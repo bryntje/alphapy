@@ -17,7 +17,19 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Event: Bot is klaar
 @bot.event
 async def on_ready():
+    await bot.wait_until_ready()
+    
     print(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
+    print(f"🔍 Ingeladen GUILD_ID vanuit config: {config.GUILD_ID}")
+
+    print("📡 Bekende guilds:")
+    for guild in bot.guilds:
+        print(f"🔹 {guild.name} (ID: {guild.id})")
+
+    if config.GUILD_ID not in [guild.id for guild in bot.guilds]:
+        print("❌ Error: De bot is NIET geconnecteerd aan de juiste server! Controleer of je hem correct hebt gejoined.")
+
+
 
 @bot.event
 async def on_raw_reaction_add(payload):
