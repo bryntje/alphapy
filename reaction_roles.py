@@ -2,6 +2,31 @@ import discord
 from discord.ext import commands
 import config
 
+class StartOnboardingView(discord.ui.View):
+    """View met een knop om direct de onboarding te starten."""
+    
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(StartOnboardingButton())
+
+class StartOnboardingButton(discord.ui.Button):
+    """Knop om de regels te accepteren en direct de onboarding te starten."""
+    
+    def __init__(self):
+        super().__init__(label="🚀 Start Onboarding", style=discord.ButtonStyle.success, custom_id="start_onboarding")
+
+    async def callback(self, interaction: discord.Interaction):
+        """Start onboarding proces zodra de knop wordt ingedrukt."""
+        member = interaction.user
+        
+        # Start met de regels
+        rules_view = RuleAcceptanceView(member)
+        await interaction.response.send_message(
+            "📜 Please accept each rule one by one before proceeding:",
+            view=rules_view,
+            ephemeral=True  # 🔥 Houd alles privé!
+        )
+
 class RuleAcceptanceView(discord.ui.View):
     """View waarin gebruikers regels één voor één moeten accepteren voordat ze doorgaan naar onboarding."""
 
@@ -11,11 +36,11 @@ class RuleAcceptanceView(discord.ui.View):
         self.current_rule = 0
         self.accepted_rules = set()
         self.rules = [
-            ("Respect Others", "Stay constructive & professional."),
-            ("No Spam or Promotions", "External links, ads, and spam are forbidden."),
-            ("Educational Content Only", "Do not share content outside Alphapips™."),
-            ("Ambassador Content Sharing", "Only approved ambassadors may share externally."),
-            ("No Financial Advice", "Alphapips™ provides education, not financial advice.")
+            ("🛡️ Respect Others", "Stay constructive & professional."),
+            ("🚫 No Spam or Promotions", "External links, ads, and spam are forbidden."),
+            ("📚 Educational Content Only", "Do not share content outside Alphapips™."),
+            ("🌟 Ambassador Content Sharing", "Only approved ambassadors may share externally."),
+            ("💰 No Financial Advice", "Alphapips™ provides education, not financial advice.")
         ]
         self.update_buttons()
 
@@ -47,9 +72,15 @@ class RuleButton(discord.ui.Button):
         view.current_rule += 1
         view.update_buttons()
 
-        await interaction.response.edit_message(
-            content=f"**{rule_text} Accepted**\n*{rule_desc}*", view=view
+        embed = discord.Embed(
+            title=rule_text,
+            description=rule_desc,
+            color=discord.Color.green()
         )
+        embed.set_footer(text="Continue to the next rule.")
+        embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
+
+        await interaction.response.edit_message(embed=embed, view=view)
 
 class FinalAcceptButton(discord.ui.Button):
     """Knop om alle regels te accepteren en onboarding te starten."""
@@ -73,89 +104,32 @@ class FinalAcceptButton(discord.ui.Button):
             await onboarding_cog.send_next_question(interaction)
         else:
             print("❌ Onboarding Cog niet gevonden! Controleer of de onboarding module correct is geladen en actief is!")
-            for cog in interaction.client.cogs:
-                print(f"🛠 Actieve cog: {cog}")  # ✅ Debug om te zien welke Cogs wél geladen zijn.
-
-
 
 class ReactionRole(commands.Cog):
-    """Regelsysteem dat onboarding start wanneer iemand op ✅ reageert in #rules."""
+    """Regelsysteem dat onboarding start via een knop in #rules."""
     
     def __init__(self, bot):
         self.bot = bot
-        self.bot.add_view(StartRulesView())  # ✅ Registreer de View
+        self.bot.add_view(StartOnboardingView())  # ✅ Registreer de View
 
     @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload):
-        print(f"🔄 Reaction detected van user ID: {payload.user_id}, emoji: {payload.emoji.name}, channel ID: {payload.channel_id}")
+    async def on_ready(self):
+        """Plaats de onboarding-knop in #rules zodra de bot opstart."""
+        guild = self.bot.get_guild(config.GUILD_ID)
+        channel = guild.get_channel(config.RULES_CHANNEL_ID)
 
-        if payload.channel_id == config.RULES_CHANNEL_ID and payload.emoji.name == "✅":
-                print("✅ Vinkje geregistreerd!")
-
-                guild = self.bot.get_guild(config.GUILD_ID)
-                if guild is None:
-                    print("❌ Guild niet gevonden! Check config.GUILD_ID")
-                    return
-
-                print(f"🏰 Guild gevonden: {guild.name}")
-
-                member = await guild.fetch_member(payload.user_id)
-                if member is None or member.bot:
-                    print("❌ Member niet gevonden of is een bot! User ID:", payload.user_id)
-                    return
-
-                print(f"👤 Member gevonden: {member.name}")
-
-                onboarding_channel = guild.get_channel(config.ONBOARDING_CHANNEL_ID)
-                if onboarding_channel:
-                    print(f"📩 Stuur start message naar {onboarding_channel.name}")
-                    await onboarding_channel.send(
-                        f"{member.mention}, click the button below to start accepting the rules.",
-                        view=StartRulesView()
-                    )
-                else:
-                    print("❌ Onboarding channel niet gevonden! Check config.ONBOARDING_CHANNEL_ID")
+        if channel:
+            embed = discord.Embed(
+                title="Welcome to Alphapips™",
+                description="The place where your learning and growth journey begins! 🌟\n\nTo get started, complete the verification by clicking the button below:",
+                color=discord.Color.blue()
+            )
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
+            
+            await channel.send(embed=embed, view=StartOnboardingView())
+            print("✅ Onboarding-knop geplaatst in #rules!")
 
 
-
-
-@commands.command()
-async def check_channels(ctx):
-    rules_channel = ctx.bot.get_channel(config.RULES_CHANNEL_ID)
-    if rules_channel:
-        await ctx.send(f"✅ Rules channel gevonden: {rules_channel.name}")
-    else:
-        await ctx.send("❌ Rules channel niet gevonden! Controleer config.py.")
-
-    onboarding_channel = ctx.bot.get_channel(config.ONBOARDING_CHANNEL_ID)
-    if onboarding_channel:
-        await ctx.send(f"✅ Onboarding channel gevonden: {onboarding_channel.name}")
-    else:
-        await ctx.send("❌ Onboarding channel niet gevonden! Controleer config.py.")
-
-
-
-class StartRulesView(discord.ui.View):
-    """View met een knop om de regel-acceptatie te starten."""
-    
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(StartRulesButton())
-
-class StartRulesButton(discord.ui.Button):
-    """Knop om de regel-acceptatie te starten."""
-    
-    def __init__(self):
-        super().__init__(label="Start Rule Acceptance", style=discord.ButtonStyle.success, custom_id="start_rules")
-
-    async def callback(self, interaction: discord.Interaction):
-        member = interaction.user
-        view = RuleAcceptanceView(member)
-        await interaction.response.send_message(
-            "📝 Please accept each rule one by one before proceeding:",
-            view=view,
-            ephemeral=True  # 🔥 Nu wél ephemeral!
-        )
 
 async def setup(bot):
     await bot.add_cog(ReactionRole(bot))
