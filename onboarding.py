@@ -29,7 +29,7 @@ class Onboarding(commands.Cog):
                     ("💡 Learn Trading", "trading"),
                     ("🔗 Networking", "networking"),
                     ("🌟 Personal Growth", "growth"),
-                    ("✨ Other", "other")
+                    ("✨ All", "all")
                 ]
             },
             {
