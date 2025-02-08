@@ -50,6 +50,17 @@ bot.setup_hook = setup_hook
 async def test(ctx):
     await ctx.send("✅ Bot is actief en werkt!")
 
+@bot.command()
+@commands.is_owner()
+async def reload(ctx, extension: str):
+    """Herlaad een specifieke extension (bijvoorbeeld 'onboarding' of 'reaction_roles')."""
+    try:
+        await bot.reload_extension(extension)
+        await ctx.send(f"✅ Extension `{extension}` succesvol herladen.")
+    except Exception as e:
+        await ctx.send(f"❌ Fout bij het herladen van `{extension}`: {e}")
+
+
 
 # Bot starten
 bot.run(config.BOT_TOKEN)
