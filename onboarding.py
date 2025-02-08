@@ -1,25 +1,57 @@
 import discord
 from discord.ext import commands
-from config import ROLE_ID
+import sqlite3
+import json
+import logging
+import uuid
+from config import ROLE_ID, LOG_CHANNEL_ID
 
+# Configureer de logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+logger.addHandler(handler)
+
+# Initialiseer de database en maak de tabel aan indien nodig
+conn = sqlite3.connect("onboarding.db")
+c = conn.cursor()
+c.execute('''
+    CREATE TABLE IF NOT EXISTS onboarding (
+        user_id TEXT PRIMARY KEY,
+        responses TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+conn.commit()
+
+def store_onboarding_data(user_id, responses):
+    try:
+        c.execute("REPLACE INTO onboarding (user_id, responses) VALUES (?, ?)", (str(user_id), json.dumps(responses)))
+        conn.commit()
+        logger.info(f"Stored onboarding data for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error storing onboarding data for user {user_id}: {e}")
 
 class Onboarding(commands.Cog):
-    """Cog managing the onboarding process for new users."""
+    """Cog die het onboarding-proces voor nieuwe gebruikers beheert."""
     
     def __init__(self, bot):
         self.bot = bot
-        self.active_sessions = {}  # Houdt bij welke gebruiker met onboarding bezig is
+        # Houd per gebruiker de huidige stap en antwoorden bij.
+        self.active_sessions = {}  # { user_id: {"step": int, "answers": {}} }
         self.questions = [
             {
                 "question": "🌟 How did you hear about Alphapips?",
                 "options": [
                     ("Invited by a friend", "friend"),
                     ("Social Media", "social"),
-                    ("Event / Presentation", "event"),
-                    ("Other", "other")
+                    ("Event / Presentation", "event")
                 ],
                 "followup": {
-                    "friend": "Who invited you?"
+                    "friend": "Who invited you?",
+                    "social": "Which platform did you find us on?",
+                    "event": "What was the name of the event?"
                 }
             },
             {
@@ -30,7 +62,8 @@ class Onboarding(commands.Cog):
                     ("🔗 Networking", "networking"),
                     ("🌟 Personal Growth", "growth"),
                     ("✨ All", "all")
-                ]
+                ],
+                "multiple": True  # Meerdere antwoorden mogen geselecteerd worden
             },
             {
                 "question": "📊 How experienced are you in trading?",
@@ -52,9 +85,9 @@ class Onboarding(commands.Cog):
                 "options": [
                     ("🔺 Forex", "forex"),
                     ("💰 Crypto", "crypto"),
-                    ("📈 Equities", "equities"),
-                    ("🔍 Other", "other")
-                ]
+                    ("📈 Equities", "equities")
+                ],
+                "multiple": True  # Meerdere keuzes mogelijk
             },
             {
                 "question": "📺 Are you interested in learning from live trading sessions?",
@@ -71,175 +104,233 @@ class Onboarding(commands.Cog):
                 ]
             }
         ]
+        
 
     async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: dict = None):
-        """Sends the next question in the onboarding process for the specific user."""
-        user_id = interaction.user.id  # Zorg dat we altijd werken met de juiste gebruiker
+        user_id = interaction.user.id
 
-        # ✅ Gebruik een aparte sessie per gebruiker
+        # Zorg dat er een sessie is voor deze gebruiker
         if user_id not in self.active_sessions:
             self.active_sessions[user_id] = {"step": 0, "answers": {}}
-
-        session = self.active_sessions[user_id]  # Laad de sessie van deze gebruiker
-
+        session = self.active_sessions[user_id]
+        
+        # Gebruik de bestaande antwoorden of update de sessie
         if answers is None:
-            answers = session["answers"]  # Haal de antwoorden van deze gebruiker op
+            answers = session["answers"]
+        else:
+            session["answers"] = answers
 
-        # ✅ Controleer of de step niet buiten de lijst valt
+        # Als alle vragen beantwoord zijn, maak de samenvatting
         if step >= len(self.questions):
-            print(f"🎉 Onboarding completed for {interaction.user.display_name}!")
-
-            # ✅ Stuur bevestigingsbericht
-            if interaction.response.is_done():
-                print("⚠️ Interaction already completed, using followup.")
-                await interaction.followup.send("✅ Onboarding completed! Welcome to AlphaPips! 🚀", ephemeral=True)
-            else:
-                await interaction.response.send_message("✅ Onboarding completed! Welcome to AlphaPips! 🚀", ephemeral=True)
-
-
-            # ✅ Geef de gebruiker de rol
-            guild = interaction.guild
-            member = guild.get_member(interaction.user.id)
-
-            if member:
-                role = guild.get_role(ROLE_ID)
-                if role:
-                    await member.add_roles(role)
-                    print(f"✅ Role '{role.name}' assigned to {member.display_name}")
+            logger.info(f"🎉 Onboarding completed for {interaction.user.display_name}!")
+            
+            summary_embed = discord.Embed(
+                title="📜 Onboarding Summary",
+                description=f"Here is a summary of your onboarding responses, {interaction.user.display_name}:",
+                color=discord.Color.blue()
+            )
+            
+            for idx, question in enumerate(self.questions):
+                answer = answers.get(idx, "No response")
+                if answer == "all":
+                    answer = ["🚀 Financial Knowledge", "💡 Learn Trading", "🔗 Networking", "🌟 Personal Growth"]
+                    answers[idx] = answer
+                if isinstance(answer, list):
+                    answer_text = ", ".join(answer) if answer else "No response"
                 else:
-                    print(f"⚠️ Role ID '{ROLE_ID}' not found.")
+                    answer_text = answer
+                summary_embed.add_field(name=f"**{question['question']}**", value=f"➜ {answer_text}", inline=False)
+            
+            # Verstuur de samenvatting als ephemeral bericht naar de gebruiker
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=summary_embed, ephemeral=True)
             else:
-                print("⚠️ Member not found.")
-
-            # ✅ Verwijder de sessie zodra onboarding klaar is
-            del self.active_sessions[interaction.user.id]
-            print(f"🗑️ Onboarding session removed for {interaction.user.display_name}")
-
-            return  # Stop hier, want onboarding is klaar
-
-
+                await interaction.followup.send(embed=summary_embed, ephemeral=True)
+            
+            # Sla de onboarding data op in de database
+            store_onboarding_data(user_id, answers)
+            
+            # Bouw en verstuur een log-embed naar het logkanaal
+            log_embed = discord.Embed(
+                title="📝 Onboarding Log",
+                description=f"**User:** {interaction.user} ({interaction.user.id})",
+                color=discord.Color.green()
+            )
+            for idx, question in enumerate(self.questions):
+                answer = answers.get(idx, "No response")
+                if answer == "all":
+                    answer = ["🚀 Financial Knowledge", "💡 Learn Trading", "🔗 Networking", "🌟 Personal Growth"]
+                if isinstance(answer, list):
+                    answer_text = ", ".join(answer) if answer else "No response"
+                else:
+                    answer_text = answer
+                log_embed.add_field(name=question['question'], value=f"➜ {answer_text}", inline=False)
+            
+            log_channel = self.bot.get_channel(LOG_CHANNEL_ID)
+            if log_channel:
+                await log_channel.send(embed=log_embed)
+            
+            # Automatische roltoewijzing
+            try:
+                member = interaction.guild.get_member(user_id)
+                if member:
+                    role = interaction.guild.get_role(ROLE_ID)
+                    if role:
+                        await member.add_roles(role)
+                        logger.info(f"Assigned role {role.name} to {member.display_name}")
+            except Exception as e:
+                logger.error(f"Error assigning role to user {user_id}: {e}")
+            
+            return
+        
+        # Bouw de embed en view voor de volgende vraag
         q_data = self.questions[step]
         embed = discord.Embed(title="📝 Onboarding Form", description=q_data["question"], color=discord.Color.blue())
+        view = OnboardingView(step=step, answers=answers, onboarding=self)
+        
+        if q_data.get("multiple"):
+            # Gebruik een select menu voor multi-select vragen en geef het unieke view_id mee
+            view.add_item(OnboardingSelect(step=step, options=q_data["options"], onboarding=self, view_id=view.view_id))
+        else:
+            # Voor single-select vragen gebruiken we knoppen
+            for label, value in q_data["options"]:
+                view.add_item(OnboardingButton(label=label, value=value, step=step, onboarding=self))
 
-        # If a follow-up is required, show a text input modal
-        if answers and list(answers.values())[-1] in q_data.get("followup", {}):
-            followup_text = q_data["followup"][list(answers.values())[-1]]
-            print(f"📝 Follow-up triggered: {followup_text}")  # ✅ Debug log
-
-            if interaction.response.is_done():
-                print("⚠️ Interaction is al voltooid, follow-up modal kan niet worden gestuurd.")
-                await interaction.followup.send("⚠️ Error: Could not send follow-up modal.", ephemeral=True)
-                return
-
-            print("🚀 Sending Follow-up Modal...")
-            await interaction.response.send_modal(FollowupModal(title="Follow-up Question", question=followup_text, step=step, answers=answers))
-            print("✅ Follow-up modal sent!")
-            return
-
-        view = OnboardingView(step, answers, self)
-
-        for label, value in q_data["options"]:
-            view.add_item(OnboardingButton(label=label, value=value, step=step, onboarding=self))
-
-        print(f"📌 Adding ConfirmButton to view at step {step}")
+        
         confirm_button = ConfirmButton(step, answers, self)
-        view.add_item(confirm_button)  # ✅ Confirm button before progressing
-
+        confirm_button.disabled = True
+        view.add_item(confirm_button)
+        
         try:
-            message = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-            view.message = message  # ✅ Forceer de view om gekoppeld te blijven aan het bericht
+            if not interaction.response.is_done():
+                await interaction.response.edit_message(embed=embed, view=view)
+            else:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         except discord.errors.InteractionResponded:
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-
-
 class OnboardingView(discord.ui.View):
-    """Interactive buttons for onboarding."""
-    def __init__(self, step: int, answers: dict, onboarding: Onboarding):
+    """View voor de onboarding-flow."""
+    def __init__(self, step: int = None, answers: dict = None, onboarding: object = None):
         super().__init__(timeout=None)
         self.step = step
-        self.answers = answers
+        self.answers = answers if answers is not None else {}
         self.onboarding = onboarding
+        self.view_id = uuid.uuid4().hex  # Uniek ID voor deze view
 
 class OnboardingButton(discord.ui.Button):
-    """Button for selecting an answer."""
+    """Knop voor single-select antwoorden."""
     def __init__(self, label: str, value: str, step: int, onboarding: Onboarding):
-        super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=value)
+        # Gebruik nu het unieke view_id in de custom_id
+        # Merk op: 'self' is hier nog niet beschikbaar, dus we moeten dit later via de view ophalen.
+        # Daarom maken we de custom_id dynamisch in de callback of we bepalen dit in de OnboardingView.
+        # Eén manier is om in de __init__ alvast een placeholder te zetten en daarna te overschrijven.
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
         self.value = value
         self.step = step
         self.onboarding = onboarding
 
     async def callback(self, interaction: discord.Interaction):
-        print(f"🔘 Button clicked: {self.label} (value: {self.value})")
-        self.view.answers[self.step] = self.value  # Save answer
+        # Indien de custom_id nodig is, kunnen we die nu dynamisch genereren.
+        # Voor de logica zelf gebruiken we nu de gegevens uit de view, die een uniek view_id bevat.
+        logger.info(f"🔘 Button clicked: {self.label} (value: {self.value})")
+        user_id = interaction.user.id
+        question_data = self.onboarding.questions[self.step]
+        
+        # Single-select: zet het antwoord
+        self.view.answers[self.step] = self.value
+        if user_id in self.onboarding.active_sessions:
+            self.onboarding.active_sessions[user_id]["answers"][self.step] = self.value
 
-        onboarding = interaction.client.get_cog("Onboarding")
-
-        # Check of een follow-up nodig is
-        question_data = onboarding.questions[self.step]
+        # Controleer of er een follow-up modal nodig is
         if self.value in question_data.get("followup", {}):
             followup_text = question_data["followup"][self.value]
-            print(f"📝 Follow-up triggered: {followup_text}")
-
-            if interaction.response.is_done():
-                print("⚠️ Interaction is already responded, sending follow-up via followup.send()")
-                await interaction.followup.send("⚠️ Error: Could not send follow-up modal.", ephemeral=True)
-                return
-
-            print("🚀 Sending Follow-up Modal...")
-            await interaction.response.send_modal(FollowupModal(title="Follow-up Question", question=followup_text, step=self.step, answers=self.view.answers))
-            print("✅ Follow-up modal sent!")
+            logger.info(f"📝 Follow-up triggered: {followup_text}")
+            await interaction.response.send_modal(
+                FollowupModal(title="Follow-up Question", question=followup_text, step=self.step, answers=self.view.answers)
+            )
             return
 
-        # ✅ In plaats van direct naar de volgende vraag te gaan, wacht op "Confirm"
-        await interaction.response.defer()
+        # Activeer de confirm-knop
+        for child in self.view.children:
+            if isinstance(child, ConfirmButton):
+                child.disabled = False
+                break
+        await interaction.response.edit_message(view=self.view)
+
+
+class OnboardingSelect(discord.ui.Select):
+    """Select menu voor multi-select vragen."""
+    def __init__(self, step: int, options: list, onboarding: Onboarding, view_id: str):
+        select_options = []
+        for label, value in options:
+            select_options.append(discord.SelectOption(label=label, value=value))
+        # Bouw een unieke custom_id met behulp van het view_id en de stap
+        custom_id = f"onboarding_select_{step}_{view_id}"
+        super().__init__(
+            placeholder="Selecteer een of meerdere opties...",
+            min_values=1,
+            max_values=len(options),
+            options=select_options,
+            custom_id=custom_id
+        )
+        self.step = step
+        self.onboarding = onboarding
+
+    async def callback(self, interaction: discord.Interaction):
+        logger.info(f"🔘 Select callback: geselecteerde waarden: {self.values}")
+        user_id = interaction.user.id
+        self.view.answers[self.step] = self.values
+        if user_id in self.onboarding.active_sessions:
+            self.onboarding.active_sessions[user_id]["answers"][self.step] = self.values
+        # Activeer de confirm-knop als er minstens één optie is geselecteerd
+        for child in self.view.children:
+            if isinstance(child, ConfirmButton):
+                child.disabled = not bool(self.values)
+                break
+        await interaction.response.edit_message(view=self.view)
 
 
 class ConfirmButton(discord.ui.Button):
-    """Button to confirm answers before moving to the next step."""
+    """Knop om de huidige stap te bevestigen en door te gaan."""
     def __init__(self, step: int, answers: dict, onboarding: Onboarding):
-        super().__init__(label="✅ Confirm", style=discord.ButtonStyle.success, custom_id="confirm")
+        # Maak een unieke custom_id met behulp van het view_id; we passen dit aan in de view.
+        # Omdat we 'self.view' nog niet kennen in __init__, kun je ervoor kiezen om
+        # de custom_id later in de view te overschrijven of te genereren.
+        super().__init__(label="✅ Confirm", style=discord.ButtonStyle.success)
         self.step = step
         self.answers = answers
         self.onboarding = onboarding
 
     async def callback(self, interaction: discord.Interaction):
-        user_id = interaction.user.id  # Zorg dat de juiste gebruiker wordt verwerkt
-
+        user_id = interaction.user.id
         if user_id not in self.onboarding.active_sessions:
-            print(f"⚠️ Geen actieve sessie voor {interaction.user.display_name}. Stop confirm.")
+            logger.warning(f"⚠️ Geen actieve sessie voor {interaction.user.display_name}.")
             return
-
-        session = self.onboarding.active_sessions[user_id]  # Haal de sessie van deze gebruiker op
-        # ConfirmButton slaat geen waarde op, dus we slaan hier niks op
-        print(f'✅ {interaction.user.display_name} bevestigde stap {self.step}')
-
-        # ✅ Stuur de gebruiker naar de volgende vraag in zijn eigen sessie
+        logger.info(f'✅ {interaction.user.display_name} bevestigde stap {self.step}')
+        session = self.onboarding.active_sessions[user_id]
+        session["answers"].update(self.answers)
         await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=session["answers"])
 
-
-
 class FollowupModal(discord.ui.Modal):
-    """Modal for follow-up text input."""
+    """Modal voor follow-up vragen waarbij de gebruiker tekst kan invoeren."""
     def __init__(self, title: str, question: str, step: int, answers: dict):
         super().__init__(title=title)
         self.step = step
         self.answers = answers
         self.question = question
-
-        self.input_field = discord.ui.TextInput(label=question, placeholder="Type your answer here...")
+        self.input_field = discord.ui.TextInput(label=question, placeholder="Type je antwoord hier...")
         self.add_item(self.input_field)
 
     async def on_submit(self, interaction: discord.Interaction):
-        self.answers[self.step] = self.input_field.value  # Store response
+        user_id = interaction.user.id
+        self.answers[self.step] = self.input_field.value
         onboarding = interaction.client.get_cog("Onboarding")
-
-        # ✅ Voorkom dat interactie al een antwoord heeft gegeven
-        await interaction.response.defer(ephemeral=True)  
+        if user_id in onboarding.active_sessions:
+            onboarding.active_sessions[user_id]["answers"][self.step] = self.input_field.value
+        await interaction.response.defer(ephemeral=True)
         await interaction.followup.send("✅ Thanks! Moving to the next question...", ephemeral=True)
-
         await onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
-
 
 async def setup(bot):
     await bot.add_cog(Onboarding(bot))
