@@ -41,7 +41,8 @@ extensions = ["commands", "reaction_roles"]
 
 async def setup_hook():
     await bot.load_extension("onboarding")
-    await bot.load_extension("reaction_roles")  # Zorg ervoor dat reaction_roles correct wordt geladen!
+    await bot.load_extension("reaction_roles")
+    await bot.load_extension("commands")
 
 bot.setup_hook = setup_hook
 
