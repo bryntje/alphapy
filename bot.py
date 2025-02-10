@@ -43,7 +43,7 @@ async def setup_hook():
     await bot.load_extension("onboarding")
     await bot.load_extension("reaction_roles")
     await bot.load_extension("slash_commands")
-    await bot.load_extension("dataquery")
+    # await bot.load_extension("dataquery")
     await bot.load_extension("reload_commands")
 
 
