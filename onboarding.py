@@ -116,10 +116,6 @@ class Onboarding(commands.Cog):
                 "followup": {
                     "yes": "Please enter your email address:"
                 }
-            },
-            {
-                "question": "Do you want to join our Leadership Program?",
-                "options": [("Yes", "yes"), ("No", "no")],
             }
         ]
         
