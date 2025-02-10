@@ -119,7 +119,7 @@ class ReactionRole(commands.Cog):
         guild = self.bot.get_guild(config.GUILD_ID)
         channel = guild.get_channel(config.RULES_CHANNEL_ID)
         # Controleer of er al een bericht met de onboarding-knop staat (bijv. op basis van de embed titel)
-        messages = await channel.history(limit=100).flatten()
+        messages = [message async for message in channel.history(limit=100)]
         persistent_message = None
         for msg in messages:
             if msg.embeds and msg.embeds[0].title == "Welcome to Alphapips™":

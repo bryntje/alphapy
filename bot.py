@@ -37,31 +37,17 @@ async def on_raw_reaction_add(payload):
 
 
 # Cogs laden (extra functies)
-extensions = ["commands", "reaction_roles"]
+extensions = ["slash_commands", "reaction_roles"]
 
 async def setup_hook():
     await bot.load_extension("onboarding")
     await bot.load_extension("reaction_roles")
-    await bot.load_extension("commands")
+    await bot.load_extension("slash_commands")
+    await bot.load_extension("dataquery")
+    await bot.load_extension("reload_commands")
+
 
 bot.setup_hook = setup_hook
-
-
-@bot.command()
-async def test(ctx):
-    await ctx.send("✅ Bot is actief en werkt!")
-
-@bot.command()
-@commands.is_owner()
-async def reload(ctx, extension: str):
-    """Herlaad een specifieke extension (bijvoorbeeld 'onboarding' of 'reaction_roles')."""
-    try:
-        await bot.reload_extension(extension)
-        await ctx.send(f"✅ Extension `{extension}` succesvol herladen.")
-    except Exception as e:
-        await ctx.send(f"❌ Fout bij het herladen van `{extension}`: {e}")
-
-
 
 # Bot starten
 bot.run(config.BOT_TOKEN)
