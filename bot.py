@@ -31,11 +31,6 @@ async def on_ready():
 
 
 
-@bot.event
-async def on_raw_reaction_add(payload):
-    print(f"🔄 Reaction detected: {payload.emoji.name} door {payload.user_id}")  # ✅ Moet altijd zichtbaar zijn
-
-
 # Cogs laden (extra functies)
 extensions = ["slash_commands", "reaction_roles"]
 
@@ -43,8 +38,10 @@ async def setup_hook():
     await bot.load_extension("onboarding")
     await bot.load_extension("reaction_roles")
     await bot.load_extension("slash_commands")
-    await bot.load_extension("dataquery")
+    # await bot.load_extension("dataquery")
     await bot.load_extension("reload_commands")
+    await bot.load_extension("gdpr")
+
 
 
 bot.setup_hook = setup_hook
