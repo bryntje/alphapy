@@ -2,6 +2,7 @@ import discord
 import asyncio
 from discord.ext import commands
 from onboarding import Onboarding  # ✅ Import the Onboarding Cog
+from gdpr import GDPRView
 
 import config
 
@@ -28,11 +29,11 @@ async def on_ready():
 
     if config.GUILD_ID not in [guild.id for guild in bot.guilds]:
         print("❌ Error: De bot is NIET geconnecteerd aan de juiste server! Controleer of je hem correct hebt gejoined.")
-
+    bot.add_view(GDPRView())
 
 
 # Cogs laden (extra functies)
-extensions = ["slash_commands", "reaction_roles"]
+extensions = ["slash_commands", "reaction_roles", "onboarding", "reload_commands", "gdpr", "invite_leaderboard"]
 
 async def setup_hook():
     await bot.load_extension("onboarding")
@@ -41,7 +42,7 @@ async def setup_hook():
     # await bot.load_extension("dataquery")
     await bot.load_extension("reload_commands")
     await bot.load_extension("gdpr")
-
+    await bot.load_extension("invite_leaderboard")
 
 
 bot.setup_hook = setup_hook
