@@ -8,8 +8,8 @@ from checks import is_owner_or_admin
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-def update_invite_count(inviter_id: str, new_count: int):
-    """Werk de invite count voor een bepaalde inviter bij in de database."""
+def update_invite_count(inviter_id: str):
+    """Verhoog de globale invite teller voor een gebruiker met 1."""
     conn = sqlite3.connect("invite_tracker.db")
     c = conn.cursor()
     c.execute("""
@@ -19,9 +19,14 @@ def update_invite_count(inviter_id: str, new_count: int):
         )
     """)
     conn.commit()
-    c.execute("REPLACE INTO invite_tracker (user_id, invite_count) VALUES (?, ?)", (str(inviter_id), new_count))
+    c.execute("""
+        INSERT INTO invite_tracker (user_id, invite_count)
+        VALUES (?, 1)
+        ON CONFLICT(user_id) DO UPDATE SET invite_count = invite_count + 1;
+    """, (str(inviter_id),))
     conn.commit()
     conn.close()
+
 
 def get_invite_leaderboard(limit: int = 10):
     """Haal de top 'limit' gebruikers op uit de invite tracker database."""
@@ -53,54 +58,44 @@ class InviteTracker(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        print(f"Member joined: {member}")
         guild = member.guild
         try:
             new_invites = await guild.invites()
         except Exception as e:
             logger.error(f"Error fetching invites for guild {guild.id}: {e}")
             return
-    
+
         old_invites = self.invite_cache.get(guild.id, {})
         used_invite = None
-    
-        # Vergelijk de oude en nieuwe invites om te bepalen welke invite is gebruikt
+
         for invite in new_invites:
             if invite.code in old_invites and invite.uses > old_invites[invite.code]:
                 used_invite = invite
                 break
-            
+
         if used_invite:
             inviter = used_invite.inviter
             logger.info(f"{member} joined using invite {used_invite.code} from {inviter}")
-    
-            # Haal de huidige invite count op voor de inviter uit de database
-            try:
-                conn = sqlite3.connect("invite_tracker.db")
-                c = conn.cursor()
-                c.execute("CREATE TABLE IF NOT EXISTS invite_tracker (user_id TEXT PRIMARY KEY, invite_count INTEGER DEFAULT 0)")
-                conn.commit()
-                c.execute("SELECT invite_count FROM invite_tracker WHERE user_id = ?", (str(inviter.id),))
-                row = c.fetchone()
-                current_count = row[0] if row else 0
-                conn.close()
-            except Exception as e:
-                logger.error(f"Error fetching invite count: {e}")
-                current_count = 0
-    
-            new_count = current_count + 1
-            update_invite_count(inviter.id, new_count)
-    
-            # Verstuur een announcement-bericht naar het aangewezen kanaal
+
+            # Verhoog de globale teller voor de inviter met 1
+            update_invite_count(inviter.id)
+
+            # (Optioneel: haal de nieuwe teller op voor de aankondiging, indien gewenst)
+            conn = sqlite3.connect("invite_tracker.db")
+            c = conn.cursor()
+            c.execute("SELECT invite_count FROM invite_tracker WHERE user_id = ?", (str(inviter.id),))
+            row = c.fetchone()
+            current_count = row[0] if row else 0
+            conn.close()
+
             announcement_channel = self.bot.get_channel(config.INVITE_ANNOUNCEMENT_CHANNEL_ID)
             if announcement_channel:
-                print("Announcement branch reached")
                 await announcement_channel.send(
-                    f"{member.mention} has been invited by {inviter.mention} and now has {new_count} invites."
+                    f"{member.mention} joined! {inviter.mention} now has {current_count} invites."
                 )
-    
-        # Werk de cache voor deze guild bij met de nieuwe invite data
+
         self.invite_cache[guild.id] = {invite.code: invite.uses for invite in new_invites}
+
 
     @commands.command(name="resetinvite")
     @is_owner_or_admin()  # Of gebruik een eigen check, zoals is_owner_or_admin()
