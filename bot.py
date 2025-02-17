@@ -43,6 +43,7 @@ async def setup_hook():
     await bot.load_extension("reload_commands")
     await bot.load_extension("gdpr")
     await bot.load_extension("invite_leaderboard")
+    await bot.load_extension("clean")
 
 
 bot.setup_hook = setup_hook
