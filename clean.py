@@ -20,5 +20,5 @@ class Clean(commands.Cog):
         confirmation = await ctx.send(f"✅ {len(deleted)-1} berichten zijn verwijderd.")
         await confirmation.delete(delay=5)
 
-def setup(bot: commands.Bot):
-    bot.add_cog(Clean(bot))
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Clean(bot))
