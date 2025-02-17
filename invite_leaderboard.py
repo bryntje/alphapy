@@ -8,8 +8,9 @@ from checks import is_owner_or_admin
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-def update_invite_count(inviter_id: str):
-    """Verhoog de globale invite teller voor een gebruiker met 1."""
+def update_invite_count(inviter_id: str, count: int = None):
+    """Verhoogt de globale invite teller voor een gebruiker met 1 als count None is,
+    of stelt de teller in op de opgegeven count als deze is meegegeven."""
     conn = sqlite3.connect("invite_tracker.db")
     c = conn.cursor()
     c.execute("""
@@ -19,13 +20,23 @@ def update_invite_count(inviter_id: str):
         )
     """)
     conn.commit()
-    c.execute("""
-        INSERT INTO invite_tracker (user_id, invite_count)
-        VALUES (?, 1)
-        ON CONFLICT(user_id) DO UPDATE SET invite_count = invite_count + 1;
-    """, (str(inviter_id),))
+    if count is None:
+        # Verhoog met 1
+        c.execute("""
+            INSERT INTO invite_tracker (user_id, invite_count)
+            VALUES (?, 1)
+            ON CONFLICT(user_id) DO UPDATE SET invite_count = invite_count + 1;
+        """, (str(inviter_id),))
+    else:
+        # Stel de teller in op de opgegeven count
+        c.execute("""
+            INSERT INTO invite_tracker (user_id, invite_count)
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET invite_count = ?;
+        """, (str(inviter_id), count, count))
     conn.commit()
     conn.close()
+
 
 
 def get_invite_leaderboard(limit: int = 10):
