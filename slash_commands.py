@@ -47,6 +47,16 @@ class CustomSlashCommands(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"Er is een fout opgetreden: {e}", ephemeral=True)
 
+    @app_commands.command(name="sync", description="Synchroniseer alle slash commands")
+    @commands.is_owner()
+    async def sync(interaction: discord.Interaction):
+        await interaction.response.defer()
+        await interaction.client.tree.sync()
+        await interaction.followup.send("✅ Slash commands zijn gesynchroniseerd!", ephemeral=True)
+
+
 async def setup(bot: commands.Bot):
-    await bot.add_cog(CustomSlashCommands(bot))
+    cog = CustomSlashCommands(bot)
+    await bot.add_cog(cog)
+    bot.tree.add_command(cog.sync)
     await bot.tree.sync()
