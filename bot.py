@@ -40,14 +40,6 @@ async def on_command_error(ctx, error):
     logger.error(f"⚠️ Error in command '{ctx.command}': {error}")
     await ctx.send("❌ Oops! An error occurred. Please try again later.")
 
-@commands.command(name="sync", hidden=True)  # ✅ Maak het een klassieke command (prefix command)
-@commands.is_owner()
-async def sync(self, ctx: commands.Context):
-    await ctx.send("🔄 Slash commands worden gesynchroniseerd...", delete_after=3)
-    await self.bot.tree.sync()
-    await ctx.send("✅ Slash commands zijn gesynchroniseerd!")
-
-
 # Cogs laden (extra functies)
 extensions = ["slash_commands", "reaction_roles", "onboarding", "reload_commands", "gdpr", "invite_leaderboard"]
 
@@ -55,7 +47,7 @@ async def setup_hook():
     await bot.load_extension("onboarding")
     await bot.load_extension("reaction_roles")
     await bot.load_extension("slash_commands")
-    # await bot.load_extension("dataquery")
+    await bot.load_extension("dataquery")
     await bot.load_extension("reload_commands")
     await bot.load_extension("gdpr")
     await bot.load_extension("invite_leaderboard")
