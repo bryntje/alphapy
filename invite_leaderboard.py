@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import sqlite3
 import logging
 import config
@@ -109,9 +110,9 @@ class InviteTracker(commands.Cog):
         # Update de cache voor deze guild
         self.invite_cache[guild.id] = {invite.code: invite.uses for invite in new_invites}
 
-    @commands.command(name="recalc_invites", help="Herschal alle invites van een gebruiker en update de teller.")
+    @app_commands.command(name="recalc_invites", help="Herschal alle invites van een gebruiker en update de teller.")
     @is_owner_or_admin()
-    async def recalc_invites(self, ctx, member: discord.Member):
+    async def recalc_invites(self, interaction: discord.Interaction, member: discord.Member):
         total_invites = 0
         try:
             # Loop door alle guilds waarin de bot zit
@@ -122,21 +123,21 @@ class InviteTracker(commands.Cog):
                         total_invites += invite.uses
         except Exception as e:
             logger.error(f"Error recalculating invites: {e}")
-            await ctx.send("Er is een fout opgetreden tijdens het herberekenen van de invites.")
+            await interaction.response.send_message("Er is een fout opgetreden tijdens het herberekenen van de invites.")
             return
 
         update_invite_count(member.id, total_invites)
-        await ctx.send(f"De totale invites voor {member.display_name} zijn bijgewerkt naar {total_invites}.")
+        await interaction.response.send_message(f"De totale invites voor {member.display_name} zijn bijgewerkt naar {total_invites}.")
 
-    @commands.command(name="inviteleaderboard", help="Toon een leaderboard van de hoogste invite counts.")
-    async def inviteleaderboard(self, ctx, limit: int = 10):
+    @app_commands.command(name="inviteleaderboard", help="Toon een leaderboard van de hoogste invite counts.")
+    async def inviteleaderboard(self, interaction: discord.Interaction, limit: int = 10):
         conn = sqlite3.connect("invite_tracker.db")
         c = conn.cursor()
         c.execute("SELECT user_id, invite_count FROM invite_tracker ORDER BY invite_count DESC LIMIT ?", (limit,))
         rows = c.fetchall()
         conn.close()
         if not rows:
-            await ctx.send("Er is nog geen invite data beschikbaar.")
+            await interaction.response.send_message("Er is nog geen invite data beschikbaar.")
             return
 
         embed = discord.Embed(title="Invite Leaderboard", color=discord.Color.gold())
@@ -144,19 +145,19 @@ class InviteTracker(commands.Cog):
             member = ctx.guild.get_member(int(user_id))
             name = member.display_name if member else f"User {user_id}"
             embed.add_field(name=f"{idx}. {name}", value=f"Invites: {invite_count}", inline=False)
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-    @commands.command(name="setinvites", help="Stelt handmatig het aantal invites voor een gebruiker in.")
+    @app_commands.command(name="setinvites", help="Stelt handmatig het aantal invites voor een gebruiker in.")
     @is_owner_or_admin()
-    async def setinvites(self, ctx, member: discord.Member, count: int):
+    async def setinvites(self, interaction: discord.Interaction, member: discord.Member, count: int):
         update_invite_count(member.id, count)
-        await ctx.send(f"Invite count for {member.display_name} is set to {count}.")
+        await interaction.response.send_message(f"Invite count for {member.display_name} is set to {count}.")
 
-    @commands.command(name="resetinvites", help="Reset het invite aantal voor een gebruiker naar 0.")
+    @app_commands.command(name="resetinvites", help="Reset het invite aantal voor een gebruiker naar 0.")
     @commands.has_permissions(manage_guild=True)
-    async def resetinvites(self, ctx, member: discord.Member):
+    async def resetinvites(self, interaction: discord.Interaction, member: discord.Member):
         update_invite_count(member.id, 0)
-        await ctx.send(f"Invite count for {member.display_name} has been reset to 0.")
+        await interaction.response.send_message(f"Invite count for {member.display_name} has been reset to 0.")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(InviteTracker(bot))
