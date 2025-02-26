@@ -110,7 +110,7 @@ class InviteTracker(commands.Cog):
         # Update de cache voor deze guild
         self.invite_cache[guild.id] = {invite.code: invite.uses for invite in new_invites}
 
-    @app_commands.command(name="recalc_invites", help="Herschal alle invites van een gebruiker en update de teller.")
+    @app_commands.command(name="recalc_invites", description="Herschal alle invites van een gebruiker en update de teller.")
     @is_owner_or_admin()
     async def recalc_invites(self, interaction: discord.Interaction, member: discord.Member):
         total_invites = 0
@@ -129,7 +129,7 @@ class InviteTracker(commands.Cog):
         update_invite_count(member.id, total_invites)
         await interaction.response.send_message(f"De totale invites voor {member.display_name} zijn bijgewerkt naar {total_invites}.")
 
-    @app_commands.command(name="inviteleaderboard", help="Toon een leaderboard van de hoogste invite counts.")
+    @app_commands.command(name="inviteleaderboard", description="Toon een leaderboard van de hoogste invite counts.")
     async def inviteleaderboard(self, interaction: discord.Interaction, limit: int = 10):
         conn = sqlite3.connect("invite_tracker.db")
         c = conn.cursor()
@@ -147,13 +147,13 @@ class InviteTracker(commands.Cog):
             embed.add_field(name=f"{idx}. {name}", value=f"Invites: {invite_count}", inline=False)
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="setinvites", help="Stelt handmatig het aantal invites voor een gebruiker in.")
+    @app_commands.command(name="setinvites", description="Stelt handmatig het aantal invites voor een gebruiker in.")
     @is_owner_or_admin()
     async def setinvites(self, interaction: discord.Interaction, member: discord.Member, count: int):
         update_invite_count(member.id, count)
         await interaction.response.send_message(f"Invite count for {member.display_name} is set to {count}.")
 
-    @app_commands.command(name="resetinvites", help="Reset het invite aantal voor een gebruiker naar 0.")
+    @app_commands.command(name="resetinvites", description="Reset het invite aantal voor een gebruiker naar 0.")
     @commands.has_permissions(manage_guild=True)
     async def resetinvites(self, interaction: discord.Interaction, member: discord.Member):
         update_invite_count(member.id, 0)
