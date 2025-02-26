@@ -1,9 +1,11 @@
 import discord
 import asyncio
 from discord.ext import commands
+from discord import app_commands
 from onboarding import Onboarding  # ✅ Import the Onboarding Cog
 from gdpr import GDPRView
 from logger import logger  # Import the logger
+
 
 import config
 
@@ -37,6 +39,13 @@ async def on_ready():
 async def on_command_error(ctx, error):
     logger.error(f"⚠️ Error in command '{ctx.command}': {error}")
     await ctx.send("❌ Oops! An error occurred. Please try again later.")
+
+@app_commands.command(name="sync", description="Synchroniseer de slash commands")
+@commands.is_owner()
+async def sync(interaction: discord.Interaction):
+    await interaction.response.defer()
+    await interaction.client.tree.sync()
+    await interaction.followup.send("✅ Slash commands zijn gesynchroniseerd!", ephemeral=True)
 
 
 # Cogs laden (extra functies)
