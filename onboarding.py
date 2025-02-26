@@ -4,6 +4,7 @@ import sqlite3
 import json
 import logging
 import uuid
+import aiosqlite
 from config import ROLE_ID, LOG_CHANNEL_ID
 
 # Configureer de logging
@@ -25,13 +26,15 @@ c.execute('''
 ''')
 conn.commit()
 
-def store_onboarding_data(user_id, responses):
-    try:
-        c.execute("REPLACE INTO onboarding (user_id, responses) VALUES (?, ?)", (str(user_id), json.dumps(responses)))
-        conn.commit()
+async def store_onboarding_data(user_id, responses):
+    async with aiosqlite.connect("onboarding.db") as db:
+        await db.execute(
+            "REPLACE INTO onboarding (user_id, responses) VALUES (?, ?)",
+            (str(user_id), json.dumps(responses))
+        )
+        await db.commit()
         logger.info(f"Stored onboarding data for user {user_id}")
-    except Exception as e:
-        logger.error(f"Error storing onboarding data for user {user_id}: {e}")
+
 
 class Onboarding(commands.Cog):
     """Cog die het onboarding-proces voor nieuwe gebruikers beheert."""

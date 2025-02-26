@@ -40,12 +40,12 @@ async def on_command_error(ctx, error):
     logger.error(f"⚠️ Error in command '{ctx.command}': {error}")
     await ctx.send("❌ Oops! An error occurred. Please try again later.")
 
-@app_commands.command(name="sync", description="Synchroniseer de slash commands")
+@commands.command(name="sync", hidden=True)  # ✅ Maak het een klassieke command (prefix command)
 @commands.is_owner()
-async def sync(interaction: discord.Interaction):
-    await interaction.response.defer()
-    await interaction.client.tree.sync()
-    await interaction.followup.send("✅ Slash commands zijn gesynchroniseerd!", ephemeral=True)
+async def sync(self, ctx: commands.Context):
+    await ctx.send("🔄 Slash commands worden gesynchroniseerd...", delete_after=3)
+    await self.bot.tree.sync()
+    await ctx.send("✅ Slash commands zijn gesynchroniseerd!")
 
 
 # Cogs laden (extra functies)
