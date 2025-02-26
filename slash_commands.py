@@ -56,7 +56,5 @@ class CustomSlashCommands(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    cog = CustomSlashCommands(bot)
-    await bot.add_cog(cog)
-    bot.tree.add_command(cog.sync)
-    await bot.tree.sync()
+    await bot.add_cog(CustomSlashCommands(bot))
+
