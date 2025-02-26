@@ -3,6 +3,7 @@ import asyncio
 from discord.ext import commands
 from onboarding import Onboarding  # ✅ Import the Onboarding Cog
 from gdpr import GDPRView
+from logger import logger  # Import the logger
 
 import config
 
@@ -20,16 +21,22 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     await bot.wait_until_ready()
     
-    print(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
-    print(f"🔍 Ingeladen GUILD_ID vanuit config: {config.GUILD_ID}")
+    logger.info(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
+    logger.info(f"🔍 Ingeladen GUILD_ID vanuit config: {config.GUILD_ID}")
 
-    print("📡 Bekende guilds:")
+    logger.info("📡 Bekende guilds:")
     for guild in bot.guilds:
-        print(f"🔹 {guild.name} (ID: {guild.id})")
+        logger.info(f"🔹 {guild.name} (ID: {guild.id})")
 
     if config.GUILD_ID not in [guild.id for guild in bot.guilds]:
-        print("❌ Error: De bot is NIET geconnecteerd aan de juiste server! Controleer of je hem correct hebt gejoined.")
+        logger.error("❌ Error: De bot is NIET geconnecteerd aan de juiste server! Controleer of je hem correct hebt gejoined.")
+    
     bot.add_view(GDPRView())
+
+@bot.event
+async def on_command_error(ctx, error):
+    logger.error(f"⚠️ Error in command '{ctx.command}': {error}")
+    await ctx.send("❌ Oops! An error occurred. Please try again later.")
 
 
 # Cogs laden (extra functies)
