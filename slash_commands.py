@@ -49,7 +49,7 @@ class CustomSlashCommands(commands.Cog):
 
     @app_commands.command(name="sync", description="Synchroniseer alle slash commands")
     @commands.is_owner()
-    async def sync(interaction: discord.Interaction):
+    async def sync(self, interaction: discord.Interaction):
         await interaction.response.defer()
         await interaction.client.tree.sync()
         await interaction.followup.send("✅ Slash commands zijn gesynchroniseerd!", ephemeral=True)
