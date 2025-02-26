@@ -29,32 +29,33 @@ class DataQuery(commands.Cog):
         days: int = None,
         limit: int = 10
     ):
+        await interaction.response.defer()  # 👈 voorkomt een timeout
+    
         query = "SELECT user_id, responses, timestamp FROM onboarding WHERE 1=1"
         params = []
-
+    
         if member is not None:
             query += " AND user_id = ?"
             params.append(str(member.id))
-        
+    
         if days is not None:
             since_time = datetime.datetime.now() - datetime.timedelta(days=days)
             since_str = since_time.strftime("%Y-%m-%d %H:%M:%S")
             query += " AND timestamp >= ?"
             params.append(since_str)
-        
+    
         query += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
-
-        # Gebruik aiosqlite voor asynchrone database-operaties
+    
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
-
+    
         if not rows:
-            await interaction.response.send_message("Geen resultaten gevonden met de opgegeven filters.", ephemeral=True)
+            await interaction.followup.send("Geen resultaten gevonden met de opgegeven filters.", ephemeral=True)
             return
-
+    
         embed = discord.Embed(title="Onboarding Data Query Results", color=discord.Color.blue())
         for row in rows:
             user_id = row["user_id"]
@@ -70,8 +71,9 @@ class DataQuery(commands.Cog):
                 value=f"Responses:\n```json\n{responses_str}```",
                 inline=False
             )
+    
+        await interaction.followup.send(embed=embed, ephemeral=True)  # 👈 Gebruik followup voor vertraagde response
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(DataQuery(bot))
