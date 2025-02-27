@@ -142,7 +142,7 @@ class InviteTracker(commands.Cog):
 
         embed = discord.Embed(title="Invite Leaderboard", color=discord.Color.gold())
         for idx, (user_id, invite_count) in enumerate(rows, start=1):
-            member = ctx.guild.get_member(int(user_id))
+            member = interaction.guild.get_member(int(user_id))
             name = member.display_name if member else f"User {user_id}"
             embed.add_field(name=f"{idx}. {name}", value=f"Invites: {invite_count}", inline=False)
         await interaction.response.send_message(embed=embed)
