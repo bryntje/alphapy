@@ -74,6 +74,40 @@ class DataQuery(commands.Cog):
     
         await interaction.followup.send(embed=embed, ephemeral=True)  # 👈 Gebruik followup voor vertraagde response
 
+class DataQuery(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.db_path = "onboarding.db"
+
+    @app_commands.command(name="export_onboarding", description="Exporteer onboarding data als een CSV-bestand.")
+    @commands.is_owner()
+    async def export_onboarding(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        csv_filename = "onboarding_data.csv"
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT * FROM onboarding")
+            rows = await cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]  # Kolomnamen ophalen
+            await cursor.close()
+
+        if not rows:
+            await interaction.followup.send("⚠️ Geen onboarding data gevonden!", ephemeral=True)
+            return
+        
+        # Schrijf data naar CSV-bestand
+        with open(csv_filename, "w", newline="", encoding="utf-8") as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(columns)  # Kolomnamen in de eerste rij
+            csv_writer.writerows(rows)  # Data schrijven
+
+        # Upload CSV-bestand naar Discord
+        file = discord.File(csv_filename)
+        await interaction.followup.send("📂 Hier is de geëxporteerde onboarding data:", file=file)
+
+        # Verwijder bestand na verzending
+        os.remove(csv_filename)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(DataQuery(bot))
