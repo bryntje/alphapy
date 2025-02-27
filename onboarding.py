@@ -4,8 +4,9 @@ import sqlite3
 import json
 import logging
 import uuid
-import aiosqlite
 from config import ROLE_ID, LOG_CHANNEL_ID
+import asyncpg
+import config
 
 # Configureer de logging
 logger = logging.getLogger(__name__)
@@ -15,25 +16,25 @@ handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(me
 logger.addHandler(handler)
 
 # Initialiseer de database en maak de tabel aan indien nodig
-conn = sqlite3.connect("onboarding.db")
-c = conn.cursor()
-c.execute('''
-    CREATE TABLE IF NOT EXISTS onboarding (
-        user_id TEXT PRIMARY KEY,
-        responses TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-''')
-conn.commit()
+async def setup_database(self):
+    """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
+    self.db = await asyncpg.create_pool(config.DATABASE_URL)
 
-async def store_onboarding_data(user_id, responses):
-    async with aiosqlite.connect("onboarding.db") as db:
-        await db.execute(
-            "REPLACE INTO onboarding (user_id, responses) VALUES (?, ?)",
-            (str(user_id), json.dumps(responses))
-        )
-        await db.commit()
-        logger.info(f"Stored onboarding data for user {user_id}")
+async def store_onboarding_data(self, user_id, responses):
+    """Slaat onboarding data op in de database."""
+    async with self.db.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO onboarding (user_id, responses)
+                VALUES ($1, $2)
+                ON CONFLICT(user_id) DO UPDATE SET responses = $2;
+                """,
+                user_id, json.dumps(responses)
+            )
+    logger.info(f"Stored onboarding data for user {user_id}")
+
+
 
 
 class Onboarding(commands.Cog):
@@ -163,7 +164,7 @@ class Onboarding(commands.Cog):
                 await interaction.followup.send(embed=summary_embed, ephemeral=True)
 
             # Sla de onboarding data op in de database
-            store_onboarding_data(user_id, answers)
+            await self.store_onboarding_data(user_id, answers)
 
             # Bouw en verstuur een log-embed naar het logkanaal
             log_embed = discord.Embed(
@@ -385,5 +386,5 @@ class FollowupModal(discord.ui.Modal):
         await interaction.followup.send("✅ Thanks! Moving to the next question...", ephemeral=True)
         await onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
-async def setup(bot):
+async def setup_database(bot):
     await bot.add_cog(Onboarding(bot))
