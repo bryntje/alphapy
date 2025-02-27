@@ -387,5 +387,6 @@ class FollowupModal(discord.ui.Modal):
         await onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Onboarding(bot))
-
+    cog = Onboarding(bot)
+    await bot.add_cog(cog)
+    await cog.setup_database()  # Zorg dat de database correct wordt opgezet
