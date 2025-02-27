@@ -6,6 +6,7 @@ import json
 import datetime
 import config
 from checks import is_owner_or_admin
+import csv
 
 class DataQuery(commands.Cog):
     def __init__(self, bot: commands.Bot):
