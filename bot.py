@@ -40,8 +40,6 @@ async def on_command_error(ctx, error):
     logger.error(f"⚠️ Error in command '{ctx.command}': {error}")
     await ctx.send("❌ Oops! An error occurred. Please try again later.")
 
-# Cogs laden (extra functies)
-extensions = ["slash_commands", "reaction_roles", "onboarding", "reload_commands", "gdpr", "invite_leaderboard"]
 
 async def setup_hook():
     await bot.load_extension("onboarding")
