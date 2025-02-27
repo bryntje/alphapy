@@ -15,28 +15,6 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
 
-# Initialiseer de database en maak de tabel aan indien nodig
-async def setup_database(self):
-    """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
-    self.db = await asyncpg.create_pool(config.DATABASE_URL)
-
-async def store_onboarding_data(self, user_id, responses):
-    """Slaat onboarding data op in de database."""
-    async with self.db.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(
-                """
-                INSERT INTO onboarding (user_id, responses)
-                VALUES ($1, $2)
-                ON CONFLICT(user_id) DO UPDATE SET responses = $2;
-                """,
-                user_id, json.dumps(responses)
-            )
-    logger.info(f"Stored onboarding data for user {user_id}")
-
-
-
-
 class Onboarding(commands.Cog):
     """Cog die het onboarding-proces voor nieuwe gebruikers beheert."""
     
@@ -123,6 +101,18 @@ class Onboarding(commands.Cog):
             }
         ]
         
+    async def setup_database(self):
+        """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
+        self.db = await asyncpg.create_pool(config.DATABASE_URL)
+        async with self.db.acquire() as conn:
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS onboarding (
+                    user_id BIGINT PRIMARY KEY,
+                    responses JSONB,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            ''')
+
     async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: dict = None):
         user_id = interaction.user.id
 
