@@ -82,11 +82,5 @@ async def setup(bot: commands.Bot):
     invite_tracker = InviteTracker(bot)
     await bot.add_cog(invite_tracker)
     await invite_tracker.setup_database()
-
-    # ✅ Forceer registratie van slash commands
-    bot.tree.add_command(invite_tracker.inviteleaderboard)
-    bot.tree.add_command(invite_tracker.setinvites)
-    bot.tree.add_command(invite_tracker.resetinvites)
-
     await bot.tree.sync()
 
