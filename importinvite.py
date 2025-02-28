@@ -55,4 +55,4 @@ class ImportInvites(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = ImportInvites(bot)
     await bot.add_cog(cog)
-    await cog.setup_database
+    await cog.setup_database()
