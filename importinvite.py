@@ -23,7 +23,7 @@ class ImportInvites(commands.Cog):
     @commands.is_owner()
     async def import_invites(self, ctx):
         """Importeer invites vanuit het invite-tracker kanaal."""
-        channel = self.bot.get_channel(config.INVITE_TRACKER_CHANNEL_ID)
+        channel = self.bot.get_channel(config.INVITE_ANNOUNCEMENT_CHANNEL_ID)
         if not channel:
             await ctx.send("Kanaal niet gevonden!")
             return
