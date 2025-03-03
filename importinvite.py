@@ -34,7 +34,8 @@ class ImportInvites(commands.Cog):
         async for message in channel.history(limit=1000):  # Pas aan indien nodig
             match = pattern.search(message.content)
             if match:
-                _, inviter, count = match.groups()
+                _, inviter_mention, count = match.groups()
+                inviter = re.sub(r'[^\d]', '', inviter_mention)  # Haal alleen de ID uit de mention
                 print(f"✅ Gevonden: {inviter} heeft nu {count} invites.")
                 count = int(count)
                 invite_counts[inviter] = max(invite_counts.get(inviter, 0), count)
@@ -45,7 +46,7 @@ class ImportInvites(commands.Cog):
                 await conn.execute(
                     """
                     INSERT INTO invite_tracker (user_id, invite_count)
-                    VALUES ((SELECT id FROM users WHERE username = $1), $2)
+                    VALUES ($1), $2)
                     ON CONFLICT(user_id) DO UPDATE SET invite_count = $2;
                     """,
                     inviter, count
