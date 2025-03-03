@@ -51,6 +51,7 @@ async def setup_hook():
     await bot.load_extension("invite_leaderboard")
     await bot.load_extension("clean")
     await bot.load_extension("importdata")
+    await bot.load_extension("importinvite")
 
 
 bot.setup_hook = setup_hook
