@@ -8,11 +8,28 @@ class GDPRMigration(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def setup_database():
+        """Maakt de GDPR-tabel aan als deze nog niet bestaat."""
+        pg_conn = await asyncpg.connect(config.DATABASE_URL)
+
+        await pg_conn.execute("""
+            CREATE TABLE IF NOT EXISTS gdpr_acceptance (
+                user_id BIGINT PRIMARY KEY,
+                accepted INTEGER DEFAULT 0,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        await pg_conn.close()
+        print("✅ GDPR-tabel gecontroleerd/aangemaakt!")
+
+
     @commands.command(name="migrate_gdpr")
     @commands.is_owner()
     async def migrate_gdpr(self, ctx):
         """Migreert GDPR-gegevens van SQLite naar PostgreSQL."""
         await ctx.send("📦 GDPR-migratie gestart... Dit kan even duren!")
+        await setup_database()
 
         # ✅ Stap 1: Connectie met SQLite
         sqlite_conn = sqlite3.connect("onboarding.db")
