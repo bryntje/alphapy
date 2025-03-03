@@ -77,6 +77,20 @@ class InviteTracker(commands.Cog):
     async def resetinvites(self, interaction: discord.Interaction, member: discord.Member):
         await self.update_invite_count(member.id, 0)
         await interaction.response.send_message(f"Invite count for {member.display_name} has been reset to 0.")
+    
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Detecteert wanneer een nieuwe gebruiker joint en stuurt een bericht in #invite_tracker."""
+        await self.bot.wait_until_ready()  # Zorgt dat de bot volledig is opgestart
+
+        channel = member.guild.get_channel(config.INVITE_TRACKER_CHANNEL_ID)
+        if not channel:
+            print("⚠️ Kanaal niet gevonden! Controleer config.INVITE_TRACKER_CHANNEL_ID")
+            return
+
+        await channel.send(f"👋 {member.mention} is gejoined! 🚀")
+        print(f"✅ Bericht gestuurd in {channel.name} voor {member.name}")
+
 
 async def setup(bot: commands.Bot):
     invite_tracker = InviteTracker(bot)

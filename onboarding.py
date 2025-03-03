@@ -223,6 +223,18 @@ class Onboarding(commands.Cog):
         except discord.errors.InteractionResponded:
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
+    async def store_onboarding_data(self, user_id, responses):
+        """Slaat onboarding data op in de database."""
+        async with self.db.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO onboarding (user_id, responses)
+                VALUES ($1, $2)
+                ON CONFLICT(user_id) DO UPDATE SET responses = $2;
+                """,
+                user_id, json.dumps(responses)
+            )
+        logger.info(f"✅ Onboarding data opgeslagen voor {user_id}")
 
 class TextInputModal(discord.ui.Modal):
     def __init__(self, title: str, step: int, answers: dict, onboarding: object):
