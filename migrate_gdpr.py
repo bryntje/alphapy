@@ -8,7 +8,7 @@ class GDPRMigration(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def setup_database():
+    async def setup_database(self):
         """Maakt de GDPR-tabel aan als deze nog niet bestaat."""
         pg_conn = await asyncpg.connect(config.DATABASE_URL)
 

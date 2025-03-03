@@ -83,9 +83,9 @@ class InviteTracker(commands.Cog):
         """Detecteert wanneer een nieuwe gebruiker joint en stuurt een bericht in #invite_tracker."""
         await self.bot.wait_until_ready()  # Zorgt dat de bot volledig is opgestart
 
-        channel = member.guild.get_channel(config.INVITE_TRACKER_CHANNEL_ID)
+        channel = member.guild.get_channel(config.INVITE_ANNOUNCEMENT_CHANNEL_ID)
         if not channel:
-            print("⚠️ Kanaal niet gevonden! Controleer config.INVITE_TRACKER_CHANNEL_ID")
+            print("⚠️ Kanaal niet gevonden! Controleer config.INVITE_ANNOUNCEMENT_CHANNEL_ID")
             return
 
         await channel.send(f"👋 {member.mention} is gejoined! 🚀")
