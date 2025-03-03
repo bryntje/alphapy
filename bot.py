@@ -52,6 +52,8 @@ async def setup_hook():
     await bot.load_extension("clean")
     await bot.load_extension("importdata")
     await bot.load_extension("importinvite")
+    await bot.load_extension("migrate_gdpr")
+
 
 
 bot.setup_hook = setup_hook
