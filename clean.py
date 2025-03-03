@@ -1,24 +1,22 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 class Clean(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="clean", help="Verwijdert het opgegeven aantal berichten uit het huidige kanaal (max. 100).")
-    @commands.has_permissions(manage_messages=True)
-    async def clean(self, ctx, limit: int = 10):
+    @app_commands.command(name="clean", description="Verwijdert het opgegeven aantal berichten (max 100).")
+    @app_commands.describe(limit="Aantal berichten om te verwijderen (max 100)")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    async def clean(self, interaction: discord.Interaction, limit: int = 10):
         """
-        Verwijdert 'limit' aantal berichten uit het kanaal en stuurt een bevestigingsbericht.
-        Het bevestigingsbericht wordt na 5 seconden verwijderd.
-        Als een getal groter dan 100 wordt opgegeven, wordt het limiet teruggezet naar 100.
+        Verwijdert 'limit' aantal berichten uit het kanaal.
         """
         if limit > 100:
             limit = 100
-        # +1 verwijdert ook het command bericht
-        deleted = await ctx.channel.purge(limit=limit + 1)
-        confirmation = await ctx.send(f"✅ {len(deleted)-1} berichten zijn verwijderd.")
-        await confirmation.delete(delay=5)
+        await interaction.channel.purge(limit=limit)
+        await interaction.response.send_message(f"✅ {limit} berichten verwijderd.", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Clean(bot))
