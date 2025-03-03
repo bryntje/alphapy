@@ -29,16 +29,18 @@ class ImportInvites(commands.Cog):
             return
 
         invite_counts = {}
-        pattern = re.compile(r'@(.+?) joined! @(.+?) now has (\d+) invites?\.')
+        pattern_invited = re.compile(r'<@(\d+)> has been invited by <@(\d+)> and now has (\d+) invites?\.')
+        pattern_joined = re.compile(r'<@(\d+)> joined! <@(\d+)> now has (\d+) invites?\.')
+
 
         print(f"🔍 Kanaal check: {channel} (ID: {config.INVITE_ANNOUNCEMENT_CHANNEL_ID})")
         async for message in channel.history(limit=1000):  # Pas aan indien nodig
-            match = pattern.search(message.content)
+            match = pattern_invited.search(message.content) or pattern_joined.search(message.content)
             print(f"📩 Bericht gevonden: {message.content}")
             if match:
                 print(f"✅ Regex match: {match.groups()}")  # ✅ Debug of regex werkt
                 _, inviter_mention, count = match.groups()
-                inviter = re.sub(r'[^\d]', '', inviter_mention)  # Haal alleen de ID uit de mention
+                inviter = int(re.sub(r'[^\d]', '', inviter_mention))
                 print(f"✅ Gevonden: {inviter} heeft nu {count} invites.")
                 count = int(count)
                 invite_counts[inviter] = max(invite_counts.get(inviter, 0), count)
@@ -51,7 +53,7 @@ class ImportInvites(commands.Cog):
                 await conn.execute(
                     """
                     INSERT INTO invite_tracker (user_id, invite_count)
-                    VALUES ($1), $2)
+                    VALUES ($1, $2)
                     ON CONFLICT(user_id) DO UPDATE SET invite_count = $2;
                     """,
                     inviter, count
