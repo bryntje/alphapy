@@ -35,11 +35,13 @@ class ImportInvites(commands.Cog):
             match = pattern.search(message.content)
             if match:
                 _, inviter, count = match.groups()
+                print(f"✅ Gevonden: {inviter} heeft nu {count} invites.")
                 count = int(count)
                 invite_counts[inviter] = max(invite_counts.get(inviter, 0), count)
 
         async with self.db.acquire() as conn:
             for inviter, count in invite_counts.items():
+                print(f"📌 Opslaan: {inviter} → {count} invites")
                 await conn.execute(
                     """
                     INSERT INTO invite_tracker (user_id, invite_count)
