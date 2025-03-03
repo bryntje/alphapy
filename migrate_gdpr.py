@@ -29,7 +29,7 @@ class GDPRMigration(commands.Cog):
     async def migrate_gdpr(self, ctx):
         """Migreert GDPR-gegevens van SQLite naar PostgreSQL."""
         await ctx.send("📦 GDPR-migratie gestart... Dit kan even duren!")
-        await setup_database()
+        await self.setup_database()
 
         # ✅ Stap 1: Connectie met SQLite
         sqlite_conn = sqlite3.connect("onboarding.db")
