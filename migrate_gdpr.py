@@ -3,6 +3,7 @@ import sqlite3
 import discord
 from discord.ext import commands
 import config
+from datetime import datetime
 
 class GDPRMigration(commands.Cog):
     def __init__(self, bot):
@@ -49,6 +50,7 @@ class GDPRMigration(commands.Cog):
         pg_conn = await asyncpg.connect(config.DATABASE_URL)
 
         for user_id, accepted, timestamp in data:
+            timestamp = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
             # ✅ Stap 4: GDPR-data invoegen in PostgreSQL
             await pg_conn.execute(
                 """
