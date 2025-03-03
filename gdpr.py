@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+import asyncpg
 import config
 
 class GDPRAnnouncement(commands.Cog):
@@ -79,27 +80,25 @@ class GDPRButton(discord.ui.Button):
         await interaction.response.send_message("Thank you for accepting the GDPR terms.", ephemeral=True)
 
 # Zorg ervoor dat je ook de store_gdpr_acceptance functie en database-initialisatie hebt, zoals eerder beschreven.
-def store_gdpr_acceptance(user_id):
-    import sqlite3
-    import logging
-    logger = logging.getLogger(__name__)
-    conn = sqlite3.connect("onboarding.db")
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS gdpr_acceptance (
-            user_id TEXT PRIMARY KEY,
-            accepted INTEGER DEFAULT 0,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
+
+
+async def store_gdpr_acceptance(user_id):
+    """Slaat de GDPR-acceptatie op in PostgreSQL."""
     try:
-        c.execute("REPLACE INTO gdpr_acceptance (user_id, accepted, timestamp) VALUES (?, ?, datetime('now'))", (str(user_id), 1))
-        conn.commit()
-        logger.info(f"Stored GDPR acceptance for user {user_id}")
+        conn = await asyncpg.connect(config.DATABASE_URL)
+        await conn.execute(
+            """
+            INSERT INTO gdpr_acceptance (user_id, accepted, timestamp)
+            VALUES ($1, $2, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET accepted = $2, timestamp = CURRENT_TIMESTAMP;
+            """,
+            user_id, 1
+        )
+        await conn.close()
+        print(f"✅ GDPR-acceptatie opgeslagen voor {user_id}")
     except Exception as e:
-        logger.error(f"Error storing GDPR acceptance for user {user_id}: {e}")
-    conn.close()
+        print(f"❌ Fout bij opslaan GDPR-acceptatie voor {user_id}: {e}")
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(GDPRAnnouncement(bot))
