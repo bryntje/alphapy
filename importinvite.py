@@ -31,7 +31,7 @@ class ImportInvites(commands.Cog):
         invite_counts = {}
         pattern = re.compile(r'@(.+?) joined! @(.+?) now has (\d+) invites?\.')
 
-        print(f"🔍 Kanaal check: {channel} (ID: {config.INVITE_TRACKER_CHANNEL_ID})")
+        print(f"🔍 Kanaal check: {channel} (ID: {config.INVITE_ANNOUNCEMENT_CHANNEL_ID})")
         async for message in channel.history(limit=1000):  # Pas aan indien nodig
             match = pattern.search(message.content)
             print(f"📩 Bericht gevonden: {message.content}")
