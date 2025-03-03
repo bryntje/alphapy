@@ -88,7 +88,28 @@ class InviteTracker(commands.Cog):
             print("⚠️ Kanaal niet gevonden! Controleer config.INVITE_ANNOUNCEMENT_CHANNEL_ID")
             return
 
-        await channel.send(f"👋 {member.mention} is gejoined! 🚀")
+        inviter_id = None
+        invite_count = 0
+    
+        # Haal de invite gegevens op uit de database
+        conn = await asyncpg.connect(config.DATABASE_URL)
+        row = await conn.fetchrow(
+            "SELECT user_id, invite_count FROM invite_tracker WHERE user_id = $1",
+            member.id
+        )
+        await conn.close()
+    
+        if row:
+            inviter_id = row["user_id"]
+            invite_count = row["invite_count"]
+    
+        inviter = member.guild.get_member(inviter_id) if inviter_id else None
+
+        
+        if inviter:
+            await channel.send(f"{member.mention} joined! {inviter.mention} now has {invite_count} invites.")
+        else:
+            await channel.send(f"{member.mention} joined, but no inviter data found.")
         print(f"✅ Bericht gestuurd in {channel.name} voor {member.name}")
 
 
