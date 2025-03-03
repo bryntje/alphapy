@@ -31,14 +31,19 @@ class ImportInvites(commands.Cog):
         invite_counts = {}
         pattern = re.compile(r'@(.+?) joined! @(.+?) now has (\d+) invites?\.')
 
+        print(f"🔍 Kanaal check: {channel} (ID: {config.INVITE_TRACKER_CHANNEL_ID})")
         async for message in channel.history(limit=1000):  # Pas aan indien nodig
             match = pattern.search(message.content)
+            print(f"📩 Bericht gevonden: {message.content}")
             if match:
+                print(f"✅ Regex match: {match.groups()}")  # ✅ Debug of regex werkt
                 _, inviter_mention, count = match.groups()
                 inviter = re.sub(r'[^\d]', '', inviter_mention)  # Haal alleen de ID uit de mention
                 print(f"✅ Gevonden: {inviter} heeft nu {count} invites.")
                 count = int(count)
                 invite_counts[inviter] = max(invite_counts.get(inviter, 0), count)
+            else:
+                print(f"❌ Geen match: {message.content}")  # ❌ Debug als er GEEN match is
 
         async with self.db.acquire() as conn:
             for inviter, count in invite_counts.items():
