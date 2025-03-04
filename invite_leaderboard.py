@@ -27,7 +27,7 @@ class InviteTracker(commands.Cog):
         ''')
         await conn.close()
 
-        async def update_invite_count(self, inviter_id):
+    async def update_invite_count(self, inviter_id):
         """Verhoog de invite count in de database."""
         conn = await asyncpg.connect(config.DATABASE_URL)
         await conn.execute(
