@@ -7,6 +7,14 @@ import config
 class InviteTracker(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.invites_cache = {}  # Hier slaan we de invites op
+        
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Laad de bestaande invites bij bot-start."""
+        for guild in self.bot.guilds:
+            self.invites_cache[guild.id] = await guild.invites()
+        print("✅ Invite cache geladen!") 
 
     async def setup_database(self):
         """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
@@ -19,27 +27,17 @@ class InviteTracker(commands.Cog):
         ''')
         await conn.close()
 
-    async def update_invite_count(self, inviter_id, count=None):
-        """Werk de invite count bij voor een gebruiker."""
+        async def update_invite_count(self, inviter_id):
+        """Verhoog de invite count in de database."""
         conn = await asyncpg.connect(config.DATABASE_URL)
-        if count is None:
-            await conn.execute(
-                """
-                INSERT INTO invite_tracker (user_id, invite_count)
-                VALUES ($1, 1)
-                ON CONFLICT(user_id) DO UPDATE SET invite_count = invite_tracker.invite_count + 1;
-                """,
-                inviter_id
-            )
-        else:
-            await conn.execute(
-                """
-                INSERT INTO invite_tracker (user_id, invite_count)
-                VALUES ($1, $2)
-                ON CONFLICT(user_id) DO UPDATE SET invite_count = $2;
-                """,
-                inviter_id, count
-            )
+        await conn.execute(
+            """
+            INSERT INTO invite_tracker (user_id, invite_count)
+            VALUES ($1, 1)
+            ON CONFLICT(user_id) DO UPDATE SET invite_count = invite_tracker.invite_count + 1;
+            """,
+            inviter_id
+        )
         await conn.close()
 
     async def get_invite_leaderboard(self, limit=10):
@@ -80,42 +78,45 @@ class InviteTracker(commands.Cog):
     
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        """Detecteert wanneer een nieuwe gebruiker joint en stuurt een bericht in #invite_tracker."""
-        await self.bot.wait_until_ready()  # Zorgt dat de bot volledig is opgestart
+        await self.bot.wait_until_ready()  # Zorg dat de bot klaar is
 
-        channel = member.guild.get_channel(config.INVITE_ANNOUNCEMENT_CHANNEL_ID)
+        # Wacht kort om Discord de tijd te geven om invites bij te werken
+        await asyncio.sleep(1)
+
+        guild = member.guild
+        new_invites = await guild.invites()
+        old_invites = self.invites_cache.get(guild.id, [])
+
+        inviter = None
+
+        # Zoek de invite die gebruikt is
+        for old_invite in old_invites:
+            for new_invite in new_invites:
+                if old_invite.code == new_invite.code and old_invite.uses < new_invite.uses:
+                    inviter = new_invite.inviter
+                    break
+        
+        # Update de cache met de nieuwe invites
+        self.invites_cache[guild.id] = new_invites
+
+        # Stuur een bericht in het kanaal
+        channel = guild.get_channel(config.INVITE_ANNOUNCEMENT_CHANNEL_ID)
         if not channel:
             print("⚠️ Kanaal niet gevonden! Controleer config.INVITE_ANNOUNCEMENT_CHANNEL_ID")
             return
 
-        inviter_id = None
-        invite_count = 0
-    
-        # Haal de invite gegevens op uit de database
-        conn = await asyncpg.connect(config.DATABASE_URL)
-        row = await conn.fetchrow(
-            "SELECT user_id, invite_count FROM invite_tracker WHERE user_id = $1",
-            member.id
-        )
-        await conn.close()
-    
-        if row:
-            inviter_id = row["user_id"]
-            invite_count = row["invite_count"]
-    
-        inviter = member.guild.get_member(inviter_id) if inviter_id else None
-
-        
         if inviter:
-            await channel.send(f"{member.mention} joined! {inviter.mention} now has {invite_count} invites.")
+            await self.update_invite_count(inviter.id)
+            await channel.send(f"{member.mention} joined! {inviter.mention} now has more invites.")
         else:
             await channel.send(f"{member.mention} joined, but no inviter data found.")
-        print(f"✅ Bericht gestuurd in {channel.name} voor {member.name}")
+
+        print(f"✅ Bericht gestuurd in {channel.name} voor {member.name}") 
 
 
 async def setup(bot: commands.Bot):
     invite_tracker = InviteTracker(bot)
     await bot.add_cog(invite_tracker)
-    await invite_tracker.setup_database()
+    await invite_tracker.setup_database()  # Zorg dat de database wordt geconfigureerd
     await bot.tree.sync()
 
