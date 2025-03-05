@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import config
+import asyncio
 
 class InviteTracker(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -12,9 +13,10 @@ class InviteTracker(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         """Laad de bestaande invites bij bot-start."""
+        await self.bot.wait_until_ready()  # Wacht tot de bot klaar is
         for guild in self.bot.guilds:
             self.invites_cache[guild.id] = await guild.invites()
-        print("✅ Invite cache geladen!") 
+        print("✅ Invite cache geladen!")
 
     async def setup_database(self):
         """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
@@ -27,19 +29,33 @@ class InviteTracker(commands.Cog):
         ''')
         await conn.close()
 
-    async def update_invite_count(self, inviter_id):
-        """Verhoog de invite count in de database."""
+    async def update_invite_count(self, inviter_id: int, count: int = None):
+        """Verhoog of stel de invite count in de database in."""
         conn = await asyncpg.connect(config.DATABASE_URL)
-        await conn.execute(
-            """
-            INSERT INTO invite_tracker (user_id, invite_count)
-            VALUES ($1, 1)
-            ON CONFLICT(user_id) DO UPDATE SET invite_count = invite_tracker.invite_count + 1;
-            """,
-            inviter_id
-        )
+    
+        if count is None:
+            # Verhoog de invites met 1 als er geen specifieke waarde wordt gegeven
+            await conn.execute(
+                """
+                INSERT INTO invite_tracker (user_id, invite_count)
+                VALUES ($1, 1)
+                ON CONFLICT(user_id) DO UPDATE SET invite_count = invite_tracker.invite_count + 1;
+                """,
+                inviter_id
+            )
+        else:
+            # Stel het aantal invites handmatig in
+            await conn.execute(
+                """
+                INSERT INTO invite_tracker (user_id, invite_count)
+                VALUES ($1, $2)
+                ON CONFLICT(user_id) DO UPDATE SET invite_count = $2;
+                """,
+                inviter_id, count
+            )
+    
         await conn.close()
-
+    
     async def get_invite_leaderboard(self, limit=10):
         """Haal de top gebruikers op met de meeste invites."""
         conn = await asyncpg.connect(config.DATABASE_URL)
@@ -65,13 +81,13 @@ class InviteTracker(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="setinvites", description="Stelt handmatig het aantal invites voor een gebruiker in.")
-    @commands.has_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def setinvites(self, interaction: discord.Interaction, member: discord.Member, count: int):
         await self.update_invite_count(member.id, count)
         await interaction.response.send_message(f"Invite count for {member.display_name} is set to {count}.")
 
     @app_commands.command(name="resetinvites", description="Reset het invite aantal voor een gebruiker naar 0.")
-    @commands.has_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def resetinvites(self, interaction: discord.Interaction, member: discord.Member):
         await self.update_invite_count(member.id, 0)
         await interaction.response.send_message(f"Invite count for {member.display_name} has been reset to 0.")
