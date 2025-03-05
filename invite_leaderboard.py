@@ -123,7 +123,14 @@ class InviteTracker(commands.Cog):
 
         if inviter:
             await self.update_invite_count(inviter.id)
-            await channel.send(f"{member.mention} joined! {inviter.mention} now has more invites.")
+            # Haal de huidige invite count op na de update
+            conn = await asyncpg.connect(config.DATABASE_URL)
+            row = await conn.fetchrow("SELECT invite_count FROM invite_tracker WHERE user_id = $1", inviter.id)
+            await conn.close()
+
+            invite_count = row["invite_count"] if row else "an unknown number of"
+
+            await channel.send(f"{member.mention} joined! {inviter.mention} now has {invite_count} invites.")
         else:
             await channel.send(f"{member.mention} joined, but no inviter data found.")
 
