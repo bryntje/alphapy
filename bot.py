@@ -53,7 +53,7 @@ async def setup_hook():
     await bot.load_extension("importdata")
     await bot.load_extension("importinvite")
     await bot.load_extension("migrate_gdpr")
-    await bot.load_extension("slash_commands_lotquiz")
+    await bot.load_extension("lotquiz")
 
 
 
