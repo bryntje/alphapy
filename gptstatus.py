@@ -1,7 +1,7 @@
 import discord
 import aiohttp
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from logger import get_gpt_status_logs
 from discord import app_commands
 
@@ -23,7 +23,7 @@ async def fetch_openai_status():
         return "Unavailable"
 
 def format_timedelta(ts):
-    delta = datetime.utcnow() - ts
+    delta = datetime.now(timezone.utc) - ts
     minutes = int(delta.total_seconds() // 60)
     return f"{minutes} min ago" if minutes < 60 else f"{delta.seconds // 3600} hr ago"
 
