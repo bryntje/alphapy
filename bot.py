@@ -56,9 +56,7 @@ async def setup_hook():
     await bot.load_extension("lotquiz")
     await bot.load_extension("slash_commands_leader")
     await bot.load_extension("gptstatus")
-
-
-
+    await bot.tree.sync(guild=discord.Object(id=config.GUILD_ID))
 
 bot.setup_hook = setup_hook
 
