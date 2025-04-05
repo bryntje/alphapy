@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from openai import AsyncOpenAI
+import config
 
 client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
@@ -43,8 +44,8 @@ class ChallengeSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         struggle = self.values[0]
         prompt = f"""I'm a community leader on Discord struggling with: {struggle}.
-Give me a short, powerful reflection + a practical tip to help me lead better.
-Keep it non-judgmental, honest, supportive, and focused on growth."""
+                    Give me a short, powerful reflection + a practical tip to help me lead better.
+                    Keep it non-judgmental, honest, supportive, and focused on growth."""
 
         await interaction.response.defer(ephemeral=True)
         response = await client.chat.completions.create(
