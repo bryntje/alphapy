@@ -55,8 +55,6 @@ async def setup_hook():
     await bot.load_extension("migrate_gdpr")
     await bot.load_extension("lotquiz")
     await bot.load_extension("slash_commands_leader")
-    await bot.load_extension("gptstatus")
-
 
 
 
