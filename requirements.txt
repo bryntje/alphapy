@@ -1,3 +1,4 @@
 discord.py
 python-dotenv
 asyncpg
+openai>=1.0.0
