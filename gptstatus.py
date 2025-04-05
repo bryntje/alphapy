@@ -51,3 +51,11 @@ async def get_gptstatus_embed():
     embed.set_footer(text="📦 GPT Status • Updated just now")
 
     return embed
+
+def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0):
+    # Hier zou je logica kunnen toevoegen voor echte tracking
+    print(f"✅ GPT success by {user_id} – {tokens_used} tokens, {latency_ms}ms latency")
+
+def log_gpt_error(error_type="unknown", user_id=None):
+    # Hier zou je error logging kunnen toevoegen
+    print(f"❌ GPT error: {error_type} by {user_id}")
