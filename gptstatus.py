@@ -1,52 +1,53 @@
 import discord
-from discord.ext import commands
-from discord import app_commands
-import datetime
-import config
+import aiohttp
+import time
+from datetime import datetime, timedelta
+from logger import get_gpt_status_logs
 
-# Tijdstempels bijhouden van GPT status
-last_gpt_status = {
-    "success": None,
-    "last_error": None,
-    "error_type": None
-}
+STATUS_URL = "https://status.openai.com/api/v2/status.json"
 
-class GPTStatus(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+async def fetch_openai_status():
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(STATUS_URL) as resp:
+                data = await resp.json()
+                return data.get("status", {}).get("description", "Unknown")
+    except Exception:
+        return "Unavailable"
 
-    @app_commands.command(name="gptstatus", description="Show the current GPT API status.")
-    async def gptstatus(self, interaction: discord.Interaction):
-        now = datetime.datetime.utcnow()
+def format_timedelta(ts):
+    delta = datetime.utcnow() - ts
+    minutes = int(delta.total_seconds() // 60)
+    return f"{minutes} min ago" if minutes < 60 else f"{delta.seconds // 3600} hr ago"
 
-        success_time = last_gpt_status["success"]
-        error_time = last_gpt_status["last_error"]
-        error_type = last_gpt_status["error_type"]
+async def get_gptstatus_embed():
+    logs = get_gpt_status_logs()
+    
+    last_success = logs.last_success_time or "-"
+    last_error = logs.last_error_type or "None"
+    latency = logs.average_latency_ms or 0
+    token_usage = logs.total_tokens_today or 0
+    rate_limit_reset = logs.rate_limit_reset or "~"
+    model = logs.current_model or "gpt-3.5-turbo"
+    user = logs.last_user or "-"
+    success_count = logs.success_count or 0
+    error_count = logs.error_count or 0
+    
+    status = await fetch_openai_status()
 
-        status_msg = "🧠 **GPT API Status**\n"
+    embed = discord.Embed(
+        title="🧠 GPT API Status",
+        color=discord.Color.teal()
+    )
+    embed.add_field(name="🔹 Operational", value=f"{'✅ Yes' if 'Operational' in status else '⚠️ ' + status}", inline=False)
+    embed.add_field(name="🔹 Last successful reply", value=format_timedelta(last_success) if isinstance(last_success, datetime) else last_success, inline=True)
+    embed.add_field(name="🔹 Last error", value=last_error, inline=True)
+    embed.add_field(name="🔹 Current model", value=f"`{model}`", inline=True)
+    embed.add_field(name="🔹 Prompt tokens used today", value=f"{token_usage:,}", inline=True)
+    embed.add_field(name="🔹 Rate limit window", value=f"Reset in {rate_limit_reset}", inline=True)
+    embed.add_field(name="🔹 Logged interactions", value=f"✅ {success_count} / ❌ {error_count}", inline=True)
+    embed.add_field(name="🔹 Last user to trigger GPT", value=f"<@{user}>", inline=True)
+    embed.add_field(name="🔹 Latency (avg)", value=f"{latency}ms", inline=True)
+    embed.set_footer(text="📦 GPT Status • Updated just now")
 
-        if success_time:
-            delta = now - success_time
-            status_msg += f"✅ Last successful reply: `{delta.seconds} sec ago`\n"
-        else:
-            status_msg += "⚠️ No successful replies logged yet.\n"
-
-        if error_time:
-            delta = now - error_time
-            status_msg += f"❌ Last error: `{delta.seconds} sec ago` (`{error_type}`)\n"
-
-        await interaction.response.send_message(status_msg, ephemeral=True)
-
-
-# Hulpfuncties voor andere modules om status bij te werken
-
-def log_gpt_success():
-    last_gpt_status["success"] = datetime.datetime.utcnow()
-
-def log_gpt_error(error_type="general"):
-    last_gpt_status["last_error"] = datetime.datetime.utcnow()
-    last_gpt_status["error_type"] = error_type
-
-
-async def setup(bot: commands.Bot):
-    await bot.add_cog(GPTStatus(bot))
+    return embed
