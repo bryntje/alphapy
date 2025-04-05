@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()  # Laad variabelen uit .env bestand
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GUILD_ID = 1160511689263947796
 ROLE_ID = 1336043451489452144
 LOG_CHANNEL_ID = 1338611872299090092
