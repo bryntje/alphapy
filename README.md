@@ -1,52 +1,101 @@
-# Discord Bot Project
+# 🤖 Alphapips Discord Bot
 
-Een modulair en uitbreidbaar Discord bot project met GPT-integraties en Google Drive synchronisatie.
+A powerful, modular Discord bot built for conscious communities — blending practical server tools with AI-enhanced features.
 
-## Overzicht
+---
 
-Deze bot is ontworpen om gebruikers te ondersteunen met verschillende interactieve functies, zoals coaching via `/growthcheckin`, kennisopbouw met `/learn_topic`, en het genereren van captions via `/create_caption`. Het project is modulair opgebouwd, zodat nieuwe features eenvoudig kunnen worden toegevoegd en bestaande modules makkelijk aangepast kunnen worden.
+## 🌱 Overview
 
-## Projectstructuur
-. ├── cogs/ # Legacy bestanden en command modules ├── gpt/ # GPT-integraties, helper functies en dataset loaders │ ├── helpers.py # Centrale GPT logica (ask_gpt, log_gpt_success, log_gpt_error) │ └── dataset_loader.py # Laadt topic data uit de lokale prompts folder ├── utils/ # Hulpfuncties zoals Drive synchronisatie │ └── drive_sync.py # Haalt PDF's op en parsed ze van Google Drive ├── requirements.txt # Projectafhankelijkheden (o.a. pydrive2, PyMuPDF) ├── README.md # Deze README └── CHANGELOG.md # Documentatie van wijzigingen
+**Alphapips Bot** is designed to support a value-driven trading community.
+It combines essential Discord utilities (onboarding, leaderboards, quizzes, role logic) with an optional AI layer that adds depth and reflection.
 
-## Installatie
+This includes:
 
-1. **Clone de repository:**
-   ```bash
-   git clone https://github.com/jouw_gebruikersnaam/discord-bot-project.git
-   cd discord-bot-project
-   
-2. Installeer de benodigde pakketten:
-  bash
-  Copy
-  pip install -r requirements.txt
+- 🧘‍♂️ Gentle growth coaching via `/growthcheckin`
+- 🧠 Hybrid knowledge search via `/learn_topic`
+- ✍️ Caption generation with tone via `/create_caption`
 
-3. Configureer de bot:
- Voeg je Discord token, Google Drive API credentials en andere benodigde configuraties toe aan de environment variabelen of een configuratiebestand.
+The bot is modular, scalable, and easy to expand — with clean architecture and clear intent.
 
-4. Start de bot:
-  python bot.py
+---
 
-## Functionaliteiten
-``` plaintext
-- `/growthcheckin`: Biedt zachte coaching met GPT-ondersteuning voor doelen, obstakels en emoties.
-- `/learn_topic`: Een hybride kenniscommando dat informatie uit .md bestanden of Drive PDF's haalt als context.
-- `/create_caption`: Genereert style-based captions voor sociale media, gebaseerd op GPT.
+## 📁 Project Structure
+
+```plaintext
+.
+├── cogs/                 # AI command modules (growth, learn, leadership, quiz, etc.)
+├── gpt/                  # GPT logic, prompt helpers, dataset loaders
+│   ├── helpers.py        # Central GPT call + logging helpers
+│   └── dataset_loader.py # Loads .md content for learn_topic
+├── utils/                # Google Drive sync + general utilities
+│   └── drive_sync.py     # Fetches and parses Drive-based PDFs
+├── data/prompts/         # Local topic files (e.g. rsi.md, scalping.md)
+├── requirements.txt      # All dependencies (GPT, Drive, PDF parser)
+├── bot.py                # Main bot runner
+├── .env / config.py      # Your API tokens, Discord settings, etc.
+├── README.md             # This file
+└── CHANGELOG.md          # Development log by branch & feature
 ```
 
-# Contributing
-Wij verwelkomen bijdragen van andere ontwikkelaars! Als je wilt bijdragen:
+---
 
-- Fork de repository.
-- Maak een feature branch: git checkout -b feature/naam-van-je-feature
-- Commit je wijzigingen: git commit -am 'Voeg een nieuwe feature toe'
-- Push naar de branch: git push origin feature/naam-van-je-feature
-- Open een Pull Request
-- Zorg ervoor dat je de projectrichtlijnen en de bestaande codeconventies volgt.
+## 🚀 Installation
 
-# Licentie
-Dit project is gelicentieerd onder de MIT License.
+1. **Clone the repository:**
+```bash
+git clone https://github.com/yourusername/alphapips-bot.git
+cd alphapips-bot
+```
 
-# Contact
-Voor vragen of suggesties kun je contact opnemen via bryan.dhaen@gmail.com of een issue openen op GitHub.
+2. **Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
 
+3. **Configure the bot:**
+- Add your Discord bot token to `.env`
+- Add Google Drive OAuth `credentials.json` to `/credentials/`
+
+4. **Run the bot:**
+```bash
+python bot.py
+```
+
+---
+
+## 💡 Slash Commands
+
+```plaintext
+/growthcheckin     → GPT-coach for goals, obstacles and emotions
+/learn_topic       → Hybrid topic search using local + Drive content
+/create_caption    → Generate 1-liner captions based on tone & topic
+```
+
+> The AI layer is modular and optional — for teams that want to deepen reflection, personalize learning, or co-create content using GPT.
+
+---
+
+## 🤝 Contributing
+
+We welcome devs, thinkers, and conscious builders.
+
+- Fork the repo
+- Create a new branch: `git checkout -b feature/your-feature`
+- Commit your changes: `git commit -am 'Add new feature'`
+- Push: `git push origin feature/your-feature`
+- Open a Pull Request
+
+Please follow the modular structure and keep the soul of the project intact 😌
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+## 📬 Contact
+
+Questions, dreams or collaborations?  
+Reach out via `bryan.dhaen@gmail.com` or open an issue on GitHub.
