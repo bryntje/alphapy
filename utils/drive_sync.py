@@ -1,41 +1,35 @@
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 from pydrive2.settings import LoadSettingsFile
+from oauth2client.service_account import ServiceAccountCredentials
 import io
 import os
 import json
 import fitz  # PyMuPDF
 import logging
 
-logger = logging.getLogger(__name__)
 
-# Setup GoogleAuth with env or fallback
+logger = logging.getLogger("utils.drive_sync")
+
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 gauth = GoogleAuth()
-gauth.settings = {
-    'client_config_backend': 'settings',
-    'client_config': {
-        'client_id': '',
-        'client_secret': '',
-        'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
-        'token_uri': 'https://oauth2.googleapis.com/token',
-        'revoke_uri': 'https://oauth2.googleapis.com/revoke'
-    }
-}
+creds_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
+if not creds_env:
+    raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
 
-creds_env = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-if creds_env:
-    logger.info("Loading Google credentials from environment variable")
-    gauth.LoadClientConfig(json.loads(creds_env))
-else:
-    logger.info("Loading Google credentials from local file")
-    gauth.LoadClientConfigFile("credentials/credentials.json")
+logger.info("🔐 Loading Google Service Account credentials from env")
 
-logger.info("Authenticating with Google Drive...")
-gauth.LocalWebserverAuth()
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    json.loads(creds_env),
+    SCOPES
+)
+
+gauth.credentials = creds
 drive = GoogleDrive(gauth)
-logger.info("Google Drive authentication successful")
+
+logger.info("✅ Google Drive service account authentication successful")
 
 def fetch_pdf_text_by_name(filename_keyword: str) -> str:
     """

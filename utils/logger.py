@@ -7,25 +7,43 @@ log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s
 
 logging.basicConfig(
     level=logging.INFO,
-    handlers=[log_handler, logging.StreamHandler()]  # Log to file and console
+    handlers=[
+        log_handler,
+        logging.StreamHandler(stream=open(1, 'w', encoding='utf-8'))  # ✅ fix UnicodeEncodeError
+    ]
 )
+
 
 from datetime import datetime
 
 class GPTStatusLogs:
     def __init__(self):
-        self.last_success_time = datetime.utcnow()
+        self.last_success_time = None
         self.last_error_type = None
-        self.average_latency_ms = 420
-        self.total_tokens_today = 3242
-        self.rate_limit_reset = "~12 min"
+        self.average_latency_ms = 0
+        self.total_tokens_today = 0
+        self.rate_limit_reset = "~"
         self.current_model = "gpt-3.5-turbo"
-        self.last_user = 123456789012345678  # Discord user ID
-        self.success_count = 8
-        self.error_count = 3
+        self.last_user = None
+        self.success_count = 0
+        self.error_count = 0
+
+gpt_logs = GPTStatusLogs()
 
 def get_gpt_status_logs():
-    return GPTStatusLogs()
+    return gpt_logs
+
+def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0):
+    gpt_logs.last_success_time = datetime.utcnow()
+    gpt_logs.last_user = user_id
+    gpt_logs.success_count += 1
+    gpt_logs.total_tokens_today += tokens_used
+    gpt_logs.average_latency_ms = latency_ms  # of maak hier een rolling average van
+
+def log_gpt_error(error_type="unknown", user_id=None):
+    gpt_logs.last_error_type = error_type
+    gpt_logs.last_user = user_id
+    gpt_logs.error_count += 1
 
 
 logger = logging.getLogger("bot")
