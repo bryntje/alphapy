@@ -1,5 +1,6 @@
 .env
 config.py
+credentials/
 # Log files
 *.log
 

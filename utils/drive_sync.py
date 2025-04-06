@@ -1,16 +1,21 @@
 import io
 import os
+import json
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 import fitz  # PyMuPDF
 
-CREDENTIALS_PATH = "credentials/credentials.json"
+gauth = GoogleAuth()
 
-# Authorize PyDrive
-_gauth = GoogleAuth()
-_gauth.LoadClientConfigFile(CREDENTIALS_PATH)
-_gauth.LocalWebserverAuth()
-drive = GoogleDrive(_gauth)
+# Load credentials from environment or fallback to file
+creds_env = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+if creds_env:
+    gauth.LoadClientConfig(json.loads(creds_env))
+else:
+    gauth.LoadClientConfigFile("credentials/credentials.json")
+
+gauth.LocalWebserverAuth()
+drive = GoogleDrive(gauth)
 
 def fetch_pdf_text_by_name(filename_keyword: str) -> str:
     """
