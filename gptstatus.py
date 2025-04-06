@@ -32,6 +32,8 @@ async def fetch_openai_status():
         return "Unavailable"
 
 def format_timedelta(ts):
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
     delta = datetime.now(timezone.utc) - ts
     minutes = int(delta.total_seconds() // 60)
     return f"{minutes} min ago" if minutes < 60 else f"{delta.seconds // 3600} hr ago"
