@@ -1,21 +1,31 @@
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from pydrive2.settings import LoadSettingsFile
 import io
 import os
 import json
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
 import fitz  # PyMuPDF
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Setup GoogleAuth with env or fallback
 
 gauth = GoogleAuth()
+gauth.settings = LoadSettingsFile()  # ✅ fixes the config backend issue
 
-# Load credentials from environment or fallback to file
 creds_env = os.environ.get("GOOGLE_CREDENTIALS_JSON")
 if creds_env:
+    logger.info("Loading Google credentials from environment variable")
     gauth.LoadClientConfig(json.loads(creds_env))
 else:
+    logger.info("Loading Google credentials from local file")
     gauth.LoadClientConfigFile("credentials/credentials.json")
 
+logger.info("Authenticating with Google Drive...")
 gauth.LocalWebserverAuth()
 drive = GoogleDrive(gauth)
+logger.info("Google Drive authentication successful")
 
 def fetch_pdf_text_by_name(filename_keyword: str) -> str:
     """
@@ -23,12 +33,15 @@ def fetch_pdf_text_by_name(filename_keyword: str) -> str:
     download hem tijdelijk en haal de tekstinhoud eruit.
     """
     query = f"title contains '{filename_keyword}' and mimeType = 'application/pdf' and trashed = false"
+    logger.info(f"Searching Google Drive for: {filename_keyword}")
     file_list = drive.ListFile({'q': query}).GetList()
 
     if not file_list:
+        logger.warning(f"No matching PDF found for keyword: {filename_keyword}")
         return "[No matching file found in Drive]"
 
     file = file_list[0]  # neem de eerste match
+    logger.info(f"Found PDF in Drive: {file['title']}")
     downloaded = file.GetContentIOBuffer()
     pdf_text = extract_text_from_pdf(downloaded)
     return pdf_text
@@ -44,4 +57,5 @@ def extract_text_from_pdf(file_buffer: io.BytesIO) -> str:
                 text += page.get_text()
         return text.strip()
     except Exception as e:
+        logger.error(f"Error extracting PDF text: {e}")
         return f"[Error extracting PDF text: {e}]"
