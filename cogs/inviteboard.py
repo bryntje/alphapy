@@ -141,5 +141,4 @@ async def setup(bot: commands.Bot):
     invite_tracker = InviteTracker(bot)
     await bot.add_cog(invite_tracker)
     await invite_tracker.setup_database()  # Zorg dat de database wordt geconfigureerd
-    await bot.tree.sync()
 
