@@ -2,7 +2,7 @@ import discord
 import aiohttp
 import time
 from datetime import datetime, timezone
-from logger import get_gpt_status_logs
+from utils.logger import get_gpt_status_logs
 from discord import app_commands
 from discord.ext import commands
 
