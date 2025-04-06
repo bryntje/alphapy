@@ -12,7 +12,17 @@ logger = logging.getLogger(__name__)
 # Setup GoogleAuth with env or fallback
 
 gauth = GoogleAuth()
-gauth.settings = LoadSettingsFile()  # ✅ fixes the config backend issue
+gauth.settings = {
+    'client_config_backend': 'settings',
+    'client_config': {
+        'client_id': '',
+        'client_secret': '',
+        'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+        'token_uri': 'https://oauth2.googleapis.com/token',
+        'revoke_uri': 'https://oauth2.googleapis.com/revoke'
+    }
+}
+
 
 creds_env = os.environ.get("GOOGLE_CREDENTIALS_JSON")
 if creds_env:
