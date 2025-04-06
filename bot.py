@@ -42,20 +42,21 @@ async def on_command_error(ctx, error):
 
 
 async def setup_hook():
-    await bot.load_extension("onboarding")
-    await bot.load_extension("reaction_roles")
-    await bot.load_extension("slash_commands")
-    await bot.load_extension("dataquery")
-    await bot.load_extension("reload_commands")
-    await bot.load_extension("gdpr")
-    await bot.load_extension("invite_leaderboard")
-    await bot.load_extension("clean")
-    await bot.load_extension("importdata")
-    await bot.load_extension("importinvite")
-    await bot.load_extension("migrate_gdpr")
-    await bot.load_extension("lotquiz")
-    await bot.load_extension("slash_commands_leader")
-    await bot.load_extension("gptstatus")
+    await bot.load_extension("cogs.onboarding")
+    await bot.load_extension("cogs.reaction_roles")
+    await bot.load_extension("cogs.slash_utils")
+    await bot.load_extension("cogs.dataquery")
+    await bot.load_extension("cogs.reload_commands")
+    await bot.load_extension("cogs.gdpr")
+    await bot.load_extension("cogs.inviteboard")
+    await bot.load_extension("cogs.clean")
+    await bot.load_extension("cogs.importdata")
+    await bot.load_extension("cogs.importinvite")
+    await bot.load_extension("cogs.migrate_gdpr")
+    await bot.load_extension("cogs.lotquiz")
+    await bot.load_extension("cogs.leadership")
+    await bot.load_extension("cogs.status")
+
 
 bot.setup_hook = setup_hook
 
