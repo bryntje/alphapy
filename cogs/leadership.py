@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from logger import logger
+from utils.logger import logger
 from config import LOG_CHANNEL_ID
 from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
 

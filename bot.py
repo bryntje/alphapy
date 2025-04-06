@@ -2,9 +2,8 @@ import discord
 import asyncio
 from discord.ext import commands
 from discord import app_commands
-from onboarding import Onboarding  # ✅ Import the Onboarding Cog
-from gdpr import GDPRView
-from logger import logger  # Import the logger
+from cogs.gdpr import GDPRView
+from utils.logger import logger  # Import the logger
 
 
 import config

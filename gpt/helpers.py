@@ -1,7 +1,7 @@
 import openai
 import config
 import logging
-from logger import logger
+from utils.logger import logger
 
 from openai import AsyncOpenAI, RateLimitError
 
