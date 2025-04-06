@@ -55,6 +55,10 @@ async def setup_hook():
     await bot.load_extension("cogs.lotquiz")
     await bot.load_extension("cogs.leadership")
     await bot.load_extension("cogs.status")
+    await bot.load_extension("cogs.growth")
+    await bot.load_extension("cogs.learn")
+    await bot.load_extension("cogs.contentgen")
+
 
 
 bot.setup_hook = setup_hook
