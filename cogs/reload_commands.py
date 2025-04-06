@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import config
-from checks import is_owner_or_admin
+from utils.checks import is_owner_or_admin
 
 class ReloadCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
