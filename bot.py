@@ -3,10 +3,15 @@ import asyncio
 from discord.ext import commands
 from discord import app_commands
 from cogs.gdpr import GDPRView
-from utils.logger import logger  # Import the logger
+from utils.logger import logger
+from gpt.helpers import set_bot_instance
 
 
-import config
+try:
+    import config_local as config
+except ImportError:
+    import config
+
 
 # Intentions instellen
 intents = discord.Intents.default()
@@ -33,6 +38,10 @@ async def on_ready():
         logger.error("❌ Error: De bot is NIET geconnecteerd aan de juiste server! Controleer of je hem correct hebt gejoined.")
     
     bot.add_view(GDPRView())
+
+
+set_bot_instance(bot)
+
 
 @bot.event
 async def on_command_error(ctx, error):

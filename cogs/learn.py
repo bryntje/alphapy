@@ -20,22 +20,25 @@ class LearnTopic(commands.Cog):
             if not context:
                 context = fetch_pdf_text_by_name(topic)
 
-            prompt = f"""
-                    You are a helpful and human-like trading coach.
-                    Explain the topic '{topic}' in simple, accessible language.
-                    If context is provided, use it as source material.
-                    Limit to 250 words. Be clear, warm, and focused.
+            messages = [
+                {"role": "system", "content": "You are a helpful and human-like trading coach."},
+                {"role": "user", "content": f"""
+Explain the topic '{topic}' in simple, accessible language.
+If context is provided, use it as source material.
+Limit to 250 words. Be clear, warm, and focused.
 
 Context:
 {context if context else '[no context available]'}
-"""
-            reply = await ask_gpt(prompt)
-            log_gpt_success(user_id=interaction.user.id)
+"""}
+            ]
+
+            reply = await ask_gpt(messages, user_id=interaction.user.id)
             await interaction.followup.send(reply, ephemeral=True)
 
         except Exception as e:
-            log_gpt_error("learn_topic", user_id=interaction.user.id)
             await interaction.followup.send("❌ Couldn't generate a response. Try again later.", ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(LearnTopic(bot))
+

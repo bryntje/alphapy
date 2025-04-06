@@ -1,40 +1,45 @@
-# 📦 Changelog
+# Changelog
 
 All notable changes to this project will be documented in this file.
 
----
-
 ## [Unreleased]
-> Currently in active development on `dev/gpt_refactor`
 
-### ✨ Added
-- `/growthcheckin`: Soft GPT-powered coaching for goals, obstacles and emotions
-- `/learn_topic`: Hybrid knowledge command (uses `.md` files or Drive PDFs as context)
-- `/create_caption`: Style-based caption generator for social, based on GPT
-- `gpt/helpers.py`: Central GPT logic (ask_gpt, log_gpt_success, log_gpt_error)
-- `gpt/dataset_loader.py`: Loads topic data from local prompts folder
-- `utils/drive_sync.py`: Fetches and parses PDFs from Google Drive
+### Added
+- `ask_gpt()` now logs real token usage and latency.
+- Persistent Google Drive authentication via service account.
+- Logging of GPT calls now includes Discord username for traceability.
 
-### ♻️ Changed
-- Fully modular refactor: legacy files moved to `cogs/`, `gpt/`, `utils/`
-- Updated `setup_hook()` to reflect new cog structure
-- Imports cleaned and centralized across all modules
-- `requirements.txt` updated with `pydrive2`, `PyMuPDF`
+### Changed
+- `log_gpt_error()` and `log_gpt_success()` now update shared status log without circular imports.
+- Drive sync fallback added for missing topic context.
 
-### 🧪 In Progress
-- Drive integration expansion (DOCX, Google Docs)
-- Caption batch generation & logging
+### Fixed
+- 🐛 Fixed: Emoji logging crash on Windows console (UnicodeEncodeError).
+- 🐛 Fixed: ImportError `cannot import name 'gpt_logs'` by decoupling `status.py`.
+- 🐛 Fixed: OpenAI `400 Bad Request` when passing plain string instead of message array.
 
 ---
 
-## [feature/ai_lotquiz]
-> Previous AI feature branch
+## [1.1.0] - 2025-04-05
 
-### ✨ Added
-- Initial GPT integration structure (lot size quiz logic)
-- Logging and slash command framework
+### Added
+- `/growthcheckin` GPT reflection flow
+- `/learn_topic` with context-aware PDF fetch
+- `/create_caption` style-based content generator
+- Google Drive integration via PyDrive2
+
+### Changed
+- Modular bot structure (`cogs/`, `gpt/`, `utils/`)
+- Improved logging output and status embed
+
+### Fixed
+- Invite cache error on startup
+- Duplicate onboarding message
 
 ---
 
-## [master]
-> Original production state
+## [1.0.0] - Initial Commit
+
+- Discord bot scaffolding with onboarding
+- Basic command structure
+- PostgreSQL async onboarding logic
