@@ -2,8 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from quiz_state import QuizState
-from quiz_tracker import QuizTracker
+from utils.quiz_state import QuizState
+from utils.quiz_tracker import QuizTracker
 
 quiz_state = QuizState()
 tracker = QuizTracker()
