@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+from gpt.helpers import is_allowed_prompt
 from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
 from gpt.dataset_loader import load_topic_context
 from utils.drive_sync import fetch_pdf_text_by_name
@@ -14,29 +15,38 @@ class LearnTopic(commands.Cog):
     async def learn_topic(self, interaction: discord.Interaction, topic: str):
         await interaction.response.defer(ephemeral=True, thinking=True)
 
+        if not is_allowed_prompt(topic):
+            await interaction.followup.send(
+                "❌ That question doesn’t align with Alphapips’ intent. Try a more purposeful topic.",
+                ephemeral=True
+            )
+            log_gpt_error("filtered_prompt", user_id=interaction.user.id)
+            return
+
+
         try:
             context = await load_topic_context(topic)
-
+        
+            # Als het geen bekend topic is, beschouw het als vraag
             if not context:
-                context = fetch_pdf_text_by_name(topic)
-
-            messages = [
-                {"role": "system", "content": "You are a helpful and human-like trading coach."},
-                {"role": "user", "content": f"""
-Explain the topic '{topic}' in simple, accessible language.
-If context is provided, use it as source material.
-Limit to 250 words. Be clear, warm, and focused.
-
-Context:
-{context if context else '[no context available]'}
-"""}
-            ]
-
-            reply = await ask_gpt(messages, user_id=interaction.user.id)
+                reply = await ask_gpt(
+                    [{"role": "user", "content": topic}],
+                    user_id=interaction.user.id
+                )
+                await interaction.followup.send(reply, ephemeral=True)
+                return
+        
+            # Als er wél context is (van Drive of PDF), stuur dat mee naar GPT
+            reply = await ask_gpt(
+                [{"role": "user", "content": context}],
+                user_id=interaction.user.id
+            )
             await interaction.followup.send(reply, ephemeral=True)
-
+        
         except Exception as e:
             await interaction.followup.send("❌ Couldn't generate a response. Try again later.", ephemeral=True)
+
+
 
 
 async def setup(bot):
