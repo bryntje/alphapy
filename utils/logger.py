@@ -1,3 +1,4 @@
+import sys
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -9,7 +10,7 @@ logging.basicConfig(
     level=logging.INFO,
     handlers=[
         log_handler,
-        logging.StreamHandler(stream=open(1, 'w', encoding='utf-8'))  # ✅ fix UnicodeEncodeError
+        logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1))  # ✅ fix UnicodeEncodeError
     ]
 )
 

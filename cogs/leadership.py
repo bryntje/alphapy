@@ -49,7 +49,7 @@ class ChallengeSelect(discord.ui.Select):
         try:
             logger.info(f"GPT request by {interaction.user} — challenge: {struggle}")
             await interaction.response.defer(ephemeral=True)
-            reply = await ask_gpt(prompt)
+            reply = await ask_gpt([{"role": "user", "content": prompt}])
             log_gpt_success(user_id=interaction.user.id)
             await interaction.followup.send(reply, ephemeral=True)
         except Exception as e:
@@ -72,21 +72,29 @@ class AskQuestionButton(discord.ui.Button):
             msg = await self.bot.wait_for("message", timeout=120.0, check=check)
             user_question = msg.content.strip()
             logger.info(f"{interaction.user} asked: {user_question[:100]}")
-
+        
             prompt = f"""
-                    You're a supportive leadership coach. A Discord leader asked:
-                    {user_question}
-                    espond with clarity, honesty, and a helpful suggestion. Keep it short.
-                    """
+        You're a supportive leadership coach. A Discord leader asked:
+        {user_question}
+        Respond with clarity, honesty, and a helpful suggestion. Keep it short.
+        """
+        
             await interaction.followup.send("🧠 Thinking...", ephemeral=True)
-            reply = await ask_gpt(prompt)
+        
+            # ✅ En hier: gewoon rechtstreeks de prompt meesturen
+            reply = await ask_gpt(
+                [{"role": "user", "content": prompt}],
+                user_id=interaction.user.id
+            )
+        
             log_gpt_success(user_id=interaction.user.id)
             await interaction.followup.send(reply, ephemeral=True)
-
+        
         except Exception as e:
             logger.exception(f"Unhandled GPT error (AskQuestionButton) by {interaction.user}: {e}")
             log_gpt_error("ask_question", user_id=interaction.user.id)
             await interaction.followup.send("❌ Error occurred. Try again later.", ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(LeaderHelp(bot))
