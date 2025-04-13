@@ -96,7 +96,7 @@ class FinalAcceptButton(discord.ui.Button):
             await interaction.response.send_message("⚠️ You must accept all rules before proceeding!", ephemeral=True)
             return
     
-        from onboarding import Onboarding
+        from cogs.onboarding import Onboarding
         onboarding_cog = interaction.client.get_cog("Onboarding")
         if onboarding_cog:
             print("✅ Onboarding Cog gevonden! Start onboarding...")
