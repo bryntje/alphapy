@@ -4,3 +4,5 @@ asyncpg
 openai>=1.0.0
 pydrive2
 PyMuPDF
+fastapi
+uvicorn
