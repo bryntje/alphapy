@@ -25,7 +25,7 @@ Je antwoord is helder, menselijk, en raakt zacht waar het mag — scherp waar he
 
 # Bot instance wordt later gezet
 bot_instance = None
-LOG_CHANNEL_ID = 1336042713459593337  # 👈 pas deze aan naar jouw Discord log kanaal ID
+LOG_CHANNEL_ID = 1336042713459593337
 
 def set_bot_instance(bot):
     global bot_instance
