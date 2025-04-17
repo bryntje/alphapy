@@ -53,8 +53,8 @@ class ReminderCog(commands.Cog):
 
         # Mapping van NL naar EN dagafkortingen
         day_map = {
-            "ma": "Mon", "di": "Tue", "wo": "Wed",
-            "do": "Thu", "vr": "Fri", "za": "Sat", "zo": "Sun"
+            "Mon": "ma", "Tue": "di", "Wed": "wo",
+            "Thu": "do", "Fri": "vr", "Sat": "za", "Sun": "zo"
         }
 
         now = datetime.now()
