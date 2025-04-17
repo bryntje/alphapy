@@ -53,7 +53,7 @@ class ReminderCog(commands.Cog):
 
         await self.conn.execute(
             "INSERT INTO reminders (name, channel_id, time, days, message, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
-            name, str(channel.id), time, days.split(","), message, str(interaction.user.id)
+            name, str(channel.id), time_obj, days.split(","), message, str(interaction.user.id)
         )
         await interaction.followup.send(f"✅ Reminder '{name}' toegevoegd in {channel.mention} om {time} op {days}.", ephemeral=True)
 
