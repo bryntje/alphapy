@@ -51,21 +51,14 @@ class ReminderCog(commands.Cog):
             print("⛔ Database connection not ready.")
             return
 
-        now = datetime.now()
-        current_time = now.time().replace(second=0, microsecond=0)
-        
         # Mapping van NL naar EN dagafkortingen
         day_map = {
             "ma": "Mon", "di": "Tue", "wo": "Wed",
             "do": "Thu", "vr": "Fri", "za": "Sat", "zo": "Sun"
         }
-        
-        # Normalizeer en converteer dagen
-        days_list = [
-            day_map.get(day.strip().lower()[:2])
-            for day in days.split(",")
-            if day.strip().lower()[:2] in day_map
-        ]
+
+        now = datetime.now()
+        current_time = now.time().replace(second=0, microsecond=0)
         current_day = day_map[now.strftime("%a")]
 
 
