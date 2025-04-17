@@ -53,7 +53,21 @@ class ReminderCog(commands.Cog):
 
         now = datetime.now()
         current_time = now.time().replace(second=0, microsecond=0)
-        current_day = now.strftime("%a")  # e.g., "Mon", "Tue", "Wed", ...
+        
+        # Mapping van NL naar EN dagafkortingen
+        day_map = {
+            "ma": "Mon", "di": "Tue", "wo": "Wed",
+            "do": "Thu", "vr": "Fri", "za": "Sat", "zo": "Sun"
+        }
+        
+        # Normalizeer en converteer dagen
+        days_list = [
+            day_map.get(day.strip().lower()[:2])
+            for day in days.split(",")
+            if day.strip().lower()[:2] in day_map
+        ]
+        current_day = day_map[now.strftime("%a")]
+
 
         query = """
             SELECT id, channel_id, name, message
