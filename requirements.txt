@@ -6,3 +6,4 @@ pydrive2
 PyMuPDF
 fastapi
 uvicorn
+pytz
