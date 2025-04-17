@@ -20,19 +20,7 @@ class ReminderCog(commands.Cog):
             print("✅ Verbonden met database!")
         except Exception as e:
             print("❌ Fout bij verbinden met database:", e)
-
-    @tasks.loop(minutes=1)
-    async def load_reminders(self):
-        now = datetime.now()
-        current_time = now.strftime("%H:%M")
-        current_day = now.strftime("%a").lower()[:2]
-
-        reminders = await self.conn.fetch("SELECT * FROM reminders")
-        for reminder in reminders:
-            if current_day in reminder["days"] and current_time == reminder["time"]:
-                channel = self.bot.get_channel(int(reminder["channel_id"]))
-                if channel:
-                    await channel.send(reminder["message"])
+        self.check_reminders.start()
 
     @app_commands.command(name="add_reminder", description="Plan een herhaalbare reminder in.")
     @app_commands.describe(
@@ -56,6 +44,34 @@ class ReminderCog(commands.Cog):
             name, str(channel.id), time_obj, days.split(","), message, str(interaction.user.id)
         )
         await interaction.followup.send(f"✅ Reminder '{name}' toegevoegd in {channel.mention} om {time} op {days}.", ephemeral=True)
+
+    @tasks.loop(seconds=60)
+    async def check_reminders(self):
+        if not self.conn:
+            print("⛔ Database connection not ready.")
+            return
+
+        now = datetime.now()
+        current_time = now.time().replace(second=0, microsecond=0)
+        current_day = now.strftime("%a")  # e.g., "Mon", "Tue", "Wed", ...
+
+        query = """
+            SELECT id, channel_id, name, message
+            FROM reminders
+            WHERE time = $1 AND $2 = ANY(days)
+        """
+
+        try:
+            rows = await self.conn.fetch(query, current_time, current_day)
+            for row in rows:
+                channel = self.bot.get_channel(int(row["channel_id"]))
+                if channel:
+                    await channel.send(f"⏰ Reminder **{row['name']}**: {row['message']}")
+                # (Optioneel) verwijder reminder of update status
+                # await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
+        except Exception as e:
+            print("🚨 Reminder loop error:", e)
+
 
 async def setup(bot):
     await bot.add_cog(ReminderCog(bot))
