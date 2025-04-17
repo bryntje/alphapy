@@ -5,6 +5,7 @@ import asyncpg
 import asyncio
 from datetime import datetime, time as dtime
 import config
+import pytz
 
 
 class ReminderCog(commands.Cog):
@@ -57,7 +58,8 @@ class ReminderCog(commands.Cog):
             "Thu": "do", "Fri": "vr", "Sat": "za", "Sun": "zo"
         }
 
-        now = datetime.now()
+        tz = pytz.timezone("Europe/Brussels")
+        now = datetime.now(tz)
         current_time = now.time().replace(second=0, microsecond=0)
         current_day = day_map[now.strftime("%a")]
 
