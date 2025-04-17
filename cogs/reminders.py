@@ -48,6 +48,9 @@ class ReminderCog(commands.Cog):
         if not self.conn:
             await interaction.followup.send("⛔ Database not connected. Try again later.", ephemeral=True)
             return
+        # Convert string to datetime.time object
+        time_obj = datetime.strptime(time, "%H:%M").time()
+
         await self.conn.execute(
             "INSERT INTO reminders (name, channel_id, time, days, message, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
             name, str(channel.id), time, days.split(","), message, str(interaction.user.id)
