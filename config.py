@@ -13,6 +13,7 @@ RULES_CHANNEL_ID = 1336039005917155510
 GDPR_CHANNEL_ID = 1338623097175146638  # Vervang dit door het ID van het kanaal waar je het GDPR document wilt plaatsen
 INVITE_ANNOUNCEMENT_CHANNEL_ID = 1336041753966416026  # Vervang dit door het ID van het kanaal waar de invite-berichten moeten komen
 DATABASE_URL = "postgresql://postgres:quXqkifzMSGEtxJbQWCPZLjdiDKBBewZ@postgres.railway.internal:5432/railway"
+WATCHER_LOG_CHANNEL = 1336042713459593337
 # Local override
 try:
     from config_local import *
