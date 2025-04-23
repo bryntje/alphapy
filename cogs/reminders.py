@@ -48,6 +48,37 @@ class ReminderCog(commands.Cog):
         )
         await interaction.followup.send(f"✅ Reminder '{name}' toegevoegd in {channel.mention} om {time} op {days}.", ephemeral=True)
 
+    @app_commands.command(name="reminder_list", description="📋 Bekijk je actieve reminders")
+    async def reminder_list(self, interaction: discord.Interaction):
+        user_id = str(interaction.user.id)
+        channel_id = str(interaction.channel.id)
+
+        await interaction.response.defer(ephemeral=True)
+
+        query = """
+            SELECT id, name, time, days FROM reminders
+            WHERE created_by = $1 OR channel_id = $2
+            ORDER BY time;
+        """
+        try:
+            rows = await self.conn.fetch(query, user_id, channel_id)
+
+            if not rows:
+                await interaction.followup.send("❌ Geen reminders gevonden.")
+                return
+
+            msg_lines = [f"📋 **Actieve Reminders:**"]
+            for row in rows:
+                days_str = ", ".join(row["days"])
+                msg_lines.append(
+                    f"🔹 **{row['name']}** — ⏰ {row['time']} op `{days_str}` (ID: {row['id']})"
+                )
+
+            await interaction.followup.send("\n".join(msg_lines))
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ Fout bij ophalen reminders: {e}")
+
+
     @tasks.loop(seconds=60)
     async def check_reminders(self):
         if not self.conn:
