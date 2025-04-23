@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import re
 from datetime import datetime, timedelta
+import config
 
 def extract_datetime_from_text(text):
     date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
@@ -24,7 +25,11 @@ def extract_datetime_from_text(text):
 class EmbedReminderWatcher(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.conn = None  # ← DB connectie later invullen als nodig
+        self.conn = None
+
+    async def setup_db(self):
+        import asyncpg
+        self.conn = await asyncpg.connect(config.DATABASE_URL)
 
     @commands.Cog.listener()
     async def on_message(self, message):
