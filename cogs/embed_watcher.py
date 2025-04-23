@@ -1,5 +1,3 @@
-# cogs/embed_watcher.py
-
 import discord
 from discord.ext import commands
 import re
@@ -12,7 +10,7 @@ class EmbedReminderWatcher(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        ANNOUNCEMENTS_CHANNEL_ID = 1234567890  # <-- pas aan!
+        ANNOUNCEMENTS_CHANNEL_ID = 1160511692824924216  # <-- pas aan!
 
         if message.channel.id != ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
             return
