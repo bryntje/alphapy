@@ -3,6 +3,24 @@ from discord.ext import commands
 import re
 from datetime import datetime, timedelta
 
+def extract_datetime_from_text(text):
+    date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
+    time_match = re.search(r"(\d{1,2}[:.]\d{2})", text)
+
+    if date_match and time_match:
+        day = int(date_match.group(1))
+        month_str = date_match.group(3)
+        time_str = time_match.group(1).replace(".", ":")
+        current_year = datetime.now().year
+
+        try:
+            full_date_str = f"{day} {month_str} {current_year} {time_str}"
+            dt = datetime.strptime(full_date_str, "%d %B %Y %H:%M")
+            return dt
+        except Exception as e:
+            print(f"⛔️ Date parse failed: {e}")
+    return None
+
 class EmbedReminderWatcher(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -36,25 +54,17 @@ class EmbedReminderWatcher(commands.Cog):
         for field in embed.fields:
             full_text += f"\n{field.name}: {field.value}"
 
-        date_match = re.search(r"(\d{1,2}(st|nd|rd|th)?\s+[A-Z][a-z]+\s+\d{4})", full_text)
-        time_match = re.search(r"(\d{1,2}[:.]\d{2})", full_text)
-
-        if not date_match or not time_match:
+        dt = extract_datetime_from_text(full_text)
+        if not dt:
             return None
+        
+        return {
+            "title": title,
+            "description": desc,
+            "datetime": dt,
+            "reminder_time": dt - timedelta(minutes=30)
+        }
 
-        try:
-            clean_date = date_match.group(1).replace('st','').replace('nd','').replace('rd','').replace('th','')
-            time_str = time_match.group(1).replace('.', ':')
-            dt = datetime.strptime(f"{clean_date} {time_str}", "%d %B %Y %H:%M")
-            return {
-                "title": title,
-                "description": desc,
-                "datetime": dt,
-                "reminder_time": dt - timedelta(minutes=30)
-            }
-        except Exception as e:
-            print(f"[Parse Error] {e}")
-            return None
 
     async def store_parsed_reminder(self, parsed, channel, created_by):
         dt = parsed["datetime"]
