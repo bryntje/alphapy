@@ -90,6 +90,7 @@ class EmbedReminderWatcher(commands.Cog):
         weekday_str = str(dt.weekday())
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
+        location = parsed.get("location", "-")
         print("[DEBUG] Attempting to store reminder:", name)
         print("DB conn:", self.conn)
 
@@ -101,7 +102,7 @@ class EmbedReminderWatcher(commands.Cog):
                 time_obj,
                 [weekday_str],
                 message,
-                str(created_by)
+                str(created_by),
                 location or "—"
             )
             print("✅ Reminder opgeslagen in DB")
