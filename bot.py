@@ -74,6 +74,7 @@ async def setup_hook():
     await bot.load_extension("cogs.learn")
     await bot.load_extension("cogs.contentgen")
     await bot.load_extension("cogs.reminders")
+    await bot.load_extension("cogs.embed_watcher")
 
 
 
