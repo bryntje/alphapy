@@ -57,7 +57,7 @@ class EmbedReminderWatcher(commands.Cog):
         dt = extract_datetime_from_text(full_text)
         if not dt:
             return None
-        
+
         return {
             "title": title,
             "description": desc,
@@ -72,17 +72,23 @@ class EmbedReminderWatcher(commands.Cog):
         weekday_str = str(dt.weekday())
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
+        print("[DEBUG] Attempting to store reminder:", name)
+        print("DB conn:", self.conn)
 
-        await self.conn.execute(
-            "INSERT INTO reminders (name, channel_id, time, days, message, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
-            name,
-            str(channel.id),
-            time_obj,
-            weekday_str,
-            message,
-            str(created_by)
-        )
-        print("✅ Reminder opgeslagen in DB")
+        try:
+            await self.conn.execute(
+                "INSERT INTO reminders (name, channel_id, time, days, message, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
+                name,
+                str(channel.id),
+                time_obj,
+                weekday_str,
+                message,
+                str(created_by)
+            )
+            print("✅ Reminder opgeslagen in DB")
+
+        except Exception as e:
+            print(f"[ERROR] Reminder insert failed: {e}")
 
 async def setup(bot):
     await bot.add_cog(EmbedReminderWatcher(bot))
