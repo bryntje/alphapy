@@ -49,6 +49,7 @@ class EmbedReminderWatcher(commands.Cog):
                     f"📌 **{parsed['title']}**\n"
                     f"📅 {parsed['datetime'].strftime('%A %d %B %Y')} om {parsed['datetime'].strftime('%H:%M')}\n"
                     f"⏰ Reminder zal triggeren om {parsed['reminder_time'].strftime('%H:%M')}."
+                    f" 📍 Locatie: {parsed.get('location') or '—'}"
                 )
             else:
                 print("⚠️  WATCHER_LOG_CHANNEL niet gevonden of niet toegankelijk.")
@@ -67,12 +68,19 @@ class EmbedReminderWatcher(commands.Cog):
         dt = extract_datetime_from_text(full_text)
         if not dt:
             return None
+        
+        location = None
+        if embed.description:
+            match = re.search(r"Location[:\-]?\s*(.+)", embed.description)
+            if match:
+                location = match.group(1).strip()
 
         return {
             "title": title,
             "description": desc,
             "datetime": dt,
-            "reminder_time": dt - timedelta(minutes=30)
+            "reminder_time": dt - timedelta(minutes=30),
+            "location": location
         }
 
 
@@ -87,13 +95,14 @@ class EmbedReminderWatcher(commands.Cog):
 
         try:
             await self.conn.execute(
-                "INSERT INTO reminders (name, channel_id, time, days, message, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
+                "INSERT INTO reminders (name, channel_id, time, days, message, created_by, location) VALUES ($1, $2, $3, $4, $5, $6, $7)",
                 name,
                 str(channel.id),
                 time_obj,
                 [weekday_str],
                 message,
                 str(created_by)
+                location or "—"
             )
             print("✅ Reminder opgeslagen in DB")
 
