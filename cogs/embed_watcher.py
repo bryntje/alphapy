@@ -86,7 +86,7 @@ class EmbedReminderWatcher(commands.Cog):
                 name,
                 str(channel.id),
                 time_obj,
-                weekday_str,
+                [weekday_str],
                 message,
                 str(created_by)
             )
