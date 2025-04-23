@@ -58,30 +58,44 @@ class EmbedReminderWatcher(commands.Cog):
             if self.conn:
                 await self.store_parsed_reminder(parsed, message.channel, message.author.id)
 
-    def parse_embed_for_reminder(self, embed):
-        title = embed.title or ""
-        desc = embed.description or ""
-        full_text = title + "\n" + desc
-        for field in embed.fields:
-            full_text += f"\n{field.name}: {field.value}"
+    def parse_embed_for_reminder(embed):
+        date_line = None
+        time_line = None
+        location_line = None
 
-        dt = extract_datetime_from_text(full_text)
-        if not dt:
+        for field in embed.description.split('\n'):
+            if "Date:" in field:
+                date_line = field
+            elif "Time:" in field:
+                time_line = field
+            elif "Location:" in field:
+                location_line = field
+
+        if not date_line or not time_line:
+            return None  # noodzakelijke info ontbreekt
+
+        # Date: Wednesday, 3rd April 2025
+        date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)? ([A-Za-z]+)(?: (\d{4}))?", date_line)
+        time_match = re.search(r"(\d{1,2}[:.]\d{2})", time_line)
+
+        if not date_match or not time_match:
             return None
-        
-        location = None
-        if embed.description:
-            match = re.search(r"Location[:\-]?\s*(.+)", embed.description)
-            if match:
-                location = match.group(1).strip()
 
-        return {
-            "title": title,
-            "description": desc,
-            "datetime": dt,
-            "reminder_time": dt - timedelta(minutes=30),
-            "location": location
-        }
+        day, month, year = date_match.groups()
+        year = year or str(datetime.now().year)
+        full_str = f"{day} {month} {year} {time_match.group(1).replace('.', ':')}"
+
+        try:
+            dt = datetime.strptime(full_str, "%d %B %Y %H:%M")
+            return {
+                "datetime": dt,
+                "reminder_time": dt.replace(minute=max(0, dt.minute - 60)),  # vb: 30 min op voorhand
+                "location": location_line.replace("Location:", "").strip() if location_line else None
+            }
+        except Exception as e:
+            print(f"❌ Parse error: {e}")
+            return None
+
 
 
     async def store_parsed_reminder(self, parsed, channel, created_by):
@@ -103,7 +117,7 @@ class EmbedReminderWatcher(commands.Cog):
                 [weekday_str],
                 message,
                 str(created_by),
-                location or "—"
+                location
             )
             print("✅ Reminder opgeslagen in DB")
 
