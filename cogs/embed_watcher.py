@@ -42,12 +42,17 @@ class EmbedReminderWatcher(commands.Cog):
         parsed = self.parse_embed_for_reminder(embed)
 
         if parsed and parsed["reminder_time"]:
-            await message.channel.send(
-                f"🔔 Auto-reminder gedetecteerd:\n"
-                f"📌 **{parsed['title']}**\n"
-                f"🗓️ {parsed['datetime'].strftime('%A %d %B %Y')} om {parsed['datetime'].strftime('%H:%M')}\n"
-                f"⏰ Reminder zal triggeren om {parsed['reminder_time'].strftime('%H:%M')}."
-            )
+            log_channel = self.bot.get_channel(config.LOG_CHANNEL_ID)
+            if log_channel:
+                await log_channel.send(
+                    f"🔔 Auto-reminder detected:\n"
+                    f"📌 **{parsed['title']}**\n"
+                    f"📅 {parsed['datetime'].strftime('%A %d %B %Y')} om {parsed['datetime'].strftime('%H:%M')}\n"
+                    f"⏰ Reminder zal triggeren om {parsed['reminder_time'].strftime('%H:%M')}."
+                )
+            else:
+                print("⚠️  LOG_CHANNEL_ID niet gevonden of niet toegankelijk.")
+
 
             if self.conn:
                 await self.store_parsed_reminder(parsed, message.channel, message.author.id)
