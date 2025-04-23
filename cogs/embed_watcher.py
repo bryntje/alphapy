@@ -58,7 +58,7 @@ class EmbedReminderWatcher(commands.Cog):
             if self.conn:
                 await self.store_parsed_reminder(parsed, message.channel, message.author.id)
 
-    def parse_embed_for_reminder(embed):
+    def parse_embed_for_reminder(self, embed):
         date_line = None
         time_line = None
         location_line = None
