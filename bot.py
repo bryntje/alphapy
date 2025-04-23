@@ -78,7 +78,6 @@ async def setup_hook():
 
 
 
-
 bot.setup_hook = setup_hook
 Thread(target=start_api, daemon=True).start()
 

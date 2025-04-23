@@ -3,6 +3,7 @@ from discord.ext import commands
 import re
 from datetime import datetime, timedelta
 import config
+import asyncpg
 
 def extract_datetime_from_text(text):
     date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
@@ -28,7 +29,6 @@ class EmbedReminderWatcher(commands.Cog):
         self.conn = None
 
     async def setup_db(self):
-        import asyncpg
         self.conn = await asyncpg.connect(config.DATABASE_URL)
 
     @commands.Cog.listener()
@@ -95,5 +95,9 @@ class EmbedReminderWatcher(commands.Cog):
         except Exception as e:
             print(f"[ERROR] Reminder insert failed: {e}")
 
+
+
 async def setup(bot):
-    await bot.add_cog(EmbedReminderWatcher(bot))
+    cog = EmbedReminderWatcher(bot)
+    await cog.setup_db()  # hier maak je je eigen verbinding
+    await bot.add_cog(cog)
