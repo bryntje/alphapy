@@ -102,9 +102,12 @@ class EmbedReminderWatcher(commands.Cog):
                 elif line.lower().startswith("days:"):
                     days_line = line.split(":", 1)[1].strip()
 
-
-
         try:
+
+            if not time_match or (not date_match and not days_line):
+                print("⚠️ Vereist: Time én minstens één van Date of Days.")
+                return None
+            
             # Parse date & time
             date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
             time_match = re.search(r"(\d{1,2})[:.](\d{2})(?:\s*(CEST|CET))?", time_line)
@@ -120,10 +123,6 @@ class EmbedReminderWatcher(commands.Cog):
                 "CEST": ZoneInfo("Europe/Brussels")
             }
             tz = tz_map.get(timezone_str.upper(), ZoneInfo("Europe/Brussels"))
-
-            if not time_match or (not date_match and not days_line):
-                print("⚠️ Vereist: Time én minstens één van Date of Days.")
-                return None
 
             if date_match:
                 day, month_str, year = date_match.groups()
