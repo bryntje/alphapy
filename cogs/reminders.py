@@ -78,6 +78,32 @@ class ReminderCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"⚠️ Fout bij ophalen reminders: {e}")
 
+    @app_commands.command(name="reminder_delete", description="🗑️ Verwijder een reminder via ID")
+    @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
+    async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int):
+        await interaction.response.defer(ephemeral=True)
+
+        row = await self.conn.fetchrow("SELECT * FROM reminders WHERE id = $1", reminder_id)
+        
+        if not row:
+            await interaction.followup.send(f"❌ Geen reminder gevonden met ID `{reminder_id}`.")
+            return
+
+        await self.conn.execute("DELETE FROM reminders WHERE id = $1", reminder_id)
+        await interaction.followup.send(
+            f"🗑️ Reminder **{row['name']}** (ID: `{reminder_id}`) werd succesvol verwijderd."
+        )
+    
+    @reminder_delete.autocomplete("reminder_id")
+    async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str):
+        rows = await self.conn.fetch("SELECT id, name FROM reminders ORDER BY id DESC LIMIT 25")
+        return [
+            app_commands.Choice(name=f"ID {row['id']} – {row['name'][:30]}", value=row["id"])
+            for row in rows if current.lower() in str(row["id"]) or current.lower() in row["name"].lower()
+        ]
+
+
+
 
     @tasks.loop(seconds=60)
     async def check_reminders(self):
