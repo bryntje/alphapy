@@ -102,6 +102,12 @@ class EmbedReminderWatcher(commands.Cog):
                 elif line.lower().startswith("days:"):
                     days_line = line.split(":", 1)[1].strip()
 
+        print(f"🧪 DEBUG - date_line: {date_line}")
+        print(f"🧪 DEBUG - time_line: {time_line}")
+        print(f"🧪 DEBUG - days_line: {days_line}")
+        print(f"🧪 DEBUG - description: {embed.description}")
+
+
         try:
 
             if not time_match or (not date_match and not days_line):
