@@ -143,7 +143,8 @@ class EmbedReminderWatcher(commands.Cog):
             # Final boss: Days line parsing
             days_str = "-"
             if days_line:
-                days_val = days_line.split(":", 1)[1].strip().lower()
+                days_val = days_line.lower()
+                days_val = re.sub(r"daily\s*:\s*", "", days_val).strip()
                 if any(word in days_val for word in ["daily", "dagelijks"]):
                     days_str = "0,1,2,3,4,5,6"
                 elif "weekdays" in days_val:
