@@ -124,8 +124,10 @@ class EmbedReminderWatcher(commands.Cog):
 
             return {
                 "datetime": dt,
-                "reminder_time": dt - timedelta(minutes=30),  # 30 min op voorhand
-                "location": location_line or "-"
+                "reminder_time": dt - timedelta(minutes=60),  # 60 min op voorhand
+                "location": location_line or "-",
+                "title": embed.title or "-"
+
             }
 
         except Exception as e:
