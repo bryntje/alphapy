@@ -104,10 +104,7 @@ class ReminderCog(commands.Cog):
         """
 
         try:
-            print(f"⏱️ Current time: {current_time}, Current day: {current_day}")
-            print(f"🧠 Query: {query}")
             rows = await self.conn.fetch(query, current_time, current_day)
-            print(f"📦 Fetched reminders: {rows}")
             for row in rows:
                 channel = self.bot.get_channel(int(row["channel_id"]))
                 if channel:
