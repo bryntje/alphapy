@@ -99,8 +99,8 @@ class EmbedReminderWatcher(commands.Cog):
                 elif line.lower().startswith("days:"):
                     days_line = line.split(":", 1)[1].strip()
 
-        if not date_line or not time_line:
-            print("⚠️ Date of time niet gevonden in embed.")
+        if not time_match or (not date_match and not days_line):
+            print("⚠️ Vereist: Time én minstens één van Date of Days.")
             return None
 
         try:
