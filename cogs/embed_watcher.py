@@ -120,6 +120,16 @@ class EmbedReminderWatcher(commands.Cog):
                 location
             )
             print("✅ Reminder opgeslagen in DB")
+            log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
+            if log_channel:
+                await log_channel.send(
+                    f"✅ Reminder opgeslagen in DB voor: **{name}**\n"
+                    f"🕒 Tijdstip: {time_obj.strftime('%H:%M')} op dag {weekday_str}\n"
+                    f"📍 Locatie: {location or '—'}"
+                )
+            else:
+                print("⚠️ Kon logkanaal niet vinden voor confirmatie.")
+
 
         except Exception as e:
             print(f"[ERROR] Reminder insert failed: {e}")
