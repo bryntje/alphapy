@@ -72,17 +72,17 @@ class EmbedReminderWatcher(commands.Cog):
         location_line = None
 
         # Eerst proberen uit embed.fields te halen
-        if embed.fields:
-            for field in embed.fields:
-                name = field.name.lower()
-                value = field.value.strip()
+        all_text = embed.description or ""
+        for field in embed.fields:
+            all_text += f"\n{field.name}\n{field.value}"
 
-                if "date" in name:
-                    date_line = value
-                elif "time" in name:
-                    time_line = value
-                elif "location" in name:
-                    location_line = value
+        for line in all_text.split('\n'):
+            if "date:" in line.lower():
+                date_line = line
+            elif "time:" in line.lower():
+                time_line = line
+            elif "location:" in line.lower():
+                location_line = line
 
         # Als fields niet bestaan, fallback naar description (legacy)
         if not date_line or not time_line:
