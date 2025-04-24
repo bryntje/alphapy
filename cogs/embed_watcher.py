@@ -126,7 +126,8 @@ class EmbedReminderWatcher(commands.Cog):
                 "datetime": dt,
                 "reminder_time": dt - timedelta(minutes=60),  # 60 min op voorhand
                 "location": location_line or "-",
-                "title": embed.title or "-"
+                "title": embed.title or "-",
+                "description": embed.description or "-"
 
             }
 
