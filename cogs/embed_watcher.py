@@ -108,12 +108,7 @@ class EmbedReminderWatcher(commands.Cog):
         print(f"🧪 DEBUG - description: {embed.description}")
 
 
-        try:
-
-            if not time_match or (not date_match and days_str == "-"):
-                print("⚠️ Vereist: Time én minstens één van Date of Days.")
-                return None
-            
+        try:            
             # Parse date & time
             date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
             time_match = re.search(r"(\d{1,2})[:.](\d{2})(?:\s*(CEST|CET))?", time_line)
@@ -178,6 +173,11 @@ class EmbedReminderWatcher(commands.Cog):
                         days_str = ",".join(sorted(set(found_days)))
             else:
                 days_str = str(dt.weekday())  # Enkel de weekday waarop het valt
+
+            
+            if not time_match or (not date_match and days_str == "-"):
+                print("⚠️ Vereist: Time én minstens één van Date of Days.")
+                return None
 
             return {
                 "datetime": dt,
