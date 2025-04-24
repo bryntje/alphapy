@@ -64,52 +64,73 @@ class EmbedReminderWatcher(commands.Cog):
                 await self.store_parsed_reminder(parsed, message.channel, message.author.id)
 
     def parse_embed_for_reminder(self, embed):
+        import re
+        from datetime import datetime, timedelta
+
+        date_line = None
+        time_line = None
+        location_line = None
+
+        # Eerst proberen uit embed.fields te halen
+        if embed.fields:
+            for field in embed.fields:
+                name = field.name.lower()
+                value = field.value.strip()
+
+                if "date" in name:
+                    date_line = value
+                elif "time" in name:
+                    time_line = value
+                elif "location" in name:
+                    location_line = value
+
+        # Als fields niet bestaan, fallback naar description (legacy)
+        if not date_line or not time_line:
+            for line in embed.description.split('\n'):
+                if line.lower().startswith("date:"):
+                    date_line = line.split(":", 1)[1].strip()
+                elif line.lower().startswith("time:"):
+                    time_line = line.split(":", 1)[1].strip()
+                elif line.lower().startswith("location:"):
+                    location_line = line.split(":", 1)[1].strip()
+
+        if not date_line or not time_line:
+            print("⚠️ Date of time niet gevonden in embed.")
+            return None
+
         try:
-            content = f"{embed.title}\n{embed.description}"
-
-            # 🔍 Date: Wednesday, 3rd April 2025
-            date_match = re.search(
-                r"Date:\s*(?:\w+day,\s*)?(\d{1,2})(?:st|nd|rd|th)?\s+([A-Z][a-z]+)(?:\s+(\d{4}))?",
-                content
-            )
-
-            # ⏰ Time: 19:30 of Doors open: 19:30
-            time_match = re.search(
-                r"(?:Time|Doors open):\s*(\d{1,2}[:.]\d{2})",
-                content
-            )
-
-            # 📍 Location: Trade Café, etc.
-            location_match = re.search(
-                r"Location:\s*(.+)",
-                content
-            )
+            # Parse date & time
+            date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
+            time_match = re.search(r"(\d{1,2})[:.](\d{2})", time_line)
 
             if not date_match or not time_match:
-                print("⚠️  Date of time niet gevonden in embed.")
+                print("⚠️ Date of time match mislukt.")
                 return None
 
-            day, month, year = date_match.groups()
-            year = year or str(datetime.now().year)
-            time_str = time_match.group(1).replace('.', ':')
-            full_str = f"{day} {month} {year} {time_str}"
+            day, month_str, year = date_match.groups()
+            day = int(day)
+            year = int(year) if year else datetime.now().year
 
-            dt = datetime.strptime(full_str, "%d %B %Y %H:%M")
-            reminder_time = dt.replace(minute=max(0, dt.minute - 30))
+            # Maand converteren
+            try:
+                month = datetime.strptime(month_str[:3], "%b").month
+            except ValueError:
+                month = datetime.strptime(month_str, "%B").month
 
-            parsed = {
+            hour = int(time_match.group(1))
+            minute = int(time_match.group(2))
+
+            dt = datetime(year, month, day, hour, minute)
+
+            return {
                 "datetime": dt,
-                "reminder_time": reminder_time,
-                "location": location_match.group(1).strip() if location_match else None
+                "reminder_time": dt - timedelta(minutes=30),  # 30 min op voorhand
+                "location": location_line or "-"
             }
-
-            print(f"🔍 Parsed embed: {parsed}")
-            return parsed
 
         except Exception as e:
             print(f"❌ Parse error: {e}")
             return None
-
 
 
     async def store_parsed_reminder(self, parsed, channel, created_by):
