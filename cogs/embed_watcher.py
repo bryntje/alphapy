@@ -119,28 +119,32 @@ class EmbedReminderWatcher(commands.Cog):
             hour = int(time_match.group(1))
             minute = int(time_match.group(2))
             timezone_str = time_match.group(3) or "CET"
-
+            
             from zoneinfo import ZoneInfo
             tz_map = {
                 "CET": ZoneInfo("Europe/Brussels"),
                 "CEST": ZoneInfo("Europe/Brussels")
             }
             tz = tz_map.get(timezone_str.upper(), ZoneInfo("Europe/Brussels"))
+            
+            if date_match:
+                day, month_str, year = date_match.groups()
+                day = int(day)
+                year = int(year) if year else datetime.now().year
+            
+                # Maand converteren
+                try:
+                    month = datetime.strptime(month_str[:3], "%b").month
+                except ValueError:
+                    month = datetime.strptime(month_str, "%B").month
+            
+                dt = datetime(year, month, day, hour, minute, tzinfo=tz)
+            
+            else:
+                # fallback bij alleen time+days
+                now = datetime.now(tz)
+                dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-            day, month_str, year = date_match.groups()
-            day = int(day)
-            year = int(year) if year else datetime.now().year
-
-            # Maand converteren
-            try:
-                month = datetime.strptime(month_str[:3], "%b").month
-            except ValueError:
-                month = datetime.strptime(month_str, "%B").month
-
-            hour = int(time_match.group(1))
-            minute = int(time_match.group(2))
-
-            dt = datetime(year, month, day, hour, minute, tzinfo=tz)
 
             
             # Final boss: Days line parsing
