@@ -101,7 +101,24 @@ class EmbedReminderWatcher(commands.Cog):
         try:
             # Parse date & time
             date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
-            time_match = re.search(r"(\d{1,2})[:.](\d{2})", time_line)
+            time_match = re.search(r"(\d{1,2})[:.](\d{2})(?:\s*(CEST|CET))?", time_line)
+
+            if not time_match:
+                print("⚠️ Time regex faalde")
+                return None
+
+            hour = int(time_match.group(1))
+            minute = int(time_match.group(2))
+            timezone_str = time_match.group(3) or "CET"
+
+            from zoneinfo import ZoneInfo
+
+            tz_map = {
+                "CET": ZoneInfo("Europe/Brussels"),
+                "CEST": ZoneInfo("Europe/Brussels")
+            }
+
+            tz = tz_map.get(timezone_str.upper(), ZoneInfo("Europe/Brussels"))
 
             if not date_match or not time_match:
                 print("⚠️ Date of time match mislukt.")
@@ -120,7 +137,7 @@ class EmbedReminderWatcher(commands.Cog):
             hour = int(time_match.group(1))
             minute = int(time_match.group(2))
 
-            dt = datetime(year, month, day, hour, minute)
+            dt = datetime(year, month, day, hour, minute, tzinfo=tz)
 
             return {
                 "datetime": dt,
