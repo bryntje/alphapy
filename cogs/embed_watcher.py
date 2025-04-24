@@ -70,6 +70,7 @@ class EmbedReminderWatcher(commands.Cog):
         date_line = None
         time_line = None
         location_line = None
+        days_line = None
 
         # Eerst proberen uit embed.fields te halen
         all_text = embed.description or ""
@@ -77,12 +78,14 @@ class EmbedReminderWatcher(commands.Cog):
             all_text += f"\n{field.name}\n{field.value}"
 
         for line in all_text.split('\n'):
-            if "date" in line.lower():
+            if "date:" in line.lower():
                 date_line = line
-            elif "time" in line.lower():
+            elif "time:" in line.lower():
                 time_line = line
-            elif "location" in line.lower():
+            elif "location:" in line.lower():
                 location_line = line
+            elif "days:" in line.lower():
+                days_line = line
 
         # Als fields niet bestaan, fallback naar description (legacy)
         if not date_line or not time_line:
@@ -93,6 +96,8 @@ class EmbedReminderWatcher(commands.Cog):
                     time_line = line.split(":", 1)[1].strip()
                 elif line.lower().startswith("location:"):
                     location_line = line.split(":", 1)[1].strip()
+                elif line.lower().startswith("days:"):
+                    days_line = line.split(":", 1)[1].strip()
 
         if not date_line or not time_line:
             print("⚠️ Date of time niet gevonden in embed.")
@@ -103,26 +108,21 @@ class EmbedReminderWatcher(commands.Cog):
             date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
             time_match = re.search(r"(\d{1,2})[:.](\d{2})(?:\s*(CEST|CET))?", time_line)
 
-            if not time_match:
-                print("⚠️ Time regex faalde")
+            if not date_match or not time_match:
+                print("⚠️ Date of time match mislukt.")
                 return None
 
+            # Extract and prepare time info
             hour = int(time_match.group(1))
             minute = int(time_match.group(2))
             timezone_str = time_match.group(3) or "CET"
 
             from zoneinfo import ZoneInfo
-
             tz_map = {
                 "CET": ZoneInfo("Europe/Brussels"),
                 "CEST": ZoneInfo("Europe/Brussels")
             }
-
             tz = tz_map.get(timezone_str.upper(), ZoneInfo("Europe/Brussels"))
-
-            if not date_match or not time_match:
-                print("⚠️ Date of time match mislukt.")
-                return None
 
             day, month_str, year = date_match.groups()
             day = int(day)
@@ -139,18 +139,49 @@ class EmbedReminderWatcher(commands.Cog):
 
             dt = datetime(year, month, day, hour, minute, tzinfo=tz)
 
+            
+            # Final boss: Days line parsing
+            days_str = "-"
+            if days_line:
+                days_val = days_line.split(":", 1)[1].strip().lower()
+                if any(word in days_val for word in ["daily", "dagelijks"]):
+                    days_str = "0,1,2,3,4,5,6"
+                elif "weekdays" in days_val:
+                    days_str = "0,1,2,3,4"
+                elif "weekends" in days_val:
+                    days_str = "5,6"
+                else:
+                    day_map = {
+                        "monday": "0", "maandag": "0",
+                        "tuesday": "1", "dinsdag": "1",
+                        "wednesday": "2", "woensdag": "2",
+                        "thursday": "3", "donderdag": "3",
+                        "friday": "4", "vrijdag": "4",
+                        "saturday": "5", "zaterdag": "5",
+                        "sunday": "6", "zondag": "6"
+                    }
+                    found_days = []
+                    for word in re.split(r",\s*|\s+", days_val):
+                        if word in day_map:
+                            found_days.append(day_map[word])
+                    if found_days:
+                        days_str = ",".join(sorted(set(found_days)))
+            else:
+                days_str = str(dt.weekday())  # Enkel de weekday waarop het valt
+
             return {
                 "datetime": dt,
-                "reminder_time": dt - timedelta(minutes=60),  # 60 min op voorhand
+                "reminder_time": dt - timedelta(minutes=60),  # 30 min op voorhand
                 "location": location_line or "-",
                 "title": embed.title or "-",
-                "description": embed.description or "-"
-
+                "description": embed.description or "-",
+                "days": days_str or "-"
             }
 
         except Exception as e:
             print(f"❌ Parse error: {e}")
             return None
+
 
 
     async def store_parsed_reminder(self, parsed, channel, created_by):
