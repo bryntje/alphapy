@@ -110,7 +110,7 @@ class EmbedReminderWatcher(commands.Cog):
 
         try:
 
-            if not time_match or (not date_match and not days_line):
+            if not time_match or (not date_match and not days_str):
                 print("⚠️ Vereist: Time én minstens één van Date of Days.")
                 return None
             
