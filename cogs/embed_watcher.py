@@ -109,10 +109,6 @@ class EmbedReminderWatcher(commands.Cog):
             date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
             time_match = re.search(r"(\d{1,2})[:.](\d{2})(?:\s*(CEST|CET))?", time_line)
 
-            if not date_match or not time_match:
-                print("⚠️ Date of time match mislukt.")
-                return None
-
             # Extract and prepare time info
             hour = int(time_match.group(1))
             minute = int(time_match.group(2))
