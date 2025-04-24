@@ -35,7 +35,7 @@ class EmbedReminderWatcher(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         print("[🐍] Message ontvangen:", message.content)
-        ANNOUNCEMENTS_CHANNEL_ID = 1336038676727206030  # <-- pas aan!
+        ANNOUNCEMENTS_CHANNEL_ID = 1160511692824924216  # <-- pas aan!
 
         if message.channel.id != ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
             print("[📣] Kanaal ID:", message.channel.id)
@@ -71,6 +71,9 @@ class EmbedReminderWatcher(commands.Cog):
         time_line = None
         location_line = None
         days_line = None
+        date_match = None
+        time_match = None
+
 
         # Eerst proberen uit embed.fields te halen
         all_text = embed.description or ""
