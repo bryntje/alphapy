@@ -110,8 +110,8 @@ class EmbedReminderWatcher(commands.Cog):
 
         try:            
             # Parse date & time
-            date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
-            time_match = re.search(r"(\d{1,2})[:.](\d{2})(?:\s*(CEST|CET))?", time_line)
+            date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line) if date_line else None
+            time_match = re.search(r"(\d{1,2})[:.](\d{2})(?:\s*(CEST|CET))?", time_line) if time_line else None
 
             # Extract and prepare time info
             hour = int(time_match.group(1))
