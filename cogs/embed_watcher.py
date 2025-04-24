@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import re
 from datetime import datetime, timedelta
@@ -63,39 +64,48 @@ class EmbedReminderWatcher(commands.Cog):
                 await self.store_parsed_reminder(parsed, message.channel, message.author.id)
 
     def parse_embed_for_reminder(self, embed):
-        date_line = None
-        time_line = None
-        location_line = None
-
-        for field in embed.description.split('\n'):
-            if "Date:" in field:
-                date_line = field
-            elif "Time:" in field:
-                time_line = field
-            elif "Location:" in field:
-                location_line = field
-
-        if not date_line or not time_line:
-            return None  # noodzakelijke info ontbreekt
-
-        # Date: Wednesday, 3rd April 2025
-        date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)? ([A-Za-z]+)(?: (\d{4}))?", date_line)
-        time_match = re.search(r"(\d{1,2}[:.]\d{2})", time_line)
-
-        if not date_match or not time_match:
-            return None
-
-        day, month, year = date_match.groups()
-        year = year or str(datetime.now().year)
-        full_str = f"{day} {month} {year} {time_match.group(1).replace('.', ':')}"
-
         try:
+            content = f"{embed.title}\n{embed.description}"
+
+            # 🔍 Date: Wednesday, 3rd April 2025
+            date_match = re.search(
+                r"Date:\s*(?:\w+day,\s*)?(\d{1,2})(?:st|nd|rd|th)?\s+([A-Z][a-z]+)(?:\s+(\d{4}))?",
+                content
+            )
+
+            # ⏰ Time: 19:30 of Doors open: 19:30
+            time_match = re.search(
+                r"(?:Time|Doors open):\s*(\d{1,2}[:.]\d{2})",
+                content
+            )
+
+            # 📍 Location: Trade Café, etc.
+            location_match = re.search(
+                r"Location:\s*(.+)",
+                content
+            )
+
+            if not date_match or not time_match:
+                print("⚠️  Date of time niet gevonden in embed.")
+                return None
+
+            day, month, year = date_match.groups()
+            year = year or str(datetime.now().year)
+            time_str = time_match.group(1).replace('.', ':')
+            full_str = f"{day} {month} {year} {time_str}"
+
             dt = datetime.strptime(full_str, "%d %B %Y %H:%M")
-            return {
+            reminder_time = dt.replace(minute=max(0, dt.minute - 30))
+
+            parsed = {
                 "datetime": dt,
-                "reminder_time": dt.replace(minute=max(0, dt.minute - 60)),  # vb: 30 min op voorhand
-                "location": location_line.replace("Location:", "").strip() if location_line else None
+                "reminder_time": reminder_time,
+                "location": location_match.group(1).strip() if location_match else None
             }
+
+            print(f"🔍 Parsed embed: {parsed}")
+            return parsed
+
         except Exception as e:
             print(f"❌ Parse error: {e}")
             return None
@@ -139,7 +149,28 @@ class EmbedReminderWatcher(commands.Cog):
         except Exception as e:
             print(f"[ERROR] Reminder insert failed: {e}")
 
+    @app_commands.command(name="debug_parse_embed", description="Parse de laatste embed in het kanaal voor test.")
+    async def debug_parse_embed(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        messages = [m async for m in interaction.channel.history(limit=10)]
 
+        for msg in messages:
+            if msg.embeds:
+                embed = msg.embeds[0]
+                parsed = self.parse_embed_for_reminder(embed)
+                if parsed:
+                    response = (
+                        f"🧠 **Parsed data:**\n"
+                        f"📅 Datum: `{parsed['datetime']}`\n"
+                        f"⏰ Reminder Time: `{parsed['reminder_time']}`\n"
+                        f"📍 Locatie: `{parsed.get('location', '-')}`"
+                    )
+                    await interaction.followup.send(response)
+                else:
+                    await interaction.followup.send("❌ Kon embed niet parsen.")
+                return
+
+        await interaction.followup.send("⚠️ Geen embed gevonden in de laatste 10 berichten.")
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)
