@@ -150,7 +150,7 @@ class EmbedReminderWatcher(commands.Cog):
 
             
             # Final boss: Days line parsing
-            days_str = "-"
+            days_str = None
             if days_line:
                 days_val = days_line.lower()
                 days_val = re.sub(r"daily\s*:\s*", "", days_val).strip()
