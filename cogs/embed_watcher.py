@@ -77,11 +77,11 @@ class EmbedReminderWatcher(commands.Cog):
             all_text += f"\n{field.name}\n{field.value}"
 
         for line in all_text.split('\n'):
-            if "date:" in line.lower():
+            if "date" in line.lower():
                 date_line = line
-            elif "time:" in line.lower():
+            elif "time" in line.lower():
                 time_line = line
-            elif "location:" in line.lower():
+            elif "location" in line.lower():
                 location_line = line
 
         # Als fields niet bestaan, fallback naar description (legacy)
