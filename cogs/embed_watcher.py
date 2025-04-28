@@ -34,7 +34,6 @@ class EmbedReminderWatcher(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        print("[🐍] Message ontvangen:", message.content)
         ANNOUNCEMENTS_CHANNEL_ID = 1336038676727206030  # <-- pas aan!
 
         if message.channel.id != ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
@@ -43,11 +42,9 @@ class EmbedReminderWatcher(commands.Cog):
 
         embed = message.embeds[0]
         parsed = self.parse_embed_for_reminder(embed)
-        print("[🔍] Parsed:", parsed)
 
         if parsed and parsed["reminder_time"]:
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
-            print("[🪵] Log channel:", log_channel)
             if log_channel:
                 await log_channel.send(
                     f"🔔 Auto-reminder detected:\n"
@@ -101,11 +98,6 @@ class EmbedReminderWatcher(commands.Cog):
                     location_line = line.split(":", 1)[1].strip()
                 elif line.lower().startswith("days:"):
                     days_line = line.split(":", 1)[1].strip()
-
-        print(f"🧪 DEBUG - date_line: {date_line}")
-        print(f"🧪 DEBUG - time_line: {time_line}")
-        print(f"🧪 DEBUG - days_line: {days_line}")
-        print(f"🧪 DEBUG - description: {embed.description}")
 
 
         try:            
@@ -201,8 +193,6 @@ class EmbedReminderWatcher(commands.Cog):
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
         location = parsed.get("location", "-")
-        print("[DEBUG] Attempting to store reminder:", name)
-        print("DB conn:", self.conn)
 
         try:
             await self.conn.execute(
@@ -215,7 +205,6 @@ class EmbedReminderWatcher(commands.Cog):
                 str(created_by),
                 location
             )
-            print("✅ Reminder opgeslagen in DB")
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
             print("[🪵] Log channel:", log_channel)
             if log_channel:
