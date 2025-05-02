@@ -127,15 +127,12 @@ class ReminderCog(commands.Cog):
             print("⛔ Database connection not ready.")
             return
 
-        day_map = {
-            "Mon": "ma", "Tue": "di", "Wed": "wo",
-            "Thu": "do", "Fri": "vr", "Sat": "za", "Sun": "zo"
-        }
+        
 
         tz = pytz.timezone("Europe/Brussels")
         now = datetime.now(tz).replace(second=0, microsecond=0)
         current_time_str = now.strftime("%H:%M:%S")
-        current_day = day_map[now.strftime("%a")]
+        current_day = str(now.weekday())
 
         try:
             rows = await self.conn.fetch("""
