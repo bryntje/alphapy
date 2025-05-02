@@ -42,6 +42,9 @@ class EmbedReminderWatcher(commands.Cog):
 
         embed = message.embeds[0]
         parsed = self.parse_embed_for_reminder(embed)
+        print("[🐛] Parsed result:", parsed)
+        print("[🐛] DB connection aanwezig?", self.conn is not None)
+
 
         if parsed and parsed["reminder_time"]:
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
