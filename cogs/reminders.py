@@ -8,6 +8,7 @@ import config
 import pytz
 import re
 from datetime import timedelta
+from utils.checks_interaction import is_owner_or_admin_interaction
 
 
 class ReminderCog(commands.Cog):
@@ -52,34 +53,43 @@ class ReminderCog(commands.Cog):
     async def reminder_list(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         channel_id = interaction.channel.id
-    
+        is_admin = interaction.user.guild_permissions.administrator
+
         await interaction.response.defer(ephemeral=True)
-    
-        query = """
-            SELECT id, name, time, days 
-            FROM reminders
-            WHERE created_by = $1 OR channel_id = $2
-            ORDER BY time;
-        """
+
+        is_admin = await is_owner_or_admin_interaction(interaction)
+
+        if is_admin:
+            query = "SELECT id, name, time, days FROM reminders ORDER BY time;"
+            params = []
+        else:
+            query = """
+                SELECT id, name, time, days FROM reminders
+                WHERE created_by = $1 OR channel_id = $2
+                ORDER BY time;
+            """
+            params = [user_id, channel_id]
+
         try:
-            rows = await self.conn.fetch(query, user_id, channel_id)
-            print(f"🔍 Fetched {len(rows)} reminders for user {user_id} in channel {channel_id}")
-    
+            rows = await self.conn.fetch(query, *params)
+            print(f"🔍 Fetched {len(rows)} reminders ({'admin' if is_admin else 'user'})")
+
             if not rows:
                 await interaction.followup.send("❌ Geen reminders gevonden.")
                 return
-    
+
             msg_lines = [f"📋 **Actieve Reminders:**"]
             for row in rows:
                 days_str = ", ".join(row["days"])
-                time_str = row["time"].strftime("%H:%M")
+                time_str = row["time"].strftime("%H:%M") if row["time"] else "⛔"
                 msg_lines.append(
                     f"🔹 **{row['name']}** — ⏰ `{time_str}` op `{days_str}` (ID: `{row['id']}`)"
                 )
-    
+
             await interaction.followup.send("\n".join(msg_lines))
         except Exception as e:
             await interaction.followup.send(f"⚠️ Fout bij ophalen reminders: `{e}`")
+
 
 
     @app_commands.command(name="reminder_delete", description="🗑️ Verwijder een reminder via ID")
