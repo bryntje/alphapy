@@ -166,6 +166,7 @@ class ReminderCog(commands.Cog):
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
                     link = f"https://discord.com/channels/{config.GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
                     embed.add_field(name="🔗 Original Message", value=f"[Click here to view]({link})", inline=False)
+                embed.set_footer(text="auto-reminder")
 
                 await channel.send(content="@everyone", embed=embed)
 

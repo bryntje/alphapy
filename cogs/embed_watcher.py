@@ -35,12 +35,18 @@ class EmbedReminderWatcher(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         ANNOUNCEMENTS_CHANNEL_ID = 1160511692824924216  # <-- pas aan!
+        
 
         if message.channel.id != ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
             print("[📣] Kanaal ID:", message.channel.id)
             return
 
         embed = message.embeds[0]
+        # ⛔️ Skip reminders die de bot zelf al gepost heeft (om loops te vermijden)
+        if embed.footer and embed.footer.text == "auto-reminder":
+            print("[🔁] Embed genegeerd (auto-reminder tag gevonden)")
+            return
+
         parsed = self.parse_embed_for_reminder(embed)
         print("[🐛] Parsed result:", parsed)
         print("[🐛] DB connection aanwezig?", self.conn is not None)
