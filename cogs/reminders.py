@@ -10,6 +10,7 @@ import re
 from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
 from typing import Optional
+from config import GUILD_ID
 
 
 
@@ -119,36 +120,54 @@ class ReminderCog(commands.Cog):
         ]
 
 
-
-
     @tasks.loop(seconds=60)
     async def check_reminders(self):
         if not self.conn:
             print("⛔ Database connection not ready.")
             return
 
-        
-
         tz = pytz.timezone("Europe/Brussels")
         now = datetime.now(tz).replace(second=0, microsecond=0)
         current_time_str = now.strftime("%H:%M:%S")
-        current_day = str(now.weekday())
+        current_day = str(now.weekday())  # maandag = 0, zondag = 6
+
+        print(f"🔁 Reminder check: {current_time_str} op dag {current_day}")
 
         try:
             rows = await self.conn.fetch("""
-                SELECT id, channel_id, name, message
+                SELECT id, channel_id, name, message, location,
+                       origin_channel_id, origin_message_id
                 FROM reminders
                 WHERE time::text = $1 AND $2 = ANY(days)
             """, current_time_str, current_day)
 
             for row in rows:
                 channel = self.bot.get_channel(int(row["channel_id"]))
-                if channel:
-                    await channel.send(f"⏰ Reminder **{row['name']}**: {row['message']}")
-                else:
+                if not channel:
                     print(f"⚠️ Kanaal {row['channel_id']} niet gevonden.")
+                    continue
+
+                msg_parts = [
+                    f"⏰ **Reminder: {row['name']}**",
+                    f"🗓️ Datum: {now.strftime('%A %d %B %Y')}",
+                    f"⏰ Tijd: {now.strftime('%H:%M')}"
+                ]
+
+                if row.get("location") and row["location"] != "-":
+                    msg_parts.append(f"📍 Locatie: {row['location']}")
+
+                if row.get("message"):
+                    msg_parts.append(f"📄 {row['message']}")
+
+                if row.get("origin_channel_id") and row.get("origin_message_id"):
+                    link = f"https://discord.com/channels/{GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
+                    msg_parts.append(f"🔗 [Origineel bericht]({link})")
+
+                await channel.send("\n".join(msg_parts))
+
         except Exception as e:
             print("🚨 Reminder loop error:", e)
+
 
 
 async def setup(bot):

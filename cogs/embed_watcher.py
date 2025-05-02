@@ -189,7 +189,7 @@ class EmbedReminderWatcher(commands.Cog):
 
 
 
-    async def store_parsed_reminder(self, parsed, channel, created_by):
+    async def store_parsed_reminder(self, parsed, channel, created_by, origin_channel_id=None, origin_message_id=None):
         dt = parsed["datetime"]
         time_obj = dt.time()
         weekday_str = str(dt.weekday())
@@ -199,7 +199,7 @@ class EmbedReminderWatcher(commands.Cog):
 
         try:
             await self.conn.execute(
-                "INSERT INTO reminders (name, channel_id, time, days, message, created_by, location) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                "INSERT INTO reminders (name, channel_id, time, days, message, created_by, location, origin_channel_id, origin_message_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
                 name,
                 channel,
                 time_obj,
@@ -207,6 +207,8 @@ class EmbedReminderWatcher(commands.Cog):
                 message,
                 created_by,
                 location
+                origin_channel_id,
+                origin_message_id
             )
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
             print("[🪵] Log channel:", log_channel)
