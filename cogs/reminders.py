@@ -148,24 +148,26 @@ class ReminderCog(commands.Cog):
                     continue
 
                 from discord import Embed
+                dt = now  # datetime object van de geplande reminder
+                datum_str = dt.strftime("%A %d %B %Y")  # e.g., Saturday 03 May 2025
+                tijd_str = dt.strftime("%H:%M")
+
                 embed = Embed(
                     title=f"⏰ Reminder: {row['name']}",
                     description=row.get("message", ""),
                     color=0x00ff99
                 )
-
-                embed.add_field(name="📅 Datum", value=now.strftime("%A %d %B %Y"), inline=False)
-                embed.add_field(name="⏰ Tijd", value=now.strftime("%H:%M"), inline=False)
+                embed.add_field(name="📅 Date", value=datum_str, inline=False)
+                embed.add_field(name="⏰ Time", value=tijd_str, inline=False)
 
                 if row.get("location") and row["location"] != "-":
-                    embed.add_field(name="📍 Locatie", value=row["location"], inline=False)
+                    embed.add_field(name="📍 Location", value=row["location"], inline=False)
 
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
                     link = f"https://discord.com/channels/{config.GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
-                    embed.add_field(name="🔗 Original message:", value=f"[Click here!]({link})", inline=False)
+                    embed.add_field(name="🔗 Original Message", value=f"[Click here to view]({link})", inline=False)
 
                 await channel.send(content="@everyone", embed=embed)
-
 
         except Exception as e:
             print("🚨 Reminder loop error:", e)
