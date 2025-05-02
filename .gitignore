@@ -8,3 +8,4 @@ config_local.py
 # Compiled Python files
 __pycache__/
 *.pyc
+.vscode/settings.json
