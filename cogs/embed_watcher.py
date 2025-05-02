@@ -34,7 +34,7 @@ class EmbedReminderWatcher(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        ANNOUNCEMENTS_CHANNEL_ID = 1336038676727206030  # <-- pas aan!
+        ANNOUNCEMENTS_CHANNEL_ID = 1160511692824924216  # <-- pas aan!
 
         if message.channel.id != ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
             print("[📣] Kanaal ID:", message.channel.id)
