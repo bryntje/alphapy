@@ -50,33 +50,37 @@ class ReminderCog(commands.Cog):
 
     @app_commands.command(name="reminder_list", description="📋 Bekijk je actieve reminders")
     async def reminder_list(self, interaction: discord.Interaction):
-        user_id = str(interaction.user.id)
-        channel_id = str(interaction.channel.id)
-
+        user_id = interaction.user.id
+        channel_id = interaction.channel.id
+    
         await interaction.response.defer(ephemeral=True)
-
+    
         query = """
-            SELECT id, name, time, days FROM reminders
+            SELECT id, name, time, days 
+            FROM reminders
             WHERE created_by = $1 OR channel_id = $2
             ORDER BY time;
         """
         try:
             rows = await self.conn.fetch(query, user_id, channel_id)
-
+            print(f"🔍 Fetched {len(rows)} reminders for user {user_id} in channel {channel_id}")
+    
             if not rows:
                 await interaction.followup.send("❌ Geen reminders gevonden.")
                 return
-
+    
             msg_lines = [f"📋 **Actieve Reminders:**"]
             for row in rows:
                 days_str = ", ".join(row["days"])
+                time_str = row["time"].strftime("%H:%M")
                 msg_lines.append(
-                    f"🔹 **{row['name']}** — ⏰ {row['time']} op `{days_str}` (ID: {row['id']})"
+                    f"🔹 **{row['name']}** — ⏰ `{time_str}` op `{days_str}` (ID: `{row['id']}`)"
                 )
-
+    
             await interaction.followup.send("\n".join(msg_lines))
         except Exception as e:
-            await interaction.followup.send(f"⚠️ Fout bij ophalen reminders: {e}")
+            await interaction.followup.send(f"⚠️ Fout bij ophalen reminders: `{e}`")
+
 
     @app_commands.command(name="reminder_delete", description="🗑️ Verwijder een reminder via ID")
     @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
@@ -111,32 +115,29 @@ class ReminderCog(commands.Cog):
             print("⛔ Database connection not ready.")
             return
 
-        # Mapping van NL naar EN dagafkortingen
         day_map = {
             "Mon": "ma", "Tue": "di", "Wed": "wo",
             "Thu": "do", "Fri": "vr", "Sat": "za", "Sun": "zo"
         }
 
         tz = pytz.timezone("Europe/Brussels")
-        now = datetime.now(tz)
-        current_time = now.time().replace(second=0, microsecond=0)
+        now = datetime.now(tz).replace(second=0, microsecond=0)
+        current_time_str = now.strftime("%H:%M:%S")
         current_day = day_map[now.strftime("%a")]
 
-
-        query = """
-            SELECT id, channel_id, name, message
-            FROM reminders
-            WHERE time = $1 AND $2 = ANY(days)
-        """
-
         try:
-            rows = await self.conn.fetch(query, current_time, current_day)
+            rows = await self.conn.fetch("""
+                SELECT id, channel_id, name, message
+                FROM reminders
+                WHERE time::text = $1 AND $2 = ANY(days)
+            """, current_time_str, current_day)
+
             for row in rows:
                 channel = self.bot.get_channel(int(row["channel_id"]))
                 if channel:
                     await channel.send(f"⏰ Reminder **{row['name']}**: {row['message']}")
-                # (Optioneel) verwijder reminder of update status
-                # await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
+                else:
+                    print(f"⚠️ Kanaal {row['channel_id']} niet gevonden.")
         except Exception as e:
             print("🚨 Reminder loop error:", e)
 
