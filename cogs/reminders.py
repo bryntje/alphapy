@@ -147,23 +147,25 @@ class ReminderCog(commands.Cog):
                     print(f"⚠️ Kanaal {row['channel_id']} niet gevonden.")
                     continue
 
-                msg_parts = [
-                    f"⏰ **Reminder: {row['name']}**",
-                    f"🗓️ Datum: {now.strftime('%A %d %B %Y')}",
-                    f"⏰ Tijd: {now.strftime('%H:%M')}"
-                ]
+                from discord import Embed
+                embed = Embed(
+                    title=f"⏰ Reminder: {row['name']}",
+                    description=row.get("message", ""),
+                    color=0x00ff99
+                )
+
+                embed.add_field(name="📅 Datum", value=now.strftime("%A %d %B %Y"), inline=False)
+                embed.add_field(name="⏰ Tijd", value=now.strftime("%H:%M"), inline=False)
 
                 if row.get("location") and row["location"] != "-":
-                    msg_parts.append(f"📍 Locatie: {row['location']}")
-
-                if row.get("message"):
-                    msg_parts.append(f"📄 {row['message']}")
+                    embed.add_field(name="📍 Locatie", value=row["location"], inline=False)
 
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
-                    link = f"https://discord.com/channels/{GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
-                    msg_parts.append(f"🔗 [Origineel bericht]({link})")
+                    link = f"https://discord.com/channels/{config.GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
+                    embed.add_field(name="🔗 Original message:", value=f"[Click here!]({link})", inline=False)
 
-                await channel.send("\n".join(msg_parts))
+                await channel.send(content="@everyone", embed=embed)
+
 
         except Exception as e:
             print("🚨 Reminder loop error:", e)
