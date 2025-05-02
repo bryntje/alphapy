@@ -9,12 +9,14 @@ import pytz
 import re
 from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
+from typing import Optional
+
 
 
 class ReminderCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.conn: asyncpg.Connection = None
+        self.conn: Optional[asyncpg.Connection] = None
         self.bot.loop.create_task(self.setup())
 
     async def setup(self):
