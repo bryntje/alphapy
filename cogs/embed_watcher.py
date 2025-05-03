@@ -202,10 +202,11 @@ class EmbedReminderWatcher(commands.Cog):
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
         location = parsed.get("location", "-")
+        event_time = dt
 
         try:
             await self.conn.execute(
-                "INSERT INTO reminders (name, channel_id, time, days, message, created_by, location, origin_channel_id, origin_message_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                "INSERT INTO reminders (name, channel_id, time, days, message, created_by, location, origin_channel_id, origin_message_id, event_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
                 name,
                 channel,
                 time_obj,
@@ -214,7 +215,8 @@ class EmbedReminderWatcher(commands.Cog):
                 created_by,
                 location,
                 origin_channel_id,
-                origin_message_id
+                origin_message_id,
+                event_time
             )
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
             print("[🪵] Log channel:", log_channel)
