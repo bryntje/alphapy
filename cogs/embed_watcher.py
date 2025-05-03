@@ -202,7 +202,7 @@ class EmbedReminderWatcher(commands.Cog):
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
         location = parsed.get("location", "-")
-        event_time = dt
+        event_time = dt.replace(tzinfo=None)
 
         try:
             await self.conn.execute(
