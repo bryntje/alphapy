@@ -152,23 +152,31 @@ class ReminderCog(commands.Cog):
                 datum_str = dt.strftime("%A %d %B %Y")  # e.g., Saturday 03 May 2025
                 tijd_str = dt.strftime("%H:%M")
 
+                
+
                 embed = Embed(
                     title=f"⏰ Reminder: {row['name']}",
-                    description=row.get("message", ""),
-                    color=0x00ff99
+                    description=row['message'] or "-",
+                    color=0x2ecc71
                 )
-                embed.add_field(name="📅 Date", value=datum_str, inline=False)
-                embed.add_field(name="⏰ Time", value=tijd_str, inline=False)
-
+                
+                # Datum & Tijd van event
+                event_dt = row['event_time']  # Dit is parsed['datetime'] bij opslag
+                embed.add_field(name="📅 Date", value=event_dt.strftime("%A %d %B %Y"), inline=False)
+                embed.add_field(name="⏰ Time", value=event_dt.strftime("%H:%M"), inline=False)
+                
+                # Locatie
                 if row.get("location") and row["location"] != "-":
                     embed.add_field(name="📍 Location", value=row["location"], inline=False)
-
+                
+                # Link naar origineel bericht
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
                     link = f"https://discord.com/channels/{config.GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
-                    embed.add_field(name="🔗 Original Message", value=f"[Click here to view]({link})", inline=False)
-                embed.set_footer(text="auto-reminder")
+                    embed.add_field(name="🔗 Origineel", value=f"[Klik hier]({link})", inline=False)
+                
+                # Verstuur met mention buiten embed
+                await channel.send("@everyone", embed=embed)
 
-                await channel.send(content="@everyone", embed=embed)
 
         except Exception as e:
             print("🚨 Reminder loop error:", e)
