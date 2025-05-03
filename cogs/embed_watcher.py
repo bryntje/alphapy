@@ -197,7 +197,7 @@ class EmbedReminderWatcher(commands.Cog):
 
     async def store_parsed_reminder(self, parsed, channel, created_by, origin_channel_id=None, origin_message_id=None):
         dt = parsed["datetime"]
-        time_obj = dt.time()
+        time_obj = parsed["reminder_time"].time()
         weekday_str = str(dt.weekday())
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
