@@ -189,6 +189,52 @@ class ReminderCog(commands.Cog):
         except Exception as e:
             print("🚨 Reminder loop error:", e)
 
+# 👇 Voor extern gebruik via FastAPI
+async def get_reminders_for_user(conn, user_id: str):
+    query = """
+        SELECT id, name, time, days, message, channel_id
+        FROM reminders
+        WHERE created_by = $1
+        ORDER BY time
+    """
+    return await conn.fetch(query, user_id)
+
+async def create_reminder(conn, data: dict):
+    await conn.execute(
+        """
+        INSERT INTO reminders (name, channel_id, time, days, message, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        """,
+        data["name"],
+        str(data["channel_id"]),
+        data["time"],
+        data["days"],
+        data["message"],
+        data["user_id"]
+    )
+
+async def update_reminder(conn, data: dict):
+    await conn.execute(
+        """
+        UPDATE reminders
+        SET name = $1, time = $2, days = $3, message = $4
+        WHERE id = $5 AND created_by = $6
+        """,
+        data["name"],
+        data["time"],
+        data["days"],
+        data["message"],
+        data["id"],
+        data["user_id"]
+    )
+
+async def delete_reminder(conn, reminder_id: int, user_id: str):
+    await conn.execute(
+        "DELETE FROM reminders WHERE id = $1 AND created_by = $2",
+        reminder_id,
+        user_id
+    )
+
 
 
 async def setup(bot):
