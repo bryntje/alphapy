@@ -68,28 +68,28 @@ class Reminder(BaseModel):
     # recurrence: Literal["once", "daily", "weekly"] # Optional if implemented
 
 # 🟢 GET reminders (eigen + global)
-@app.get("/api/reminders/{user_id}", response_model=List[Reminder])
+@app.get("/reminders/{user_id}", response_model=List[Reminder])
 async def get_user_reminders(user_id: str):
     global db_conn
     rows = await get_reminders_for_user(db_conn, user_id)
     return [dict(r) for r in rows]
 
 # 🟡 POST nieuw reminder
-@app.post("/api/reminders")
+@app.post("/reminders")
 async def add_reminder(reminder: Reminder):
     global db_conn
     await create_reminder(db_conn, reminder.dict())
     return {"success": True}
 
 # 🟠 PUT update reminder
-@app.put("/api/reminders")
+@app.put("/reminders")
 async def edit_reminder(reminder: Reminder):
     global db_conn
     await update_reminder(db_conn, reminder.dict())
     return {"success": True}
 
 # 🔴 DELETE reminder
-@app.delete("/api/reminders/{reminder_id}/{created_by}")
+@app.delete("/reminders/{reminder_id}/{created_by}")
 async def remove_reminder(reminder_id: str, created_by: str):
     global db_conn
     await delete_reminder(db_conn, int(reminder_id), created_by)
