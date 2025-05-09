@@ -20,7 +20,7 @@ db_conn = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_conn
-    db_conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
+    db_conn = await asyncpg.connect(config.DATABASE_URL)
     print("✅ DB connected")
     yield
     await db_conn.close()
