@@ -129,17 +129,22 @@ class ReminderCog(commands.Cog):
         tz = pytz.timezone("Europe/Brussels")
         now = datetime.now(tz).replace(second=0, microsecond=0)
         current_time_str = now.strftime("%H:%M:%S")
-        current_day = str(now.weekday())  # maandag = 0, zondag = 6
+        current_day = str(now.weekday())
+        current_date = now.date()
 
         print(f"🔁 Reminder check: {current_time_str} op dag {current_day}")
 
         try:
             rows = await self.conn.fetch("""
                 SELECT id, channel_id, name, message, location,
-                       origin_channel_id, origin_message_id, event_time
+                       origin_channel_id, origin_message_id, event_time, days
                 FROM reminders
-                WHERE time::text = $1 AND $2 = ANY(days)
-            """, current_time_str, current_day)
+                WHERE time::text = $1 AND (
+                    (event_time IS NOT NULL AND event_time::date = $2)
+                    OR
+                    ($3 = ANY(days))
+                )
+            """, current_time_str, current_date , current_day)
 
             for row in rows:
                 channel = self.bot.get_channel(int(row["channel_id"]))
@@ -176,7 +181,10 @@ class ReminderCog(commands.Cog):
                 
                 # Verstuur met mention buiten embed
                 await channel.send("@everyone", embed=embed)
-
+                # Als het een eenmalige reminder was (event_time bestaat), verwijder hem
+                if row.get("event_time"):
+                    await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
+                    print(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na verzenden.")
 
         except Exception as e:
             print("🚨 Reminder loop error:", e)
