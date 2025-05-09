@@ -60,14 +60,13 @@ if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
 
 class Reminder(BaseModel):
-    id: str
-    user_id: str
+    id: int
     name: str
-    time: str  # "HH:MM"
+    time: str  # of `datetime.time` als je deze exact gebruikt
     days: List[str]
     message: str
-    channel_id: str
-    # recurrence: Literal["once", "daily", "weekly"] # Optional if implemented
+    channel_id: int
+    user_id: str  # ← belangrijk: moet overeenkomen met je response (created_by)
 
 # 🟢 GET reminders (eigen + global)
 @router.get("/reminders/{user_id}", response_model=List[Reminder])
@@ -75,7 +74,19 @@ async def get_user_reminders(user_id: str):
     global db_conn
     try:
         rows = await get_reminders_for_user(db_conn, int(user_id))
-        return rows  # ✅ must be a list, not None or dict
+        return [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "time": r["time"].strftime("%H:%M"),  # als datetime.time
+                "days": r["days"],
+                "message": r["message"],
+                "channel_id": r["channel_id"],
+                "user_id": str(r["created_by"]),  # expliciet hernoemen
+            }
+            for r in rows
+        ]
+  # ✅ must be a list, not None or dict
     except Exception as e:
         print("[ERROR] Failed to get reminders:", e)
         return []  # ✅ default to empty list on error
