@@ -112,9 +112,12 @@ class EmbedReminderWatcher(commands.Cog):
         try:            
             # Parse date & time
             date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line) if date_line else None
-            time_match = re.search(r"(\d{1,2})[:.](\d{2})(?:\s*(CEST|CET))?", time_line) if time_line else None
+            time_match = re.search(r"^.*?(\d{1,2})[:.](\d{2})(?:\s*(CET|CEST))?.*$", time_line) if time_line else None
 
             # Extract and prepare time info
+            if not time_match:
+                print(f"❌ Geen geldige tijd gevonden in regel: {time_line}")
+                return None
             hour = int(time_match.group(1))
             minute = int(time_match.group(2))
             timezone_str = time_match.group(3) or "CET"
@@ -126,6 +129,10 @@ class EmbedReminderWatcher(commands.Cog):
             }
             tz = tz_map.get(timezone_str.upper(), ZoneInfo("Europe/Brussels"))
 
+            if not date_match and not days_line:
+                print(f"❌ Geen geldige datum of days gevonden. Date line: {date_line}")
+                return None
+            
             if date_match:
                 day, month_str, year = date_match.groups()
                 day = int(day)
