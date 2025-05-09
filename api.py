@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from typing import List
 import asyncpg
 import config
+import os
+from contextlib import asynccontextmanager
 
 from cogs.reminders import (
     get_reminders_for_user,
@@ -13,10 +15,18 @@ from cogs.reminders import (
     delete_reminder
 )
 
+db_conn = None
 
-
-
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global db_conn
+    db_conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
+    print("✅ DB connected")
+    yield
+    await db_conn.close()
+    print("🔌 DB connection closed")
+    
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # of specifieker: ["http://localhost:3000"]
@@ -57,30 +67,30 @@ class Reminder(BaseModel):
     channel_id: str
     # recurrence: Literal["once", "daily", "weekly"] # Optional if implemented
 
+# 🟢 GET reminders (eigen + global)
 @app.get("/api/reminders/{user_id}", response_model=List[Reminder])
 async def get_user_reminders(user_id: str):
-    conn = await asyncpg.connect(config.DATABASE_URL)
-    rows = await get_reminders_for_user(conn, user_id)
-    await conn.close()
+    global db_conn
+    rows = await get_reminders_for_user(db_conn, user_id)
     return [dict(r) for r in rows]
 
+# 🟡 POST nieuw reminder
 @app.post("/api/reminders")
 async def add_reminder(reminder: Reminder):
-    conn = await asyncpg.connect(config.DATABASE_URL)
-    await create_reminder(conn, reminder.dict())
-    await conn.close()
+    global db_conn
+    await create_reminder(db_conn, reminder.dict())
     return {"success": True}
 
+# 🟠 PUT update reminder
 @app.put("/api/reminders")
 async def edit_reminder(reminder: Reminder):
-    conn = await asyncpg.connect(config.DATABASE_URL)
-    await update_reminder(conn, reminder.dict())
-    await conn.close()
+    global db_conn
+    await update_reminder(db_conn, reminder.dict())
     return {"success": True}
 
-@app.delete("/api/reminders/{reminder_id}/{user_id}")
-async def remove_reminder(reminder_id: str, user_id: str):
-    conn = await asyncpg.connect(config.DATABASE_URL)
-    await delete_reminder(conn, int(reminder_id), user_id)
-    await conn.close()
+# 🔴 DELETE reminder
+@app.delete("/api/reminders/{reminder_id}/{created_by}")
+async def remove_reminder(reminder_id: str, created_by: str):
+    global db_conn
+    await delete_reminder(db_conn, int(reminder_id), created_by)
     return {"success": True}
