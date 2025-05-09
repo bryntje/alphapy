@@ -73,8 +73,12 @@ class Reminder(BaseModel):
 @router.get("/reminders/{user_id}", response_model=List[Reminder])
 async def get_user_reminders(user_id: str):
     global db_conn
-    rows = await get_reminders_for_user(db_conn, user_id)
-    return [dict(r) for r in rows]
+    try:
+        rows = await get_reminders_for_user(db_conn, int(user_id))
+        return rows  # ✅ must be a list, not None or dict
+    except Exception as e:
+        print("[ERROR] Failed to get reminders:", e)
+        return []  # ✅ default to empty list on error
 
 # 🟡 POST nieuw reminder
 @router.post("/reminders")
