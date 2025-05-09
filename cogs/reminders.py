@@ -136,7 +136,7 @@ class ReminderCog(commands.Cog):
         try:
             rows = await self.conn.fetch("""
                 SELECT id, channel_id, name, message, location,
-                       origin_channel_id, origin_message_id
+                       origin_channel_id, origin_message_id, event_time
                 FROM reminders
                 WHERE time::text = $1 AND $2 = ANY(days)
             """, current_time_str, current_day)
