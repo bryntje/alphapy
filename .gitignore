@@ -1,7 +1,11 @@
 .env
+config.py
+credentials/
+config_local.py
 # Log files
 *.log
 
 # Compiled Python files
 __pycache__/
 *.pyc
+.vscode/settings.json
