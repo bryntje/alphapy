@@ -2,7 +2,9 @@ name: Bot CI
 
 on:
   push:
-    branches: [dev]
+    branches: 
+      - master
+      - 'feature/**'
 
 jobs:
   test:
