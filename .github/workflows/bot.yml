@@ -5,7 +5,7 @@ on:
     branches: 
       - master
       - 'feature/**'
-      - dev
+      - 'dev/**'
 
 jobs:
   test:
