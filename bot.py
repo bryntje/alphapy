@@ -2,12 +2,22 @@ import discord
 import asyncio
 from discord.ext import commands
 from discord import app_commands
-from onboarding import Onboarding  # ✅ Import the Onboarding Cog
-from gdpr import GDPRView
-from logger import logger  # Import the logger
+from cogs.gdpr import GDPRView
+from utils.logger import logger
+from gpt.helpers import set_bot_instance
 
 
-import config
+try:
+    import config_local as config
+except ImportError:
+    import config
+
+from threading import Thread
+import uvicorn
+
+def start_api():
+    uvicorn.run("api:app", host="0.0.0.0", port=8000)
+
 
 # Intentions instellen
 intents = discord.Intents.default()
@@ -35,6 +45,10 @@ async def on_ready():
     
     bot.add_view(GDPRView())
 
+
+set_bot_instance(bot)
+
+
 @bot.event
 async def on_command_error(ctx, error):
     logger.error(f"⚠️ Error in command '{ctx.command}': {error}")
@@ -42,21 +56,31 @@ async def on_command_error(ctx, error):
 
 
 async def setup_hook():
-    await bot.load_extension("onboarding")
-    await bot.load_extension("reaction_roles")
-    await bot.load_extension("slash_commands")
-    await bot.load_extension("dataquery")
-    await bot.load_extension("reload_commands")
-    await bot.load_extension("gdpr")
-    await bot.load_extension("invite_leaderboard")
-    await bot.load_extension("clean")
-    await bot.load_extension("importdata")
-    await bot.load_extension("importinvite")
-    await bot.load_extension("migrate_gdpr")
+    await bot.load_extension("cogs.onboarding")
+    await bot.load_extension("cogs.reaction_roles")
+    await bot.load_extension("cogs.slash_utils")
+    await bot.load_extension("cogs.dataquery")
+    await bot.load_extension("cogs.reload_commands")
+    await bot.load_extension("cogs.gdpr")
+    await bot.load_extension("cogs.inviteboard")
+    await bot.load_extension("cogs.clean")
+    await bot.load_extension("cogs.importdata")
+    await bot.load_extension("cogs.importinvite")
+    await bot.load_extension("cogs.migrate_gdpr")
+    await bot.load_extension("cogs.lotquiz")
+    await bot.load_extension("cogs.leadership")
+    await bot.load_extension("cogs.status")
+    await bot.load_extension("cogs.growth")
+    await bot.load_extension("cogs.learn")
+    await bot.load_extension("cogs.contentgen")
+    await bot.load_extension("cogs.reminders")
+    await bot.load_extension("cogs.embed_watcher")
 
 
 
 bot.setup_hook = setup_hook
+Thread(target=start_api, daemon=True).start()
+
 
 # Bot starten
 bot.run(config.BOT_TOKEN)

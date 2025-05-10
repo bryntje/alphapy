@@ -1,3 +1,10 @@
 discord.py
 python-dotenv
 asyncpg
+openai>=1.0.0
+pydrive2
+PyMuPDF
+fastapi
+uvicorn
+pytz
+pytest>=7.0

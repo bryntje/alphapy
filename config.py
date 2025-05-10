@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()  # Laad variabelen uit .env bestand
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GUILD_ID = 1160511689263947796
 ROLE_ID = 1336043451489452144
 LOG_CHANNEL_ID = 1338611872299090092
@@ -12,8 +13,15 @@ RULES_CHANNEL_ID = 1336039005917155510
 GDPR_CHANNEL_ID = 1338623097175146638  # Vervang dit door het ID van het kanaal waar je het GDPR document wilt plaatsen
 INVITE_ANNOUNCEMENT_CHANNEL_ID = 1336041753966416026  # Vervang dit door het ID van het kanaal waar de invite-berichten moeten komen
 DATABASE_URL = "postgresql://postgres:quXqkifzMSGEtxJbQWCPZLjdiDKBBewZ@postgres.railway.internal:5432/railway"
+WATCHER_LOG_CHANNEL = 1336042713459593337
+# Local override
+try:
+    from config_local import *
+except ImportError:
+    pass
+
 
 
 # Admin And Owner
-OWNER_IDS = 367270193585455104
-ADMIN_ROLE_ID = 1160511689289125925 
+OWNER_IDS = [367270193585455104]
+ADMIN_ROLE_ID = [1160511689289125925]
