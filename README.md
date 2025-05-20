@@ -44,7 +44,7 @@ The bot is modular, scalable, and easy to expand — with clean architecture and
 1. **Clone the repository:**
 ```bash
 git clone https://github.com/bryntje/alphapy.git
-cd alphapips-bot
+cd alphapy
 ```
 
 2. **Install dependencies:**
