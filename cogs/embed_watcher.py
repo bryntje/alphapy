@@ -98,7 +98,7 @@ class EmbedReminderWatcher(commands.Cog):
 
         # Als fields niet bestaan, fallback naar description (legacy)
         if not date_line or not time_line:
-            for line in embed.description.split('\n'):
+            for line in (embed.description or "").split('\n'):
                 if line.lower().startswith("date:"):
                     date_line = line.split(":", 1)[1].strip()
                 elif line.lower().startswith("time:"):
