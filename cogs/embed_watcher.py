@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta
 import config
 import asyncpg
+from zoneinfo import ZoneInfo
 
 def extract_datetime_from_text(text):
     date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
@@ -70,135 +71,113 @@ class EmbedReminderWatcher(commands.Cog):
                 await self.store_parsed_reminder(parsed, int(message.channel.id), int(message.author.id))
 
     def parse_embed_for_reminder(self, embed):
-        import re
-        from datetime import datetime, timedelta
-
-        date_line = None
-        time_line = None
-        location_line = None
-        days_line = None
-        date_match = None
-        time_match = None
-
-
-        # Eerst proberen uit embed.fields te halen
         all_text = embed.description or ""
         for field in embed.fields:
             all_text += f"\n{field.name}\n{field.value}"
 
-        for line in all_text.split('\n'):
-            if "date:" in line.lower():
-                date_line = line
-            elif "time:" in line.lower():
-                time_line = line
-            elif "location:" in line.lower():
-                location_line = line
-            elif "days:" in line.lower():
-                days_line = line
+        lines = all_text.split('\n')
+        date_line, time_line, location_line, days_line = self.extract_fields_from_lines(lines)
 
-        # Als fields niet bestaan, fallback naar description (legacy)
-        if not date_line or not time_line:
-            for line in (embed.description or "").split('\n'):
-                if line.lower().startswith("date:"):
-                    date_line = line.split(":", 1)[1].strip()
-                elif line.lower().startswith("time:"):
-                    time_line = line.split(":", 1)[1].strip()
-                elif line.lower().startswith("location:"):
-                    location_line = line.split(":", 1)[1].strip()
-                elif line.lower().startswith("days:"):
-                    days_line = line.split(":", 1)[1].strip()
+        try:
+            dt, tz = self.parse_datetime(date_line, time_line)
+            days_str = self.parse_days(days_line, dt)
 
-
-        try:            
-            # Parse date & time
-            date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line) if date_line else None
-            time_match = re.search(r"^.*?(\d{1,2})[:.](\d{2})(?:\s*(CET|CEST))?.*$", time_line) if time_line else None
-
-            # Extract and prepare time info
-            if not time_match:
-                print(f"❌ Geen geldige tijd gevonden in regel: {time_line}")
-                return None
-            hour = int(time_match.group(1))
-            minute = int(time_match.group(2))
-            timezone_str = time_match.group(3) or "CET"
-
-            from zoneinfo import ZoneInfo
-            tz_map = {
-                "CET": ZoneInfo("Europe/Brussels"),
-                "CEST": ZoneInfo("Europe/Brussels")
-            }
-            tz = tz_map.get(timezone_str.upper(), ZoneInfo("Europe/Brussels"))
-
-            if not date_match and not days_line:
-                print(f"❌ Geen geldige datum of days gevonden. Date line: {date_line}")
-                return None
-            
-            if date_match:
-                day, month_str, year = date_match.groups()
-                day = int(day)
-                year = int(year) if year else datetime.now().year
-
-                # Maand converteren
-                try:
-                    month = datetime.strptime(month_str[:3], "%b").month
-                except ValueError:
-                    month = datetime.strptime(month_str, "%B").month
-
-                dt = datetime(year, month, day, hour, minute, tzinfo=tz)
-
-            else:
-                # fallback bij alleen time+days
-                now = datetime.now(tz)
-                dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-            
-            # Final boss: Days line parsing
-            days_str = None
-            if days_line:
-                days_val = days_line.lower()
-                days_val = re.sub(r"daily\s*:\s*", "", days_val).strip()
-                if any(word in days_val for word in ["daily", "dagelijks"]):
-                    days_str = "0,1,2,3,4,5,6"
-                elif "weekdays" in days_val:
-                    days_str = "0,1,2,3,4"
-                elif "weekends" in days_val:
-                    days_str = "5,6"
-                else:
-                    day_map = {
-                        "monday": "0", "maandag": "0",
-                        "tuesday": "1", "dinsdag": "1",
-                        "wednesday": "2", "woensdag": "2",
-                        "thursday": "3", "donderdag": "3",
-                        "friday": "4", "vrijdag": "4",
-                        "saturday": "5", "zaterdag": "5",
-                        "sunday": "6", "zondag": "6"
-                    }
-                    found_days = []
-                    for word in re.split(r",\s*|\s+", days_val):
-                        if word in day_map:
-                            found_days.append(day_map[word])
-                    if found_days:
-                        days_str = ",".join(sorted(set(found_days)))
-            else:
-                days_str = str(dt.weekday())  # Enkel de weekday waarop het valt
-
-            
-            if not time_match or (not date_match and days_str == "-"):
-                print("⚠️ Vereist: Time én minstens één van Date of Days.")
+            if not dt or not days_str:
+                print(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
                 return None
 
             return {
                 "datetime": dt,
-                "reminder_time": dt - timedelta(minutes=60),  # 30 min op voorhand
+                "reminder_time": dt - timedelta(minutes=60),
                 "location": location_line or "-",
                 "title": embed.title or "-",
                 "description": embed.description or "-",
                 "days": days_str.split(",") if days_str else []
             }
-
         except Exception as e:
             print(f"❌ Parse error: {e}")
             return None
+
+    def extract_fields_from_lines(self, lines):
+        date_line = time_line = location_line = days_line = None
+        for line in lines:
+            lower = line.lower()
+            if "date:" in lower:
+                date_line = line.split(":", 1)[1].strip()
+            elif "time:" in lower:
+                time_line = line.split(":", 1)[1].strip()
+            elif "location:" in lower:
+                location_line = line.split(":", 1)[1].strip()
+            elif "days:" in lower:
+                days_line = line.split(":", 1)[1].strip()
+        return date_line, time_line, location_line, days_line
+
+    def parse_datetime(self, date_line, time_line):
+        if not time_line:
+            print(f"❌ Geen geldige tijd gevonden in regel: {time_line}")
+            return None, None
+
+        time_match = re.search(r"^.*?(\d{1,2})[:.](\d{2})(?:\s*(CET|CEST))?.*$", time_line)
+        if not time_match:
+            return None, None
+
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2))
+        timezone_str = time_match.group(3) or "CET"
+
+        tz = ZoneInfo("Europe/Brussels")
+
+        if date_line:
+            date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
+            if not date_match:
+                return None, None
+
+            day, month_str, year = date_match.groups()
+            day = int(day)
+            year = int(year) if year else datetime.now().year
+
+            try:
+                month = datetime.strptime(month_str[:3], "%b").month
+            except ValueError:
+                month = datetime.strptime(month_str, "%B").month
+
+            dt = datetime(year, month, day, hour, minute, tzinfo=tz)
+        else:   
+            now = datetime.now(tz)
+            dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        return dt, tz
+
+    def parse_days(self, days_line, dt):
+        if not days_line:
+            return str(dt.weekday())
+
+        days_val = days_line.lower()
+        days_val = re.sub(r"daily\s*:\s*", "", days_val).strip()
+
+        if any(word in days_val for word in ["daily", "dagelijks"]):
+            return "0,1,2,3,4,5,6"
+        elif "weekdays" in days_val:
+            return "0,1,2,3,4"
+        elif "weekends" in days_val:
+            return "5,6"
+        else:
+            day_map = {
+                "monday": "0", "maandag": "0",
+                "tuesday": "1", "dinsdag": "1",
+                "wednesday": "2", "woensdag": "2",
+                "thursday": "3", "donderdag": "3",
+                "friday": "4", "vrijdag": "4",
+                "saturday": "5", "zaterdag": "5",
+                "sunday": "6", "zondag": "6"
+            }
+            found_days = []
+            for word in re.split(r",\\s*|\\s+", days_val):
+                if word in day_map:
+                    found_days.append(day_map[word])
+            if found_days:
+                return ",".join(sorted(set(found_days)))
+        return "-"
 
 
 
