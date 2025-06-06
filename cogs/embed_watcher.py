@@ -183,29 +183,35 @@ class EmbedReminderWatcher(commands.Cog):
 
     async def store_parsed_reminder(self, parsed, channel, created_by, origin_channel_id=None, origin_message_id=None):
         dt = parsed["datetime"]
-        time_obj = parsed["reminder_time"].time()
+        reminder_dt = parsed["reminder_time"].replace(tzinfo=None)
+        time_obj = reminder_dt.time()  # optioneel voor UI
         weekday_str = str(dt.weekday())
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
         location = parsed.get("location", "-")
-        event_time = dt.replace(tzinfo=None)
 
         try:
             await self.conn.execute(
-                "INSERT INTO reminders (name, channel_id, time, days, message, created_by, location, origin_channel_id, origin_message_id, event_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                """
+                INSERT INTO reminders (
+                    name, channel_id, days, message, created_by, 
+                    location, origin_channel_id, origin_message_id, 
+                    event_time, time
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                """,
                 name,
                 channel,
-                time_obj,
                 [weekday_str],
                 message,
                 created_by,
                 location,
                 origin_channel_id,
                 origin_message_id,
-                event_time
+                reminder_dt,
+                time_obj
             )
+
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
-            print("[🪵] Log channel:", log_channel)
             if log_channel:
                 await log_channel.send(
                     f"✅ Reminder opgeslagen in DB voor: **{name}**\n"
@@ -214,7 +220,6 @@ class EmbedReminderWatcher(commands.Cog):
                 )
             else:
                 print("⚠️ Kon logkanaal niet vinden voor confirmatie.")
-
 
         except Exception as e:
             print(f"[ERROR] Reminder insert failed: {e}")

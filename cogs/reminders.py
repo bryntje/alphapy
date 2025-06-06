@@ -11,6 +11,7 @@ from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
 from typing import Optional
 from config import GUILD_ID
+from cogs.embed_watcher import parse_reminder_from_embed
 
 
 
@@ -29,28 +30,107 @@ class ReminderCog(commands.Cog):
             print("❌ Fout bij verbinden met database:", e)
         self.check_reminders.start()
 
-    @app_commands.command(name="add_reminder", description="Plan een herhaalbare reminder in.")
+    @app_commands.command(name="add_reminder", description="Plan een herhaalbare of eenmalige reminder in via formulier of berichtlink.")
     @app_commands.describe(
         name="Naam van de reminder",
         channel="Kanaal waar de reminder gestuurd moet worden",
         time="Tijdstip in HH:MM formaat",
         days="Dagen van de week (bv. ma,di,wo)",
-        message="De remindertekst"
+        message="De remindertekst",
+        link="(Optioneel) Link naar bericht met embed"
     )
-    async def add_reminder(self, interaction: discord.Interaction, name: str, channel: discord.TextChannel, time: str, days: str, message: str):
+    async def add_reminder(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+        time: Optional[str] = None,
+        days: Optional[str] = None,
+        message: Optional[str] = None,
+        link: Optional[str] = None,
+    ):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        print("Database connection:", self.conn)
+    
         if not self.conn:
-            await interaction.followup.send("⛔ Database not connected. Try again later.", ephemeral=True)
+            await interaction.followup.send("⛔ Database niet verbonden. Probeer later opnieuw.", ephemeral=True)
             return
-        # Convert string to datetime.time object
+    
+        origin_channel_id = origin_message_id = event_time = None
+        debug_info = []
+    
+        # 👇 Als een embed-link is opgegeven: fetch en parse de embed
+        if link:
+            match = re.match(r"https://discord\.com/channels/(\d+)/(\d+)/(\d+)", link)
+            if not match:
+                await interaction.followup.send("❌ Ongeldige berichtlink opgegeven.", ephemeral=True)
+                return
+    
+            _, channel_id, message_id = map(int, match.groups())
+            try:
+                msg_channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                msg = await msg_channel.fetch_message(message_id)
+    
+                if not msg.embeds:
+                    await interaction.followup.send("❌ Geen embed gevonden in dat bericht.", ephemeral=True)
+                    return
+    
+                from cogs.embed_watcher import parse_reminder_from_embed
+                parsed = parse_reminder_from_embed(msg.embeds[0])
+    
+                if parsed.get("title"): 
+                    name = parsed["title"]
+                    debug_info.append(f"📝 Titel: `{name}`")
+    
+                if parsed.get("description"): 
+                    message = parsed["description"]
+                    debug_info.append(f"💬 Bericht: `{message[:25]}...`" if len(message) > 25 else f"💬 Bericht: `{message}`")
+    
+                if parsed.get("reminder_time"): 
+                    time = parsed["reminder_time"].strftime("%H:%M")
+                    event_time = parsed["reminder_time"]
+                    debug_info.append(f"⏰ Tijd: `{time}`")
+    
+                if parsed.get("datetime"): 
+                    days = str(parsed["datetime"].weekday())
+                    debug_info.append(f"📅 Dag: `{days}`")
+    
+                if parsed.get("location"): 
+                    debug_info.append(f"📍 Locatie: `{parsed['location']}`")
+    
+                origin_channel_id = str(channel_id)
+                origin_message_id = str(message_id)
+    
+            except Exception as e:
+                await interaction.followup.send(f"❌ Fout bij embed parsing: `{e}`", ephemeral=True)
+                return
+    
+        # ⏰ Tijd moet zeker bestaan
+        if not time:
+            await interaction.followup.send("❌ Geen tijd opgegeven en geen geldige embed gevonden.", ephemeral=True)
+            return
+    
+        # ⏳ Parse time string naar datetime.time
         time_obj = datetime.strptime(time, "%H:%M").time()
-
+    
         await self.conn.execute(
-            "INSERT INTO reminders (name, channel_id, time, days, message, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
-            name, str(channel.id), time_obj, days.split(","), message, str(interaction.user.id)
+            """INSERT INTO reminders (name, channel_id, time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+            name,
+            str(channel.id),
+            time_obj,
+            days.split(",") if days else [],
+            message,
+            str(interaction.user.id),
+            origin_channel_id,
+            origin_message_id,
+            event_time
         )
-        await interaction.followup.send(f"✅ Reminder '{name}' toegevoegd in {channel.mention} om {time} op {days}.", ephemeral=True)
+    
+        debug_str = "\n".join(debug_info) if debug_info else "ℹ️ Geen extra info uit embed gehaald."
+        await interaction.followup.send(
+            f"✅ Reminder **'{name}'** toegevoegd in {channel.mention}.\n{debug_str}",
+            ephemeral=True
+        )
 
     @app_commands.command(name="reminder_list", description="📋 Bekijk je actieve reminders")
     async def reminder_list(self, interaction: discord.Interaction):
