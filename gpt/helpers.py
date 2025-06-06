@@ -96,6 +96,11 @@ async def ask_gpt(messages, user_id=None, model="gpt-3.5-turbo"):
     start = time.perf_counter()
 
     try:
+        # 👉 Check of messages een string is (oude stijl prompt)
+        if isinstance(messages, str):
+            messages = [{"role": "user", "content": messages}]
+        assert isinstance(messages, list) and all(isinstance(m, dict) for m in messages), "❌ Invalid messages format"
+
         response = await openai_client.chat.completions.create(
             model=model,
             messages=[
