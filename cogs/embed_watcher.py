@@ -35,10 +35,7 @@ class EmbedReminderWatcher(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        ANNOUNCEMENTS_CHANNEL_ID = 1160511692824924216  # <-- pas aan!
-        
-
-        if message.channel.id != ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
+        if message.channel.id != config.ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
             print("[📣] Kanaal ID:", message.channel.id)
             return
 
@@ -177,7 +174,8 @@ class EmbedReminderWatcher(commands.Cog):
                     found_days.append(day_map[word])
             if found_days:
                 return ",".join(sorted(set(found_days)))
-        return "-"
+        # fallback to the weekday of the provided datetime
+        return str(dt.weekday())
 
 
 
@@ -246,6 +244,12 @@ class EmbedReminderWatcher(commands.Cog):
                 return
 
         await interaction.followup.send("⚠️ Geen embed gevonden in de laatste 10 berichten.")
+
+
+def parse_embed_for_reminder(embed: discord.Embed):
+    """Convenience wrapper to parse a reminder embed outside of the cog."""
+    parser = EmbedReminderWatcher(None)
+    return parser.parse_embed_for_reminder(embed)
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)
