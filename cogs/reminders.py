@@ -91,7 +91,7 @@ class ReminderCog(commands.Cog):
 
                 if parsed.get("reminder_time"):
                     time = parsed["reminder_time"].strftime("%H:%M")
-                    event_time = parsed["reminder_time"]
+                    event_time = parsed["datetime"]
                     debug_info.append(f"⏰ Tijd: `{time}`")
 
                 if parsed.get("datetime"):

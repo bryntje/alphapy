@@ -205,7 +205,7 @@ class EmbedReminderWatcher(commands.Cog):
                 location,
                 origin_channel_id,
                 origin_message_id,
-                reminder_dt,
+                dt,
                 time_obj
             )
 
