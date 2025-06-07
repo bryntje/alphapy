@@ -94,9 +94,12 @@ class ReminderCog(commands.Cog):
                     event_time = parsed["datetime"].replace(tzinfo=None)  # strip timezone
                     debug_info.append(f"⏰ Tijd: `{time}`")
 
-                if parsed.get("datetime"):
-                    days = str(parsed["datetime"].weekday())
+                if parsed.get("days"):
+                    days = ",".join(parsed["days"])
                     debug_info.append(f"📅 Dag: `{days}`")
+                elif parsed.get("datetime"):
+                    days = str(parsed["datetime"].weekday())
+                    debug_info.append(f"📅 Dag (fallback): `{days}`")
 
                 if parsed.get("location"):
                     debug_info.append(f"📍 Locatie: `{parsed['location']}`")
