@@ -110,7 +110,6 @@ class EmbedReminderWatcher(commands.Cog):
             if not dt or not days_str:
                 print(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
                 return None
-            print(f"⚠️ Fallback triggered in parse_days — geen geldige days_line: '{days_line}' → weekday van dt: {dt.strftime('%A')} ({dt.weekday()})")
             return {
                 "datetime": dt,
                 "reminder_time": dt - timedelta(minutes=60),
@@ -207,6 +206,7 @@ class EmbedReminderWatcher(commands.Cog):
             if found_days:
                 return ",".join(sorted(set(found_days)))
         # fallback to the weekday of the provided datetime
+        print(f"⚠️ Fallback triggered in parse_days — geen geldige days_line: '{days_line}' → weekday van dt: {dt.strftime('%A')} ({dt.weekday()})")
         return str(dt.weekday())
 
 
@@ -249,7 +249,7 @@ class EmbedReminderWatcher(commands.Cog):
             if log_channel:
                 await log_channel.send(
                     f"✅ Reminder opgeslagen in DB voor: **{name}**\n"
-                    f"🕒 Tijdstip: {time_obj.strftime('%H:%M')} op dag {weekday_str}\n"
+                    f"🕒 Tijdstip: {time_obj.strftime('%H:%M')} op dag {days_str}\n"
                     f"📍 Locatie: {location or '—'}"
                 )
             else:
