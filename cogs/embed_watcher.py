@@ -77,6 +77,21 @@ class EmbedReminderWatcher(commands.Cog):
 
         try:
             dt, tz = self.parse_datetime(date_line, time_line)
+
+            # Fallback: try to parse datetime from the description when
+            # no explicit date/time fields were found.
+            if not dt:
+                dt = extract_datetime_from_text(embed.description or "")
+                if dt:
+                    tz = ZoneInfo("Europe/Brussels")
+
+            # Fallback: attempt to extract location from the description if no
+            # location field exists.
+            if not location_line and embed.description:
+                loc_match = re.search(r"(?:location|locatie)[:\s]*([^\n]+)", embed.description, re.IGNORECASE)
+                if loc_match:
+                    location_line = loc_match.group(1).strip()
+
             days_str = self.parse_days(days_line, dt)
 
             if not dt or not days_str:
@@ -103,7 +118,7 @@ class EmbedReminderWatcher(commands.Cog):
                 date_line = line.split(":", 1)[1].strip()
             elif "time:" in lower:
                 time_line = line.split(":", 1)[1].strip()
-            elif "location:" in lower:
+            elif "location:" in lower or "locatie:" in lower:
                 location_line = line.split(":", 1)[1].strip()
             elif "days:" in lower:
                 days_line = line.split(":", 1)[1].strip()
