@@ -80,7 +80,7 @@ class EmbedReminderWatcher(commands.Cog):
             time_fallback = re.search(r"\b(\d{1,2}[:.]\d{2})\s*(?:CET|CEST)?", embed.description)
             if time_fallback:
                 time_line = time_fallback.group(0)
-        
+
         if not days_line and embed.description:
             day_fallback = re.search(r"\b(?:every|elke)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", embed.description, re.IGNORECASE)
             if day_fallback:
@@ -207,6 +207,10 @@ class EmbedReminderWatcher(commands.Cog):
 
     async def store_parsed_reminder(self, parsed, channel, created_by, origin_channel_id=None, origin_message_id=None):
         dt = parsed["datetime"]
+        channel = int(channel)
+        created_by = int(created_by)
+        origin_channel_id = int(origin_channel_id) if origin_channel_id is not None else None
+        origin_message_id = int(origin_message_id) if origin_message_id is not None else None
         reminder_dt = parsed["reminder_time"].replace(tzinfo=None)
         time_obj = reminder_dt.time()  # optioneel voor UI
         weekday_str = str(dt.weekday())
