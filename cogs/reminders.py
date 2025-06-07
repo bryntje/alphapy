@@ -116,15 +116,20 @@ class ReminderCog(commands.Cog):
         # ⏳ Parse time string naar datetime.time
         time_obj = datetime.strptime(time, "%H:%M").time()
 
+        origin_channel_id = int(origin_channel_id) if origin_channel_id else None
+        origin_message_id = int(origin_message_id) if origin_message_id else None
+        created_by = int(interaction.user.id)
+        channel_id = int(channel.id)
+
         await self.conn.execute(
             """INSERT INTO reminders (name, channel_id, time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
             name,
-            str(channel.id),
+            channel_id,
             time_obj,
             days.split(",") if days else [],
             message,
-            str(interaction.user.id),
+            created_by,
             origin_channel_id,
             origin_message_id,
             event_time
