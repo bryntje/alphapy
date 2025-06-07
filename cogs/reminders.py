@@ -77,28 +77,24 @@ class ReminderCog(commands.Cog):
                 from cogs.embed_watcher import parse_embed_for_reminder
                 parsed = parse_embed_for_reminder(msg.embeds[0])
 
-                if not parsed:
-                    await interaction.followup.send("❌ Fout bij embed parsing.", ephemeral=True)
-                    return
-
-                if parsed.get("title"):
+                if parsed.get("title"): 
                     name = parsed["title"]
                     debug_info.append(f"📝 Titel: `{name}`")
 
-                if parsed.get("description"):
+                if parsed.get("description"): 
                     message = parsed["description"]
                     debug_info.append(f"💬 Bericht: `{message[:25]}...`" if len(message) > 25 else f"💬 Bericht: `{message}`")
 
-                if parsed.get("reminder_time"):
+                if parsed.get("reminder_time"): 
                     time = parsed["reminder_time"].strftime("%H:%M")
                     event_time = parsed["reminder_time"]
                     debug_info.append(f"⏰ Tijd: `{time}`")
 
-                if parsed.get("datetime"):
+                if parsed.get("datetime"): 
                     days = str(parsed["datetime"].weekday())
                     debug_info.append(f"📅 Dag: `{days}`")
 
-                if parsed.get("location"):
+                if parsed.get("location"): 
                     debug_info.append(f"📍 Locatie: `{parsed['location']}`")
 
                 origin_channel_id = str(channel_id)
