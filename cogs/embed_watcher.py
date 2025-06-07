@@ -75,6 +75,17 @@ class EmbedReminderWatcher(commands.Cog):
         lines = all_text.split('\n')
         date_line, time_line, location_line, days_line = self.extract_fields_from_lines(lines)
 
+        # Fallbacks for time and days if not present in structured lines
+        if not time_line and embed.description:
+            time_fallback = re.search(r"\b(\d{1,2}[:.]\d{2})\s*(?:CET|CEST)?", embed.description)
+            if time_fallback:
+                time_line = time_fallback.group(0)
+        
+        if not days_line and embed.description:
+            day_fallback = re.search(r"\b(?:every|elke)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", embed.description, re.IGNORECASE)
+            if day_fallback:
+                days_line = day_fallback.group(1)
+
         try:
             dt, tz = self.parse_datetime(date_line, time_line)
 
