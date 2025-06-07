@@ -199,8 +199,10 @@ class EmbedReminderWatcher(commands.Cog):
             found_days = []
             for word in re.split(r",\s*|\s+", days_val):
                 word = word.strip().lower()
+                word = re.sub(r"[^\w]", "", word)
                 if word in day_map:
                     found_days.append(day_map[word])
+            print(f"🔍 Check woord: '{word}' → match? {word in day_map}")
             if found_days:
                 return ",".join(sorted(set(found_days)))
         # fallback to the weekday of the provided datetime
