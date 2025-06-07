@@ -110,7 +110,7 @@ class EmbedReminderWatcher(commands.Cog):
             if not dt or not days_str:
                 print(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
                 return None
-
+            print(f"⚠️ Fallback triggered in parse_days — geen geldige days_line: '{days_line}' → weekday van dt: {dt.strftime('%A')} ({dt.weekday()})")
             return {
                 "datetime": dt,
                 "reminder_time": dt - timedelta(minutes=60),
@@ -197,7 +197,8 @@ class EmbedReminderWatcher(commands.Cog):
                 "sunday": "6", "zondag": "6"
             }
             found_days = []
-            for word in re.split(r",\\s*|\\s+", days_val):
+            for word in re.split(r",\s*|\s+", days_val):
+                word = word.strip().lower()
                 if word in day_map:
                     found_days.append(day_map[word])
             if found_days:
