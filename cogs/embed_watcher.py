@@ -8,21 +8,36 @@ import asyncpg
 from zoneinfo import ZoneInfo
 
 def extract_datetime_from_text(text):
-    date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
+    date_match = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", text)
     time_match = re.search(r"(\d{1,2}[:.]\d{2})", text)
+    current_year = datetime.now().year
 
+    if date_match and time_match:
+        day = int(date_match.group(1))
+        month = int(date_match.group(2))
+        year = date_match.group(3)
+        if year:
+            year = int(year) if len(year) == 4 else 2000 + int(year)
+        else:
+            year = current_year
+        time_str = time_match.group(1).replace(".", ":")
+        try:
+            dt = datetime.strptime(f"{day}/{month}/{year} {time_str}", "%d/%m/%Y %H:%M")
+            return dt
+        except Exception as e:
+            print(f"⛔️ Date parse failed: {e}")
+
+    date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
     if date_match and time_match:
         day = int(date_match.group(1))
         month_str = date_match.group(3)
         time_str = time_match.group(1).replace(".", ":")
-        current_year = datetime.now().year
-
         try:
-            full_date_str = f"{day} {month_str} {current_year} {time_str}"
-            dt = datetime.strptime(full_date_str, "%d %B %Y %H:%M")
+            dt = datetime.strptime(f"{day} {month_str} {current_year} {time_str}", "%d %B %Y %H:%M")
             return dt
         except Exception as e:
             print(f"⛔️ Date parse failed: {e}")
+
     return None
 
 class EmbedReminderWatcher(commands.Cog):
@@ -152,19 +167,31 @@ class EmbedReminderWatcher(commands.Cog):
         tz = ZoneInfo("Europe/Brussels")
 
         if date_line:
-            date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
-            if not date_match:
-                return None, None
-
-            day, month_str, year = date_match.groups()
-            day = int(day)
-            year = int(year) if year else datetime.now().year
-
-            try:
-                month = datetime.strptime(month_str[:3], "%b").month
-            except ValueError:
-                month = datetime.strptime(month_str, "%B").month
-
+            date_line = date_line.strip()
+            numeric = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", date_line)
+            if numeric:
+                day = int(numeric.group(1))
+                month = int(numeric.group(2))
+                year = numeric.group(3)
+                if year:
+                    year = int(year) if len(year) == 4 else 2000 + int(year)
+                else:
+                    year = datetime.now().year
+            else:
+                date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
+                if not date_match:
+                    alt_match = re.search(r"([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?", date_line)
+                    if not alt_match:
+                        return None, None
+                    month_str, day, year = alt_match.groups()
+                else:
+                    day, month_str, year = date_match.groups()
+                day = int(day)
+                year = int(year) if year else datetime.now().year
+                try:
+                    month = datetime.strptime(month_str[:3], "%b").month
+                except ValueError:
+                    month = datetime.strptime(month_str, "%B").month
             dt = datetime(year, month, day, hour, minute, tzinfo=tz)
         else:   
             now = datetime.now(tz)
