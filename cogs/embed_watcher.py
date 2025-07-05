@@ -120,14 +120,15 @@ class EmbedReminderWatcher(commands.Cog):
                 if loc_match:
                     location_line = loc_match.group(1).strip()
 
-            days_str = self.parse_days(days_line, dt)
+            reminder_time = dt - timedelta(minutes=60)
+            days_str = self.parse_days(days_line, reminder_time)
 
             if not dt or not days_str:
                 print(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
                 return None
             return {
                 "datetime": dt,
-                "reminder_time": dt - timedelta(minutes=60),
+                "reminder_time": reminder_time,
                 "location": location_line or "-",
                 "title": embed.title or "-",
                 "description": embed.description or "-",
