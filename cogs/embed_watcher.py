@@ -7,6 +7,8 @@ import config
 import asyncpg
 from utils.timezone import BRUSSELS_TZ
 
+# All logging timestamps in this module use Brussels time for clarity.
+
 def extract_datetime_from_text(text):
     date_match = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", text)
     time_match = re.search(r"(\d{1,2}[:.]\d{2})", text)
@@ -122,6 +124,13 @@ class EmbedReminderWatcher(commands.Cog):
 
             reminder_time = dt - timedelta(minutes=60)
             days_str = self.parse_days(days_line, reminder_time)
+            days_list = days_str.split(",") if days_str else []
+
+            # Log the parsed datetime and days list for debugging purposes.
+            print(
+                f"🕑 Parsed datetime: {dt.astimezone(BRUSSELS_TZ)} "
+                f"(weekday {dt.weekday()}) → days {days_list}"
+            )
 
             if not dt or not days_str:
                 print(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
@@ -132,7 +141,7 @@ class EmbedReminderWatcher(commands.Cog):
                 "location": location_line or "-",
                 "title": embed.title or "-",
                 "description": embed.description or "-",
-                "days": days_str.split(",") if days_str else []
+                "days": days_list,
             }
         except Exception as e:
             print(f"❌ Parse error: {e}")
