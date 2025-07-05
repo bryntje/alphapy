@@ -5,12 +5,12 @@ import re
 from datetime import datetime, timedelta
 import config
 import asyncpg
-from zoneinfo import ZoneInfo
+from utils.timezone import BRUSSELS_TZ
 
 def extract_datetime_from_text(text):
     date_match = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", text)
     time_match = re.search(r"(\d{1,2}[:.]\d{2})", text)
-    current_year = datetime.now().year
+    current_year = datetime.now(BRUSSELS_TZ).year
 
     if date_match and time_match:
         day = int(date_match.group(1))
@@ -111,7 +111,7 @@ class EmbedReminderWatcher(commands.Cog):
             if not dt:
                 dt = extract_datetime_from_text(embed.description or "")
                 if dt:
-                    tz = ZoneInfo("Europe/Brussels")
+                    tz = BRUSSELS_TZ
 
             # Fallback: attempt to extract location from the description if no
             # location field exists.
@@ -164,7 +164,7 @@ class EmbedReminderWatcher(commands.Cog):
         minute = int(time_match.group(2))
         timezone_str = time_match.group(3) or "CET"
 
-        tz = ZoneInfo("Europe/Brussels")
+        tz = BRUSSELS_TZ
 
         if date_line:
             date_line = date_line.strip()
@@ -176,7 +176,7 @@ class EmbedReminderWatcher(commands.Cog):
                 if year:
                     year = int(year) if len(year) == 4 else 2000 + int(year)
                 else:
-                    year = datetime.now().year
+                    year = datetime.now(BRUSSELS_TZ).year
             else:
                 date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
                 if not date_match:
@@ -187,14 +187,14 @@ class EmbedReminderWatcher(commands.Cog):
                 else:
                     day, month_str, year = date_match.groups()
                 day = int(day)
-                year = int(year) if year else datetime.now().year
+                year = int(year) if year else datetime.now(BRUSSELS_TZ).year
                 try:
                     month = datetime.strptime(month_str[:3], "%b").month
                 except ValueError:
                     month = datetime.strptime(month_str, "%B").month
             dt = datetime(year, month, day, hour, minute, tzinfo=tz)
         else:   
-            now = datetime.now(tz)
+            now = datetime.now(BRUSSELS_TZ)
             dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
         return dt, tz
