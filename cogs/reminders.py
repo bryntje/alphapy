@@ -25,6 +25,23 @@ class ReminderCog(commands.Cog):
         await self.bot.wait_until_ready()
         try:
             self.conn = await asyncpg.connect(config.DATABASE_URL)
+            await self.conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reminders (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    channel_id BIGINT NOT NULL,
+                    time TIME,
+                    days TEXT[],
+                    message TEXT,
+                    created_by BIGINT,
+                    origin_channel_id BIGINT,
+                    origin_message_id BIGINT,
+                    event_time TIMESTAMPTZ,
+                    location TEXT
+                );
+                """
+            )
             print("✅ Verbonden met database!")
         except Exception as e:
             print("❌ Fout bij verbinden met database:", e)
@@ -91,7 +108,7 @@ class ReminderCog(commands.Cog):
 
                 if parsed.get("reminder_time"):
                     time = parsed["reminder_time"].strftime("%H:%M")
-                    event_time = parsed["datetime"].replace(tzinfo=None)  # strip timezone
+                    event_time = parsed["datetime"].astimezone(BRUSSELS_TZ)
                     debug_info.append(f"⏰ Tijd: `{time}`")
 
                 if parsed.get("days"):
@@ -260,6 +277,8 @@ class ReminderCog(commands.Cog):
                 event_dt = row['event_time']  # Dit is parsed['datetime'] bij opslag
                 if not event_dt:
                     event_dt = dt
+                else:
+                    event_dt = event_dt.astimezone(BRUSSELS_TZ)
                 embed.add_field(name="📅 Date", value=event_dt.strftime("%A %d %B %Y"), inline=False)
                 embed.add_field(name="⏰ Time", value=event_dt.strftime("%H:%M"), inline=False)
                 

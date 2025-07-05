@@ -245,7 +245,7 @@ class EmbedReminderWatcher(commands.Cog):
         created_by = int(created_by)
         origin_channel_id = int(origin_channel_id) if origin_channel_id is not None else None
         origin_message_id = int(origin_message_id) if origin_message_id is not None else None
-        reminder_dt = parsed["reminder_time"].replace(tzinfo=None)
+        reminder_dt = parsed["reminder_time"].astimezone(BRUSSELS_TZ)
         time_obj = reminder_dt.time()  # optioneel voor UI
         days_str = ",".join(parsed["days"])
         name = f"AutoReminder - {parsed['title'][:30]}"
