@@ -5,7 +5,7 @@ import asyncpg
 import asyncio
 from datetime import datetime, time as dtime
 import config
-import pytz
+from utils.timezone import BRUSSELS_TZ
 import re
 from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
@@ -218,8 +218,7 @@ class ReminderCog(commands.Cog):
             print("⛔ Database connection not ready.")
             return
 
-        tz = pytz.timezone("Europe/Brussels")
-        now = datetime.now(tz).replace(second=0, microsecond=0)
+        now = datetime.now(BRUSSELS_TZ).replace(second=0, microsecond=0)
         current_time_str = now.strftime("%H:%M:%S")
         current_day = str(now.weekday())
         current_date = now.date()
