@@ -256,7 +256,10 @@ class EmbedReminderWatcher(commands.Cog):
         origin_message_id = int(origin_message_id) if origin_message_id is not None else None
         reminder_dt = parsed["reminder_time"].astimezone(BRUSSELS_TZ)
         time_obj = reminder_dt.time()  # optioneel voor UI
-        days_str = ",".join(parsed["days"])
+        days_arr = parsed["days"]
+        if isinstance(days_arr, str):
+            days_arr = [d.strip() for d in days_arr.split(",") if d.strip()]
+        print(f"[DEBUG] Final days_arr voor DB-insert: {days_arr} ({type(days_arr)})")
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
         location = parsed.get("location", "-")
@@ -272,7 +275,7 @@ class EmbedReminderWatcher(commands.Cog):
                 """,
                 name,
                 channel,
-                days_str,
+                days_arr,  # geef als array door
                 message,
                 created_by,
                 location,
@@ -286,7 +289,7 @@ class EmbedReminderWatcher(commands.Cog):
             if log_channel:
                 await log_channel.send(
                     f"✅ Reminder opgeslagen in DB voor: **{name}**\n"
-                    f"🕒 Tijdstip: {time_obj.strftime('%H:%M')} op dag {days_str}\n"
+                    f"🕒 Tijdstip: {time_obj.strftime('%H:%M')} op dag {','.join(days_arr)}\n"
                     f"📍 Locatie: {location or '—'}"
                 )
             else:
