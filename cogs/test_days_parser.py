@@ -2,6 +2,7 @@
 
 import re
 import unittest
+from utils.timezone import BRUSSELS_TZ
 
 def parse_days_line(days_line: str) -> str:
     days_str = None
@@ -33,7 +34,7 @@ def parse_days_line(days_line: str) -> str:
     else:
         # fallback
         from datetime import datetime
-        days_str = str(datetime.now().weekday())
+        days_str = str(datetime.now(BRUSSELS_TZ).weekday())
 
     return days_str
 
