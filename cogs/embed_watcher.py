@@ -25,6 +25,8 @@ def extract_datetime_from_text(text):
         time_str = time_match.group(1).replace(".", ":")
         try:
             dt = datetime.strptime(f"{day}/{month}/{year} {time_str}", "%d/%m/%Y %H:%M")
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=BRUSSELS_TZ)
             return dt
         except Exception as e:
             print(f"⛔️ Date parse failed: {e}")
@@ -36,6 +38,8 @@ def extract_datetime_from_text(text):
         time_str = time_match.group(1).replace(".", ":")
         try:
             dt = datetime.strptime(f"{day} {month_str} {current_year} {time_str}", "%d %B %Y %H:%M")
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=BRUSSELS_TZ)
             return dt
         except Exception as e:
             print(f"⛔️ Date parse failed: {e}")
