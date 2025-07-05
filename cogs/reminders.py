@@ -114,11 +114,11 @@ class ReminderCog(commands.Cog):
                     debug_info.append(f"⏰ Tijd: `{time}`")
 
                 if parsed.get("days"):
-                    days = ",".join(parsed["days"])
-                    debug_info.append(f"📅 Dag: `{days}`")
+                    days = parsed["days"]
+                    debug_info.append(f"📅 Dag: `{', '.join(days)}`")
                 elif parsed.get("datetime"):
-                    days = str(parsed["datetime"].weekday())
-                    debug_info.append(f"📅 Dag (fallback): `{days}`")
+                    days = [str(parsed["datetime"].weekday())]
+                    debug_info.append(f"📅 Dag (fallback): `{days[0]}`")
 
                 if parsed.get("location"):
                     debug_info.append(f"📍 Locatie: `{parsed['location']}`")
@@ -138,6 +138,11 @@ class ReminderCog(commands.Cog):
         # ⏳ Parse time string naar datetime.time
         time_obj = datetime.strptime(time, "%H:%M").time()
 
+        if not days:
+            days = []
+        elif isinstance(days, str):
+            days = [days]
+
         origin_channel_id = int(origin_channel_id) if origin_channel_id else None
         origin_message_id = int(origin_message_id) if origin_message_id else None
         created_by = int(interaction.user.id)
@@ -149,7 +154,7 @@ class ReminderCog(commands.Cog):
             name,
             channel_id,
             time_obj,
-            days.split(",") if days else [],
+            days if days else [],
             message,
             created_by,
             origin_channel_id,
@@ -165,6 +170,8 @@ class ReminderCog(commands.Cog):
 
     @app_commands.command(name="reminder_list", description="📋 Bekijk je actieve reminders")
     async def reminder_list(self, interaction: discord.Interaction):
+        if not self.conn:
+            return
         user_id = interaction.user.id
         channel_id = interaction.channel.id
         is_admin = interaction.user.guild_permissions.administrator
@@ -194,7 +201,14 @@ class ReminderCog(commands.Cog):
 
             msg_lines = [f"📋 **Actieve Reminders:**"]
             for row in rows:
-                days_str = ", ".join(row["days"])
+                days_db = row["days"]
+                if not days_db:
+                    days_list = []
+                elif isinstance(days_db, str):
+                    days_list = [days_db]
+                else:
+                    days_list = list(days_db)
+                days_str = ", ".join(days_list)
                 time_str = row["time"].strftime("%H:%M") if row["time"] else "⛔"
                 msg_lines.append(
                     f"🔹 **{row['name']}** — ⏰ `{time_str}` op `{days_str}` (ID: `{row['id']}`)"
@@ -209,6 +223,8 @@ class ReminderCog(commands.Cog):
     @app_commands.command(name="reminder_delete", description="🗑️ Verwijder een reminder via ID")
     @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
     async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int):
+        if not self.conn:
+            return
         await interaction.response.defer(ephemeral=True)
 
         row = await self.conn.fetchrow("SELECT * FROM reminders WHERE id = $1", reminder_id)
@@ -224,6 +240,8 @@ class ReminderCog(commands.Cog):
     
     @reminder_delete.autocomplete("reminder_id")
     async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str):
+        if not self.conn:
+            return []
         rows = await self.conn.fetch("SELECT id, name FROM reminders ORDER BY id DESC LIMIT 25")
         return [
             app_commands.Choice(name=f"ID {row['id']} – {row['name'][:30]}", value=row["id"])
@@ -315,10 +333,29 @@ async def get_reminders_for_user(conn, user_id: str):
         WHERE created_by = $1 OR created_by = '717695552669745152'
         ORDER BY time
     """
-    return await conn.fetch(query, user_id)
+    rows = await conn.fetch(query, user_id)
+    # days verwerking
+    processed_rows = []
+    for row in rows:
+        days_db = row["days"]
+        if not days_db:
+            days_list = []
+        elif isinstance(days_db, str):
+            days_list = [days_db]
+        else:
+            days_list = list(days_db)
+        new_row = dict(row)
+        new_row["days"] = days_list
+        processed_rows.append(new_row)
+    return processed_rows
 
 
 async def create_reminder(conn, data: dict):
+    days = data.get("days")
+    if not days:
+        days = []
+    elif isinstance(days, str):
+        days = [days]
     await conn.execute(
         """
         INSERT INTO reminders (name, channel_id, time, days, message, created_by)
@@ -327,13 +364,18 @@ async def create_reminder(conn, data: dict):
         data["name"],
         str(data["channel_id"]),
         data["time"],
-        data["days"],
+        days,
         data["message"],
         data["created_by"]  # 👈 fix naam
     )
 
 
 async def update_reminder(conn, data: dict):
+    days = data.get("days")
+    if not days:
+        days = []
+    elif isinstance(days, str):
+        days = [days]
     await conn.execute(
         """
         UPDATE reminders
@@ -342,7 +384,7 @@ async def update_reminder(conn, data: dict):
         """,
         data["name"],
         data["time"],
-        data["days"],
+        days,
         data["message"],
         data["id"],
         data["created_by"]  # 👈 fix naam
