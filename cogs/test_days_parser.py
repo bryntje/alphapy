@@ -3,9 +3,12 @@
 import re
 import unittest
 from utils.timezone import BRUSSELS_TZ
+from datetime import datetime, timedelta
 
-def parse_days_line(days_line: str) -> str:
+def parse_days_line(days_line: str, dt: datetime | None = None) -> str:
     days_str = None
+    if dt is None:
+        dt = datetime.now(BRUSSELS_TZ)
     if days_line:
         days_val = days_line.lower()
         days_val = re.sub(r"daily\s*:\s*", "", days_val).strip()
@@ -32,9 +35,8 @@ def parse_days_line(days_line: str) -> str:
             if found_days:
                 days_str = ",".join(sorted(set(found_days)))
     else:
-        # fallback
-        from datetime import datetime
-        days_str = str(datetime.now(BRUSSELS_TZ).weekday())
+        # fallback to provided datetime's weekday
+        days_str = str(dt.weekday())
 
     return days_str
 
@@ -56,7 +58,13 @@ class TestDaysLineParsing(unittest.TestCase):
         self.assertEqual(parse_days_line("maandag donderdag"), "0,3")
     
     def test_empty(self):
-        self.assertTrue(parse_days_line("") in [str(i) for i in range(7)])  # fallback to current weekday
+        dt = datetime(2024, 3, 19, 12, 0, tzinfo=BRUSSELS_TZ)
+        self.assertEqual(parse_days_line("", dt), str(dt.weekday()))
+
+    def test_midnight_crossover(self):
+        event_dt = datetime(2024, 3, 19, 0, 30, tzinfo=BRUSSELS_TZ)
+        reminder_time = event_dt - timedelta(minutes=60)
+        self.assertEqual(parse_days_line("", reminder_time), str(reminder_time.weekday()))
 
 if __name__ == "__main__":
     unittest.main()
