@@ -8,11 +8,15 @@ Dit document beschrijft de actieve AI-agents en modulaire functies van de Alphap
 
 ## 📣 Agent: EmbedReminderWatcher
 
+- **Pad**: `cogs/embed_watcher.py`
 - **Doel**: Detecteert nieuwe embeds in het announcements-kanaal en genereert automatisch reminders.
 - **Triggers**: `on_message` → embed parsing
 - **Opslag**: PostgreSQL (reminders table)
 - **Speciale parsing**: Titel, tijd, dagen, locatie via NLP
 - **Helper functie**: `parse_embed_for_reminder()`
+- **Logging**: `WATCHER_LOG_CHANNEL`
+- **Dependencies**: `discord.py`, `asyncpg`, `spaCy` (optioneel)
+- **Known Issues**: Tijdzone parsing kritisch, NLP vereist juiste embed structuur.
 
 ---
 
