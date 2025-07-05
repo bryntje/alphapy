@@ -13,6 +13,8 @@ from typing import Optional
 from config import GUILD_ID
 from cogs.embed_watcher import parse_embed_for_reminder
 
+# All logging timestamps in this module use Brussels time for clarity.
+
 
 
 class ReminderCog(commands.Cog):
@@ -240,7 +242,11 @@ class ReminderCog(commands.Cog):
         current_day = str(now.weekday())
         current_date = now.date()
 
+        # Log current Brussels time and weekday before querying reminders.
         print(f"🔁 Reminder check: {current_time_str} op dag {current_day}")
+        print(
+            f"🕒 Brussels now: {now.astimezone(BRUSSELS_TZ)} (weekday {now.weekday()})"
+        )
 
         try:
             rows = await self.conn.fetch("""
