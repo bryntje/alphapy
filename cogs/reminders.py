@@ -317,10 +317,13 @@ class ReminderCog(commands.Cog):
                 
                 # Verstuur met mention buiten embed
                 await channel.send("@everyone", embed=embed)
-                # Als het een eenmalige reminder was (event_time bestaat), verwijder hem
-                if row.get("event_time"):
+                # Logging: toon altijd wat er gebeurt
+                print(f"🟠 Reminder ID {row['id']} | event_time: {row.get('event_time')}, days: {row.get('days')}")
+                if row.get("event_time") and not row.get("days"):
                     await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
                     print(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na verzenden.")
+                else:
+                    print(f"🔁 Reminder {row['id']} NIET verwijderd (herhalend of days ingevuld).")
 
         except Exception as e:
             print("🚨 Reminder loop error:", e)
