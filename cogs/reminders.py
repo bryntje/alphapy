@@ -34,6 +34,7 @@ class ReminderCog(commands.Cog):
                     name TEXT NOT NULL,
                     channel_id BIGINT NOT NULL,
                     time TIME,
+                    call_time TIME,
                     days TEXT[],
                     message TEXT,
                     created_by BIGINT,
@@ -148,12 +149,16 @@ class ReminderCog(commands.Cog):
         created_by = int(interaction.user.id)
         channel_id = int(channel.id)
 
+        # Bepaal call_time: de daadwerkelijke event tijd of fallback naar time_obj
+        call_time_obj = event_time.time() if event_time else time_obj
+
         await self.conn.execute(
-            """INSERT INTO reminders (name, channel_id, time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+            """INSERT INTO reminders (name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
             name,
             channel_id,
             time_obj,
+            call_time_obj,
             days if days else [],
             message,
             created_by,
@@ -303,8 +308,10 @@ class ReminderCog(commands.Cog):
                     event_dt = dt
                 else:
                     event_dt = event_dt.astimezone(BRUSSELS_TZ)
+                # Use stored call_time (reminder trigger) instead of event_time for the embed time
+                call_time_obj = row.get("call_time") or event_dt.time()
                 embed.add_field(name="📅 Date", value=event_dt.strftime("%A %d %B %Y"), inline=False)
-                embed.add_field(name="⏰ Time", value=event_dt.strftime("%H:%M"), inline=False)
+                embed.add_field(name="⏰ Time", value=call_time_obj.strftime("%H:%M"), inline=False)
                 
                 # Locatie
                 if row.get("location") and row["location"] != "-":
