@@ -45,6 +45,10 @@ class ReminderCog(commands.Cog):
                 );
                 """
             )
+            # Ensure call_time column is present for recurring reminders
+            await self.conn.execute(
+                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
+            )
             print("✅ Verbonden met database!")
         except Exception as e:
             print("❌ Fout bij verbinden met database:", e)
