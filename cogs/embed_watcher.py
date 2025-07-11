@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import config
 import asyncpg
 from utils.timezone import BRUSSELS_TZ
+import logging
 
 # All logging timestamps in this module use Brussels time for clarity.
 
@@ -50,12 +51,17 @@ class EmbedReminderWatcher(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.conn = None
+        self.logger = logging.getLogger(EmbedReminderWatcher)
+        
+        
 
     async def setup_db(self):
         self.conn = await asyncpg.connect(config.DATABASE_URL)
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        if message.author.id == self.bot.user.id:
+            return  # Skip messages from the bot itself
         if message.channel.id != config.ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
             print("[📣] Kanaal ID:", message.channel.id)
             return
