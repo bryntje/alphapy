@@ -51,7 +51,7 @@ class EmbedReminderWatcher(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.conn = None
-        self.logger = logging.getLogger(EmbedReminderWatcher)
+        self.logger = logging.getLogger("EmbedReminderWatcher")
         
         
 
