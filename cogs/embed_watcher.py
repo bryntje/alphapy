@@ -6,8 +6,11 @@ from datetime import datetime, timedelta
 import config
 import asyncpg
 from zoneinfo import ZoneInfo
+from typing import Optional, Tuple, List
+from utils.logger import logger
 
-def extract_datetime_from_text(text):
+
+def extract_datetime_from_text(text: str) -> Optional[datetime]:
     date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
     time_match = re.search(r"(\d{1,2}[:.]\d{2})", text)
 
@@ -22,36 +25,34 @@ def extract_datetime_from_text(text):
             dt = datetime.strptime(full_date_str, "%d %B %Y %H:%M")
             return dt
         except Exception as e:
-            print(f"⛔️ Date parse failed: {e}")
+            logger.warning(f"⛔️ Date parse failed: {e}")
     return None
 
 class EmbedReminderWatcher(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.conn = None
+        self.conn: Optional[asyncpg.Connection] = None
 
-    async def setup_db(self):
+    async def setup_db(self) -> None:
         self.conn = await asyncpg.connect(config.DATABASE_URL)
 
     @commands.Cog.listener()
-    async def on_message(self, message):
+    async def on_message(self, message: discord.Message):
         ANNOUNCEMENTS_CHANNEL_ID = 1160511692824924216  # <-- pas aan!
         
-
         if message.channel.id != ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
-            print("[📣] Kanaal ID:", message.channel.id)
+            logger.debug(f"[📣] Kanal ID: {message.channel.id} - embeds: {bool(message.embeds)}")
             return
 
         embed = message.embeds[0]
         # ⛔️ Skip reminders die de bot zelf al gepost heeft (om loops te vermijden)
         if embed.footer and embed.footer.text == "auto-reminder":
-            print("[🔁] Embed genegeerd (auto-reminder tag gevonden)")
+            logger.debug("[🔁] Embed genegeerd (auto-reminder tag gevonden)")
             return
 
         parsed = self.parse_embed_for_reminder(embed)
-        print("[🐛] Parsed result:", parsed)
-        print("[🐛] DB connection aanwezig?", self.conn is not None)
-
+        logger.debug(f"[🐛] Parsed result: {parsed}")
+        logger.debug(f"[🐛] DB connection aanwezig? {self.conn is not None}")
 
         if parsed and parsed["reminder_time"]:
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
@@ -64,13 +65,12 @@ class EmbedReminderWatcher(commands.Cog):
                     f" 📍 Locatie: {parsed.get('location') or '—'}"
                 )
             else:
-                print("⚠️  WATCHER_LOG_CHANNEL niet gevonden of niet toegankelijk.")
-
+                logger.warning("⚠️  WATCHER_LOG_CHANNEL niet gevonden of niet toegankelijk.")
 
             if self.conn:
                 await self.store_parsed_reminder(parsed, int(message.channel.id), int(message.author.id))
 
-    def parse_embed_for_reminder(self, embed):
+    def parse_embed_for_reminder(self, embed: discord.Embed) -> Optional[dict]:
         all_text = embed.description or ""
         for field in embed.fields:
             all_text += f"\n{field.name}\n{field.value}"
@@ -83,7 +83,7 @@ class EmbedReminderWatcher(commands.Cog):
             days_str = self.parse_days(days_line, dt)
 
             if not dt or not days_str:
-                print(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
+                logger.warning(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
                 return None
 
             return {
@@ -95,10 +95,10 @@ class EmbedReminderWatcher(commands.Cog):
                 "days": days_str.split(",") if days_str else []
             }
         except Exception as e:
-            print(f"❌ Parse error: {e}")
+            logger.exception(f"❌ Parse error: {e}")
             return None
 
-    def extract_fields_from_lines(self, lines):
+    def extract_fields_from_lines(self, lines: List[str]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
         date_line = time_line = location_line = days_line = None
         for line in lines:
             lower = line.lower()
@@ -112,9 +112,9 @@ class EmbedReminderWatcher(commands.Cog):
                 days_line = line.split(":", 1)[1].strip()
         return date_line, time_line, location_line, days_line
 
-    def parse_datetime(self, date_line, time_line):
+    def parse_datetime(self, date_line: Optional[str], time_line: Optional[str]) -> Tuple[Optional[datetime], Optional[ZoneInfo]]:
         if not time_line:
-            print(f"❌ Geen geldige tijd gevonden in regel: {time_line}")
+            logger.warning(f"❌ Geen geldige tijd gevonden in regel: {time_line}")
             return None, None
 
         time_match = re.search(r"^.*?(\d{1,2})[:.](\d{2})(?:\s*(CET|CEST))?.*$", time_line)
@@ -148,7 +148,7 @@ class EmbedReminderWatcher(commands.Cog):
 
         return dt, tz
 
-    def parse_days(self, days_line, dt):
+    def parse_days(self, days_line: Optional[str], dt: datetime) -> str:
         if not days_line:
             return str(dt.weekday())
 
@@ -171,17 +171,15 @@ class EmbedReminderWatcher(commands.Cog):
                 "saturday": "5", "zaterdag": "5",
                 "sunday": "6", "zondag": "6"
             }
-            found_days = []
-            for word in re.split(r",\\s*|\\s+", days_val):
+            found_days: List[str] = []
+            for word in re.split(r",\s*|\s+", days_val):
                 if word in day_map:
                     found_days.append(day_map[word])
             if found_days:
                 return ",".join(sorted(set(found_days)))
         return "-"
 
-
-
-    async def store_parsed_reminder(self, parsed, channel, created_by, origin_channel_id=None, origin_message_id=None):
+    async def store_parsed_reminder(self, parsed: dict, channel: int, created_by: int, origin_channel_id: Optional[int]=None, origin_message_id: Optional[int]=None) -> None:
         dt = parsed["datetime"]
         time_obj = parsed["reminder_time"].time()
         weekday_str = str(dt.weekday())
@@ -205,7 +203,7 @@ class EmbedReminderWatcher(commands.Cog):
                 event_time
             )
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
-            print("[🪵] Log channel:", log_channel)
+            logger.debug(f"[🪵] Log channel: {log_channel}")
             if log_channel:
                 await log_channel.send(
                     f"✅ Reminder opgeslagen in DB voor: **{name}**\n"
@@ -213,11 +211,10 @@ class EmbedReminderWatcher(commands.Cog):
                     f"📍 Locatie: {location or '—'}"
                 )
             else:
-                print("⚠️ Kon logkanaal niet vinden voor confirmatie.")
-
+                logger.warning("⚠️ Kon logkanaal niet vinden voor confirmatie.")
 
         except Exception as e:
-            print(f"[ERROR] Reminder insert failed: {e}")
+            logger.exception(f"[ERROR] Reminder insert failed: {e}")
 
     @app_commands.command(name="debug_parse_embed", description="Parse de laatste embed in het kanaal voor test.")
     async def debug_parse_embed(self, interaction: discord.Interaction):

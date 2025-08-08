@@ -10,7 +10,7 @@ logging.basicConfig(
     level=logging.INFO,
     handlers=[
         log_handler,
-        logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1))  # ✅ fix UnicodeEncodeError
+        logging.StreamHandler(sys.stdout)
     ]
 )
 
