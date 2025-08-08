@@ -13,32 +13,44 @@ logger = logging.getLogger("utils.drive_sync")
 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
-gauth = GoogleAuth()
-creds_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+drive = None
 
-if not creds_env:
-    raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
+def _ensure_drive():
+    global drive
+    if drive is not None:
+        return drive
 
-logger.info("🔐 Loading Google Service Account credentials from env")
+    gauth = GoogleAuth()
+    creds_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
-creds = ServiceAccountCredentials.from_json_keyfile_dict(
-    json.loads(creds_env),
-    SCOPES
-)
+    if not creds_env:
+        logger.warning("GOOGLE_CREDENTIALS_JSON not set; Drive features disabled")
+        return None
 
-gauth.credentials = creds
-drive = GoogleDrive(gauth)
+    logger.info("🔐 Loading Google Service Account credentials from env")
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(
+        json.loads(creds_env),
+        SCOPES
+    )
 
-logger.info("✅ Google Drive service account authentication successful")
+    gauth.credentials = creds
+    drive = GoogleDrive(gauth)
+    logger.info("✅ Google Drive service account authentication successful")
+    return drive
+
 
 def fetch_pdf_text_by_name(filename_keyword: str) -> str:
     """
     Zoek een PDF in Google Drive op basis van een zoekwoord in de bestandsnaam,
     download hem tijdelijk en haal de tekstinhoud eruit.
     """
+    gd = _ensure_drive()
+    if gd is None:
+        return "[Drive not configured: set GOOGLE_CREDENTIALS_JSON]"
+
     query = f"title contains '{filename_keyword}' and mimeType = 'application/pdf' and trashed = false"
     logger.info(f"Searching Google Drive for: {filename_keyword}")
-    file_list = drive.ListFile({'q': query}).GetList()
+    file_list = gd.ListFile({'q': query}).GetList()
 
     if not file_list:
         logger.warning(f"No matching PDF found for keyword: {filename_keyword}")
@@ -49,6 +61,7 @@ def fetch_pdf_text_by_name(filename_keyword: str) -> str:
     downloaded = file.GetContentIOBuffer()
     pdf_text = extract_text_from_pdf(downloaded)
     return pdf_text
+
 
 def extract_text_from_pdf(file_buffer: io.BytesIO) -> str:
     """
