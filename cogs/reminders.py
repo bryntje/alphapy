@@ -180,7 +180,11 @@ class ReminderCog(commands.Cog):
                     embed.add_field(name="🔗 Origineel", value=f"[Klik hier]({link})", inline=False)
                 
                 # Verstuur met mention buiten embed
-                await channel.send("@everyone", embed=embed)
+                await channel.send(
+                    "@everyone",
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(everyone=config.ENABLE_EVERYONE_MENTIONS)
+                )
                 # Als het een eenmalige reminder was (event_time bestaat), verwijder hem
                 if row.get("event_time"):
                     await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])

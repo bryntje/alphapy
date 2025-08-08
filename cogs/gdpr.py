@@ -76,7 +76,7 @@ class GDPRButton(discord.ui.Button):
         super().__init__(label="I Agree", style=discord.ButtonStyle.success, custom_id="gdpr_agree")
     
     async def callback(self, interaction: discord.Interaction):
-        store_gdpr_acceptance(interaction.user.id)
+        await store_gdpr_acceptance(interaction.user.id)
         await interaction.response.send_message("Thank you for accepting the GDPR terms.", ephemeral=True)
 
 # Zorg ervoor dat je ook de store_gdpr_acceptance functie en database-initialisatie hebt, zoals eerder beschreven.

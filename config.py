@@ -5,15 +5,19 @@ load_dotenv()  # Laad variabelen uit .env bestand
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GUILD_ID = 1160511689263947796
-ROLE_ID = 1336043451489452144
-LOG_CHANNEL_ID = 1338611872299090092
-ONBOARDING_CHANNEL_ID = 1336039005917155510  # Kanaal waar onboarding plaatsvindt
-RULES_CHANNEL_ID = 1336039005917155510
-GDPR_CHANNEL_ID = 1338623097175146638  # Vervang dit door het ID van het kanaal waar je het GDPR document wilt plaatsen
-INVITE_ANNOUNCEMENT_CHANNEL_ID = 1336041753966416026  # Vervang dit door het ID van het kanaal waar de invite-berichten moeten komen
-DATABASE_URL = "postgresql://postgres:quXqkifzMSGEtxJbQWCPZLjdiDKBBewZ@postgres.railway.internal:5432/railway"
-WATCHER_LOG_CHANNEL = 1336042713459593337
+GUILD_ID = int(os.getenv("GUILD_ID", "1160511689263947796"))
+ROLE_ID = int(os.getenv("ROLE_ID", "1336043451489452144"))
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "1338611872299090092"))
+ONBOARDING_CHANNEL_ID = int(os.getenv("ONBOARDING_CHANNEL_ID", "1336039005917155510"))  # Kanaal waar onboarding plaatsvindt
+RULES_CHANNEL_ID = int(os.getenv("RULES_CHANNEL_ID", "1336039005917155510"))
+GDPR_CHANNEL_ID = int(os.getenv("GDPR_CHANNEL_ID", "1338623097175146638"))  # Vervang dit door het ID van het kanaal waar je het GDPR document wilt plaatsen
+INVITE_ANNOUNCEMENT_CHANNEL_ID = int(os.getenv("INVITE_ANNOUNCEMENT_CHANNEL_ID", "1336041753966416026"))  # Vervang dit door het ID van het kanaal waar de invite-berichten moeten komen
+# Database & API security
+DATABASE_URL = os.getenv("DATABASE_URL")
+API_KEY = os.getenv("API_KEY")
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+ENABLE_EVERYONE_MENTIONS = os.getenv("ENABLE_EVERYONE_MENTIONS", "false").strip().lower() == "true"
+WATCHER_LOG_CHANNEL = int(os.getenv("WATCHER_LOG_CHANNEL", "1336042713459593337"))
 # Local override
 try:
     from config_local import *
