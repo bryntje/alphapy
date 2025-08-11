@@ -9,24 +9,24 @@ import pytz
 import re
 from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from config import GUILD_ID
-
+from utils.logger import logger
 
 
 class ReminderCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
         self.bot.loop.create_task(self.setup())
 
-    async def setup(self):
+    async def setup(self) -> None:
         await self.bot.wait_until_ready()
         try:
             self.conn = await asyncpg.connect(config.DATABASE_URL)
-            print("✅ Verbonden met database!")
+            logger.info("✅ Verbonden met database!")
         except Exception as e:
-            print("❌ Fout bij verbinden met database:", e)
+            logger.error(f"❌ Fout bij verbinden met database: {e}")
         self.check_reminders.start()
 
     @app_commands.command(name="add_reminder", description="Plan een herhaalbare reminder in.")
@@ -39,7 +39,7 @@ class ReminderCog(commands.Cog):
     )
     async def add_reminder(self, interaction: discord.Interaction, name: str, channel: discord.TextChannel, time: str, days: str, message: str):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        print("Database connection:", self.conn)
+        logger.debug(f"Database connection aanwezig? {self.conn is not None}")
         if not self.conn:
             await interaction.followup.send("⛔ Database not connected. Try again later.", ephemeral=True)
             return
@@ -64,7 +64,7 @@ class ReminderCog(commands.Cog):
 
         if is_admin:
             query = "SELECT id, name, time, days FROM reminders ORDER BY time;"
-            params = []
+            params: List[Any] = []
         else:
             query = """
                 SELECT id, name, time, days FROM reminders
@@ -75,7 +75,7 @@ class ReminderCog(commands.Cog):
 
         try:
             rows = await self.conn.fetch(query, *params)
-            print(f"🔍 Fetched {len(rows)} reminders ({'admin' if is_admin else 'user'})")
+            logger.info(f"🔍 Fetched {len(rows)} reminders ({'admin' if is_admin else 'user'})")
 
             if not rows:
                 await interaction.followup.send("❌ Geen reminders gevonden.")
@@ -83,7 +83,7 @@ class ReminderCog(commands.Cog):
 
             msg_lines = [f"📋 **Actieve Reminders:**"]
             for row in rows:
-                days_str = ", ".join(row["days"])
+                days_str = ", ".join(row["days"]) if row.get("days") else "-"
                 time_str = row["time"].strftime("%H:%M") if row["time"] else "⛔"
                 msg_lines.append(
                     f"🔹 **{row['name']}** — ⏰ `{time_str}` op `{days_str}` (ID: `{row['id']}`)"
@@ -91,9 +91,8 @@ class ReminderCog(commands.Cog):
 
             await interaction.followup.send("\n".join(msg_lines))
         except Exception as e:
+            logger.exception("Fout bij ophalen reminders")
             await interaction.followup.send(f"⚠️ Fout bij ophalen reminders: `{e}`")
-
-
 
     @app_commands.command(name="reminder_delete", description="🗑️ Verwijder een reminder via ID")
     @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
@@ -119,11 +118,10 @@ class ReminderCog(commands.Cog):
             for row in rows if current.lower() in str(row["id"]) or current.lower() in row["name"].lower()
         ]
 
-
     @tasks.loop(seconds=60)
-    async def check_reminders(self):
+    async def check_reminders(self) -> None:
         if not self.conn:
-            print("⛔ Database connection not ready.")
+            logger.warning("⛔ Database connection not ready.")
             return
 
         tz = pytz.timezone("Europe/Brussels")
@@ -132,7 +130,7 @@ class ReminderCog(commands.Cog):
         current_day = str(now.weekday())
         current_date = now.date()
 
-        print(f"🔁 Reminder check: {current_time_str} op dag {current_day}")
+        logger.debug(f"🔁 Reminder check: {current_time_str} op dag {current_day}")
 
         try:
             rows = await self.conn.fetch("""
@@ -149,15 +147,13 @@ class ReminderCog(commands.Cog):
             for row in rows:
                 channel = self.bot.get_channel(int(row["channel_id"]))
                 if not channel:
-                    print(f"⚠️ Kanaal {row['channel_id']} niet gevonden.")
+                    logger.warning(f"⚠️ Kanaal {row['channel_id']} niet gevonden.")
                     continue
 
                 from discord import Embed
-                dt = now  # datetime object van de geplande reminder
-                datum_str = dt.strftime("%A %d %B %Y")  # e.g., Saturday 03 May 2025
+                dt = now
+                datum_str = dt.strftime("%A %d %B %Y")
                 tijd_str = dt.strftime("%H:%M")
-
-                
 
                 embed = Embed(
                     title=f"⏰ Reminder: {row['name']}",
@@ -166,7 +162,7 @@ class ReminderCog(commands.Cog):
                 )
                 
                 # Datum & Tijd van event
-                event_dt = row['event_time']  # Dit is parsed['datetime'] bij opslag
+                event_dt = row['event_time']
                 embed.add_field(name="📅 Date", value=event_dt.strftime("%A %d %B %Y"), inline=False)
                 embed.add_field(name="⏰ Time", value=event_dt.strftime("%H:%M"), inline=False)
                 
@@ -180,17 +176,21 @@ class ReminderCog(commands.Cog):
                     embed.add_field(name="🔗 Origineel", value=f"[Klik hier]({link})", inline=False)
                 
                 # Verstuur met mention buiten embed
-                await channel.send("@everyone", embed=embed)
+                await channel.send(
+                    "@everyone",
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(everyone=config.ENABLE_EVERYONE_MENTIONS)
+                )
                 # Als het een eenmalige reminder was (event_time bestaat), verwijder hem
                 if row.get("event_time"):
                     await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
-                    print(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na verzenden.")
+                    logger.info(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na verzenden.")
 
         except Exception as e:
-            print("🚨 Reminder loop error:", e)
+            logger.exception("🚨 Reminder loop error")
 
 # Voor extern gebruik via FastAPI
-async def get_reminders_for_user(conn, user_id: str):
+async def get_reminders_for_user(conn: asyncpg.Connection, user_id: str):
     query = """
         SELECT id, name, time, days, message, channel_id, created_by
         FROM reminders
@@ -200,7 +200,7 @@ async def get_reminders_for_user(conn, user_id: str):
     return await conn.fetch(query, user_id)
 
 
-async def create_reminder(conn, data: dict):
+async def create_reminder(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:
     await conn.execute(
         """
         INSERT INTO reminders (name, channel_id, time, days, message, created_by)
@@ -211,11 +211,11 @@ async def create_reminder(conn, data: dict):
         data["time"],
         data["days"],
         data["message"],
-        data["created_by"]  # 👈 fix naam
+        data["created_by"]
     )
 
 
-async def update_reminder(conn, data: dict):
+async def update_reminder(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:
     await conn.execute(
         """
         UPDATE reminders
@@ -227,18 +227,16 @@ async def update_reminder(conn, data: dict):
         data["days"],
         data["message"],
         data["id"],
-        data["created_by"]  # 👈 fix naam
+        data["created_by"]
     )
 
 
-async def delete_reminder(conn, reminder_id: int, created_by: str):
+async def delete_reminder(conn: asyncpg.Connection, reminder_id: int, created_by: str) -> None:
     await conn.execute(
         "DELETE FROM reminders WHERE id = $1 AND created_by = $2",
         reminder_id,
         created_by
     )
-
-
 
 
 async def setup(bot):

@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 import asyncpg
 import config
+from typing import Any
+from utils.logger import logger
 
 class GDPRAnnouncement(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -9,7 +11,7 @@ class GDPRAnnouncement(commands.Cog):
 
     @commands.command(name="postgdpr")
     @commands.is_owner()
-    async def post_gdpr(self, ctx):
+    async def post_gdpr(self, ctx: commands.Context) -> None:
         """
         Post the GDPR Data Processing and Confidentiality Agreement in the designated channel and pin the message.
         """
@@ -75,14 +77,11 @@ class GDPRButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label="I Agree", style=discord.ButtonStyle.success, custom_id="gdpr_agree")
     
-    async def callback(self, interaction: discord.Interaction):
-        store_gdpr_acceptance(interaction.user.id)
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await store_gdpr_acceptance(interaction.user.id)
         await interaction.response.send_message("Thank you for accepting the GDPR terms.", ephemeral=True)
 
-# Zorg ervoor dat je ook de store_gdpr_acceptance functie en database-initialisatie hebt, zoals eerder beschreven.
-
-
-async def store_gdpr_acceptance(user_id):
+async def store_gdpr_acceptance(user_id: int) -> None:
     """Slaat de GDPR-acceptatie op in PostgreSQL."""
     try:
         conn = await asyncpg.connect(config.DATABASE_URL)
@@ -95,10 +94,9 @@ async def store_gdpr_acceptance(user_id):
             user_id, 1
         )
         await conn.close()
-        print(f"✅ GDPR-acceptatie opgeslagen voor {user_id}")
+        logger.info(f"✅ GDPR-acceptatie opgeslagen voor {user_id}")
     except Exception as e:
-        print(f"❌ Fout bij opslaan GDPR-acceptatie voor {user_id}: {e}")
+        logger.exception(f"❌ Fout bij opslaan GDPR-acceptatie voor {user_id}: {e}")
 
-
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(GDPRAnnouncement(bot))
