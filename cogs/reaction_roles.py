@@ -58,16 +58,19 @@ class RuleButton(discord.ui.Button):
         self.rule_view = view
 
     async def callback(self, interaction: discord.Interaction):
-        view: RuleAcceptanceView = self.view
-        if interaction.user.id != view.member.id:
+        view_obj = self.view
+        if not isinstance(view_obj, RuleAcceptanceView):
+            await interaction.response.send_message("⚠️ Invalid view state.", ephemeral=True)
+            return
+        if interaction.user.id != view_obj.member.id:
             await interaction.response.send_message("🚫 You cannot interact with this!", ephemeral=True)
             return
 
-        view.accepted_rules.add(self.rule_index)
-        view.current_rule += 1
-        view.update_buttons()
-        if view.current_rule < len(view.rules):
-            next_rule_text, next_rule_desc = view.rules[view.current_rule]
+        view_obj.accepted_rules.add(self.rule_index)
+        view_obj.current_rule += 1
+        view_obj.update_buttons()
+        if view_obj.current_rule < len(view_obj.rules):
+            next_rule_text, next_rule_desc = view_obj.rules[view_obj.current_rule]
             embed = discord.Embed(
                 title=next_rule_text,
                 description=next_rule_desc,
@@ -75,11 +78,11 @@ class RuleButton(discord.ui.Button):
             )
             embed.set_footer(text="Continue to the next rule.")
             embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message(embed=embed, view=view_obj)
         else:
-            view.clear_items()
-            view.add_item(FinalAcceptButton())
-            await interaction.response.edit_message(view=view)
+            view_obj.clear_items()
+            view_obj.add_item(FinalAcceptButton())
+            await interaction.response.edit_message(view=view_obj)
 
 class FinalAcceptButton(discord.ui.Button):
     """Knop waarmee een gebruiker aangeeft alle regels te accepteren en onboarding start."""
@@ -87,17 +90,21 @@ class FinalAcceptButton(discord.ui.Button):
         super().__init__(label="✅ Accept All Rules & Start Onboarding", style=discord.ButtonStyle.success, custom_id="final_accept")
 
     async def callback(self, interaction: discord.Interaction):
-        view: RuleAcceptanceView = self.view
-        if interaction.user.id != view.member.id:
+        view_obj = self.view
+        if not isinstance(view_obj, RuleAcceptanceView):
+            await interaction.response.send_message("⚠️ Invalid view state.", ephemeral=True)
+            return
+        if interaction.user.id != view_obj.member.id:
             await interaction.response.send_message("🚫 You cannot interact with this!", ephemeral=True)
             return
         
-        if len(view.accepted_rules) < len(view.rules):
+        if len(view_obj.accepted_rules) < len(view_obj.rules):
             await interaction.response.send_message("⚠️ You must accept all rules before proceeding!", ephemeral=True)
             return
     
         from cogs.onboarding import Onboarding
-        onboarding_cog = interaction.client.get_cog("Onboarding")
+        bot_client = interaction.client
+        onboarding_cog = getattr(bot_client, "get_cog", lambda name: None)("Onboarding")
         if onboarding_cog:
             print("✅ Onboarding Cog gevonden! Start onboarding...")
             await interaction.response.defer()
@@ -117,7 +124,13 @@ class ReactionRole(commands.Cog):
     async def on_ready(self):
         """Plaats de onboarding-knop in #rules zodra de bot opstart (indien nog niet aanwezig)."""
         guild = self.bot.get_guild(config.GUILD_ID)
+        if not guild:
+            print(f"⚠️ Guild {config.GUILD_ID} niet gevonden. Sla plaatsen onboarding-knop over.")
+            return
         channel = guild.get_channel(config.RULES_CHANNEL_ID)
+        if not channel:
+            print(f"⚠️ Kanaal {config.RULES_CHANNEL_ID} niet gevonden in guild {guild.name}.")
+            return
 
         # Helper: check of een bericht de Start Onboarding-knop bevat via custom_id
         def has_start_button(message: discord.Message) -> bool:
@@ -133,7 +146,11 @@ class ReactionRole(commands.Cog):
                 return False
 
         # Controleer of er al een bericht met de onboarding-knop staat op basis van custom_id
-        messages = [message async for message in channel.history(limit=100)]
+        try:
+            messages = [message async for message in channel.history(limit=100)]
+        except Exception as e:
+            print(f"⚠️ Kon channel history niet lezen: {e}")
+            return
         persistent_message = None
         for msg in messages:
             if has_start_button(msg):

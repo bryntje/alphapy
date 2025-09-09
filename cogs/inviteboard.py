@@ -100,7 +100,11 @@ class InviteTracker(commands.Cog):
         await asyncio.sleep(1)
 
         guild = member.guild
-        new_invites = await guild.invites()
+        try:
+            new_invites = await guild.invites()
+        except Exception as e:
+            print(f"⚠️ Kan guild invites niet ophalen: {e}")
+            return
         old_invites = self.invites_cache.get(guild.id, [])
 
         inviter = None
@@ -124,9 +128,17 @@ class InviteTracker(commands.Cog):
         if inviter:
             await self.update_invite_count(inviter.id)
             # Haal de huidige invite count op na de update
-            conn = await asyncpg.connect(config.DATABASE_URL)
-            row = await conn.fetchrow("SELECT invite_count FROM invite_tracker WHERE user_id = $1", inviter.id)
-            await conn.close()
+            try:
+                conn = await asyncpg.connect(config.DATABASE_URL)
+                row = await conn.fetchrow("SELECT invite_count FROM invite_tracker WHERE user_id = $1", inviter.id)
+            except Exception as e:
+                print(f"⚠️ DB-fout bij ophalen invite_count: {e}")
+                row = None
+            finally:
+                try:
+                    await conn.close()
+                except Exception:
+                    pass
 
             invite_count = row["invite_count"] if row else "an unknown number of"
 
