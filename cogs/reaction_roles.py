@@ -118,13 +118,28 @@ class ReactionRole(commands.Cog):
         """Plaats de onboarding-knop in #rules zodra de bot opstart (indien nog niet aanwezig)."""
         guild = self.bot.get_guild(config.GUILD_ID)
         channel = guild.get_channel(config.RULES_CHANNEL_ID)
-        # Controleer of er al een bericht met de onboarding-knop staat (bijv. op basis van de embed titel)
+
+        # Helper: check of een bericht de Start Onboarding-knop bevat via custom_id
+        def has_start_button(message: discord.Message) -> bool:
+            try:
+                for row in getattr(message, "components", []) or []:
+                    # ActionRow kan 'children' (discord.py UI) of 'components' (API representatie) hebben
+                    children = getattr(row, "children", None) or getattr(row, "components", [])
+                    for comp in children:
+                        if getattr(comp, "custom_id", None) == "start_onboarding":
+                            return True
+                return False
+            except Exception:
+                return False
+
+        # Controleer of er al een bericht met de onboarding-knop staat op basis van custom_id
         messages = [message async for message in channel.history(limit=100)]
         persistent_message = None
         for msg in messages:
-            if msg.embeds and msg.embeds[0].title == "Welcome to Alphapips™":
+            if has_start_button(msg):
                 persistent_message = msg
                 break
+
         if not persistent_message:
             embed = discord.Embed(
                 title="Welcome to Alphapips™",

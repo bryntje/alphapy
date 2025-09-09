@@ -2,6 +2,7 @@ import discord
 import aiohttp
 import time
 from datetime import datetime, timezone
+from utils.timezone import BRUSSELS_TZ
 from utils.logger import get_gpt_status_logs
 from discord import app_commands
 from discord.ext import commands
@@ -34,7 +35,7 @@ async def fetch_openai_status():
 def format_timedelta(ts):
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
-    delta = datetime.now(timezone.utc) - ts
+    delta = datetime.now(BRUSSELS_TZ) - ts
     minutes = int(delta.total_seconds() // 60)
     return f"{minutes} min ago" if minutes < 60 else f"{delta.seconds // 3600} hr ago"
 

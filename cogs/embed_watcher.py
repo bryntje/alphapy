@@ -5,28 +5,52 @@ import re
 from datetime import datetime, timedelta
 import config
 import asyncpg
-from zoneinfo import ZoneInfo
 from typing import Optional, Tuple, List
 from utils.logger import logger
+from utils.timezone import BRUSSELS_TZ
 
+
+# All logging timestamps in this module use Brussels time for clarity.
 
 def extract_datetime_from_text(text: str) -> Optional[datetime]:
-    date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
+    """Parse a free-text date/time, trying numeric and natural language formats."""
+    # Try numeric date like 12/05/2025 or 12-05-25
+    date_match = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", text)
     time_match = re.search(r"(\d{1,2}[:.]\d{2})", text)
+    current_year = datetime.now(BRUSSELS_TZ).year
 
+    if date_match and time_match:
+        day = int(date_match.group(1))
+        month = int(date_match.group(2))
+        year = date_match.group(3)
+        if year:
+            year = int(year) if len(year) == 4 else 2000 + int(year)
+        else:
+            year = current_year
+        time_str = time_match.group(1).replace(".", ":")
+        try:
+            dt = datetime.strptime(f"{day}/{month}/{year} {time_str}", "%d/%m/%Y %H:%M")
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=BRUSSELS_TZ)
+            return dt
+        except Exception as e:
+            logger.warning(f"⛔️ Date parse failed: {e}")
+
+    # Try natural language date like 12th May
+    date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
     if date_match and time_match:
         day = int(date_match.group(1))
         month_str = date_match.group(3)
         time_str = time_match.group(1).replace(".", ":")
-        current_year = datetime.now().year
-
         try:
-            full_date_str = f"{day} {month_str} {current_year} {time_str}"
-            dt = datetime.strptime(full_date_str, "%d %B %Y %H:%M")
+            dt = datetime.strptime(f"{day} {month_str} {current_year} {time_str}", "%d %B %Y %H:%M")
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=BRUSSELS_TZ)
             return dt
         except Exception as e:
             logger.warning(f"⛔️ Date parse failed: {e}")
     return None
+
 
 class EmbedReminderWatcher(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -38,9 +62,9 @@ class EmbedReminderWatcher(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        ANNOUNCEMENTS_CHANNEL_ID = 1160511692824924216  # <-- pas aan!
-        
-        if message.channel.id != ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
+        if message.author.id == getattr(self.bot.user, 'id', None):
+            return  # Skip messages from the bot itself
+        if message.channel.id != config.ANNOUNCEMENTS_CHANNEL_ID or not message.embeds:
             logger.debug(f"[📣] Kanal ID: {message.channel.id} - embeds: {bool(message.embeds)}")
             return
 
@@ -78,21 +102,56 @@ class EmbedReminderWatcher(commands.Cog):
         lines = all_text.split('\n')
         date_line, time_line, location_line, days_line = self.extract_fields_from_lines(lines)
 
+        # Fallbacks for time and days if not present in structured lines
+        if not time_line:
+            time_fallback = re.search(r"\b(\d{1,2}[:.]\d{2})\s*(?:CET|CEST)?", embed.description or "")
+            if not time_fallback:
+                time_fallback = re.search(r"\b(\d{1,2}[:.]\d{2})\s*(?:CET|CEST)?", all_text)
+            if time_fallback:
+                time_line = time_fallback.group(0)
+
+        if not days_line and embed.description:
+            day_fallback = re.search(r"\b(?:every|elke)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", embed.description, re.IGNORECASE)
+            if day_fallback:
+                days_line = day_fallback.group(1)
+
         try:
             dt, tz = self.parse_datetime(date_line, time_line)
-            days_str = self.parse_days(days_line, dt)
+
+            # Fallback: try to parse datetime from the description when
+            # no explicit date/time fields were found.
+            if not dt:
+                dt = extract_datetime_from_text(embed.description or "")
+                if dt:
+                    tz = BRUSSELS_TZ
+
+            # Fallback: attempt to extract location from the description if no
+            # location field exists.
+            if not location_line and embed.description:
+                loc_match = re.search(r"(?:location|locatie)[:\s]*([^\n]+)", embed.description, re.IGNORECASE)
+                if loc_match:
+                    location_line = loc_match.group(1).strip()
+
+            reminder_time = dt - timedelta(minutes=60)
+            days_str = self.parse_days(days_line, reminder_time)
+            days_list = days_str.split(",") if days_str else []
+
+            # Log the parsed datetime and days list for debugging purposes.
+            print(
+                f"🕑 Parsed datetime: {dt.astimezone(BRUSSELS_TZ)} "
+                f"(weekday {dt.weekday()}) → days {days_list}"
+            )
 
             if not dt or not days_str:
                 logger.warning(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
                 return None
-
             return {
                 "datetime": dt,
-                "reminder_time": dt - timedelta(minutes=60),
+                "reminder_time": reminder_time,
                 "location": location_line or "-",
                 "title": embed.title or "-",
                 "description": embed.description or "-",
-                "days": days_str.split(",") if days_str else []
+                "days": days_list,
             }
         except Exception as e:
             logger.exception(f"❌ Parse error: {e}")
@@ -106,13 +165,13 @@ class EmbedReminderWatcher(commands.Cog):
                 date_line = line.split(":", 1)[1].strip()
             elif "time:" in lower:
                 time_line = line.split(":", 1)[1].strip()
-            elif "location:" in lower:
+            elif "location:" in lower or "locatie:" in lower:
                 location_line = line.split(":", 1)[1].strip()
             elif "days:" in lower:
                 days_line = line.split(":", 1)[1].strip()
         return date_line, time_line, location_line, days_line
 
-    def parse_datetime(self, date_line: Optional[str], time_line: Optional[str]) -> Tuple[Optional[datetime], Optional[ZoneInfo]]:
+    def parse_datetime(self, date_line: Optional[str], time_line: Optional[str]) -> Tuple[Optional[datetime], Optional[object]]:
         if not time_line:
             logger.warning(f"❌ Geen geldige tijd gevonden in regel: {time_line}")
             return None, None
@@ -123,27 +182,39 @@ class EmbedReminderWatcher(commands.Cog):
 
         hour = int(time_match.group(1))
         minute = int(time_match.group(2))
-        timezone_str = time_match.group(3) or "CET"
+        _timezone_str = time_match.group(3) or "CET"
 
-        tz = ZoneInfo("Europe/Brussels")
+        tz = BRUSSELS_TZ
 
         if date_line:
-            date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
-            if not date_match:
-                return None, None
-
-            day, month_str, year = date_match.groups()
-            day = int(day)
-            year = int(year) if year else datetime.now().year
-
-            try:
-                month = datetime.strptime(month_str[:3], "%b").month
-            except ValueError:
-                month = datetime.strptime(month_str, "%B").month
-
+            date_line = date_line.strip()
+            numeric = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", date_line)
+            if numeric:
+                day = int(numeric.group(1))
+                month = int(numeric.group(2))
+                year = numeric.group(3)
+                if year:
+                    year = int(year) if len(year) == 4 else 2000 + int(year)
+                else:
+                    year = datetime.now(BRUSSELS_TZ).year
+            else:
+                date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
+                if not date_match:
+                    alt_match = re.search(r"([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?", date_line)
+                    if not alt_match:
+                        return None, None
+                    month_str, day, year = alt_match.groups()
+                else:
+                    day, month_str, year = date_match.groups()
+                day = int(day)
+                year = int(year) if year else datetime.now(BRUSSELS_TZ).year
+                try:
+                    month = datetime.strptime(month_str[:3], "%b").month
+                except ValueError:
+                    month = datetime.strptime(month_str, "%B").month
             dt = datetime(year, month, day, hour, minute, tzinfo=tz)
         else:   
-            now = datetime.now(tz)
+            now = datetime.now(BRUSSELS_TZ)
             dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
         return dt, tz
@@ -173,41 +244,61 @@ class EmbedReminderWatcher(commands.Cog):
             }
             found_days: List[str] = []
             for word in re.split(r",\s*|\s+", days_val):
+                word = word.strip().lower()
+                word = re.sub(r"[^\w]", "", word)
                 if word in day_map:
                     found_days.append(day_map[word])
+            print(f"🔍 Check woord: '{word}' → match? {word in day_map}")
+            print(f"✅ Found days list: {found_days}")
             if found_days:
                 return ",".join(sorted(set(found_days)))
-        return "-"
+        # fallback to the weekday of the provided datetime
+        print(f"⚠️ Fallback triggered in parse_days — geen geldige days_line: '{days_line}' → weekday van dt: {dt.strftime('%A')} ({dt.weekday()})")
+        return str(dt.weekday())
 
     async def store_parsed_reminder(self, parsed: dict, channel: int, created_by: int, origin_channel_id: Optional[int]=None, origin_message_id: Optional[int]=None) -> None:
         dt = parsed["datetime"]
-        time_obj = parsed["reminder_time"].time()
-        weekday_str = str(dt.weekday())
+        channel = int(channel)
+        created_by = int(created_by)
+        origin_channel_id = int(origin_channel_id) if origin_channel_id is not None else None
+        origin_message_id = int(origin_message_id) if origin_message_id is not None else None
+        reminder_dt = parsed["reminder_time"].astimezone(BRUSSELS_TZ)
+        time_obj = reminder_dt.time()  # optioneel voor UI
+        days_arr = parsed["days"]
+        if isinstance(days_arr, str):
+            days_arr = [d.strip() for d in days_arr.split(",") if d.strip()]
+        print(f"[DEBUG] Final days_arr voor DB-insert: {days_arr} ({type(days_arr)})")
         name = f"AutoReminder - {parsed['title'][:30]}"
         message = f"{parsed['title']}\n\n{parsed['description']}"
         location = parsed.get("location", "-")
-        event_time = dt.replace(tzinfo=None)
 
         try:
             await self.conn.execute(
-                "INSERT INTO reminders (name, channel_id, time, days, message, created_by, location, origin_channel_id, origin_message_id, event_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                """
+                INSERT INTO reminders (
+                    name, channel_id, days, message, created_by, 
+                    location, origin_channel_id, origin_message_id, 
+                    event_time, time
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                """,
                 name,
                 channel,
-                time_obj,
-                [weekday_str],
+                days_arr,  # geef als array door
                 message,
                 created_by,
                 location,
                 origin_channel_id,
                 origin_message_id,
-                event_time
+                reminder_dt,
+                time_obj
             )
+
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
             logger.debug(f"[🪵] Log channel: {log_channel}")
             if log_channel:
                 await log_channel.send(
                     f"✅ Reminder opgeslagen in DB voor: **{name}**\n"
-                    f"🕒 Tijdstip: {time_obj.strftime('%H:%M')} op dag {weekday_str}\n"
+                    f"🕒 Tijdstip: {time_obj.strftime('%H:%M')} op dag {','.join(days_arr)}\n"
                     f"📍 Locatie: {location or '—'}"
                 )
             else:
@@ -238,6 +329,12 @@ class EmbedReminderWatcher(commands.Cog):
                 return
 
         await interaction.followup.send("⚠️ Geen embed gevonden in de laatste 10 berichten.")
+
+
+def parse_embed_for_reminder(embed: discord.Embed):
+    """Convenience wrapper to parse a reminder embed outside of the cog."""
+    parser = EmbedReminderWatcher(None)
+    return parser.parse_embed_for_reminder(embed)
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)
