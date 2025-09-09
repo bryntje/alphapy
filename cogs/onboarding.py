@@ -1,9 +1,10 @@
 import discord
 from discord.ext import commands
-import sqlite3
 import json
 import logging
 import uuid
+import re
+from typing import Optional, Dict, Any, cast
 from config import ROLE_ID, LOG_CHANNEL_ID
 import asyncpg
 import config
@@ -22,85 +23,76 @@ class Onboarding(commands.Cog):
         self.bot = bot
         # Houd per gebruiker de huidige stap en antwoorden bij.
         self.active_sessions = {}  # { user_id: {"step": int, "answers": {}} }
+        # Regex voor emailvalidatie
+        self.EMAIL_REGEX = re.compile(r"^[\w\.-]+@[\w\.-]+\.\w{2,}$")
+
+        # Nieuwe, compacte onboarding flow (4 vragen)
         self.questions = [
             {
-                "question": "🌟 How did you hear about Alphapips?",
+                "question": "📣 How did you hear about AlphaPips?",
                 "options": [
                     ("Invited by a friend", "friend"),
                     ("Social Media", "social"),
                     ("Event / Presentation", "event")
                 ],
                 "followup": {
-                    "friend": "Who invited you?",
-                    "social": "Which platform did you find us on?",
-                    "event": "What was the name of the event?"
+                    "friend": {"question": "Who invited you?"},
+                    "social": {"question": "Which platform?"},
+                    "event": {"question": "Name of the event?"}
                 }
             },
             {
-                "question": "🙋‍♂️ What do you want to achieve with Alphapips?",
-                "options": [
-                    ("🚀 Financial Knowledge", "finance"),
-                    ("💡 Learn Trading", "trading"),
-                    ("🔗 Networking", "networking"),
-                    ("🌟 Personal Growth", "growth"),
-                    ("✨ All", "all")
-                ],
-                "multiple": True  # Meerdere antwoorden mogen geselecteerd worden
-            },
-            {
-                "question": "📊 How experienced are you in trading?",
-                "options": [
-                    ("🔰 Beginner (0-3 months)", "beginner"),
-                    ("📈 Intermediate (3-12 months)", "intermediate"),
-                    ("🚀 Advanced (1+ year)", "advanced")
-                ]
-            },
-            {
-                "question": "💳 Do you already have an iGenius membership?",
-                "options": [
-                    ("✅ Yes", "yes"),
-                    ("❌ No", "no")
-                ]
-            },
-            {
-                "question": "📈 Which markets are you most interested in?",
+                "question": "💼 Which opportunities are you most interested in?",
                 "options": [
                     ("🔺 Forex", "forex"),
                     ("💰 Crypto", "crypto"),
-                    ("📈 Equities", "equities")
+                    ("📈 Stocks", "stocks"),
+                    ("📸 UGC", "ugc"),
+                    ("🛒 E-commerce", "ecommerce"),
+                    ("🤝 Network Marketing", "network_marketing")
                 ],
-                "multiple": True  # Meerdere keuzes mogelijk
+                "multiple": True
             },
             {
-                "question": "📺 Are you interested in learning from live trading sessions?",
+                "question": "🧠 Do you have a ZiNRAi membership?",
                 "options": [
                     ("✅ Yes", "yes"),
                     ("❌ No", "no")
                 ]
             },
             {
-                "question": "🚀 Would you like to be part of the Alphapips Growth & Leadership program?",
+                "question": "📞 Would you like to have an introduction call?",
                 "options": [
                     ("✅ Yes", "yes"),
-                    ("❌ No", "no")
-                ]
-            },
-            {
-                "question": "Please enter your full name:",
-                "input": True  # Dit geeft aan dat voor deze vraag een tekstinvoer (modal) nodig is
-            },
-            {
-                "question": "Would you like to receive updates about upcoming promotions?",
-                "options": [
-                    ("✅ Yes", "yes"), 
                     ("❌ No", "no")
                 ],
                 "followup": {
-                    "yes": "Please enter your email address:"
+                    "yes": {"question": "Please enter your email address", "type": "email"}
                 }
             }
         ]
         
+    def _value_to_label(self, q_data: dict, value: object) -> str:
+        options = q_data.get("options")
+        if not isinstance(options, list):
+            return str(value)
+        for label, val in options:
+            if val == value:
+                return label
+        return str(value)
+
+    def _format_answer(self, q_data: dict, raw_answer: object) -> str:
+        if isinstance(raw_answer, dict):
+            choice_value = raw_answer.get("choice")
+            choice_label = self._value_to_label(q_data, choice_value)
+            followup_text = raw_answer.get("followup")
+            followup_label = raw_answer.get("followup_label") or "Details"
+            return f"{choice_label} — {followup_label}: {followup_text}" if followup_text else f"{choice_label}"
+        if isinstance(raw_answer, list):
+            mapped = [self._value_to_label(q_data, v) for v in raw_answer]
+            return ", ".join(mapped) if mapped else "No response"
+        return self._value_to_label(q_data, raw_answer)
+
     async def setup_database(self):
         """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
         self.db = await asyncpg.create_pool(config.DATABASE_URL)
@@ -113,7 +105,7 @@ class Onboarding(commands.Cog):
                 );
             ''')
 
-    async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: dict = None):
+    async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: Optional[dict] = None):
         user_id = interaction.user.id
 
         # Zorg dat er een actieve sessie is voor deze gebruiker
@@ -137,14 +129,8 @@ class Onboarding(commands.Cog):
                 color=discord.Color.blue()
             )
             for idx, question in enumerate(self.questions):
-                answer = answers.get(idx, "No response")
-                if answer == "all":
-                    answer = ["🚀 Financial Knowledge", "💡 Learn Trading", "🔗 Networking", "🌟 Personal Growth"]
-                    answers[idx] = answer
-                if isinstance(answer, list):
-                    answer_text = ", ".join(answer) if answer else "No response"
-                else:
-                    answer_text = answer
+                raw_answer = answers.get(idx, "No response")
+                answer_text = self._format_answer(question, raw_answer)
                 summary_embed.add_field(name=f"**{question['question']}**", value=f"➜ {answer_text}", inline=False)
 
             # Verstuur de samenvatting als ephemeral bericht naar de gebruiker
@@ -163,13 +149,8 @@ class Onboarding(commands.Cog):
                 color=discord.Color.green()
             )
             for idx, question in enumerate(self.questions):
-                answer = answers.get(idx, "No response")
-                if answer == "all":
-                    answer = ["🚀 Financial Knowledge", "💡 Learn Trading", "🔗 Networking", "🌟 Personal Growth"]
-                if isinstance(answer, list):
-                    answer_text = ", ".join(answer) if answer else "No response"
-                else:
-                    answer_text = answer
+                raw_answer = answers.get(idx, "No response")
+                answer_text = self._format_answer(question, raw_answer)
                 log_embed.add_field(name=question['question'], value=f"➜ {answer_text}", inline=False)
 
             log_channel = self.bot.get_channel(LOG_CHANNEL_ID)
@@ -178,12 +159,14 @@ class Onboarding(commands.Cog):
 
             # Automatische roltoewijzing
             try:
-                member = interaction.guild.get_member(user_id)
-                if member:
-                    role = interaction.guild.get_role(ROLE_ID)
-                    if role:
-                        await member.add_roles(role)
-                        logger.info(f"Assigned role {role.name} to {member.display_name}")
+                guild = interaction.guild
+                if guild:
+                    member = guild.get_member(user_id)
+                    if member:
+                        role = guild.get_role(ROLE_ID)
+                        if role:
+                            await member.add_roles(role)
+                            logger.info(f"Assigned role {role.name} to {member.display_name}")
             except Exception as e:
                 logger.error(f"Error assigning role to user {user_id}: {e}")
 
@@ -237,7 +220,7 @@ class Onboarding(commands.Cog):
         logger.info(f"✅ Onboarding data opgeslagen voor {user_id}")
 
 class TextInputModal(discord.ui.Modal):
-    def __init__(self, title: str, step: int, answers: dict, onboarding: object):
+    def __init__(self, title: str, step: int, answers: dict, onboarding: 'Onboarding'):
         # Stel de titel van de modal in op de vraag
         super().__init__(title=title)
         self.step = step
@@ -267,7 +250,7 @@ class TextInputModal(discord.ui.Modal):
 
 class OnboardingView(discord.ui.View):
     """View voor de onboarding-flow."""
-    def __init__(self, step: int = None, answers: dict = None, onboarding: object = None):
+    def __init__(self, step: Optional[int] = None, answers: Optional[dict] = None, onboarding: Optional['Onboarding'] = None):
         super().__init__(timeout=None)
         self.step = step
         self.answers = answers if answers is not None else {}
@@ -294,25 +277,44 @@ class OnboardingButton(discord.ui.Button):
         question_data = self.onboarding.questions[self.step]
         
         # Single-select: zet het antwoord
-        self.view.answers[self.step] = self.value
+        # Als er een follow-up is voor deze keuze, bewaar zowel keuze als latere follow-up in een dict
+        view = self.view
+        if view is None:
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("⚠️ Something went wrong. Please try again.", ephemeral=True)
+            return
+        onboarding_view = cast(OnboardingView, view)
+        if self.value in question_data.get("followup", {}):
+            onboarding_view.answers[self.step] = {"choice": self.value}
+        else:
+            onboarding_view.answers[self.step] = self.value
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.value
 
         # Controleer of er een follow-up modal nodig is
         if self.value in question_data.get("followup", {}):
-            followup_text = question_data["followup"][self.value]
+            followup_cfg = question_data["followup"][self.value]
+            followup_text = followup_cfg["question"] if isinstance(followup_cfg, dict) else str(followup_cfg)
+            validate_email = isinstance(followup_cfg, dict) and followup_cfg.get("type") == "email"
             logger.info(f"📝 Follow-up triggered: {followup_text}")
             await interaction.response.send_modal(
-                FollowupModal(title="Follow-up Question", question=followup_text, step=self.step, answers=self.view.answers)
+                FollowupModal(
+                    title="Follow-up Question",
+                    question=followup_text,
+                    step=self.step,
+                    answers=onboarding_view.answers,
+                    validate_email=validate_email,
+                    onboarding=self.onboarding
+                )
             )
             return
 
         # Activeer de confirm-knop
-        for child in self.view.children:
+        for child in onboarding_view.children:
             if isinstance(child, ConfirmButton):
                 child.disabled = False
                 break
-        await interaction.response.edit_message(view=self.view)
+        await interaction.response.edit_message(view=onboarding_view)
 
 
 class OnboardingSelect(discord.ui.Select):
@@ -336,15 +338,21 @@ class OnboardingSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         logger.info(f"🔘 Select callback: geselecteerde waarden: {self.values}")
         user_id = interaction.user.id
-        self.view.answers[self.step] = self.values
+        view = self.view
+        if view is None:
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("⚠️ Something went wrong. Please try again.", ephemeral=True)
+            return
+        onboarding_view = cast(OnboardingView, view)
+        onboarding_view.answers[self.step] = self.values
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.values
         # Activeer de confirm-knop als er minstens één optie is geselecteerd
-        for child in self.view.children:
+        for child in onboarding_view.children:
             if isinstance(child, ConfirmButton):
                 child.disabled = not bool(self.values)
                 break
-        await interaction.response.edit_message(view=self.view)
+        await interaction.response.edit_message(view=onboarding_view)
 
 
 class ConfirmButton(discord.ui.Button):
@@ -370,23 +378,72 @@ class ConfirmButton(discord.ui.Button):
 
 class FollowupModal(discord.ui.Modal):
     """Modal voor follow-up vragen waarbij de gebruiker tekst kan invoeren."""
-    def __init__(self, title: str, question: str, step: int, answers: dict):
+    def __init__(self, title: str, question: str, step: int, answers: dict, validate_email: bool = False, onboarding: Optional['Onboarding'] = None):
         super().__init__(title=title)
         self.step = step
         self.answers = answers
         self.question = question
-        self.input_field = discord.ui.TextInput(label=question, placeholder="Type je antwoord hier...")
+        self.validate_email = validate_email
+        self.onboarding = onboarding
+        self.input_field = discord.ui.TextInput(label=question, placeholder="Type your answer here...")
         self.add_item(self.input_field)
 
     async def on_submit(self, interaction: discord.Interaction):
         user_id = interaction.user.id
-        self.answers[self.step] = self.input_field.value
-        onboarding = interaction.client.get_cog("Onboarding")
+        value = self.input_field.value.strip()
+
+        # Emailvalidatie indien vereist
+        if self.validate_email:
+            bot_client = cast(commands.Bot, interaction.client)
+            onboarding_cog: Onboarding = self.onboarding or cast(Onboarding, bot_client.get_cog("Onboarding"))
+            if not onboarding_cog.EMAIL_REGEX.match(value):
+                # Bied een retry-knop aan om opnieuw te proberen
+                await interaction.response.send_message(
+                    "❌ Invalid email format. Please try again.",
+                    view=ReenterEmailView(step=self.step, answers=self.answers, onboarding=onboarding_cog),
+                    ephemeral=True
+                )
+                return
+
+        # Sla follow-up op naast de keuze
+        existing = self.answers.get(self.step)
+        if isinstance(existing, dict):
+            existing["followup"] = value
+            existing["followup_label"] = self.question
+            self.answers[self.step] = existing
+        else:
+            self.answers[self.step] = {"choice": existing, "followup": value, "followup_label": self.question}
+
+        # Update actieve sessie
+        bot_client2 = cast(commands.Bot, interaction.client)
+        onboarding = self.onboarding or cast(Onboarding, bot_client2.get_cog("Onboarding"))
         if user_id in onboarding.active_sessions:
-            onboarding.active_sessions[user_id]["answers"][self.step] = self.input_field.value
+            onboarding.active_sessions[user_id]["answers"][self.step] = self.answers[self.step]
+
         await interaction.response.defer(ephemeral=True)
         await interaction.followup.send("✅ Thanks! Moving to the next question...", ephemeral=True)
         await onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
+
+
+class ReenterEmailView(discord.ui.View):
+    def __init__(self, step: int, answers: dict, onboarding: Onboarding):
+        super().__init__(timeout=60)
+        self.step = step
+        self.answers = answers
+        self.onboarding = onboarding
+
+    @discord.ui.button(label="Re-enter email", style=discord.ButtonStyle.primary)
+    async def reenter(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(
+            FollowupModal(
+                title="Email Address",
+                question="Please enter your email address",
+                step=self.step,
+                answers=self.answers,
+                validate_email=True,
+                onboarding=self.onboarding,
+            )
+        )
 
 async def setup(bot: commands.Bot):
     cog = Onboarding(bot)
