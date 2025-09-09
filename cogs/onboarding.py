@@ -129,7 +129,7 @@ class Onboarding(commands.Cog):
                 color=discord.Color.blue()
             )
             for idx, question in enumerate(self.questions):
-                raw_answer = answers.get(idx, "No response")
+                raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
                 summary_embed.add_field(name=f"**{question['question']}**", value=f"➜ {answer_text}", inline=False)
 
@@ -149,7 +149,7 @@ class Onboarding(commands.Cog):
                 color=discord.Color.green()
             )
             for idx, question in enumerate(self.questions):
-                raw_answer = answers.get(idx, "No response")
+                raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
                 log_embed.add_field(name=question['question'], value=f"➜ {answer_text}", inline=False)
 
@@ -177,26 +177,27 @@ class Onboarding(commands.Cog):
 
         # Als deze vraag een vrije tekstinvoer vereist, stuur dan een modal
         if q_data.get("input"):
-            modal = TextInputModal(title=q_data["question"], step=step, answers=answers, onboarding=self)
+            modal = TextInputModal(title=q_data["question"], step=step, answers=answers or {}, onboarding=self)
             await interaction.response.send_modal(modal)
             return
 
         # Anders, bouw een embed en view voor de vraag met opties
         embed = discord.Embed(title="📝 Onboarding Form", description=q_data["question"], color=discord.Color.blue())
-        view = OnboardingView(step=step, answers=answers, onboarding=self)
+        view = OnboardingView(step=step, answers=answers or {}, onboarding=self)
 
         if q_data.get("multiple"):
-            # Voeg een select menu toe voor multi-select vragen
+            # Multi-select: toon enkel de select; geen confirm-knop nodig
             view.add_item(OnboardingSelect(step=step, options=q_data["options"], onboarding=self, view_id=view.view_id))
         else:
             # Voeg knoppen toe voor single-select vragen
             for label, value in q_data["options"]:
                 view.add_item(OnboardingButton(label=label, value=value, step=step, onboarding=self))
 
-        # Voeg een confirm-knop toe die pas wordt ingeschakeld als er een keuze is gemaakt
-        confirm_button = ConfirmButton(step, answers, self)
-        confirm_button.disabled = True
-        view.add_item(confirm_button)
+        # Alleen confirm-knop voor single-select vragen
+        if not q_data.get("multiple"):
+            confirm_button = ConfirmButton(step, answers or {}, self)
+            confirm_button.disabled = True
+            view.add_item(confirm_button)
 
         try:
             if not interaction.response.is_done():
@@ -347,12 +348,8 @@ class OnboardingSelect(discord.ui.Select):
         onboarding_view.answers[self.step] = self.values
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.values
-        # Activeer de confirm-knop als er minstens één optie is geselecteerd
-        for child in onboarding_view.children:
-            if isinstance(child, ConfirmButton):
-                child.disabled = not bool(self.values)
-                break
-        await interaction.response.edit_message(view=onboarding_view)
+        # Ga direct naar de volgende vraag bij multi-select (geen confirm nodig)
+        await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=onboarding_view.answers)
 
 
 class ConfirmButton(discord.ui.Button):
