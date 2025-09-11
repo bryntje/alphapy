@@ -75,6 +75,20 @@ python bot.py
 
 ---
 
+## ⏰ Reminders (one-off & recurring)
+
+- One-off events (from embeds) store a concrete `event_time` and empty `days`.
+  - Trigger at T−60 (scheduler `time`) and at T0 (`event_time::time`).
+  - Embed displays the event clock via `call_time`.
+  - Deleted after the T0 send.
+- Recurring events store `days` (0=Mon..6=Sun) and a daily `time`.
+  - Trigger when `current_day ∈ days` at `time`.
+  - Not deleted.
+- Idempotency: reminders won’t send twice in the same minute (tracked via `last_sent_at`).
+- Logging: major events (created/sent/deleted/errors) are also posted to `WATCHER_LOG_CHANNEL`.
+
+---
+
 ## 🤝 Contributing
 
 We welcome devs, thinkers, and conscious builders.
@@ -99,3 +113,39 @@ This project is licensed under the MIT License.
 
 Questions, dreams or collaborations?  
 Reach out via `bryan.dhaen@gmail.com` or open an issue on GitHub.
+
+---
+
+## 🧭 Operational Playbook (Reminders & Logging)
+
+Use this quick checklist after deploys or config changes to validate reminder behavior and logs.
+
+1) Pre-flight
+- Ensure env vars are set: `DATABASE_URL`, `WATCHER_LOG_CHANNEL`, `GUILD_ID`, `ENABLE_EVERYONE_MENTIONS`.
+- Bot has permissions to read/send in announcement and log channels.
+
+2) Startup verification
+- Start the bot and watch the process logs; you should see DB connection OK.
+- Confirm the `reminders` table includes `call_time` and `last_sent_at`.
+
+3) One-off reminder test (embed-driven)
+- Post an announcement embed with a concrete date/time.
+- Expect two sends: at T−60 and at T0 (event time).
+- After T0 send, the reminder should be deleted.
+- Check `WATCHER_LOG_CHANNEL` for “created”, “sent”, and “deleted” log embeds.
+
+4) Recurring reminder test
+- Create a recurring reminder (days + time).
+- Expect send only on matching weekday at the configured time; not deleted afterward.
+
+5) Idempotency test
+- Restart the bot within the same minute window of a scheduled send.
+- Verify that duplicates are prevented (only one send), thanks to `last_sent_at`.
+
+6) Troubleshooting
+- No sends? Verify time zone is Brussels and system clock is correct.
+- Check that `time` in DB equals the intended trigger minute (HH:MM).
+- Inspect logs in `WATCHER_LOG_CHANNEL` for parsing or SQL errors.
+- Optional indexes for performance:
+  - `CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders (time);`
+  - `CREATE INDEX IF NOT EXISTS idx_reminders_reminder_date ON reminders ((event_time - interval '60 minutes')::date);`
