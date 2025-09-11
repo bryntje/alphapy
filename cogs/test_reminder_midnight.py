@@ -31,7 +31,8 @@ class TestReminderMidnight(unittest.TestCase):
         expected_reminder = event_dt - timedelta(minutes=60)
         self.assertEqual(parsed["reminder_time"], expected_reminder)
         self.assertEqual(parsed["reminder_time"].weekday(), expected_reminder.weekday())
-        self.assertEqual(parsed["days"], [str(expected_reminder.weekday())])
+        # One-off event derived from a concrete date → days should be empty
+        self.assertEqual(parsed["days"], [])
 
 if __name__ == "__main__":
     unittest.main()

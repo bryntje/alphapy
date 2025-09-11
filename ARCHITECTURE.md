@@ -25,6 +25,8 @@
   - Accepts optional embed link and parses details (title, time, days, location)
   - Stores reminders (recurring or one-off) with `call_time` support
   - Periodic job (`tasks.loop`) dispatches reminders
+  - Idempotency: `last_sent_at` prevents duplicate sends in the same minute
+  - T0 support: One-off reminders send at T−60 and at `event_time` (T0)
 
 - `cogs/embed_watcher.py`
   - Listens in announcements channel and auto-creates reminders from embeds
@@ -47,14 +49,15 @@
   - `id SERIAL PRIMARY KEY`
   - `name TEXT`
   - `channel_id BIGINT`
-  - `time TIME` (trigger time)
-  - `call_time TIME` (display time; optional)
-  - `days TEXT[]` (0=Mon..6=Sun) or empty with `event_time`
+  - `time TIME` (trigger time; T−60)
+  - `call_time TIME` (display time; event clock)
+  - `days TEXT[]` (0=Mon..6=Sun); empty with one-off `event_time`
   - `message TEXT`
   - `created_by BIGINT`
   - `origin_channel_id BIGINT` / `origin_message_id BIGINT`
   - `event_time TIMESTAMPTZ` (one-off event)
   - `location TEXT`
+  - `last_sent_at TIMESTAMPTZ` (idempotency per minute)
 
 ## Configuration (`config.py`)
 - Driven by env vars: `GUILD_ID`, `ROLE_ID`, `LOG_CHANNEL_ID`, `RULES_CHANNEL_ID`, `WATCHER_LOG_CHANNEL`, `ANNOUNCEMENTS_CHANNEL_ID`, `DATABASE_URL`, `ENABLE_EVERYONE_MENTIONS`, etc.
@@ -65,11 +68,16 @@
 2. `Onboarding` prompts 4 questions; multi-select advances automatically; follow-ups via modal.
 3. On completion: summary embed (ephemeral), log embed (log channel), role assignment, DB persist.
 4. Reminders: via slash commands or auto from `EmbedReminderWatcher`.
-5. `tasks.loop` in `reminders` dispatches messages at scheduled times.
+5. `tasks.loop` in `reminders` dispatches messages at scheduled times:
+   - One-off (T−60): `time == now` and `(event_time - 60m).date == today`
+   - One-off (T0): `event_time::time == now`
+   - Recurring: `time == now` and `weekday(now) ∈ days`
+   - Skip if `date_trunc('minute', last_sent_at) == date_trunc('minute', now)`
+   - After send: update `last_sent_at`; delete one-offs after T0
 
 ## Observability
 - Centralized logging via `utils/logger.py`
-- Debug messages in watcher and reminders to trace parsing and scheduling
+- Discord log embeds to `WATCHER_LOG_CHANNEL` for created/sent/deleted/errors
 
 ## Security
 - Tokens and DB credentials via env only (no hardcoded secrets)

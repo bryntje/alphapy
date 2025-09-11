@@ -5,26 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- `ask_gpt()` now logs real token usage and latency.
-- Persistent Google Drive authentication via service account.
-- Logging of GPT calls now includes Discord username for traceability.
-- Onboarding: new 4-question flow with follow-ups and email validation.
-- Onboarding: DRY helpers for answer formatting.
-- ReactionRoles: onboarding message detection via button custom_id.
-- Reminders: support for parsing embeds via link; call_time handling.
-- Embed watcher: improved datetime parsing and timezone consistency.
+- Reminders: idempotency with `last_sent_at` to prevent duplicate sends per minute.
+- Reminders: T0 support (event time) alongside T−60; one-offs dispatch twice by default.
+- Reminders: richer logs to console and Discord `WATCHER_LOG_CHANNEL` (created/sent/deleted/errors).
 
 ### Changed
-- `log_gpt_error()` and `log_gpt_success()` now update shared status log without circular imports.
-- Drive sync fallback added for missing topic context.
-- Config is fully env-driven; added ANNOUNCEMENTS_CHANNEL_ID.
+- Reminder scheduler SQL split logic consolidated to match T−60 (by date), T0, and recurring by `days`.
+- Improved observability for reminder flow with structured info/debug messages.
 
 ### Fixed
-- 🐛 Fixed: Emoji logging crash on Windows console (UnicodeEncodeError).
-- 🐛 Fixed: ImportError `cannot import name 'gpt_logs'` by decoupling `status.py`.
-- 🐛 Fixed: OpenAI `400 Bad Request` when passing plain string instead of message array.
-- 🐛 Fixed: duplicate onboarding message by switching to button detection.
-- 🐛 Fixed: reminders loop timezone and embed field robustness.
+- One-offs no longer become weekly due to weekday fallback; days remain empty for dated events.
+- Embed watcher stores `event_time` (event) and `call_time` (display) correctly; `time` remains trigger time (T−60).
 
 ---
 

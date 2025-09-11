@@ -9,7 +9,7 @@ from utils.timezone import BRUSSELS_TZ
 import re
 from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, cast
 from config import GUILD_ID
 from cogs.embed_watcher import parse_embed_for_reminder
 from utils.logger import logger
@@ -26,8 +26,8 @@ class ReminderCog(commands.Cog):
     async def setup(self) -> None:
         await self.bot.wait_until_ready()
         try:
-            self.conn = await asyncpg.connect(config.DATABASE_URL)
-            await self.conn.execute(
+            conn = await asyncpg.connect(config.DATABASE_URL)
+            await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS reminders (
                     id SERIAL PRIMARY KEY,
@@ -41,18 +41,56 @@ class ReminderCog(commands.Cog):
                     origin_channel_id BIGINT,
                     origin_message_id BIGINT,
                     event_time TIMESTAMPTZ,
-                    location TEXT
+                    location TEXT,
+                    last_sent_at TIMESTAMPTZ,
+                    second_ping BOOLEAN DEFAULT FALSE
                 );
                 """
             )
             # Ensure call_time column is present for recurring reminders
-            await self.conn.execute(
+            await conn.execute(
                 "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
             )
+            # Idempotency timestamp
+            await conn.execute(
+                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
+            )
+            # Optional T0 support flag
+            await conn.execute(
+                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS second_ping BOOLEAN DEFAULT FALSE;"
+            )
+            # Useful indexes for scheduler
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_reminders_reminder_date ON reminders(((event_time - INTERVAL '60 minutes')::date));"
+            )
+            self.conn = conn
             logger.info("✅ Verbonden met database!")
         except Exception as e:
             logger.error(f"❌ Fout bij verbinden met database: {e}")
         self.check_reminders.start()
+
+    async def send_log_embed(self, title: str, description: str, level: str = "info") -> None:
+        try:
+            color_map = {
+                "info": 0x3498db,
+                "debug": 0x95a5a6,
+                "error": 0xe74c3c,
+                "success": 0x2ecc71,
+                "warning": 0xf1c40f,
+            }
+            color = color_map.get(level, 0x3498db)
+            from discord import Embed
+            embed = Embed(title=title, description=description, color=color)
+            embed.set_footer(text="reminders")
+            channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+            if channel and hasattr(channel, "send"):
+                text_channel = cast(discord.TextChannel, channel)
+                await text_channel.send(embed=embed)
+        except Exception as e:
+            logger.warning(f"⚠️ Kon log embed niet versturen: {e}")
 
     @app_commands.command(name="add_reminder", description="Plan een herhaalbare of eenmalige reminder in via formulier of berichtlink.")
     @app_commands.describe(
@@ -92,7 +130,9 @@ class ReminderCog(commands.Cog):
             _, channel_id, message_id = map(int, match.groups())
             try:
                 msg_channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
-                msg = await msg_channel.fetch_message(message_id)
+                # Cast to TextChannel for type safety (fetch_message exists there)
+                text_ch = cast(discord.TextChannel, msg_channel)
+                msg = await text_ch.fetch_message(message_id)
 
                 if not msg.embeds:
                     await interaction.followup.send("❌ Geen embed gevonden in dat bericht.", ephemeral=True)
@@ -108,21 +148,25 @@ class ReminderCog(commands.Cog):
                     name = parsed["title"]
                     debug_info.append(f"📝 Titel: `{name}`")
 
-                if parsed.get("description"):
-                    message = parsed["description"]
-                    debug_info.append(f"💬 Bericht: `{message[:25]}...`" if len(message) > 25 else f"💬 Bericht: `{message}`")
+                if parsed.get("description") is not None:
+                    desc_val = str(parsed.get("description") or "")
+                    message = desc_val
+                    debug_info.append(f"💬 Bericht: `{desc_val[:25]}...`" if len(desc_val) > 25 else f"💬 Bericht: `{desc_val}`")
 
                 if parsed.get("reminder_time"):
                     time = parsed["reminder_time"].strftime("%H:%M")
                     event_time = parsed["datetime"].astimezone(BRUSSELS_TZ)
                     debug_info.append(f"⏰ Tijd: `{time}`")
 
-                if parsed.get("days"):
-                    days = parsed["days"]
-                    debug_info.append(f"📅 Dag: `{', '.join(days)}`")
+                days_input: Optional[Any] = days
+                if parsed.get("days") is not None:
+                    days_input = parsed["days"]
+                    days_for_debug = list(days_input) if isinstance(days_input, list) else [str(days_input)]
+                    debug_info.append(f"📅 Dag: `{', '.join(days_for_debug)}`")
                 elif parsed.get("datetime"):
-                    days = [str(parsed["datetime"].weekday())]
-                    debug_info.append(f"📅 Dag (fallback): `{days[0]}`")
+                    # Treat parsed embeds with a concrete date as one-off events
+                    days_input = []
+                    debug_info.append("📅 Eenmalig event (geen days ingesteld)")
 
                 if parsed.get("location"):
                     debug_info.append(f"📍 Locatie: `{parsed['location']}`")
@@ -143,14 +187,19 @@ class ReminderCog(commands.Cog):
         time_obj = datetime.strptime(time, "%H:%M").time()
 
         # Normaliseer days
-        if not days:
+        if 'days_input' in locals() and days_input is not None:
+            raw_days = days_input
+        else:
+            raw_days = days
+
+        if not raw_days:
             days_list: List[str] = []
-        elif isinstance(days, str):
+        elif isinstance(raw_days, str):
             # comma- of spatiegescheiden invoer → lijst
-            parts = re.split(r",\s*|\s+", days.strip())
+            parts = re.split(r",\s*|\s+", raw_days.strip())
             days_list = [p for p in parts if p]
         else:
-            days_list = list(days)
+            days_list = list(raw_days)
 
         origin_channel_id = int(origin_channel_id) if origin_channel_id else None
         origin_message_id = int(origin_message_id) if origin_message_id else None
@@ -162,7 +211,8 @@ class ReminderCog(commands.Cog):
 
         await self.conn.execute(
             """INSERT INTO reminders (name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               RETURNING id""",
             name,
             channel_id,
             time_obj,
@@ -173,6 +223,21 @@ class ReminderCog(commands.Cog):
             origin_channel_id,
             origin_message_id,
             event_time
+        )
+        rid_row = await self.conn.fetchrow("SELECT currval(pg_get_serial_sequence('reminders','id')) AS id")
+        rid = rid_row["id"] if rid_row else None
+        logger.info(f"🟢 Reminder aangemaakt (ID={rid}): {name} @ {time_obj} days={days_list} channel={channel_id}")
+        await self.send_log_embed(
+            title="🟢 Reminder aangemaakt",
+            description=(
+                f"ID: `{rid}`\n"
+                f"Naam: **{name}**\n"
+                f"Kanaal: <#{channel_id}>\n"
+                f"Tijd: `{time_obj.strftime('%H:%M')}`\n"
+                f"Call time: `{call_time_obj.strftime('%H:%M')}`\n"
+                f"Dagen: `{', '.join(days_list) if days_list else '—'}`"
+            ),
+            level="success",
         )
 
         debug_str = "\n".join(debug_info) if debug_info else "ℹ️ Geen extra info uit embed gehaald."
@@ -188,7 +253,7 @@ class ReminderCog(commands.Cog):
             await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
             return
         user_id = interaction.user.id
-        channel_id = interaction.channel.id
+        channel_id = getattr(interaction.channel, "id", 0)
         await interaction.response.defer(ephemeral=True)
 
         is_admin = await is_owner_or_admin_interaction(interaction)
@@ -282,20 +347,38 @@ class ReminderCog(commands.Cog):
             rows = await self.conn.fetch(
                 """
                 SELECT id, channel_id, name, message, location,
-                       origin_channel_id, origin_message_id, event_time, days, call_time
+                       origin_channel_id, origin_message_id, event_time, days, call_time,
+                       last_sent_at, second_ping
                 FROM reminders
-                WHERE time::text = $1 AND (
-                    (event_time IS NOT NULL AND event_time::date = $2)
+                WHERE (
+                    -- One-off at T−60
+                    (event_time IS NOT NULL AND time::text = $1 AND (event_time - INTERVAL '60 minutes')::date = $2)
                     OR
-                    ($3 = ANY(days))
+                    -- One-off at T0 (always enabled if event_time is present)
+                    (event_time IS NOT NULL AND (event_time::time)::text = $1)
+                    OR
+                    -- Recurring by days
+                    (event_time IS NULL AND time::text = $1 AND ($3 = ANY(days)))
                 )
                 """,
                 current_time_str, current_date , current_day
             )
 
+            logger.debug(f"🔎 Matching reminders op {current_time_str} (rows={len(rows)})")
             for row in rows:
+                # Idempotency guard: skip if already sent in this minute
+                last_sent = row.get("last_sent_at")
+                if last_sent is not None:
+                    try:
+                        last_sent_bxl = last_sent.astimezone(BRUSSELS_TZ)
+                    except Exception:
+                        last_sent_bxl = last_sent
+                    if last_sent_bxl.replace(second=0, microsecond=0) == now:
+                        logger.info(f"⏭️ Skip reminder {row['id']} (already sent this minute)")
+                        continue
+
                 channel = self.bot.get_channel(int(row["channel_id"]))
-                if not channel:
+                if not channel or not hasattr(channel, "send"):
                     logger.warning(f"⚠️ Kanaal {row['channel_id']} niet gevonden.")
                     continue
 
@@ -323,18 +406,66 @@ class ReminderCog(commands.Cog):
                     link = f"https://discord.com/channels/{config.GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
                     embed.add_field(name="🔗 Origineel", value=f"[Klik hier]({link})", inline=False)
 
-                await channel.send(
+                text_channel = cast(discord.TextChannel, channel)
+                await text_channel.send(
                     "@everyone",
                     embed=embed,
                     allowed_mentions=discord.AllowedMentions(everyone=config.ENABLE_EVERYONE_MENTIONS)
                 )
-                # Eenmalige reminders verwijderen
+                logger.info(f"📤 Reminder verzonden (ID={row['id']}) naar kanaal {row['channel_id']}: {row['name']}")
+                await self.send_log_embed(
+                    title="📤 Reminder verzonden",
+                    description=(
+                        f"ID: `{row['id']}`\n"
+                        f"Naam: **{row['name']}**\n"
+                        f"Kanaal: <#{row['channel_id']}>\n"
+                        f"Datum: {event_dt.strftime('%Y-%m-%d')}\n"
+                        f"Tijd (weergave): `{call_time_obj.strftime('%H:%M')}`"
+                    ),
+                    level="info",
+                )
+                # Update idempotency marker
+                try:
+                    await self.conn.execute(
+                        "UPDATE reminders SET last_sent_at = $1 WHERE id = $2",
+                        now,
+                        row["id"],
+                    )
+                except Exception:
+                    logger.exception("⚠️ Kon last_sent_at niet updaten")
+                # Eenmalige reminders verwijderen: enkel na T0 (niet na T−60)
                 if row.get("event_time") and not row.get("days"):
-                    await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
-                    logger.info(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na verzenden.")
+                    # Determine if this send corresponds to T0
+                    event_dt_for_delete = row.get("event_time")
+                    is_t0_send = False
+                    if event_dt_for_delete is not None:
+                        try:
+                            event_dt_for_delete = event_dt_for_delete.astimezone(BRUSSELS_TZ)
+                        except Exception:
+                            pass
+                        event_time_str = event_dt_for_delete.strftime("%H:%M:%S")
+                        is_t0_send = (event_time_str == current_time_str)
+                    if is_t0_send:
+                        await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
+                        logger.info(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na T0-verzenden.")
+                        await self.send_log_embed(
+                            title="🗑️ Reminder verwijderd (one-off)",
+                            description=(
+                                f"ID: `{row['id']}`\n"
+                                f"Naam: **{row['name']}**\n"
+                                f"Kanaal: <#{row['channel_id']}>\n"
+                                f"Verwijderd na T0 op {now.strftime('%Y-%m-%d %H:%M')}"
+                            ),
+                            level="warning",
+                        )
 
         except Exception as e:
             logger.exception("🚨 Reminder loop error")
+            await self.send_log_embed(
+                title="🚨 Reminder loop error",
+                description=str(e),
+                level="error",
+            )
 
 
 # Voor extern gebruik via FastAPI
