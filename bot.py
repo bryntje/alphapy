@@ -75,6 +75,7 @@ async def setup_hook():
     await bot.load_extension("cogs.contentgen")
     await bot.load_extension("cogs.reminders")
     await bot.load_extension("cogs.embed_watcher")
+    await bot.load_extension("cogs.ticketbot")
 
 
 
