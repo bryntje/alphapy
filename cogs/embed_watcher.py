@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timedelta
 import config
 import asyncpg
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, cast
 from utils.logger import logger
 from utils.timezone import BRUSSELS_TZ
 
@@ -80,7 +80,7 @@ class EmbedReminderWatcher(commands.Cog):
 
         if parsed and parsed["reminder_time"]:
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
-            if log_channel:
+            if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
                 await log_channel.send(
                     f"🔔 Auto-reminder detected:\n"
                     f"📌 **{parsed['title']}**\n"
@@ -118,12 +118,18 @@ class EmbedReminderWatcher(commands.Cog):
         try:
             dt, tz = self.parse_datetime(date_line, time_line)
 
+            # Track whether we found a concrete calendar date
+            had_explicit_date = bool(date_line)
+            dt_from_description = False
+
             # Fallback: try to parse datetime from the description when
             # no explicit date/time fields were found.
             if not dt:
-                dt = extract_datetime_from_text(embed.description or "")
-                if dt:
+                parsed_from_description = extract_datetime_from_text(embed.description or "")
+                if parsed_from_description:
+                    dt = parsed_from_description
                     tz = BRUSSELS_TZ
+                    dt_from_description = True
 
             # Fallback: attempt to extract location from the description if no
             # location field exists.
@@ -132,9 +138,24 @@ class EmbedReminderWatcher(commands.Cog):
                 if loc_match:
                     location_line = loc_match.group(1).strip()
 
+            if not dt:
+                logger.warning("⚠️ Geen geldige datum gevonden en geen tijd/datum in description. Reminder wordt niet gemaakt.")
+                return None
+
             reminder_time = dt - timedelta(minutes=60)
-            days_str = self.parse_days(days_line, reminder_time)
-            days_list = days_str.split(",") if days_str else []
+
+            # Decide recurrence: only use parse_days when explicitly provided.
+            # If we have a concrete date (explicit date or parsed from description),
+            # treat it as a one-off (days = []). Otherwise, require explicit days.
+            if days_line:
+                days_str = self.parse_days(days_line, reminder_time)
+                days_list = days_str.split(",") if days_str else []
+            else:
+                if had_explicit_date or dt_from_description:
+                    days_list = []  # one-off event
+                else:
+                    logger.warning("⚠️ Geen datum en geen dagen opgegeven → geen reminder aangemaakt.")
+                    return None
 
             # Log the parsed datetime and days list for debugging purposes.
             print(
@@ -142,9 +163,7 @@ class EmbedReminderWatcher(commands.Cog):
                 f"(weekday {dt.weekday()}) → days {days_list}"
             )
 
-            if not dt or not days_str:
-                logger.warning(f"⚠️ Vereist: Geldige tijd én datum of dagen. Gevonden: tijd={time_line}, datum={date_line}, dagen={days_line}")
-                return None
+            # At this point we have a valid datetime; days_list may be empty for one-off
             return {
                 "datetime": dt,
                 "reminder_time": reminder_time,
@@ -263,7 +282,9 @@ class EmbedReminderWatcher(commands.Cog):
         origin_channel_id = int(origin_channel_id) if origin_channel_id is not None else None
         origin_message_id = int(origin_message_id) if origin_message_id is not None else None
         reminder_dt = parsed["reminder_time"].astimezone(BRUSSELS_TZ)
-        time_obj = reminder_dt.time()  # optioneel voor UI
+        event_dt = parsed["datetime"].astimezone(BRUSSELS_TZ)
+        trigger_time = reminder_dt.time()
+        call_time_obj = event_dt.time()
         days_arr = parsed["days"]
         if isinstance(days_arr, str):
             days_arr = [d.strip() for d in days_arr.split(",") if d.strip()]
@@ -273,13 +294,15 @@ class EmbedReminderWatcher(commands.Cog):
         location = parsed.get("location", "-")
 
         try:
+            if not self.conn:
+                raise RuntimeError("Databaseverbinding niet beschikbaar voor store_parsed_reminder")
             await self.conn.execute(
                 """
                 INSERT INTO reminders (
                     name, channel_id, days, message, created_by, 
                     location, origin_channel_id, origin_message_id, 
-                    event_time, time
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    event_time, time, call_time
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 """,
                 name,
                 channel,
@@ -289,16 +312,17 @@ class EmbedReminderWatcher(commands.Cog):
                 location,
                 origin_channel_id,
                 origin_message_id,
-                reminder_dt,
-                time_obj
+                event_dt,
+                trigger_time,
+                call_time_obj
             )
 
             log_channel = self.bot.get_channel(config.WATCHER_LOG_CHANNEL)
             logger.debug(f"[🪵] Log channel: {log_channel}")
-            if log_channel:
+            if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
                 await log_channel.send(
                     f"✅ Reminder opgeslagen in DB voor: **{name}**\n"
-                    f"🕒 Tijdstip: {time_obj.strftime('%H:%M')} op dag {','.join(days_arr)}\n"
+                    f"🕒 Tijdstip: {trigger_time.strftime('%H:%M')} op dag {','.join(days_arr)}\n"
                     f"📍 Locatie: {location or '—'}"
                 )
             else:
@@ -310,6 +334,9 @@ class EmbedReminderWatcher(commands.Cog):
     @app_commands.command(name="debug_parse_embed", description="Parse de laatste embed in het kanaal voor test.")
     async def debug_parse_embed(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
+            await interaction.followup.send("⚠️ Dit commando werkt enkel in tekstkanalen.")
+            return
         messages = [m async for m in interaction.channel.history(limit=10)]
 
         for msg in messages:
@@ -333,7 +360,7 @@ class EmbedReminderWatcher(commands.Cog):
 
 def parse_embed_for_reminder(embed: discord.Embed):
     """Convenience wrapper to parse a reminder embed outside of the cog."""
-    parser = EmbedReminderWatcher(None)
+    parser = EmbedReminderWatcher(cast(commands.Bot, None))
     return parser.parse_embed_for_reminder(embed)
 
 async def setup(bot):
