@@ -96,6 +96,18 @@ class TicketBot(commands.Cog):
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_ticket_summaries_key ON ticket_summaries(similarity_key);"
             )
+            # FAQ entries table
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS faq_entries (
+                  id SERIAL PRIMARY KEY,
+                  similarity_key TEXT,
+                  summary TEXT NOT NULL,
+                  created_by BIGINT,
+                  created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                """
+            )
             self.conn = conn
             logger.info("✅ TicketBot: DB ready (support_tickets)")
         except Exception as e:
@@ -424,6 +436,9 @@ class TicketActionView(discord.ui.View):
                         ),
                         color=discord.Color.gold(),
                     )
+                    # Show a sample of the latest summary in the footer to aid admins
+                    sample_preview = (summary[:180] + "…") if len(summary) > 180 else summary
+                    embed.set_footer(text=f"Sample: {sample_preview}")
                     # Lightweight view with a placeholder button
                     view = discord.ui.View()
 
@@ -431,9 +446,25 @@ class TicketActionView(discord.ui.View):
                         if not await is_owner_or_admin_interaction(interaction):
                             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                             return
-                        await interaction.response.send_message(
-                            "✅ Noted. FAQ creation flow will be implemented in a future version.", ephemeral=True
-                        )
+                        try:
+                            # Insert FAQ entry
+                            await self.conn.execute(
+                                "INSERT INTO faq_entries (similarity_key, summary, created_by) VALUES ($1, $2, $3)",
+                                key, summary, int(interaction.user.id)
+                            )
+                            await interaction.response.send_message("✅ FAQ entry added.", ephemeral=True)
+                            await self._log(
+                                interaction,
+                                title="✅ FAQ entry created",
+                                desc=(
+                                    f"Key: `{key}`\n"
+                                    f"By: {interaction.user} ({interaction.user.id})\n"
+                                    f"Snippet: {sample_preview}"
+                                ),
+                                level="success",
+                            )
+                        except Exception as e:
+                            await interaction.response.send_message(f"❌ Failed to add FAQ: {e}", ephemeral=True)
 
                     btn = discord.ui.Button(label="Add to FAQ", style=discord.ButtonStyle.success)
                     btn.callback = add_faq_callback  # type: ignore
