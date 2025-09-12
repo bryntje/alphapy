@@ -29,6 +29,14 @@
   - T0 support: One-off reminders send at T−60 and at `event_time` (T0)
 
 - `cogs/embed_watcher.py`
+- `cogs/ticketbot.py`
+  - Slash commands: `/ticket`, `/ticket_list`, `/ticket_claim`, `/ticket_close`, `/ticket_panel_post`
+  - Channel UX: per-ticket private channel under `TICKET_CATEGORY_ID`
+  - Interactive UI in channel: buttons to Claim/Close/Delete (staff only)
+  - Summary: GPT summary posted on Close; persisted for clustering
+  - FAQ: repeated-topic detection; proposal embed with “Add to FAQ” button (admin)
+  - Logging: create/claim/close/delete to `WATCHER_LOG_CHANNEL`
+
   - Listens in announcements channel and auto-creates reminders from embeds
   - Robust datetime parsing with Brussels timezone
   - Persists via `reminders` table, logs to `WATCHER_LOG_CHANNEL`
@@ -46,6 +54,25 @@
   - `timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
 
 - `reminders`
+- `support_tickets`
+  - `id SERIAL PRIMARY KEY`
+  - `user_id BIGINT`, `username TEXT`, `description TEXT`, `status TEXT DEFAULT 'open'`
+  - `channel_id BIGINT`, `claimed_by BIGINT`, `claimed_at TIMESTAMPTZ`
+  - `created_at TIMESTAMPTZ DEFAULT NOW()`
+
+- `ticket_summaries`
+  - `id SERIAL PRIMARY KEY`
+  - `ticket_id INT NOT NULL`
+  - `summary TEXT NOT NULL`
+  - `similarity_key TEXT`
+  - `created_at TIMESTAMPTZ DEFAULT NOW()`
+
+- `faq_entries`
+  - `id SERIAL PRIMARY KEY`
+  - `similarity_key TEXT`
+  - `summary TEXT NOT NULL`
+  - `created_by BIGINT`
+  - `created_at TIMESTAMPTZ DEFAULT NOW()`
   - `id SERIAL PRIMARY KEY`
   - `name TEXT`
   - `channel_id BIGINT`
@@ -69,6 +96,10 @@
 3. On completion: summary embed (ephemeral), log embed (log channel), role assignment, DB persist.
 4. Reminders: via slash commands or auto from `EmbedReminderWatcher`.
 5. `tasks.loop` in `reminders` dispatches messages at scheduled times:
+6. Tickets:
+   - User runs `/ticket` or clicks panel button → per-ticket channel created with restricted access
+   - Staff can Claim, Close; on Close: channel locks/renames and GPT summary posts
+   - Summary stored; repeated topics trigger FAQ proposal; staff may add to FAQ
    - One-off (T−60): `time == now` and `(event_time - 60m).date == today`
    - One-off (T0): `event_time::time == now`
    - Recurring: `time == now` and `weekday(now) ∈ days`
