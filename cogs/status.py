@@ -6,6 +6,7 @@ from utils.timezone import BRUSSELS_TZ
 from utils.logger import get_gpt_status_logs
 from discord import app_commands
 from discord.ext import commands
+from version import __version__
 
 # ------------------ SLASH COMMAND ------------------ #
 
@@ -14,10 +15,15 @@ async def gptstatus(interaction: discord.Interaction):
     embed = await get_gptstatus_embed()
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@app_commands.command(name="version", description="Show bot version")
+async def version_cmd(interaction: discord.Interaction):
+    await interaction.response.send_message(f"Alphapips version: v{__version__}", ephemeral=True)
+
 # ------------------ SETUP FUNCTION ------------------ #
 
 async def setup(bot: commands.Bot):
     bot.tree.add_command(gptstatus)
+    bot.tree.add_command(version_cmd)
 
 # ------------------ HELPER FUNCTIONS ------------------ #
 
@@ -67,7 +73,7 @@ async def get_gptstatus_embed():
     embed.add_field(name="🔹 Logged interactions", value=f"✅ {success_count} / ❌ {error_count}", inline=True)
     embed.add_field(name="🔹 Last user to trigger GPT", value=f"<@{user}>", inline=True)
     embed.add_field(name="🔹 Latency (avg)", value=f"{latency}ms", inline=True)
-    embed.set_footer(text="📦 GPT Status • Updated just now")
+    embed.set_footer(text=f"📦 GPT Status • v{__version__} • Updated just now")
 
     return embed
 
