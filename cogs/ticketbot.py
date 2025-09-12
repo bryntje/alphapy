@@ -4,12 +4,12 @@ from discord import app_commands
 from discord.app_commands import checks as app_checks
 import asyncpg
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, cast
 
 try:
-    import config_local as config
+    import config_local as config  # type: ignore
 except ImportError:
-    import config
+    import config  # type: ignore
 
 from utils.logger import logger
 from utils.checks_interaction import is_owner_or_admin_interaction
@@ -35,8 +35,8 @@ class TicketBot(commands.Cog):
     async def setup_db(self) -> None:
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
         try:
-            self.conn = await asyncpg.connect(config.DATABASE_URL)
-            await self.conn.execute(
+            conn = await asyncpg.connect(config.DATABASE_URL)
+            await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS support_tickets (
                     id SERIAL PRIMARY KEY,
@@ -48,27 +48,38 @@ class TicketBot(commands.Cog):
                 );
                 """
             )
+            # Nieuwe kolom voor ticketkanaal
+            try:
+                await conn.execute(
+                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS channel_id BIGINT;"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ TicketBot: kon kolom channel_id niet toevoegen: {e}")
             # Backwards compatible schema upgrades
             try:
-                await self.conn.execute(
+                await conn.execute(
                     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claimed_by BIGINT;"
                 )
-                await self.conn.execute(
+                await conn.execute(
                     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;"
                 )
             except Exception as e:
                 logger.warning(f"⚠️ TicketBot: kon schema niet upgraden: {e}")
             # Indexen voor snellere queries later
-            await self.conn.execute(
+            await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_id);"
             )
-            await self.conn.execute(
+            await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);"
             )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_support_tickets_channel_id ON support_tickets(channel_id);"
+            )
             # Handige index voor claims
-            await self.conn.execute(
+            await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_support_tickets_claimed_by ON support_tickets(claimed_by);"
             )
+            self.conn = conn
             logger.info("✅ TicketBot: DB ready (support_tickets)")
         except Exception as e:
             logger.error(f"❌ TicketBot: DB init error: {e}")
@@ -91,7 +102,8 @@ class TicketBot(commands.Cog):
             embed.set_footer(text="ticketbot")
             channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
             if channel and hasattr(channel, "send"):
-                await channel.send(embed=embed)
+                text_channel = cast(discord.TextChannel, channel)
+                await text_channel.send(embed=embed)
         except Exception as e:
             logger.warning(f"⚠️ TicketBot: kon log embed niet versturen: {e}")
 
@@ -120,7 +132,8 @@ class TicketBot(commands.Cog):
         user_display = f"{user} ({user.id})"
 
         try:
-            row = await self.conn.fetchrow(
+            conn_safe = cast(asyncpg.Connection, self.conn)
+            row = await conn_safe.fetchrow(
                 """
                 INSERT INTO support_tickets (user_id, username, description)
                 VALUES ($1, $2, $3)
@@ -140,8 +153,15 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Er ging iets mis bij het aanmaken van je ticket.")
             return
 
-        ticket_id = row["id"] if row else None
-        created_at: datetime = row["created_at"] if row else datetime.utcnow()
+        ticket_id: int
+        created_at: datetime
+        if row:
+            ticket_id = int(row["id"])  # not None after successful insert
+            created_at = row["created_at"]
+        else:
+            # Fallback: should not happen, but keep types safe
+            ticket_id = 0
+            created_at = datetime.utcnow()
 
         # Bevestigings-embed naar gebruiker (ephemeral followup)
         confirm = discord.Embed(
@@ -154,7 +174,99 @@ class TicketBot(commands.Cog):
         confirm.add_field(name="User", value=f"{user.mention}", inline=True)
         confirm.add_field(name="Status", value="open", inline=True)
         confirm.add_field(name="Omschrijving", value=description[:1024] or "—", inline=False)
+
+        # Maak een dedicated kanaal aan onder opgegeven category met private overwrites
+        channel_mention_text = "—"
+        try:
+            guild = interaction.guild
+            if guild is None:
+                raise RuntimeError("Guild context ontbreekt")
+
+            # Category via config of fallback naar gegeven ID
+            category_id = int(getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275))
+            fetched_channel = guild.get_channel(category_id) or await self.bot.fetch_channel(category_id)
+            if not isinstance(fetched_channel, discord.CategoryChannel):
+                raise RuntimeError("Category kanaal niet gevonden of geen category type")
+            category = fetched_channel
+
+            # Support role bepalen: TICKET_ACCESS_ROLE_ID > ADMIN_ROLE_ID (fallback)
+            support_role_id_value: Optional[int] = None
+            srid = getattr(config, "TICKET_ACCESS_ROLE_ID", None)
+            if isinstance(srid, int):
+                support_role_id_value = srid
+            elif isinstance(srid, str) and srid.isdigit():
+                support_role_id_value = int(srid)
+            if support_role_id_value is None:
+                admin_candidate = getattr(config, "ADMIN_ROLE_ID", None)
+                if isinstance(admin_candidate, int):
+                    support_role_id_value = admin_candidate
+                elif isinstance(admin_candidate, list) and admin_candidate:
+                    first_role = admin_candidate[0]
+                    if isinstance(first_role, int):
+                        support_role_id_value = first_role
+                    elif isinstance(first_role, str) and first_role.isdigit():
+                        support_role_id_value = int(first_role)
+            support_role = guild.get_role(support_role_id_value) if support_role_id_value else None
+
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                user: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                    attach_files=True,
+                    embed_links=True,
+                ),
+            }
+            if support_role is not None:
+                overwrites[support_role] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                    manage_messages=True,
+                )
+
+            channel = await guild.create_text_channel(
+                name=f"ticket-{ticket_id}",
+                category=category,
+                overwrites=overwrites,
+                reason=f"Ticket {ticket_id} aangemaakt door {user}"
+            )
+
+            # Update DB met channel_id
+            try:
+                conn_safe2 = cast(asyncpg.Connection, self.conn)
+                await conn_safe2.execute(
+                    "UPDATE support_tickets SET channel_id = $1 WHERE id = $2",
+                    int(channel.id),
+                    ticket_id,
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ TicketBot: kon channel_id niet opslaan: {e}")
+
+            # Initieel bericht in ticketkanaal
+            ch_embed = discord.Embed(
+                title="🎟️ Ticket aangemaakt",
+                color=discord.Color.green(),
+                timestamp=created_at,
+                description=(
+                    f"Ticket ID: `{ticket_id}`\n"
+                    f"Gebruiker: {user.mention}\n"
+                    f"Status: **open**\n\n"
+                    f"Omschrijving:\n{description}"
+                )
+            )
+            await channel.send(content=(support_role.mention if support_role else None), embed=ch_embed, allowed_mentions=discord.AllowedMentions(roles=True))
+
+            channel_mention_text = channel.mention
+            confirm.add_field(name="Kanaal", value=channel_mention_text, inline=False)
+        except Exception as e:
+            logger.warning(f"⚠️ TicketBot: kanaal aanmaken mislukt: {e}")
+            confirm.add_field(name="Kanaal", value="(aanmaken mislukt)", inline=False)
+
         await interaction.followup.send(embed=confirm, ephemeral=True)
+        if channel_mention_text != "—":
+            await interaction.followup.send(f"✅ Ticket succesvol aangemaakt in {channel_mention_text}", ephemeral=True)
 
         # Publieke log naar WATCHER_LOG_CHANNEL
         await self.send_log_embed(
@@ -163,6 +275,7 @@ class TicketBot(commands.Cog):
                 f"ID: {ticket_id}\n"
                 f"User: {user_display}\n"
                 f"Timestamp: {created_at.isoformat()}\n"
+                f"Kanaal: {channel_mention_text}\n"
                 f"Omschrijving: {description}"
             ),
             level="success",
