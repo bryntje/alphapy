@@ -105,6 +105,21 @@ python bot.py
 - Repeated-topic detection proposes adding an FAQ entry; admins can click “Add to FAQ” (stored in `faq_entries`)
 - Admins can post a persistent panel with `/ticket_panel_post` that includes a “Create ticket” button
 
+### Usage: buttons in the ticket channel
+- Claim ticket (staff only): assigns the ticket to the clicker; button becomes “Claimed”.
+- Close ticket (staff only): locks channel for the requester, optionally renames to `ticket-<id>-closed`, posts a GPT summary embed, enables the Delete button.
+- Delete ticket (staff only, visible after close): deletes DB records for the ticket and removes the channel.
+
+### FAQ workflow
+- On close, the GPT summary is saved in `ticket_summaries` with a computed similarity key.
+- If 3 or more similar summaries appear within 7 days, a proposal embed is posted to `WATCHER_LOG_CHANNEL` with an “Add to FAQ” button.
+- Admins can click “Add to FAQ” to store an entry in `faq_entries` for later surfacing.
+
+### Admin permissions
+- “staff” checks rely on `is_owner_or_admin_interaction`:
+  - Bot owner or IDs in `OWNER_IDS`, or users with `ADMIN_ROLE_ID` (or the configured `TICKET_ACCESS_ROLE_ID`).
+- Staff-only actions: `/ticket_list`, `/ticket_claim`, `/ticket_close`, `/ticket_panel_post`, Claim/Close/Delete buttons.
+
 ### Env
 - `TICKET_CATEGORY_ID`: category under which ticket channels are created
 - `TICKET_ACCESS_ROLE_ID`: role with access to ticket channels (falls back to `ADMIN_ROLE_ID`)
@@ -116,6 +131,20 @@ python bot.py
 4. Repeat with similar issues to trigger FAQ proposal in `WATCHER_LOG_CHANNEL`
 
 ---
+
+## 🛣️ Roadmap (Tickets)
+
+- `/faq` command
+  - `/faq list` to show recent/pinned entries
+  - `/faq view <id|keyword>` to show a specific entry
+  - Optional `/faq search <query>` (keyword match)
+- Tests
+  - Unit tests for summary prompt builder and storage
+  - Interaction tests for claim/close/permissions
+- CI (future)
+  - Lightweight migration check (ensure tables/columns exist)
+  - Lint and type checks on PRs
+
 
 ## 🤝 Contributing
 
