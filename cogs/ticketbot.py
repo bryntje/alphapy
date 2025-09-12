@@ -377,7 +377,7 @@ class TicketActionView(discord.ui.View):
             level="info",
         )
 
-    @discord.ui.button(label="🔒 Sluit ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_btn")
+    @discord.ui.button(label="🔒 Close ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_btn")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te sluiten.", ephemeral=True)
