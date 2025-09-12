@@ -320,6 +320,22 @@ class TicketActionView(discord.ui.View):
         except Exception:
             pass
 
+    async def _post_summary_placeholder(self, channel: discord.TextChannel) -> None:
+        """Post a summary placeholder message in English that we can later replace with GPT results.
+
+        TODO: Inject GPT-generated summary here in a future version
+        """
+        try:
+            summary_text = (
+                "📄 **Ticket Summary (Placeholder)**  \n"
+                "This space is reserved for the automated summary of this ticket.  \n"
+                "In a future version, a GPT-based recap of this conversation will appear here."
+            )
+            await channel.send(summary_text)
+        except Exception:
+            # Non-fatal; summary can be posted later
+            pass
+
     @discord.ui.button(label="🎟️ Claim ticket", style=discord.ButtonStyle.primary, custom_id="ticket_claim_btn")
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._is_staff(interaction):
@@ -414,10 +430,10 @@ class TicketActionView(discord.ui.View):
                 child.disabled = True
         await interaction.response.edit_message(view=self)
 
-        await interaction.followup.send(f"✅ Ticket gesloten door {interaction.user.mention} op {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+        await interaction.followup.send(f"✅ Ticket closed by {interaction.user.mention} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
         await self._log(
             interaction,
-            title="🟢 Ticket gesloten",
+            title="🟢 Ticket closed",
             desc=(
                 f"ID: {self.ticket_id}\n"
                 f"Closed by: {interaction.user} ({interaction.user.id})\n"
@@ -425,6 +441,9 @@ class TicketActionView(discord.ui.View):
             ),
             level="success",
         )
+        # Post summary placeholder last to satisfy required execution order
+        if isinstance(interaction.channel, discord.TextChannel):
+            await self._post_summary_placeholder(interaction.channel)
     # (end of TicketActionView)
 
 
