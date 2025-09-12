@@ -3,7 +3,8 @@ from discord.ext import commands
 from discord import app_commands
 from discord.app_commands import checks as app_checks
 import asyncpg
-from datetime import datetime
+from datetime import datetime, timedelta
+import re
 from typing import Optional, List, cast
 
 try:
@@ -79,6 +80,21 @@ class TicketBot(commands.Cog):
             # Handige index voor claims
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_support_tickets_claimed_by ON support_tickets(claimed_by);"
+            )
+            # Summaries table for FAQ detection
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ticket_summaries (
+                  id SERIAL PRIMARY KEY,
+                  ticket_id INT NOT NULL,
+                  summary TEXT NOT NULL,
+                  similarity_key TEXT,
+                  created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ticket_summaries_key ON ticket_summaries(similarity_key);"
             )
             self.conn = conn
             logger.info("✅ TicketBot: DB ready (support_tickets)")
@@ -359,8 +375,78 @@ class TicketActionView(discord.ui.View):
                 color=discord.Color.green(),
             )
             await channel.send(embed=embed)
+            # Register the summary for clustering/FAQ suggestions
+            await self._register_summary(self.ticket_id, (summary_text or "").strip())
         except Exception:
             # Non-fatal; do not block the close flow on summary issues
+            pass
+
+    def _compute_similarity_key(self, text: str) -> str:
+        normalized = re.sub(r"[^a-z0-9\s]", " ", text.lower())
+        tokens = [t for t in normalized.split() if len(t) >= 4 and t not in {
+            "this","that","with","from","have","about","which","their","there","would","could","should",
+            "subject","ticket","issue","user","message","chat","channel","please","thank","thanks"
+        }]
+        # Use top unique tokens alphabetically as a simple key
+        unique_tokens = sorted(set(tokens))[:12]
+        key = "-".join(unique_tokens)
+        return key[:256]
+
+    async def _register_summary(self, ticket_id: int, summary: str) -> None:
+        try:
+            key = self._compute_similarity_key(summary)
+            since = datetime.utcnow() - timedelta(days=7)
+            # Insert summary
+            await self.conn.execute(
+                "INSERT INTO ticket_summaries (ticket_id, summary, similarity_key) VALUES ($1, $2, $3)",
+                int(ticket_id), summary, key
+            )
+            # Check recent similar summaries
+            rows = await self.conn.fetch(
+                """
+                SELECT id FROM ticket_summaries
+                WHERE similarity_key = $1 AND created_at >= $2
+                ORDER BY created_at DESC
+                LIMIT 30
+                """,
+                key, since
+            )
+            if len(rows) >= 3:
+                # Propose FAQ to admins via log channel with a button
+                try:
+                    embed = discord.Embed(
+                        title="💡 Repeated Ticket Pattern Detected",
+                        description=(
+                            "We detected multiple tickets with a similar topic in the last 7 days.\n\n"
+                            f"Similarity key: `{key}`\n"
+                            f"Occurrences: **{len(rows)}**\n\n"
+                            "Consider adding an FAQ entry for this topic."
+                        ),
+                        color=discord.Color.gold(),
+                    )
+                    # Lightweight view with a placeholder button
+                    view = discord.ui.View()
+
+                    async def add_faq_callback(interaction: discord.Interaction):
+                        if not await is_owner_or_admin_interaction(interaction):
+                            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+                            return
+                        await interaction.response.send_message(
+                            "✅ Noted. FAQ creation flow will be implemented in a future version.", ephemeral=True
+                        )
+
+                    btn = discord.ui.Button(label="Add to FAQ", style=discord.ButtonStyle.success)
+                    btn.callback = add_faq_callback  # type: ignore
+                    view.add_item(btn)
+
+                    channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+                    if channel and hasattr(channel, "send"):
+                        text_channel = cast(discord.TextChannel, channel)
+                        await text_channel.send(embed=embed, view=view)
+                except Exception:
+                    pass
+        except Exception:
+            # Do not block on summary registration failures
             pass
 
     @discord.ui.button(label="🎟️ Claim ticket", style=discord.ButtonStyle.primary, custom_id="ticket_claim_btn")
@@ -451,10 +537,12 @@ class TicketActionView(discord.ui.View):
         except Exception as e:
             await interaction.followup.send(f"⚠️ Channel lock/rename failed: {e}")
 
-        # Disable entire view
+        # Disable claim/close, enable delete (admin-only enforcement in handler)
         for child in self.children:
-            if isinstance(child, discord.ui.Button):
+            if isinstance(child, discord.ui.Button) and child.custom_id in {"ticket_claim_btn", "ticket_close_btn"}:
                 child.disabled = True
+            if isinstance(child, discord.ui.Button) and child.custom_id == "ticket_delete_btn":
+                child.disabled = False
         await interaction.response.edit_message(view=self)
 
         await interaction.followup.send(f"✅ Ticket closed by {interaction.user.mention} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
@@ -471,6 +559,42 @@ class TicketActionView(discord.ui.View):
         # Post GPT summary last to satisfy required execution order
         if isinstance(interaction.channel, discord.TextChannel):
             await self._post_summary(interaction.channel)
+
+    @discord.ui.button(label="🗑 Delete ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_delete_btn", disabled=True)
+    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Admin-only
+        if not await self._is_staff(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        # Delete DB entries first
+        try:
+            await self.conn.execute("DELETE FROM ticket_summaries WHERE ticket_id = $1", int(self.ticket_id))
+        except Exception:
+            pass
+        try:
+            await self.conn.execute("DELETE FROM support_tickets WHERE id = $1", int(self.ticket_id))
+        except Exception:
+            pass
+        # Delete channel
+        try:
+            ch = interaction.channel
+            if isinstance(ch, discord.TextChannel):
+                await interaction.followup.send("🗑 Deleting ticket channel...", ephemeral=True)
+                await ch.delete(reason=f"Ticket {self.ticket_id} deleted by {interaction.user}")
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ Channel delete failed: {e}", ephemeral=True)
+        # Log deletion
+        await self._log(
+            interaction,
+            title="🗑 Ticket deleted",
+            desc=(
+                f"ID: {self.ticket_id}\n"
+                f"Deleted by: {interaction.user} ({interaction.user.id})\n"
+                f"Timestamp: {datetime.utcnow().isoformat()}"
+            ),
+            level="warning",
+        )
     # (end of TicketActionView)
 
 
