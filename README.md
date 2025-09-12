@@ -69,6 +69,11 @@ python bot.py
 /growthcheckin     → GPT-coach for goals, obstacles and emotions
 /learn_topic       → Hybrid topic search using local + Drive content
 /create_caption    → Generate 1-liner captions based on tone & topic
+/ticket            → Create a support ticket (private channel per ticket)
+/ticket_list       → View open tickets (admins)
+/ticket_claim      → Claim a ticket (admins)
+/ticket_close      → Close a ticket (admins)
+/ticket_panel_post → Post a persistent “Create ticket” panel (admins)
 ```
 
 > The AI layer is modular and optional — for teams that want to deepen reflection, personalize learning, or co-create content using GPT.
@@ -86,6 +91,29 @@ python bot.py
   - Not deleted.
 - Idempotency: reminders won’t send twice in the same minute (tracked via `last_sent_at`).
 - Logging: major events (created/sent/deleted/errors) are also posted to `WATCHER_LOG_CHANNEL`.
+
+---
+
+## 🎟️ TicketBot
+
+- Per-ticket channels created under `TICKET_CATEGORY_ID` with restricted access (requester + support role)
+- Interactive buttons in the ticket channel:
+  - Claim ticket (staff only)
+  - Close ticket (locks channel, optional rename, posts GPT summary)
+  - Delete ticket (staff only; visible after close)
+- GPT summary on close using `gpt/helpers.ask_gpt`; summaries are stored in `ticket_summaries`
+- Repeated-topic detection proposes adding an FAQ entry; admins can click “Add to FAQ” (stored in `faq_entries`)
+- Admins can post a persistent panel with `/ticket_panel_post` that includes a “Create ticket” button
+
+### Env
+- `TICKET_CATEGORY_ID`: category under which ticket channels are created
+- `TICKET_ACCESS_ROLE_ID`: role with access to ticket channels (falls back to `ADMIN_ROLE_ID`)
+
+### Minimal test plan
+1. Run `/ticket_panel_post` in a channel to publish the panel; click “Create ticket”
+2. In the ticket channel, click Claim, then Close
+3. Confirm summary embed posts; Delete button becomes available for admins
+4. Repeat with similar issues to trigger FAQ proposal in `WATCHER_LOG_CHANNEL`
 
 ---
 
