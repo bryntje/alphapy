@@ -12,6 +12,7 @@ except ImportError:
     import config  # type: ignore
 
 from utils.logger import logger
+from gpt.helpers import ask_gpt
 from utils.checks_interaction import is_owner_or_admin_interaction
 
 
@@ -320,20 +321,46 @@ class TicketActionView(discord.ui.View):
         except Exception:
             pass
 
-    async def _post_summary_placeholder(self, channel: discord.TextChannel) -> None:
-        """Post a summary placeholder message in English that we can later replace with GPT results.
+    async def _post_summary(self, channel: discord.TextChannel) -> None:
+        """Generate and post a GPT-based summary of the ticket conversation.
 
-        TODO: Inject GPT-generated summary here in a future version
+        # TODO: Inject GPT-generated summary here in a future version
         """
+        messages: List[str] = []
         try:
-            summary_text = (
-                "📄 **Ticket Summary (Placeholder)**  \n"
-                "This space is reserved for the automated summary of this ticket.  \n"
-                "In a future version, a GPT-based recap of this conversation will appear here."
+            async for msg in channel.history(limit=100, oldest_first=True):
+                if not msg.author.bot:
+                    content = (msg.content or "").strip()
+                    if content:
+                        messages.append(f"{msg.author.display_name}: {content}")
+
+            if not messages:
+                await channel.send("No content to summarize.")
+                return
+
+            prompt = (
+                "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
+                + "\n".join(messages[-50:])
             )
-            await channel.send(summary_text)
+
+            try:
+                # Use default model from ask_gpt (defaults to gpt-3.5-turbo)
+                summary_text = await ask_gpt(
+                    messages=[{"role": "user", "content": prompt}],
+                    user_id=None,
+                )
+            except Exception as e:
+                await channel.send(f"❌ Failed to generate summary: {e}")
+                return
+
+            embed = discord.Embed(
+                title="📄 Ticket Summary",
+                description=(summary_text or "").strip() or "(empty)",
+                color=discord.Color.green(),
+            )
+            await channel.send(embed=embed)
         except Exception:
-            # Non-fatal; summary can be posted later
+            # Non-fatal; do not block the close flow on summary issues
             pass
 
     @discord.ui.button(label="🎟️ Claim ticket", style=discord.ButtonStyle.primary, custom_id="ticket_claim_btn")
@@ -441,9 +468,9 @@ class TicketActionView(discord.ui.View):
             ),
             level="success",
         )
-        # Post summary placeholder last to satisfy required execution order
+        # Post GPT summary last to satisfy required execution order
         if isinstance(interaction.channel, discord.TextChannel):
-            await self._post_summary_placeholder(interaction.channel)
+            await self._post_summary(interaction.channel)
     # (end of TicketActionView)
 
 
