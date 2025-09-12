@@ -18,12 +18,12 @@ from utils.checks_interaction import is_owner_or_admin_interaction
 class TicketBot(commands.Cog):
     """TicketBot MVP
 
-    Deze Cog biedt een minimale `/ticket` slash command waarmee gebruikers
-    een supportticket kunnen aanmaken. Tickets worden opgeslagen in PostgreSQL
-    in de tabel `support_tickets`. Na aanmaak wordt er een bevestigings-embed
-    gestuurd in het kanaal en wordt er tevens gelogd naar `WATCHER_LOG_CHANNEL`.
+    This Cog provides a minimal `/ticket` slash command that lets users
+    create a support ticket. Tickets are stored in PostgreSQL in the
+    `support_tickets` table. After creation, a confirmation embed is sent
+    and a log is posted to `WATCHER_LOG_CHANNEL`.
 
-    Voorbereid op uitbreidingen zoals: claimen, closen, tagging, GPT-ondersteuning.
+    Prepared for future extensions like: claim, close, tagging, GPT support.
     """
 
     def __init__(self, bot: commands.Bot):
@@ -107,15 +107,15 @@ class TicketBot(commands.Cog):
         except Exception as e:
             logger.warning(f"⚠️ TicketBot: kon log embed niet versturen: {e}")
 
-    @app_commands.command(name="ticket", description="Maak een supportticket aan")
-    @app_checks.cooldown(1, 30.0)  # simpele user cooldown
-    @app_commands.describe(description="Korte omschrijving van je issue")
+    @app_commands.command(name="ticket", description="Create a support ticket")
+    @app_checks.cooldown(1, 30.0)  # simple user cooldown
+    @app_commands.describe(description="Short description of your issue")
     async def ticket(self, interaction: discord.Interaction, description: str):
-        """Slash command om een nieuw ticket aan te maken.
+        """Slash command to create a new ticket.
 
-        - Slaat ticket op in `support_tickets`
-        - Stuurt een bevestigings-embed met ticketdetails
-        - Logt naar `WATCHER_LOG_CHANNEL`
+        - Stores the ticket in `support_tickets`
+        - Sends a confirmation embed with details
+        - Logs to `WATCHER_LOG_CHANNEL`
         """
         await interaction.response.defer(ephemeral=True)
 
@@ -125,7 +125,7 @@ class TicketBot(commands.Cog):
                 await self.setup_db()
             except Exception as e:
                 logger.error(f"❌ TicketBot: DB connect error: {e}")
-                await interaction.followup.send("❌ Database is niet beschikbaar. Probeer later opnieuw.")
+                await interaction.followup.send("❌ Database is not available. Please try again later.")
                 return
 
         user = interaction.user
@@ -146,11 +146,11 @@ class TicketBot(commands.Cog):
         except Exception as e:
             logger.exception("🚨 TicketBot: insert failed")
             await self.send_log_embed(
-                title="🚨 Ticket aanmaken mislukt",
-                description=f"User: {user_display}\nFout: {e}",
+                title="🚨 Ticket creation failed",
+                description=f"User: {user_display}\nError: {e}",
                 level="error",
             )
-            await interaction.followup.send("❌ Er ging iets mis bij het aanmaken van je ticket.")
+            await interaction.followup.send("❌ Something went wrong creating your ticket.")
             return
 
         ticket_id: int
@@ -163,19 +163,19 @@ class TicketBot(commands.Cog):
             ticket_id = 0
             created_at = datetime.utcnow()
 
-        # Bevestigings-embed naar gebruiker (ephemeral followup)
+        # Confirmation embed to the user (ephemeral followup)
         confirm = discord.Embed(
-            title="🎟️ Ticket aangemaakt",
-            description="Je ticket is succesvol aangemaakt.",
+            title="🎟️ Ticket created",
+            description="Your ticket has been created successfully.",
             color=discord.Color.green(),
             timestamp=created_at,
         )
         confirm.add_field(name="Ticket ID", value=str(ticket_id), inline=True)
         confirm.add_field(name="User", value=f"{user.mention}", inline=True)
         confirm.add_field(name="Status", value="open", inline=True)
-        confirm.add_field(name="Omschrijving", value=description[:1024] or "—", inline=False)
+        confirm.add_field(name="Description", value=description[:1024] or "—", inline=False)
 
-        # Maak een dedicated kanaal aan onder opgegeven category met private overwrites
+        # Create a dedicated channel under the given category with private overwrites
         channel_mention_text = "—"
         try:
             guild = interaction.guild
@@ -244,16 +244,16 @@ class TicketBot(commands.Cog):
             except Exception as e:
                 logger.warning(f"⚠️ TicketBot: kon channel_id niet opslaan: {e}")
 
-            # Initieel bericht in ticketkanaal
+            # Initial message in the ticket channel
             ch_embed = discord.Embed(
-                title="🎟️ Ticket aangemaakt",
+                title="🎟️ Ticket created",
                 color=discord.Color.green(),
                 timestamp=created_at,
                 description=(
                     f"Ticket ID: `{ticket_id}`\n"
-                    f"Gebruiker: {user.mention}\n"
+                    f"User: {user.mention}\n"
                     f"Status: **open**\n\n"
-                    f"Omschrijving:\n{description}"
+                    f"Description:\n{description}"
                 )
             )
             view = TicketActionView(
@@ -271,24 +271,24 @@ class TicketBot(commands.Cog):
             )
 
             channel_mention_text = channel.mention
-            confirm.add_field(name="Kanaal", value=channel_mention_text, inline=False)
+            confirm.add_field(name="Channel", value=channel_mention_text, inline=False)
         except Exception as e:
-            logger.warning(f"⚠️ TicketBot: kanaal aanmaken mislukt: {e}")
-            confirm.add_field(name="Kanaal", value="(aanmaken mislukt)", inline=False)
+            logger.warning(f"⚠️ TicketBot: channel creation failed: {e}")
+            confirm.add_field(name="Channel", value="(creation failed)", inline=False)
 
         await interaction.followup.send(embed=confirm, ephemeral=True)
         if channel_mention_text != "—":
-            await interaction.followup.send(f"✅ Ticket succesvol aangemaakt in {channel_mention_text}", ephemeral=True)
+            await interaction.followup.send(f"✅ Ticket created in {channel_mention_text}", ephemeral=True)
 
-        # Publieke log naar WATCHER_LOG_CHANNEL
+        # Public log to WATCHER_LOG_CHANNEL
         await self.send_log_embed(
-            title="🟢 Ticket aangemaakt",
+            title="🟢 Ticket created",
             description=(
                 f"ID: {ticket_id}\n"
                 f"User: {user_display}\n"
                 f"Timestamp: {created_at.isoformat()}\n"
-                f"Kanaal: {channel_mention_text}\n"
-                f"Omschrijving: {description}"
+                f"Channel: {channel_mention_text}\n"
+                f"Description: {description}"
             ),
             level="success",
         )
@@ -353,22 +353,22 @@ class TicketActionView(discord.ui.View):
                 int(self.ticket_id),
             )
         except Exception as e:
-            await interaction.response.send_message(f"❌ Claim mislukt: {e}", ephemeral=True)
+            await interaction.response.send_message(f"❌ Claim failed: {e}", ephemeral=True)
             return
 
         if not row:
-            await interaction.response.send_message("❌ Ticket niet gevonden of al geclaimd/gesloten.", ephemeral=True)
+            await interaction.response.send_message("❌ Ticket not found or already claimed/closed.", ephemeral=True)
             return
 
         # Update UI: disable claim
         button.disabled = True
-        button.label = "Geclaimd"
+        button.label = "Claimed"
         await interaction.response.edit_message(view=self)
 
-        await interaction.followup.send(f"✅ Ticket geclaimd door {interaction.user.mention} op {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+        await interaction.followup.send(f"✅ Ticket claimed by {interaction.user.mention} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
         await self._log(
             interaction,
-            title="🟡 Ticket geclaimd",
+            title="🟡 Ticket claimed",
             desc=(
                 f"ID: {self.ticket_id}\n"
                 f"Claimed by: {interaction.user} ({interaction.user.id})\n"
@@ -394,11 +394,11 @@ class TicketActionView(discord.ui.View):
                 int(self.ticket_id),
             )
         except Exception as e:
-            await interaction.response.send_message(f"❌ Sluiten mislukt: {e}", ephemeral=True)
+            await interaction.response.send_message(f"❌ Close failed: {e}", ephemeral=True)
             return
 
         if not row:
-            await interaction.response.send_message("❌ Ticket niet gevonden of al gesloten.", ephemeral=True)
+            await interaction.response.send_message("❌ Ticket not found or already closed.", ephemeral=True)
             return
 
         # Lock/rename channel
@@ -414,7 +414,7 @@ class TicketActionView(discord.ui.View):
                 if member is not None:
                     overwrites[member] = discord.PermissionOverwrite(view_channel=True, send_messages=False, read_message_history=True)
                 overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
-                await ch.edit(overwrites=overwrites, reason=f"Ticket {self.ticket_id} gesloten")
+                await ch.edit(overwrites=overwrites, reason=f"Ticket {self.ticket_id} closed")
 
                 try:
                     await ch.edit(name=f"ticket-{self.ticket_id}-closed")
@@ -422,7 +422,7 @@ class TicketActionView(discord.ui.View):
                     pass
 
         except Exception as e:
-            await interaction.followup.send(f"⚠️ Kanaal lock/rename faalde: {e}")
+            await interaction.followup.send(f"⚠️ Channel lock/rename failed: {e}")
 
         # Disable entire view
         for child in self.children:
