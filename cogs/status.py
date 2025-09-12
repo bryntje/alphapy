@@ -6,7 +6,11 @@ from utils.timezone import BRUSSELS_TZ
 from utils.logger import get_gpt_status_logs
 from discord import app_commands
 from discord.ext import commands
-from version import __version__
+from version import __version__, CODENAME
+import os
+import asyncio
+
+BOOT_TIME = datetime.now(BRUSSELS_TZ)
 
 # ------------------ SLASH COMMAND ------------------ #
 
@@ -17,13 +21,29 @@ async def gptstatus(interaction: discord.Interaction):
 
 @app_commands.command(name="version", description="Show bot version")
 async def version_cmd(interaction: discord.Interaction):
-    await interaction.response.send_message(f"Alphapips version: v{__version__}", ephemeral=True)
+    await interaction.response.send_message(f"Alphapips version: v{__version__} — {CODENAME}", ephemeral=True)
+
+@app_commands.command(name="release", description="Show release notes for the current version")
+async def release_cmd(interaction: discord.Interaction):
+    try:
+        base = os.path.dirname(os.path.dirname(__file__))
+        path = os.path.join(base, "changelog.md")
+        notes = await _read_release_notes(path, __version__)
+        if not notes:
+            await interaction.response.send_message(f"No notes found for v{__version__}.", ephemeral=True)
+            return
+        embed = discord.Embed(title=f"Release notes v{__version__}", description=notes, color=discord.Color.blue())
+        embed.set_footer(text=f"{CODENAME}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Failed to read release notes: {e}", ephemeral=True)
 
 # ------------------ SETUP FUNCTION ------------------ #
 
 async def setup(bot: commands.Bot):
     bot.tree.add_command(gptstatus)
     bot.tree.add_command(version_cmd)
+    bot.tree.add_command(release_cmd)
 
 # ------------------ HELPER FUNCTIONS ------------------ #
 
@@ -73,9 +93,39 @@ async def get_gptstatus_embed():
     embed.add_field(name="🔹 Logged interactions", value=f"✅ {success_count} / ❌ {error_count}", inline=True)
     embed.add_field(name="🔹 Last user to trigger GPT", value=f"<@{user}>", inline=True)
     embed.add_field(name="🔹 Latency (avg)", value=f"{latency}ms", inline=True)
-    embed.set_footer(text=f"📦 GPT Status • v{__version__} • Updated just now")
+    embed.add_field(name="🔹 Uptime", value=_format_uptime(BOOT_TIME), inline=True)
+    embed.set_footer(text=f"📦 GPT Status • v{__version__} — {CODENAME} • Updated just now")
 
     return embed
+
+async def _read_release_notes(changelog_path: str, version: str) -> str:
+    try:
+        loop = asyncio.get_event_loop()
+        content = await loop.run_in_executor(None, lambda: open(changelog_path, "r", encoding="utf-8").read())
+        # very simple parse: find header '## [version]' and capture until next '##'
+        start_marker = f"## [{version}]"
+        if start_marker not in content:
+            return ""
+        start = content.index(start_marker) + len(start_marker)
+        rest = content[start:]
+        end_idx = rest.find("\n## ")
+        section = rest[:end_idx] if end_idx != -1 else rest
+        return section.strip()
+    except Exception:
+        return ""
+
+def _format_uptime(start_dt: datetime) -> str:
+    delta = datetime.now(BRUSSELS_TZ) - start_dt
+    days = delta.days
+    hours = delta.seconds // 3600
+    minutes = (delta.seconds % 3600) // 60
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
 
 # ------------------ LOGGING MOCKS ------------------ #
 
