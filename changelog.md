@@ -5,15 +5,24 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- TicketBot module:
+  - `/ticket` command to create tickets with private channel per ticket
+  - Interactive View in ticket channel with Claim/Close/Delete buttons (admin-gated)
+  - GPT-generated summary on close; stored in `ticket_summaries`
+  - Repeated-topic detection with proposal to add FAQ via button; `faq_entries` table
+  - Admin command `/ticket_panel_post` to post a persistent “Create ticket” panel
+  - Logging to `WATCHER_LOG_CHANNEL` for create/claim/close/delete
 - Reminders: idempotency with `last_sent_at` to prevent duplicate sends per minute.
 - Reminders: T0 support (event time) alongside T−60; one-offs dispatch twice by default.
 - Reminders: richer logs to console and Discord `WATCHER_LOG_CHANNEL` (created/sent/deleted/errors).
 
 ### Changed
+- Translated ticket UX to English and unified embeds/messages across flows
 - Reminder scheduler SQL split logic consolidated to match T−60 (by date), T0, and recurring by `days`.
 - Improved observability for reminder flow with structured info/debug messages.
 
 ### Fixed
+- Avoid expression index error on reminders by using `event_time` index
 - One-offs no longer become weekly due to weekday fallback; days remain empty for dated events.
 - Embed watcher stores `event_time` (event) and `call_time` (display) correctly; `time` remains trigger time (T−60).
 
