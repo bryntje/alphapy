@@ -59,13 +59,19 @@ class ReminderCog(commands.Cog):
             await conn.execute(
                 "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS second_ping BOOLEAN DEFAULT FALSE;"
             )
-            # Useful indexes for scheduler
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_reminders_reminder_date ON reminders(((event_time - INTERVAL '60 minutes')::date));"
-            )
+            # Useful indexes for scheduler (avoid non-immutable expression indexes)
+            try:
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);"
+                )
+                # Replace expression index with simple index on event_time for planner support
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_reminders_event_time ON reminders(event_time);"
+                )
+            except Exception as idx_e:
+                # Index creation shouldn't block bot operation
+                logger.warning(f"⚠️ Index creation warning: {idx_e}")
+
             self.conn = conn
             logger.info("✅ Verbonden met database!")
         except Exception as e:
