@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+Nothing yet.
+
+---
+
+## [1.3.0] - 2025-09-12
+
 ### Added
 - TicketBot module:
   - `/ticket` command to create tickets with private channel per ticket
