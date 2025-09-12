@@ -322,7 +322,145 @@ class TicketBot(commands.Cog):
             level="success",
         )
 
-    
+    @app_commands.command(name="ticket_panel_post", description="Post a ticket panel with a Create ticket button")
+    async def ticket_panel_post(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+        if not await is_owner_or_admin_interaction(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        target = channel or cast(discord.TextChannel, interaction.channel)
+        if target is None:
+            await interaction.response.send_message("❌ No channel specified.", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title="Support Tickets",
+            description="To create a ticket, click the button below.",
+            color=discord.Color.blurple(),
+        )
+        view = TicketOpenView(self, timeout=None)
+        await target.send(embed=embed, view=view)
+        await interaction.response.send_message("✅ Ticket panel posted.", ephemeral=True)
+
+    async def create_ticket_for_user(self, interaction: discord.Interaction, description: str) -> None:
+        # Ensure DB
+        if self.conn is None:
+            try:
+                await self.setup_db()
+            except Exception as e:
+                logger.error(f"❌ TicketBot: DB connect error: {e}")
+                await interaction.followup.send("❌ Database is not available. Please try again later.")
+                return
+        # Reuse existing flow by calling the command internals
+        user = interaction.user
+        user_display = f"{user} ({user.id})"
+        try:
+            conn_safe = cast(asyncpg.Connection, self.conn)
+            row = await conn_safe.fetchrow(
+                """
+                INSERT INTO support_tickets (user_id, username, description)
+                VALUES ($1, $2, $3)
+                RETURNING id, created_at
+                """,
+                int(user.id),
+                str(user),
+                (description or "").strip() or "—",
+            )
+        except Exception as e:
+            logger.exception("🚨 TicketBot: insert failed")
+            await self.send_log_embed(
+                title="🚨 Ticket creation failed",
+                description=f"User: {user_display}\nError: {e}",
+                level="error",
+            )
+            await interaction.followup.send("❌ Something went wrong creating your ticket.")
+            return
+        ticket_id = int(row["id"]) if row else 0
+        created_at: datetime = row["created_at"] if row else datetime.utcnow()
+        # Build channel and send initial message — duplicate logic kept for clarity
+        guild = interaction.guild
+        if guild is None:
+            await interaction.followup.send("❌ Guild context missing.")
+            return
+        category_id = int(getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275))
+        fetched = guild.get_channel(category_id) or await self.bot.fetch_channel(category_id)
+        if not isinstance(fetched, discord.CategoryChannel):
+            await interaction.followup.send("❌ Ticket category not found.")
+            return
+        category = fetched
+        # Determine support role
+        support_role: Optional[discord.Role] = None
+        srid = getattr(config, "TICKET_ACCESS_ROLE_ID", None)
+        if isinstance(srid, int):
+            support_role = guild.get_role(srid)
+        elif isinstance(srid, str) and srid.isdigit():
+            support_role = guild.get_role(int(srid))
+        if support_role is None:
+            admin_candidate = getattr(config, "ADMIN_ROLE_ID", None)
+            if isinstance(admin_candidate, int):
+                support_role = guild.get_role(admin_candidate)
+            elif isinstance(admin_candidate, list) and admin_candidate:
+                first_role = admin_candidate[0]
+                if isinstance(first_role, int):
+                    support_role = guild.get_role(first_role)
+                elif isinstance(first_role, str) and first_role.isdigit():
+                    support_role = guild.get_role(int(first_role))
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+                embed_links=True,
+            ),
+        }
+        if support_role is not None:
+            overwrites[support_role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                manage_messages=True,
+            )
+        channel = await guild.create_text_channel(
+            name=f"ticket-{ticket_id}",
+            category=category,
+            overwrites=overwrites,
+            reason=f"Ticket {ticket_id} created by {user}"
+        )
+        # Store channel id
+        try:
+            conn_safe2 = cast(asyncpg.Connection, self.conn)
+            await conn_safe2.execute(
+                "UPDATE support_tickets SET channel_id = $1 WHERE id = $2",
+                int(channel.id), ticket_id
+            )
+        except Exception:
+            pass
+        ch_embed = discord.Embed(
+            title="🎟️ Ticket created",
+            color=discord.Color.green(),
+            timestamp=created_at,
+            description=(
+                f"Ticket ID: `{ticket_id}`\n"
+                f"User: {user.mention}\n"
+                f"Status: **open**\n\n"
+                f"Description:\n{description or '—'}"
+            )
+        )
+        view = TicketActionView(
+            bot=self.bot,
+            conn=conn_safe2,
+            ticket_id=ticket_id,
+            support_role_id=support_role.id if support_role else None,
+            timeout=None,
+        )
+        await channel.send(
+            content=(support_role.mention if support_role else None),
+            embed=ch_embed,
+            view=view,
+            allowed_mentions=discord.AllowedMentions(roles=True)
+        )
+        await interaction.followup.send(f"✅ Ticket created in {channel.mention}", ephemeral=True)
+
 
 class TicketActionView(discord.ui.View):
     def __init__(self, bot: commands.Bot, conn: asyncpg.Connection, ticket_id: int, support_role_id: Optional[int] = None, timeout: Optional[float] = None):
@@ -627,6 +765,17 @@ class TicketActionView(discord.ui.View):
             level="warning",
         )
     # (end of TicketActionView)
+
+
+class TicketOpenView(discord.ui.View):
+    def __init__(self, cog: "TicketBot", timeout: Optional[float] = None):
+        super().__init__(timeout=timeout)
+        self.cog = cog
+
+    @discord.ui.button(label="📨 Create ticket", style=discord.ButtonStyle.primary, custom_id="ticket_open_btn")
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.create_ticket_for_user(interaction, description="New ticket")
 
 
 async def setup(bot: commands.Bot):
