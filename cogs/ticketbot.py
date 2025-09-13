@@ -121,6 +121,16 @@ class TicketBot(commands.Cog):
                 );
                 """
             )
+            # Metrics snapshots (optional)
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ticket_metrics (
+                  id BIGSERIAL PRIMARY KEY,
+                  snapshot JSONB NOT NULL,
+                  created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                """
+            )
             self.conn = conn
             logger.info("✅ TicketBot: DB ready (support_tickets)")
         except Exception as e:
@@ -473,6 +483,54 @@ class TicketBot(commands.Cog):
             allowed_mentions=discord.AllowedMentions(roles=True)
         )
         await interaction.followup.send(f"✅ Ticket created in {channel.mention}", ephemeral=True)
+
+    @app_commands.command(name="ticket_stats", description="Show ticket statistics (admin)")
+    @app_commands.describe(public="Post in channel instead of ephemeral (default: false)")
+    async def ticket_stats(self, interaction: discord.Interaction, public: bool = False):
+        if not await is_owner_or_admin_interaction(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=not public)
+
+        if not self.conn:
+            await interaction.followup.send("❌ Database not connected.", ephemeral=not public)
+            return
+        try:
+            counts = await self.conn.fetch(
+                "SELECT status, COUNT(*) AS c FROM support_tickets GROUP BY status"
+            )
+            avg_row = await self.conn.fetchrow(
+                "SELECT AVG(updated_at - created_at) AS avg_dur FROM support_tickets WHERE status='closed' AND updated_at IS NOT NULL"
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Query failed: {e}", ephemeral=not public)
+            return
+
+        status_to_count = {r["status"] or "-": int(r["c"]) for r in counts}
+        avg_dur = avg_row["avg_dur"] if avg_row else None
+        avg_text = str(avg_dur) if avg_dur else "-"
+
+        embed = discord.Embed(title="📊 Ticket Stats", color=discord.Color.blue())
+        for s in ["open", "claimed", "waiting_for_user", "escalated", "closed"]:
+            embed.add_field(name=s, value=str(status_to_count.get(s, 0)), inline=True)
+        embed.add_field(name="Avg cycle time (closed)", value=avg_text, inline=False)
+
+        # snapshot
+        try:
+            snap = {
+                "counts": status_to_count,
+                "avg_cycle_closed": avg_text,
+            }
+            await self.conn.execute("INSERT INTO ticket_metrics (snapshot) VALUES ($1)", snap)
+        except Exception:
+            pass
+
+        await interaction.followup.send(embed=embed, ephemeral=not public)
+        await self.send_log_embed(
+            title="📊 Ticket stats",
+            description=f"public={public} • counts={status_to_count}",
+            level="info",
+        )
 
     @app_commands.command(name="ticket_status", description="Update a ticket status (admin)")
     @app_commands.describe(
@@ -876,6 +934,36 @@ class TicketActionView(discord.ui.View):
             ),
             level="warning",
         )
+    
+    @discord.ui.button(label="💡 Suggest reply", style=discord.ButtonStyle.success, custom_id="ticket_suggest_btn")
+    async def suggest_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._is_staff(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        ch = interaction.channel
+        if not isinstance(ch, discord.TextChannel):
+            await interaction.response.send_message("❌ Not a text channel.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        msgs: List[str] = []
+        async for m in ch.history(limit=20, oldest_first=False):
+            if not m.author.bot and m.content:
+                msgs.append(f"{m.author.display_name}: {m.content}")
+        msgs = list(reversed(msgs))
+        prompt = (
+            "You are a support assistant. Summarize the situation and propose a short reply the staff can post.\n\n"
+            + "\n".join(msgs)
+        )
+        try:
+            suggestion = await ask_gpt(
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to get suggestion: {e}", ephemeral=True)
+            return
+        embed = discord.Embed(title="💡 Suggested reply", description=(suggestion or "-"), color=discord.Color.teal())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        await self._log(interaction, "💡 Suggest reply", f"id={self.ticket_id}")
     # (end of TicketActionView)
 
 
