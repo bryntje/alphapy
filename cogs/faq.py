@@ -313,6 +313,83 @@ class FAQ(commands.Cog):
             return
         await interaction.response.send_modal(FAQ.AddFAQModal(self))
 
+    class EditFAQModal(discord.ui.Modal):
+        def __init__(self, cog: "FAQ", entry_id: int, row: asyncpg.Record):
+            super().__init__(title=f"Edit FAQ #{entry_id}")
+            self.cog = cog
+            self.entry_id = entry_id
+            self.old_title = row.get("title") or f"Entry #{row['id']}"
+            self.title_input = discord.ui.TextInput(
+                label="Title",
+                max_length=100,
+                default=str(row.get("title") or "").strip(),
+            )
+            self.summary_input = discord.ui.TextInput(
+                label="Summary",
+                style=discord.TextStyle.paragraph,
+                max_length=1000,
+                default=str(row.get("summary") or "").strip(),
+            )
+            kws = row.get("keywords") or []
+            kws_str = ", ".join([str(k) for k in kws])
+            self.keywords_input = discord.ui.TextInput(
+                label="Keywords (comma-separated)",
+                max_length=200,
+                required=False,
+                default=kws_str,
+            )
+            self.add_item(self.title_input)
+            self.add_item(self.summary_input)
+            self.add_item(self.keywords_input)
+
+        async def on_submit(self, interaction: discord.Interaction) -> None:
+            title = str(self.title_input.value).strip()
+            summary = str(self.summary_input.value).strip()
+            kw_raw = str(self.keywords_input.value or "")
+            keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
+            if not title or not summary:
+                await interaction.response.send_message("❌ Title and summary are required.", ephemeral=True)
+                return
+            try:
+                conn = self.cog.conn
+                if conn is None:
+                    await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
+                    return
+                await conn.execute(
+                    "UPDATE faq_entries SET title=$1, summary=$2, keywords=$3 WHERE id=$4",
+                    title,
+                    summary,
+                    keywords,
+                    int(self.entry_id),
+                )
+                embed = discord.Embed(
+                    title="✅ FAQ entry updated",
+                    description=f"ID: `{self.entry_id}`\nTitle: **{title}**",
+                    color=discord.Color.green(),
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await self.cog._log_embed(
+                    "🟡 FAQ edited",
+                    f"id={self.entry_id} • {self.old_title} → {title} • by {interaction.user} ({interaction.user.id})",
+                )
+            except Exception as e:
+                await interaction.response.send_message(f"❌ Failed to update entry: {e}", ephemeral=True)
+
+    @faq.command(name="edit", description="Edit a FAQ entry (admin)")
+    @app_commands.describe(id="FAQ entry ID")
+    async def faq_edit(self, interaction: discord.Interaction, id: int):
+        if not await is_owner_or_admin_interaction(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        if not self.conn:
+            await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
+            return
+        row = await self.conn.fetchrow("SELECT id, title, summary, keywords FROM faq_entries WHERE id = $1", id)
+        if not row:
+            await interaction.response.send_message("❌ Entry not found.", ephemeral=True)
+            return
+        await interaction.response.send_modal(FAQ.EditFAQModal(self, id, row))
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(FAQ(bot))
