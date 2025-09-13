@@ -15,6 +15,8 @@ except ImportError:
 from utils.logger import logger
 from gpt.helpers import ask_gpt
 from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.timezone import BRUSSELS_TZ
+from version import __version__, CODENAME
 
 
 class TicketBot(commands.Cog):
@@ -131,6 +133,14 @@ class TicketBot(commands.Cog):
                 );
                 """
             )
+            # Evolve metrics to structured columns
+            try:
+                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS scope TEXT;")
+                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS counts JSONB;")
+                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS average_cycle_time BIGINT;")
+                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS triggered_by BIGINT;")
+            except Exception:
+                pass
             self.conn = conn
             logger.info("✅ TicketBot: DB ready (support_tickets)")
         except Exception as e:
@@ -484,6 +494,101 @@ class TicketBot(commands.Cog):
         )
         await interaction.followup.send(f"✅ Ticket created in {channel.mention}", ephemeral=True)
 
+    def _human_duration(self, seconds: int) -> str:
+        mins, sec = divmod(seconds, 60)
+        hrs, mins = divmod(mins, 60)
+        days, hrs = divmod(hrs, 24)
+        parts = []
+        if days:
+            parts.append(f"{days}d")
+        if hrs or days:
+            parts.append(f"{hrs}h")
+        parts.append(f"{mins}m")
+        return " ".join(parts)
+
+    async def _compute_stats(self, scope: str) -> tuple[dict, Optional[int]]:
+        # scope: 'all' | '7d' | '30d'
+        if not self.conn:
+            return {}, None
+        where = ""
+        if scope == "7d":
+            where = "WHERE created_at >= NOW() - INTERVAL '7 days'"
+        elif scope == "30d":
+            where = "WHERE created_at >= NOW() - INTERVAL '30 days'"
+        counts = await self.conn.fetch(f"SELECT status, COUNT(*) c FROM support_tickets {where} GROUP BY status")
+        status_to_count = {r["status"] or "-": int(r["c"]) for r in counts}
+        # average cycle (closed only)
+        avg_row = await self.conn.fetchrow(
+            f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {where} AND status='closed'"
+            if where else
+            "SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets WHERE status='closed'"
+        )
+        avg_seconds: Optional[int] = None
+        if avg_row and avg_row["avg_s"] is not None:
+            try:
+                avg_seconds = int(float(avg_row["avg_s"]))
+            except Exception:
+                avg_seconds = None
+        return status_to_count, avg_seconds
+
+    def _stats_embed(self, counts: dict, avg_seconds: Optional[int]) -> discord.Embed:
+        embed = discord.Embed(title="📊 Ticket Statistics", color=0x5865F2)
+        for s in ["open", "claimed", "waiting_for_user", "escalated", "closed"]:
+            embed.add_field(name=s, value=str(counts.get(s, 0)), inline=True)
+        if avg_seconds is not None:
+            embed.add_field(name="Average cycle time (closed)", value=self._human_duration(avg_seconds), inline=False)
+        else:
+            embed.add_field(name="Average cycle time (closed)", value="-", inline=False)
+        now_bxl = datetime.now(BRUSSELS_TZ)
+        embed.set_footer(text=f"AlphaPips v{__version__} — {CODENAME} | Last updated: {now_bxl.strftime('%Y-%m-%d %H:%M')} BXL")
+        return embed
+
+    class StatsView(discord.ui.View):
+        def __init__(self, cog: "TicketBot", public: bool, scope: str):
+            super().__init__(timeout=180)
+            self.cog = cog
+            self.public = public
+            self.scope = scope  # 'all' | '7d' | '30d'
+
+        async def _update(self, interaction: discord.Interaction, scope: Optional[str] = None):
+            if scope:
+                self.scope = scope
+            if not await is_owner_or_admin_interaction(interaction):
+                await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+                return
+            counts, avg_seconds = await self.cog._compute_stats(self.scope)
+            embed = self.cog._stats_embed(counts, avg_seconds)
+            await interaction.response.edit_message(embed=embed, view=self)
+            try:
+                await self.cog.send_log_embed(
+                    title="📊 Ticket stats (button)",
+                    description=f"by={interaction.user.id} • scope={self.scope} • counts={counts}",
+                    level="info",
+                )
+                if self.cog.conn:
+                    await self.cog.conn.execute(
+                        "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1,$2,$3,$4,$5)",
+                        {"counts": counts, "avg": avg_seconds, "scope": self.scope}, self.scope, counts, avg_seconds, int(interaction.user.id)
+                    )
+            except Exception:
+                pass
+
+        @discord.ui.button(label="Last 7d", style=discord.ButtonStyle.secondary, custom_id="stats_7d")
+        async def last7(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._update(interaction, "7d")
+
+        @discord.ui.button(label="Last 30d", style=discord.ButtonStyle.secondary, custom_id="stats_30d")
+        async def last30(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._update(interaction, "30d")
+
+        @discord.ui.button(label="All time", style=discord.ButtonStyle.secondary, custom_id="stats_all")
+        async def alltime(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._update(interaction, "all")
+
+        @discord.ui.button(label="Refresh 🔄", style=discord.ButtonStyle.primary, custom_id="stats_refresh")
+        async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._update(interaction, None)
+
     @app_commands.command(name="ticket_stats", description="Show ticket statistics (admin)")
     @app_commands.describe(public="Post in channel instead of ephemeral (default: false)")
     async def ticket_stats(self, interaction: discord.Interaction, public: bool = False):
@@ -495,42 +600,22 @@ class TicketBot(commands.Cog):
         if not self.conn:
             await interaction.followup.send("❌ Database not connected.", ephemeral=not public)
             return
-        try:
-            counts = await self.conn.fetch(
-                "SELECT status, COUNT(*) AS c FROM support_tickets GROUP BY status"
-            )
-            avg_row = await self.conn.fetchrow(
-                "SELECT AVG(updated_at - created_at) AS avg_dur FROM support_tickets WHERE status='closed' AND updated_at IS NOT NULL"
-            )
-        except Exception as e:
-            await interaction.followup.send(f"❌ Query failed: {e}", ephemeral=not public)
-            return
-
-        status_to_count = {r["status"] or "-": int(r["c"]) for r in counts}
-        avg_dur = avg_row["avg_dur"] if avg_row else None
-        avg_text = str(avg_dur) if avg_dur else "-"
-
-        embed = discord.Embed(title="📊 Ticket Stats", color=discord.Color.blue())
-        for s in ["open", "claimed", "waiting_for_user", "escalated", "closed"]:
-            embed.add_field(name=s, value=str(status_to_count.get(s, 0)), inline=True)
-        embed.add_field(name="Avg cycle time (closed)", value=avg_text, inline=False)
-
-        # snapshot
-        try:
-            snap = {
-                "counts": status_to_count,
-                "avg_cycle_closed": avg_text,
-            }
-            await self.conn.execute("INSERT INTO ticket_metrics (snapshot) VALUES ($1)", snap)
-        except Exception:
-            pass
-
-        await interaction.followup.send(embed=embed, ephemeral=not public)
+        counts, avg_seconds = await self._compute_stats("all")
+        embed = self._stats_embed(counts, avg_seconds)
+        view = TicketBot.StatsView(self, public=public, scope="all")
+        await interaction.followup.send(embed=embed, view=view, ephemeral=not public)
         await self.send_log_embed(
             title="📊 Ticket stats",
-            description=f"public={public} • counts={status_to_count}",
+            description=f"by={interaction.user.id} • scope=all • public={public} • counts={counts}",
             level="info",
         )
+        try:
+            await self.conn.execute(
+                "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1,$2,$3,$4,$5)",
+                {"counts": counts, "avg": avg_seconds, "scope": "all"}, "all", counts, avg_seconds, int(interaction.user.id)
+            )
+        except Exception:
+            pass
 
     @app_commands.command(name="ticket_status", description="Update a ticket status (admin)")
     @app_commands.describe(
