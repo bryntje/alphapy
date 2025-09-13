@@ -248,6 +248,71 @@ class FAQ(commands.Cog):
             return
         await interaction.response.send_message("✅ FAQ index reload queued (in-memory).", ephemeral=True)
 
+    class AddFAQModal(discord.ui.Modal):
+        def __init__(self, cog: "FAQ"):
+            super().__init__(title="Add FAQ entry")
+            self.cog = cog
+            self.title_input = discord.ui.TextInput(
+                label="Title",
+                placeholder="How to reset my password?",
+                max_length=100,
+            )
+            self.summary_input = discord.ui.TextInput(
+                label="Summary",
+                style=discord.TextStyle.paragraph,
+                placeholder="Describe the solution in up to 1000 characters",
+                max_length=1000,
+            )
+            self.keywords_input = discord.ui.TextInput(
+                label="Keywords (comma-separated)",
+                placeholder="password, reset, login",
+                max_length=200,
+                required=False,
+            )
+            self.add_item(self.title_input)
+            self.add_item(self.summary_input)
+            self.add_item(self.keywords_input)
+
+        async def on_submit(self, interaction: discord.Interaction) -> None:
+            title = str(self.title_input.value).strip()
+            summary = str(self.summary_input.value).strip()
+            kw_raw = str(self.keywords_input.value or "")
+            keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
+            if not title or not summary:
+                await interaction.response.send_message("❌ Title and summary are required.", ephemeral=True)
+                return
+            try:
+                conn = self.cog.conn
+                if conn is None:
+                    await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
+                    return
+                row = await conn.fetchrow(
+                    "INSERT INTO faq_entries (title, summary, keywords) VALUES ($1, $2, $3) RETURNING id",
+                    title,
+                    summary,
+                    keywords,
+                )
+                new_id = row["id"] if row else None
+                embed = discord.Embed(
+                    title="✅ FAQ entry created",
+                    description=f"ID: `{new_id}`\nTitle: **{title}**",
+                    color=discord.Color.green(),
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await self.cog._log_embed(
+                    "🟢 New FAQ added",
+                    f"[{new_id}] {title} by {interaction.user} ({interaction.user.id})",
+                )
+            except Exception as e:
+                await interaction.response.send_message(f"❌ Failed to create entry: {e}", ephemeral=True)
+
+    @faq.command(name="add", description="Add a new FAQ entry (admin)")
+    async def faq_add(self, interaction: discord.Interaction):
+        if not await is_owner_or_admin_interaction(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        await interaction.response.send_modal(FAQ.AddFAQModal(self))
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(FAQ(bot))
