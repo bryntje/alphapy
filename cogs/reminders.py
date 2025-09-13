@@ -395,15 +395,25 @@ class ReminderCog(commands.Cog):
                     description=row['message'] or "-",
                     color=0x2ecc71
                 )
-                # Datum & Tijd
+                # Show date+time for one-off events; for recurring show only the configured time
                 event_dt = row.get("event_time")
-                if not event_dt:
-                    event_dt = dt
+                if event_dt:
+                    try:
+                        event_dt = event_dt.astimezone(BRUSSELS_TZ)
+                    except Exception:
+                        pass
+                    call_time_obj = row.get("call_time") or event_dt.time()
+                    embed.add_field(name="📅 Date", value=event_dt.strftime("%A %d %B %Y"), inline=False)
+                    embed.add_field(name="⏰ Time", value=call_time_obj.strftime("%H:%M"), inline=False)
                 else:
-                    event_dt = event_dt.astimezone(BRUSSELS_TZ)
-                call_time_obj = row.get("call_time") or event_dt.time()
-                embed.add_field(name="📅 Date", value=event_dt.strftime("%A %d %B %Y"), inline=False)
-                embed.add_field(name="⏰ Time", value=call_time_obj.strftime("%H:%M"), inline=False)
+                    # Recurring: show only reminder time (no date)
+                    call_time_obj = row.get("call_time") or row.get("time")
+                    if call_time_obj:
+                        try:
+                            time_str = call_time_obj.strftime("%H:%M")
+                        except Exception:
+                            time_str = str(call_time_obj)
+                        embed.add_field(name="⏰ Time", value=time_str, inline=False)
                 # Locatie
                 if row.get("location") and row["location"] != "-":
                     embed.add_field(name="📍 Location", value=row["location"], inline=False)
