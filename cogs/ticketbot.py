@@ -77,6 +77,19 @@ class TicketBot(commands.Cog):
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_support_tickets_channel_id ON support_tickets(channel_id);"
             )
+            # Status workflow columns (M2)
+            try:
+                await conn.execute(
+                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();"
+                )
+                await conn.execute(
+                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS escalated_to BIGINT;"
+                )
+            except Exception:
+                pass
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_support_tickets_updated_at ON support_tickets(updated_at);"
+            )
             # Handige index voor claims
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_support_tickets_claimed_by ON support_tickets(claimed_by);"
@@ -266,7 +279,7 @@ class TicketBot(commands.Cog):
             try:
                 conn_safe2 = cast(asyncpg.Connection, self.conn)
                 await conn_safe2.execute(
-                    "UPDATE support_tickets SET channel_id = $1 WHERE id = $2",
+                    "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2",
                     int(channel.id),
                     ticket_id,
                 )
@@ -430,7 +443,7 @@ class TicketBot(commands.Cog):
         try:
             conn_safe2 = cast(asyncpg.Connection, self.conn)
             await conn_safe2.execute(
-                "UPDATE support_tickets SET channel_id = $1 WHERE id = $2",
+                "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2",
                 int(channel.id), ticket_id
             )
         except Exception:
@@ -627,7 +640,7 @@ class TicketActionView(discord.ui.View):
             row = await self.conn.fetchrow(
                 """
                 UPDATE support_tickets
-                SET claimed_by = $1, claimed_at = NOW()
+                SET claimed_by = $1, claimed_at = NOW(), updated_at = NOW()
                 WHERE id = $2 AND (claimed_by IS NULL OR claimed_by = 0) AND status = 'open'
                 RETURNING id
                 """,
@@ -669,7 +682,7 @@ class TicketActionView(discord.ui.View):
             row = await self.conn.fetchrow(
                 """
                 UPDATE support_tickets
-                SET status = 'closed'
+                SET status = 'closed', updated_at = NOW()
                 WHERE id = $1 AND status <> 'closed'
                 RETURNING id, user_id, channel_id
                 """,
@@ -728,6 +741,33 @@ class TicketActionView(discord.ui.View):
         # Post GPT summary last to satisfy required execution order
         if isinstance(interaction.channel, discord.TextChannel):
             await self._post_summary(interaction.channel)
+
+    @discord.ui.button(label="⏳ Wait for user", style=discord.ButtonStyle.secondary, custom_id="ticket_wait_btn")
+    async def wait_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._is_staff(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        await self.conn.execute(
+            "UPDATE support_tickets SET status='waiting_for_user', updated_at = NOW() WHERE id = $1",
+            int(self.ticket_id),
+        )
+        await interaction.response.send_message("✅ Status set to waiting_for_user.", ephemeral=True)
+        await self._log(interaction, "🕒 Ticket status", f"id={self.ticket_id} → waiting_for_user")
+
+    @discord.ui.button(label="🚩 Escalate", style=discord.ButtonStyle.secondary, custom_id="ticket_escalate_btn")
+    async def escalate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._is_staff(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
+        escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None
+        await self.conn.execute(
+            "UPDATE support_tickets SET status='escalated', escalated_to=$1, updated_at = NOW() WHERE id = $2",
+            escalated_to,
+            int(self.ticket_id),
+        )
+        await interaction.response.send_message("✅ Ticket escalated.", ephemeral=True)
+        await self._log(interaction, "🚩 Ticket escalated", f"id={self.ticket_id} • to={escalated_to or '-'}")
 
     @discord.ui.button(label="🗑 Delete ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_delete_btn", disabled=True)
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
