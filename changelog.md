@@ -8,6 +8,28 @@ Nothing yet.
 
 ---
 
+## [1.4.0] - 2025-09-13
+
+### Added
+- Phase 2 (TicketBot & FAQ)
+  - FAQ module `/faq` with `search`, `view`, `list`, autocomplete, public toggle
+  - Admin flows: `/faq add` (modal), `/faq edit` (prefilled modal)
+  - Search scoring with simple normalization + synonyms
+  - Ticket status workflows: Wait for user, Escalate buttons; `/ticket_status` admin command
+  - AI assist: “💡 Suggest reply” button drafts an ephemeral response using GPT
+  - Ticket statistics `/ticket_stats` with buttons (Last 7d / 30d / All / Refresh), versioned footer
+  - Metrics persistence: `ticket_metrics` snapshots (scope, counts, avg_cycle_time, triggered_by)
+  - Exports: `/export_tickets [scope]`, `/export_faq` (admin CSV exports)
+
+### Changed
+- Improved embeds and logging; status updates also write `updated_at`
+
+### DB
+- `support_tickets`: add `updated_at TIMESTAMPTZ`, `escalated_to BIGINT`
+- `ticket_metrics`: structured fields (`scope`, `counts`, `average_cycle_time`, `triggered_by`) in addition to `snapshot`
+
+---
+
 ## [1.3.0] - 2025-09-12
 
 ### Added
