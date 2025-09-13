@@ -474,6 +474,78 @@ class TicketBot(commands.Cog):
         )
         await interaction.followup.send(f"✅ Ticket created in {channel.mention}", ephemeral=True)
 
+    @app_commands.command(name="ticket_status", description="Update a ticket status (admin)")
+    @app_commands.describe(
+        id="Ticket ID",
+        escalate_to="Optional escalation role when setting status to escalated"
+    )
+    @app_commands.choices(
+        status=[
+            app_commands.Choice(name="open", value="open"),
+            app_commands.Choice(name="claimed", value="claimed"),
+            app_commands.Choice(name="waiting_for_user", value="waiting_for_user"),
+            app_commands.Choice(name="escalated", value="escalated"),
+            app_commands.Choice(name="closed", value="closed"),
+        ]
+    )
+    async def ticket_status(
+        self,
+        interaction: discord.Interaction,
+        id: int,
+        status: app_commands.Choice[str],
+        escalate_to: Optional[discord.Role] = None,
+    ):
+        if not await is_owner_or_admin_interaction(interaction):
+            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        if not self.conn:
+            await interaction.followup.send("❌ Database not connected.", ephemeral=True)
+            return
+
+        new_status = status.value
+        try:
+            if new_status == "escalated":
+                await self.conn.execute(
+                    "UPDATE support_tickets SET status=$1, escalated_to=$2, updated_at=NOW() WHERE id=$3",
+                    new_status,
+                    int(escalate_to.id) if escalate_to else None,
+                    id,
+                )
+            elif new_status == "claimed":
+                await self.conn.execute(
+                    "UPDATE support_tickets SET status=$1, updated_at=NOW(), claimed_by=COALESCE(claimed_by,$2), claimed_at=COALESCE(claimed_at,NOW()) WHERE id=$3",
+                    new_status,
+                    int(interaction.user.id),
+                    id,
+                )
+            else:
+                await self.conn.execute(
+                    "UPDATE support_tickets SET status=$1, updated_at=NOW() WHERE id=$2",
+                    new_status,
+                    id,
+                )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to update status: {e}", ephemeral=True)
+            return
+
+        await interaction.followup.send(f"✅ Ticket `{id}` status set to **{new_status}**.", ephemeral=True)
+        # Log
+        try:
+            await self.send_log_embed(
+                title="🧭 Ticket status update",
+                description=(
+                    f"ID: {id}\n"
+                    f"New status: **{new_status}**\n"
+                    f"By: {interaction.user} ({interaction.user.id})"
+                    + (f"\nEscalated to: <@&{escalate_to.id}>" if (new_status == 'escalated' and escalate_to) else "")
+                ),
+                level="info",
+            )
+        except Exception:
+            pass
+
 
 class TicketActionView(discord.ui.View):
     def __init__(self, bot: commands.Bot, conn: asyncpg.Connection, ticket_id: int, support_role_id: Optional[int] = None, timeout: Optional[float] = None):
