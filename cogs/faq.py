@@ -14,6 +14,15 @@ from utils.logger import logger
 from utils.checks_interaction import is_owner_or_admin_interaction
 
 
+SYNS: Dict[str, List[str]] = {
+    "pwd": ["password"],
+    "pass": ["password"],
+    "mail": ["email"],
+    "e-mail": ["email"],
+    "login": ["signin", "sign-in"],
+}
+
+
 def _normalize(text: str) -> List[str]:
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
@@ -28,7 +37,17 @@ def _score_entry(query_tokens: List[str], entry: Dict[str, Any]) -> int:
         entry.get("title") or "",
     ])
     tokens = set(_normalize(hay))
-    return sum(1 for t in query_tokens if t in tokens)
+    score = 0
+    for qt in query_tokens:
+        if qt in tokens:
+            score += 2  # direct token match has higher weight
+        # synonyms
+        for base, syns in SYNS.items():
+            if qt == base or qt in syns:
+                if base in tokens or any(s in tokens for s in syns):
+                    score += 1
+                    break
+    return score
 
 
 class FAQ(commands.Cog):
@@ -39,12 +58,12 @@ class FAQ(commands.Cog):
 
     async def _setup_db(self) -> None:
         try:
-            self.conn = await asyncpg.connect(config.DATABASE_URL)
+            conn = await asyncpg.connect(config.DATABASE_URL)
             # Ensure columns on faq_entries
-            await self.conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS title TEXT;")
-            await self.conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS keywords TEXT[];")
+            await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS title TEXT;")
+            await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS keywords TEXT[];")
             # Logs table
-            await self.conn.execute(
+            await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS faq_search_logs (
                   id SERIAL PRIMARY KEY,
@@ -54,6 +73,7 @@ class FAQ(commands.Cog):
                 );
                 """
             )
+            self.conn = conn
             logger.info("✅ FAQ: DB ready")
         except Exception as e:
             logger.error(f"❌ FAQ: DB init error: {e}")
@@ -85,48 +105,112 @@ class FAQ(commands.Cog):
     # --- Slash group
     faq = app_commands.Group(name="faq", description="FAQ commands")
 
-    @faq.command(name="list", description="Show latest FAQ entries (last 10)")
-    async def faq_list(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        rows = await self._fetch_entries()
-        rows = rows[:10]
-        if not rows:
-            await interaction.followup.send("No FAQ entries yet.", ephemeral=True)
-            return
+    async def _log_embed(self, title: str, description: str) -> None:
+        try:
+            channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+            if channel and hasattr(channel, "send"):
+                embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
+                text_channel = cast(discord.TextChannel, channel)
+                await text_channel.send(embed=embed)
+        except Exception:
+            pass
+
+    def _page_embed(self, rows: List[asyncpg.Record], page: int, page_size: int = 10) -> discord.Embed:
+        start = page * page_size
+        end = start + page_size
+        slice_rows = rows[start:end]
         embed = discord.Embed(title="📚 FAQ – Latest", color=discord.Color.blurple())
-        for r in rows:
+        if not slice_rows:
+            embed.description = "No FAQ entries yet."
+            return embed
+        for r in slice_rows:
             title = r.get("title") or f"Entry #{r['id']}"
             preview = (r.get("summary") or "-")
             if len(preview) > 140:
                 preview = preview[:140] + "…"
             embed.add_field(name=f"[{r['id']}] {title}", value=preview, inline=False)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        embed.set_footer(text=f"Page {page+1} / {max(1, (len(rows)+page_size-1)//page_size)}")
+        return embed
+
+    class FAQListView(discord.ui.View):
+        def __init__(self, cog: "FAQ", rows: List[asyncpg.Record], public: bool, page: int = 0, page_size: int = 10):
+            super().__init__(timeout=180)
+            self.cog = cog
+            self.rows = rows
+            self.page = page
+            self.page_size = page_size
+            self.public = public
+            self._sync_buttons()
+
+        def _sync_buttons(self) -> None:
+            total_pages = max(1, (len(self.rows)+self.page_size-1)//self.page_size)
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    if child.custom_id == "faq_prev":
+                        child.disabled = (self.page <= 0)
+                    if child.custom_id == "faq_next":
+                        child.disabled = (self.page >= total_pages - 1)
+
+        async def _update(self, interaction: discord.Interaction) -> None:
+            self._sync_buttons()
+            embed = self.cog._page_embed(self.rows, self.page, self.page_size)
+            await interaction.response.edit_message(embed=embed, view=self)
+
+        @discord.ui.button(label="⬅ Prev", style=discord.ButtonStyle.secondary, custom_id="faq_prev")
+        async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if self.page > 0:
+                self.page -= 1
+            await self._update(interaction)
+
+        @discord.ui.button(label="➡ Next", style=discord.ButtonStyle.primary, custom_id="faq_next")
+        async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+            total_pages = max(1, (len(self.rows)+self.page_size-1)//self.page_size)
+            if self.page < total_pages - 1:
+                self.page += 1
+            await self._update(interaction)
+
+    @faq.command(name="list", description="Show latest FAQ entries (last 10)")
+    @app_commands.describe(public="Post in channel instead of ephemeral (default: false)")
+    async def faq_list(self, interaction: discord.Interaction, public: bool = False):
+        await interaction.response.defer(ephemeral=not public)
+        rows = await self._fetch_entries()
+        if not rows:
+            await interaction.followup.send("No FAQ entries yet.", ephemeral=not public)
+            return
+        embed = self._page_embed(rows, page=0, page_size=10)
+        if len(rows) > 10:
+            view = FAQ.FAQListView(self, rows, public, page=0, page_size=10)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=not public)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=not public)
+        await self._log_embed("📚 FAQ list", f"count={len(rows)} • public={public}")
 
     @faq.command(name="view", description="View a FAQ entry by ID")
-    @app_commands.describe(id="FAQ entry ID")
-    async def faq_view(self, interaction: discord.Interaction, id: int):
-        await interaction.response.defer(ephemeral=True)
+    @app_commands.describe(id="FAQ entry ID", public="Post in channel instead of ephemeral (default: false)")
+    async def faq_view(self, interaction: discord.Interaction, id: int, public: bool = False):
+        await interaction.response.defer(ephemeral=not public)
         if not self.conn:
-            await interaction.followup.send("Database not connected.", ephemeral=True)
+            await interaction.followup.send("Database not connected.", ephemeral=not public)
             return
         row = await self.conn.fetchrow("SELECT id, title, summary, keywords, created_at FROM faq_entries WHERE id = $1", id)
         if not row:
-            await interaction.followup.send("Entry not found.", ephemeral=True)
+            await interaction.followup.send("Entry not found.", ephemeral=not public)
             return
         title = row.get("title") or f"Entry #{row['id']}"
         embed = discord.Embed(title=f"📖 {title}", description=row.get("summary") or "-", color=discord.Color.green())
         kws = row.get("keywords") or []
         if kws:
             embed.add_field(name="Keywords", value=", ".join(kws), inline=False)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=not public)
+        await self._log_embed("📖 FAQ view", f"id={id} • public={public}")
 
     @faq.command(name="search", description="Search in FAQ entries")
-    @app_commands.describe(query="Your question or keywords")
-    async def faq_search(self, interaction: discord.Interaction, query: str):
-        await interaction.response.defer(ephemeral=True)
+    @app_commands.describe(query="Your question or keywords", public="Post in channel instead of ephemeral (default: false)")
+    async def faq_search(self, interaction: discord.Interaction, query: str, public: bool = False):
+        await interaction.response.defer(ephemeral=not public)
         results = await self._search_entries(query, limit=5)
         if not results:
-            await interaction.followup.send("No results.", ephemeral=True)
+            await interaction.followup.send("No results.", ephemeral=not public)
             return
         embed = discord.Embed(title="🔎 FAQ – Top results", color=discord.Color.orange())
         for r in results:
@@ -135,7 +219,8 @@ class FAQ(commands.Cog):
             if len(preview) > 160:
                 preview = preview[:160] + "…"
             embed.add_field(name=f"[{r['id']}] {title}", value=preview, inline=False)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=not public)
+        await self._log_embed("🔎 FAQ search", f"query=‘{query}’ • matches={len(results)} • public={public}")
 
     @faq_search.autocomplete("query")
     async def faq_search_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
