@@ -109,6 +109,9 @@ python bot.py
 - Claim ticket (staff only): assigns the ticket to the clicker; button becomes “Claimed”.
 - Close ticket (staff only): locks channel for the requester, optionally renames to `ticket-<id>-closed`, posts a GPT summary embed, enables the Delete button.
 - Delete ticket (staff only, visible after close): deletes DB records for the ticket and removes the channel.
+- Wait for user (staff only): sets status to `waiting_for_user`.
+- Escalate (staff only): sets status to `escalated` (optionally stores target role).
+- 💡 Suggest reply (staff only): drafts an ephemeral assistant reply based on recent messages.
 
 ### FAQ workflow
 - On close, the GPT summary is saved in `ticket_summaries` with a computed similarity key.
@@ -123,6 +126,7 @@ python bot.py
 ### Env
 - `TICKET_CATEGORY_ID`: category under which ticket channels are created
 - `TICKET_ACCESS_ROLE_ID`: role with access to ticket channels (falls back to `ADMIN_ROLE_ID`)
+- `TICKET_ESCALATION_ROLE_ID`: optional role used as escalation target
 
 ### Minimal test plan
 1. Run `/ticket_panel_post` in a channel to publish the panel; click “Create ticket”
@@ -144,6 +148,15 @@ python bot.py
 - CI (future)
   - Lightweight migration check (ensure tables/columns exist)
   - Lint and type checks on PRs
+
+---
+
+## 📊 Exports & Metrics
+
+- `/ticket_stats` – interactive stats (7d/30d/all, refresh), embeds include version/codename
+- `ticket_metrics` table stores snapshots (scope, counts, avg cycle seconds, triggered_by)
+- `/export_tickets [scope]` – CSV export of tickets
+- `/export_faq` – CSV export of FAQ entries
 
 
 ## 🤝 Contributing

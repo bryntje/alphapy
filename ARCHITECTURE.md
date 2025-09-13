@@ -35,6 +35,8 @@
   - Interactive UI in channel: buttons to Claim/Close/Delete (staff only)
   - Summary: GPT summary posted on Close; persisted for clustering
   - FAQ: repeated-topic detection; proposal embed with “Add to FAQ” button (admin)
+  - Extra status workflows (Phase 2): Wait for user, Escalate, `/ticket_status`
+  - Ticket stats: `/ticket_stats` with interactive scope buttons (7d/30d/all)
   - Logging: create/claim/close/delete to `WATCHER_LOG_CHANNEL`
 
   - Listens in announcements channel and auto-creates reminders from embeds
@@ -58,9 +60,18 @@
   - `id SERIAL PRIMARY KEY`
   - `user_id BIGINT`, `username TEXT`, `description TEXT`, `status TEXT DEFAULT 'open'`
   - `channel_id BIGINT`, `claimed_by BIGINT`, `claimed_at TIMESTAMPTZ`
+  - `updated_at TIMESTAMPTZ`, `escalated_to BIGINT`
   - `created_at TIMESTAMPTZ DEFAULT NOW()`
 
 - `ticket_summaries`
+- `ticket_metrics`
+  - `id BIGSERIAL PRIMARY KEY`
+  - `snapshot JSONB`
+  - `scope TEXT` (7d/30d/all)
+  - `counts JSONB` (status → count)
+  - `average_cycle_time BIGINT` (seconds)
+  - `triggered_by BIGINT`
+  - `created_at TIMESTAMPTZ DEFAULT NOW()`
   - `id SERIAL PRIMARY KEY`
   - `ticket_id INT NOT NULL`
   - `summary TEXT NOT NULL`
