@@ -42,8 +42,7 @@ class ReminderCog(commands.Cog):
                     origin_message_id BIGINT,
                     event_time TIMESTAMPTZ,
                     location TEXT,
-                    last_sent_at TIMESTAMPTZ,
-                    second_ping BOOLEAN DEFAULT FALSE
+                    last_sent_at TIMESTAMPTZ
                 );
                 """
             )
@@ -55,10 +54,7 @@ class ReminderCog(commands.Cog):
             await conn.execute(
                 "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
             )
-            # Optional T0 support flag
-            await conn.execute(
-                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS second_ping BOOLEAN DEFAULT FALSE;"
-            )
+            
             # Useful indexes for scheduler (avoid non-immutable expression indexes)
             try:
                 await conn.execute(
@@ -354,7 +350,7 @@ class ReminderCog(commands.Cog):
                 """
                 SELECT id, channel_id, name, message, location,
                        origin_channel_id, origin_message_id, event_time, days, call_time,
-                       last_sent_at, second_ping
+                       last_sent_at
                 FROM reminders
                 WHERE (
                     -- One-off at T−60
