@@ -353,11 +353,19 @@ class ReminderCog(commands.Cog):
                        last_sent_at
                 FROM reminders
                 WHERE (
-                    -- One-off at T−60
-                    (event_time IS NOT NULL AND time::text = $1 AND (event_time - INTERVAL '60 minutes')::date = $2)
+                    -- One-off at T−60 (evaluate date in Brussels time)
+                    (
+                        event_time IS NOT NULL
+                        AND time::text = $1
+                        AND ((event_time AT TIME ZONE 'Europe/Brussels') - INTERVAL '60 minutes')::date = $2
+                    )
                     OR
-                    -- One-off at T0 (always enabled if event_time is present)
-                    (event_time IS NOT NULL AND (event_time::time)::text = $1)
+                    -- One-off at T0 (match call_time and Brussels calendar date)
+                    (
+                        event_time IS NOT NULL
+                        AND call_time::text = $1
+                        AND (event_time AT TIME ZONE 'Europe/Brussels')::date = $2
+                    )
                     OR
                     -- Recurring by days
                     (event_time IS NULL AND time::text = $1 AND ($3 = ANY(days)))
@@ -416,7 +424,7 @@ class ReminderCog(commands.Cog):
                 # Link naar origineel bericht
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
                     link = f"https://discord.com/channels/{config.GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
-                    embed.add_field(name="🔗 Origineel", value=f"[Klik hier]({link})", inline=False)
+                    embed.add_field(name="🔗 Original", value=f"[Click here]({link})", inline=False)
 
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(
