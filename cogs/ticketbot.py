@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from discord.app_commands import checks as app_checks
 import asyncpg
+from asyncpg.types import Json  # type: ignore[attr-defined]
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List, Dict, cast
@@ -614,12 +615,12 @@ class TicketBot(commands.Cog):
             INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by, topics)
             VALUES ($1, $2, $3, $4, $5, $6)
             """,
-            snapshot,
+            Json(snapshot),
             scope,
-            counts,
+            Json(counts),
             avg_seconds,
             int(triggered_by),
-            topics_payload,
+            Json(topics_payload) if topics_payload is not None else None,
         )
 
         try:
@@ -673,7 +674,11 @@ class TicketBot(commands.Cog):
                 if self.cog.conn:
                     await self.cog.conn.execute(
                         "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1,$2,$3,$4,$5)",
-                        {"counts": counts, "avg": avg_seconds, "scope": self.scope}, self.scope, counts, avg_seconds, int(interaction.user.id)
+                        Json({"counts": counts, "avg": avg_seconds, "scope": self.scope}),
+                        self.scope,
+                        Json(counts),
+                        avg_seconds,
+                        int(interaction.user.id)
                     )
             except Exception:
                 pass
@@ -717,7 +722,11 @@ class TicketBot(commands.Cog):
         try:
             await self.conn.execute(
                 "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1,$2,$3,$4,$5)",
-                {"counts": counts, "avg": avg_seconds, "scope": "all"}, "all", counts, avg_seconds, int(interaction.user.id)
+                Json({"counts": counts, "avg": avg_seconds, "scope": "all"}),
+                "all",
+                Json(counts),
+                avg_seconds,
+                int(interaction.user.id)
             )
         except Exception:
             pass
