@@ -102,6 +102,15 @@ class EmbedReminderWatcher(commands.Cog):
         lines = all_text.split('\n')
         date_line, time_line, location_line, days_line = self.extract_fields_from_lines(lines)
 
+        # Fallback: if the "Time" line includes a concrete date, extract it so
+        # one-off messages such as "Wednesday, October 01/10/25 – 19:30" are
+        # recognised as dated events instead of recurring reminders.
+        inferred_date = None
+        if not date_line and time_line:
+            inferred_date = self.infer_date_from_time_line(time_line)
+            if inferred_date:
+                date_line = inferred_date
+
         # Fallbacks for time and days if not present in structured lines
         if not time_line:
             time_fallback = re.search(r"\b(\d{1,2}[:.]\d{2})\s*(?:CET|CEST)?", embed.description or "")
@@ -237,6 +246,35 @@ class EmbedReminderWatcher(commands.Cog):
             dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
         return dt, tz
+
+    def infer_date_from_time_line(self, time_line: str) -> Optional[str]:
+        numeric = re.search(r"\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b", time_line)
+        if numeric:
+            return numeric.group(1)
+
+        month_day = re.search(
+            r"\b([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:[,\s]+(\d{4}))?",
+            time_line
+        )
+        if month_day:
+            month, day, year = month_day.groups()
+            parts = [day, month]
+            if year:
+                parts.append(year)
+            return " ".join(parts)
+
+        day_month = re.search(
+            r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:[,\s]+(\d{4}))?",
+            time_line
+        )
+        if day_month:
+            day, month, year = day_month.groups()
+            parts = [day, month]
+            if year:
+                parts.append(year)
+            return " ".join(parts)
+
+        return None
 
     def parse_days(self, days_line: Optional[str], dt: datetime) -> str:
         if not days_line:
