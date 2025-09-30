@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+- Auto-reminder parser herkent nu datums die in de `Time:`-regel staan (bv. "Wednesday, October 01/10/25 – 19:30"), waardoor eenmalige evenementen correct worden opgeslagen.
+- Ticket panel knoppen blijven actief na een bot-restart dankzij registratie van de persistente view tijdens initialisatie.
 
 ---
 
