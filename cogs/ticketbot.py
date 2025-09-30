@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from discord.app_commands import checks as app_checks
 import asyncpg
-from asyncpg.pgproto.pgproto import Json
+import json
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List, Dict, cast
@@ -610,17 +610,21 @@ class TicketBot(commands.Cog):
             if top_topics:
                 topics_payload["top30d"] = top_topics
 
+        snapshot_json = json.dumps(snapshot)
+        counts_json = json.dumps(counts)
+        topics_json = json.dumps(topics_payload) if topics_payload is not None else None
+
         await self.conn.execute(
             """
             INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by, topics)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1::jsonb, $2, $3::jsonb, $4, $5, CASE WHEN $6 IS NULL THEN NULL ELSE $6::jsonb END)
             """,
-            Json(snapshot),
+            snapshot_json,
             scope,
-            Json(counts),
+            counts_json,
             avg_seconds,
             int(triggered_by),
-            Json(topics_payload) if topics_payload is not None else None,
+            topics_json,
         )
 
         try:
@@ -673,10 +677,10 @@ class TicketBot(commands.Cog):
                 )
                 if self.cog.conn:
                     await self.cog.conn.execute(
-                        "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1,$2,$3,$4,$5)",
-                        Json({"counts": counts, "avg": avg_seconds, "scope": self.scope}),
+                        "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1::jsonb,$2,$3::jsonb,$4,$5)",
+                        json.dumps({"counts": counts, "avg": avg_seconds, "scope": self.scope}),
                         self.scope,
-                        Json(counts),
+                        json.dumps(counts),
                         avg_seconds,
                         int(interaction.user.id)
                     )
@@ -721,10 +725,10 @@ class TicketBot(commands.Cog):
         )
         try:
             await self.conn.execute(
-                "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1,$2,$3,$4,$5)",
-                Json({"counts": counts, "avg": avg_seconds, "scope": "all"}),
+                "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1::jsonb,$2,$3::jsonb,$4,$5)",
+                json.dumps({"counts": counts, "avg": avg_seconds, "scope": "all"}),
                 "all",
-                Json(counts),
+                json.dumps(counts),
                 avg_seconds,
                 int(interaction.user.id)
             )
