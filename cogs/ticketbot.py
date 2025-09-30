@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from discord.app_commands import checks as app_checks
 import asyncpg
-from asyncpg.types import Json  # type: ignore[attr-defined]
+from asyncpg.pgproto.pgproto import Json
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List, Dict, cast
