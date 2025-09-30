@@ -35,6 +35,11 @@ class TicketBot(commands.Cog):
         self.conn: Optional[asyncpg.Connection] = None
         # Start async setup zonder de event loop te blokkeren
         self.bot.loop.create_task(self.setup_db())
+        # Register persistent view so the ticket button keeps working after restarts
+        try:
+            self.bot.add_view(TicketOpenView(self, timeout=None))
+        except Exception as e:
+            logger.warning(f"⚠️ TicketBot: kon TicketOpenView niet registreren: {e}")
 
     async def setup_db(self) -> None:
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
@@ -1065,5 +1070,4 @@ class TicketOpenView(discord.ui.View):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketBot(bot))
-
 
