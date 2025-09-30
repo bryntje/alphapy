@@ -5,7 +5,7 @@ from discord.app_commands import checks as app_checks
 import asyncpg
 from datetime import datetime, timedelta
 import re
-from typing import Optional, List, cast
+from typing import Optional, List, Dict, cast
 
 try:
     import config_local as config  # type: ignore
@@ -92,6 +92,12 @@ class TicketBot(commands.Cog):
                 await conn.execute(
                     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS escalated_to BIGINT;"
                 )
+                await conn.execute(
+                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;"
+                )
+                await conn.execute(
+                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS archived_by BIGINT;"
+                )
             except Exception:
                 pass
             await conn.execute(
@@ -144,6 +150,7 @@ class TicketBot(commands.Cog):
                 await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS counts JSONB;")
                 await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS average_cycle_time BIGINT;")
                 await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS triggered_by BIGINT;")
+                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS topics JSONB;")
             except Exception:
                 pass
             self.conn = conn
@@ -328,6 +335,7 @@ class TicketBot(commands.Cog):
                 conn=conn_safe2,
                 ticket_id=ticket_id,
                 support_role_id=support_role.id if support_role else None,
+                cog=self,
                 timeout=None,
             )
             await channel.send(
@@ -489,6 +497,7 @@ class TicketBot(commands.Cog):
             conn=conn_safe2,
             ticket_id=ticket_id,
             support_role_id=support_role.id if support_role else None,
+            cog=self,
             timeout=None,
         )
         await channel.send(
@@ -536,9 +545,100 @@ class TicketBot(commands.Cog):
                 avg_seconds = None
         return status_to_count, avg_seconds
 
+    async def _top_topics(self, limit: int = 5) -> Dict[str, int]:
+        if not self.conn:
+            return {}
+        rows = await self.conn.fetch(
+            """
+            SELECT similarity_key, COUNT(*) AS cnt
+            FROM ticket_summaries
+            WHERE similarity_key IS NOT NULL AND similarity_key <> ''
+              AND created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY similarity_key
+            ORDER BY cnt DESC, similarity_key
+            LIMIT $1
+            """,
+            int(limit),
+        )
+        topics: Dict[str, int] = {}
+        for row in rows:
+            key = row.get("similarity_key") or "-"
+            topics[key] = int(row.get("cnt") or 0)
+        return topics
+
+    async def capture_metrics_snapshot(
+        self,
+        *,
+        triggered_by: int,
+        scope: str,
+        ticket_id: Optional[int] = None,
+        topic: Optional[str] = None,
+        summary: Optional[str] = None,
+    ) -> None:
+        if not self.conn:
+            return
+
+        counts, avg_seconds = await self._compute_stats("all")
+        snapshot: Dict[str, object] = {
+            "counts": counts,
+            "avg": avg_seconds,
+            "scope": scope,
+        }
+        if ticket_id is not None:
+            snapshot["ticket_id"] = ticket_id
+        if topic:
+            snapshot["topic"] = topic
+        if summary:
+            snapshot["summary_preview"] = summary[:280]
+
+        topics_payload: Optional[Dict[str, object]] = None
+        latest_topic: Dict[str, object] = {}
+        if topic:
+            latest_topic = {
+                "key": topic,
+                "ticket_id": ticket_id,
+            }
+            if summary:
+                latest_topic["summary"] = summary[:280]
+
+        top_topics = await self._top_topics()
+        if latest_topic or top_topics:
+            topics_payload = {}
+            if latest_topic:
+                topics_payload["latest"] = latest_topic
+            if top_topics:
+                topics_payload["top30d"] = top_topics
+
+        await self.conn.execute(
+            """
+            INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by, topics)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            """,
+            snapshot,
+            scope,
+            counts,
+            avg_seconds,
+            int(triggered_by),
+            topics_payload,
+        )
+
+        try:
+            await self.send_log_embed(
+                title="📊 Ticket metrics snapshot",
+                description=(
+                    f"scope: `{scope}`\n"
+                    f"triggered_by: {triggered_by}\n"
+                    f"ticket_id: {ticket_id or '-'}\n"
+                    f"topic: {topic or '-'}"
+                ),
+                level="info",
+            )
+        except Exception:
+            pass
+
     def _stats_embed(self, counts: dict, avg_seconds: Optional[int]) -> discord.Embed:
         embed = discord.Embed(title="📊 Ticket Statistics", color=0x5865F2)
-        for s in ["open", "claimed", "waiting_for_user", "escalated", "closed"]:
+        for s in ["open", "claimed", "waiting_for_user", "escalated", "closed", "archived"]:
             embed.add_field(name=s, value=str(counts.get(s, 0)), inline=True)
         if avg_seconds is not None:
             embed.add_field(name="Average cycle time (closed)", value=self._human_duration(avg_seconds), inline=False)
@@ -634,6 +734,7 @@ class TicketBot(commands.Cog):
             app_commands.Choice(name="waiting_for_user", value="waiting_for_user"),
             app_commands.Choice(name="escalated", value="escalated"),
             app_commands.Choice(name="closed", value="closed"),
+            app_commands.Choice(name="archived", value="archived"),
         ]
     )
     async def ticket_status(
@@ -668,6 +769,13 @@ class TicketBot(commands.Cog):
                     int(interaction.user.id),
                     id,
                 )
+            elif new_status == "archived":
+                await self.conn.execute(
+                    "UPDATE support_tickets SET status=$1, archived_at=NOW(), archived_by=$2, updated_at=NOW() WHERE id=$3",
+                    new_status,
+                    int(interaction.user.id),
+                    id,
+                )
             else:
                 await self.conn.execute(
                     "UPDATE support_tickets SET status=$1, updated_at=NOW() WHERE id=$2",
@@ -696,12 +804,13 @@ class TicketBot(commands.Cog):
 
 
 class TicketActionView(discord.ui.View):
-    def __init__(self, bot: commands.Bot, conn: asyncpg.Connection, ticket_id: int, support_role_id: Optional[int] = None, timeout: Optional[float] = None):
+    def __init__(self, bot: commands.Bot, conn: asyncpg.Connection, ticket_id: int, support_role_id: Optional[int] = None, cog: Optional["TicketBot"] = None, timeout: Optional[float] = None):
         super().__init__(timeout=timeout)
         self.bot = bot
         self.conn = conn
         self.ticket_id = ticket_id
         self.support_role_id = support_role_id
+        self.cog = cog
 
     async def _is_staff(self, interaction: discord.Interaction) -> bool:
         return await is_owner_or_admin_interaction(interaction)
@@ -720,10 +829,12 @@ class TicketActionView(discord.ui.View):
         except Exception:
             pass
 
-    async def _post_summary(self, channel: discord.TextChannel) -> None:
-        """Generate and post a GPT-based summary of the ticket conversation.
+    async def _post_summary(self, channel: discord.TextChannel) -> Optional[Dict[str, str]]:
+        """Generate, post and persist a GPT-based summary for this ticket.
 
-        # TODO: Inject GPT-generated summary here in a future version
+        Returns a dict with `summary` and `key` when successful so callers can
+        reuse the detected topic for metrics, or ``None`` if no summary was
+        generated.
         """
         messages: List[str] = []
         try:
@@ -735,7 +846,7 @@ class TicketActionView(discord.ui.View):
 
             if not messages:
                 await channel.send("No content to summarize.")
-                return
+                return None
 
             prompt = (
                 "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
@@ -750,7 +861,7 @@ class TicketActionView(discord.ui.View):
                 )
             except Exception as e:
                 await channel.send(f"❌ Failed to generate summary: {e}")
-                return
+                return None
 
             embed = discord.Embed(
                 title="📄 Ticket Summary",
@@ -759,10 +870,14 @@ class TicketActionView(discord.ui.View):
             )
             await channel.send(embed=embed)
             # Register the summary for clustering/FAQ suggestions
-            await self._register_summary(self.ticket_id, (summary_text or "").strip())
+            key = await self._register_summary(self.ticket_id, (summary_text or "").strip())
+            cleaned = (summary_text or "").strip()
+            if key:
+                return {"summary": cleaned, "key": key}
+            return {"summary": cleaned} if cleaned else None
         except Exception:
             # Non-fatal; do not block the close flow on summary issues
-            pass
+            return None
 
     def _compute_similarity_key(self, text: str) -> str:
         normalized = re.sub(r"[^a-z0-9\s]", " ", text.lower())
@@ -775,7 +890,7 @@ class TicketActionView(discord.ui.View):
         key = "-".join(unique_tokens)
         return key[:256]
 
-    async def _register_summary(self, ticket_id: int, summary: str) -> None:
+    async def _register_summary(self, ticket_id: int, summary: str) -> Optional[str]:
         try:
             key = self._compute_similarity_key(summary)
             since = datetime.utcnow() - timedelta(days=7)
@@ -847,9 +962,10 @@ class TicketActionView(discord.ui.View):
                         await text_channel.send(embed=embed, view=view)
                 except Exception:
                     pass
+            return key
         except Exception:
             # Do not block on summary registration failures
-            pass
+            return None
 
     @discord.ui.button(label="🎟️ Claim ticket", style=discord.ButtonStyle.primary, custom_id="ticket_claim_btn")
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -943,7 +1059,7 @@ class TicketActionView(discord.ui.View):
         for child in self.children:
             if isinstance(child, discord.ui.Button) and child.custom_id in {"ticket_claim_btn", "ticket_close_btn"}:
                 child.disabled = True
-            if isinstance(child, discord.ui.Button) and child.custom_id == "ticket_delete_btn":
+            if isinstance(child, discord.ui.Button) and child.custom_id == "ticket_archive_btn":
                 child.disabled = False
         await interaction.response.edit_message(view=self)
 
@@ -959,8 +1075,27 @@ class TicketActionView(discord.ui.View):
             level="success",
         )
         # Post GPT summary last to satisfy required execution order
+        summary_meta: Optional[Dict[str, str]] = None
         if isinstance(interaction.channel, discord.TextChannel):
-            await self._post_summary(interaction.channel)
+            summary_meta = await self._post_summary(interaction.channel)
+
+        # Automatically capture a metrics snapshot (counts, cycle time, topics)
+        if self.cog and hasattr(self.cog, "capture_metrics_snapshot"):
+            try:
+                await self.cog.capture_metrics_snapshot(
+                    triggered_by=int(interaction.user.id),
+                    scope="auto-close",
+                    ticket_id=int(self.ticket_id),
+                    topic=summary_meta.get("key") if summary_meta else None,
+                    summary=summary_meta.get("summary") if summary_meta else None,
+                )
+            except Exception as e:
+                await self._log(
+                    interaction,
+                    title="⚠️ Metrics snapshot failed",
+                    desc=f"id={self.ticket_id} • error={e}",
+                    level="warning",
+                )
 
     @discord.ui.button(label="⏳ Wait for user", style=discord.ButtonStyle.secondary, custom_id="ticket_wait_btn")
     async def wait_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -989,40 +1124,47 @@ class TicketActionView(discord.ui.View):
         await interaction.response.send_message("✅ Ticket escalated.", ephemeral=True)
         await self._log(interaction, "🚩 Ticket escalated", f"id={self.ticket_id} • to={escalated_to or '-'}")
 
-    @discord.ui.button(label="🗑 Delete ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_delete_btn", disabled=True)
-    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🗄 Archive ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_archive_btn", disabled=True)
+    async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Admin-only
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        # Delete DB entries first
+
         try:
-            await self.conn.execute("DELETE FROM ticket_summaries WHERE ticket_id = $1", int(self.ticket_id))
-        except Exception:
-            pass
-        try:
-            await self.conn.execute("DELETE FROM support_tickets WHERE id = $1", int(self.ticket_id))
-        except Exception:
-            pass
-        # Delete channel
+            await self.conn.execute(
+                """
+                UPDATE support_tickets
+                SET status = 'archived', archived_at = NOW(), archived_by = $1, updated_at = NOW()
+                WHERE id = $2
+                """,
+                int(interaction.user.id),
+                int(self.ticket_id),
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Archiving failed: {e}", ephemeral=True)
+            return
+
+        # Delete the channel after archiving to keep Discord tidy
         try:
             ch = interaction.channel
             if isinstance(ch, discord.TextChannel):
-                await interaction.followup.send("🗑 Deleting ticket channel...", ephemeral=True)
-                await ch.delete(reason=f"Ticket {self.ticket_id} deleted by {interaction.user}")
+                await interaction.followup.send("🗄 Archiving ticket channel…", ephemeral=True)
+                await ch.delete(reason=f"Ticket {self.ticket_id} archived by {interaction.user}")
         except Exception as e:
             await interaction.followup.send(f"⚠️ Channel delete failed: {e}", ephemeral=True)
-        # Log deletion
+
+        # Log archiving (summaries remain in DB)
         await self._log(
             interaction,
-            title="🗑 Ticket deleted",
+            title="🗄 Ticket archived",
             desc=(
                 f"ID: {self.ticket_id}\n"
-                f"Deleted by: {interaction.user} ({interaction.user.id})\n"
+                f"Archived by: {interaction.user} ({interaction.user.id})\n"
                 f"Timestamp: {datetime.utcnow().isoformat()}"
             ),
-            level="warning",
+            level="info",
         )
     
     @discord.ui.button(label="💡 Suggest reply", style=discord.ButtonStyle.success, custom_id="ticket_suggest_btn")
@@ -1070,4 +1212,3 @@ class TicketOpenView(discord.ui.View):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketBot(bot))
-

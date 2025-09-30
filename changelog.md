@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Automatische metriek-snapshots bij het sluiten van een ticket met onderwerp-inschatting (laatste ticket + top 30 dagen).
+
 ### Fixed
 - Auto-reminder parser herkent nu datums die in de `Time:`-regel staan (bv. "Wednesday, October 01/10/25 – 19:30"), waardoor eenmalige evenementen correct worden opgeslagen.
 - Ticket panel knoppen blijven actief na een bot-restart dankzij registratie van de persistente view tijdens initialisatie.
+
+### Changed
+- Ticket "Delete" knop archiveert tickets (status `archived`) en behoudt summaries voor rapportering.
 
 ---
 
