@@ -2,12 +2,13 @@ import discord
 from discord.ext import commands
 import asyncpg
 import config
-from typing import Any
+from typing import Any, Optional
 from utils.logger import logger
 
 class GDPRAnnouncement(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.settings = getattr(bot, "settings", None)
 
     @commands.command(name="postgdpr")
     @commands.is_owner()
@@ -15,9 +16,25 @@ class GDPRAnnouncement(commands.Cog):
         """
         Post the GDPR Data Processing and Confidentiality Agreement in the designated channel and pin the message.
         """
-        channel = self.bot.get_channel(config.GDPR_CHANNEL_ID)
+        if not self._is_enabled():
+            await ctx.send("⚠️ GDPR-functionaliteit is momenteel uitgeschakeld.")
+            return
+
+        channel_id = self._get_channel_id()
+        if not channel_id:
+            await ctx.send("⚠️ Geen GDPR kanaal ingesteld.")
+            return
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception:
+                channel = None
         if channel is None:
             await ctx.send("GDPR channel not found.")
+            return
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            await ctx.send("GDPR channel moet een tekstkanaal zijn.")
             return
 
         gdpr_text = (
@@ -64,22 +81,57 @@ class GDPRAnnouncement(commands.Cog):
             description=gdpr_text,
             color=discord.Color.blue()
         )
-        message = await channel.send(embed=embed, view=GDPRView())
+        message = await channel.send(embed=embed, view=GDPRView(self.bot))
         await message.pin()
         await ctx.send("GDPR document posted and pinned.")
 
+    def _is_enabled(self) -> bool:
+        if self.settings:
+            try:
+                return bool(self.settings.get("gdpr", "enabled"))
+            except KeyError:
+                pass
+        return True
+
+    def _get_channel_id(self) -> Optional[int]:
+        if self.settings:
+            try:
+                value = self.settings.get("gdpr", "channel_id")
+                if value:
+                    return int(value)
+            except KeyError:
+                pass
+            except (TypeError, ValueError):
+                logger.warning("⚠️ GDPR: channel_id setting ongeldig.")
+        return getattr(config, "GDPR_CHANNEL_ID", 0)
+
 class GDPRView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, bot: commands.Bot):
         super().__init__(timeout=None)
-        self.add_item(GDPRButton())
+        self.bot = bot
+        self.settings = getattr(bot, "settings", None)
+        self.add_item(GDPRButton(bot))
 
 class GDPRButton(discord.ui.Button):
-    def __init__(self):
+    def __init__(self, bot: commands.Bot):
         super().__init__(label="I Agree", style=discord.ButtonStyle.success, custom_id="gdpr_agree")
+        self.bot = bot
+        self.settings = getattr(bot, "settings", None)
     
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not self._is_enabled():
+            await interaction.response.send_message("⚠️ GDPR-functionaliteit is momenteel uitgeschakeld.", ephemeral=True)
+            return
         await store_gdpr_acceptance(interaction.user.id)
         await interaction.response.send_message("Thank you for accepting the GDPR terms.", ephemeral=True)
+
+    def _is_enabled(self) -> bool:
+        if self.settings:
+            try:
+                return bool(self.settings.get("gdpr", "enabled"))
+            except KeyError:
+                pass
+        return True
 
 async def store_gdpr_acceptance(user_id: int) -> None:
     """Slaat de GDPR-acceptatie op in PostgreSQL."""
@@ -100,3 +152,4 @@ async def store_gdpr_acceptance(user_id: int) -> None:
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(GDPRAnnouncement(bot))
+    bot.add_view(GDPRView(bot))

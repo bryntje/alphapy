@@ -21,11 +21,6 @@ ENABLE_EVERYONE_MENTIONS = os.getenv("ENABLE_EVERYONE_MENTIONS", "false").strip(
 WATCHER_LOG_CHANNEL = int(os.getenv("WATCHER_LOG_CHANNEL", "1336042713459593337"))
 ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv("ANNOUNCEMENTS_CHANNEL_ID", "1336038676727206030"))
 
-# Local override
-try:
-    from config_local import *  # noqa
-except ImportError:
-    pass
 
 
 # Admin And Owner

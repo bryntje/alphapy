@@ -2,15 +2,17 @@ import discord
 import asyncpg
 import json
 from discord.ext import commands
+from typing import Optional
 import config
 
 class ImportData(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = None
+        self.db: Optional[asyncpg.Pool] = None
 
     async def setup_database(self):
         self.db = await asyncpg.create_pool(config.DATABASE_URL)
+        assert self.db is not None
         async with self.db.acquire() as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (
@@ -25,7 +27,7 @@ class ImportData(commands.Cog):
     async def import_onboarding(self, ctx):
         """Importeer onboarding data uit embed berichten in het logkanaal."""
         channel = self.bot.get_channel(config.LOG_CHANNEL_ID)
-        if not channel:
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             await ctx.send("Kanaal niet gevonden!")
             return
 
@@ -34,7 +36,15 @@ class ImportData(commands.Cog):
                 continue
 
             embed = message.embeds[0]
-            user_field = embed.description.split("(")[1].split(")")[0]  # Haalt de user ID uit de beschrijving
+            description = embed.description or ""
+            if "(" not in description or ")" not in description:
+                continue
+
+            try:
+                user_field = description.split("(")[1].split(")")[0]
+            except IndexError:
+                continue
+
             user_id = int(user_field) if user_field.isdigit() else None
 
             if not user_id:
@@ -42,10 +52,13 @@ class ImportData(commands.Cog):
 
             responses = {}
             for field in embed.fields:
-                question = field.name.strip()
-                answer = field.value.strip()
+                question_raw = field.name or ""
+                answer_raw = field.value or ""
+                question = question_raw.strip()
+                answer = answer_raw.strip()
                 responses[question] = answer
 
+            assert self.db is not None
             async with self.db.acquire() as conn:
                 await conn.execute(
                     """
