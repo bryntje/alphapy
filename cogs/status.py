@@ -9,6 +9,8 @@ from discord.ext import commands
 from version import __version__, CODENAME
 import os
 import asyncio
+import asyncpg
+import config
 
 BOOT_TIME = datetime.now(BRUSSELS_TZ)
 
@@ -38,12 +40,18 @@ async def release_cmd(interaction: discord.Interaction):
     except Exception as e:
         await interaction.response.send_message(f"Failed to read release notes: {e}", ephemeral=True)
 
+@app_commands.command(name="health", description="Toon configuratie en systeemstatus")
+async def health_cmd(interaction: discord.Interaction):
+    embed = await _build_health_embed(interaction)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # ------------------ SETUP FUNCTION ------------------ #
 
 async def setup(bot: commands.Bot):
     bot.tree.add_command(gptstatus)
     bot.tree.add_command(version_cmd)
     bot.tree.add_command(release_cmd)
+    bot.tree.add_command(health_cmd)
 
 # ------------------ HELPER FUNCTIONS ------------------ #
 
@@ -97,6 +105,65 @@ async def get_gptstatus_embed():
     embed.set_footer(text=f"📦 GPT Status • v{__version__} — {CODENAME} • Updated just now")
 
     return embed
+
+
+async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed:
+    bot = interaction.client
+    settings = getattr(bot, "settings", None)
+
+    reminders_enabled = invites_enabled = gdpr_enabled = "?"
+    if settings:
+        try:
+            reminders_enabled = "✅" if settings.get("reminders", "enabled") else "🛑"
+            invites_enabled = "✅" if settings.get("invites", "enabled") else "🛑"
+            gdpr_enabled = "✅" if settings.get("gdpr", "enabled") else "🛑"
+        except KeyError:
+            pass
+
+    db_ok = "✅"
+    try:
+        conn = await asyncio.wait_for(asyncpg.connect(config.DATABASE_URL), timeout=3)
+    except Exception:
+        db_ok = "🛑"
+    else:
+        await conn.close()
+
+    embed = discord.Embed(title="🩺 Bot Health", color=discord.Color.green())
+    embed.add_field(name="Database", value=db_ok, inline=True)
+    embed.add_field(name="Reminders", value=reminders_enabled, inline=True)
+    embed.add_field(name="Invites", value=invites_enabled, inline=True)
+    embed.add_field(name="GDPR", value=gdpr_enabled, inline=True)
+    embed.add_field(name="Uptime", value=_format_uptime(BOOT_TIME), inline=True)
+    return embed
+
+async def _read_release_notes(changelog_path: str, version: str) -> str:
+    try:
+        loop = asyncio.get_event_loop()
+        content = await loop.run_in_executor(None, lambda: open(changelog_path, "r", encoding="utf-8").read())
+        # very simple parse: find header '## [version]' and capture until next '##'
+        start_marker = f"## [{version}]"
+        if start_marker not in content:
+            return ""
+        start = content.index(start_marker) + len(start_marker)
+        rest = content[start:]
+        end_idx = rest.find("\n## ")
+        section = rest[:end_idx] if end_idx != -1 else rest
+        return section.strip()
+    except Exception:
+        return ""
+
+def _format_uptime(start_dt: datetime) -> str:
+    delta = datetime.now(BRUSSELS_TZ) - start_dt
+    days = delta.days
+    hours = delta.seconds // 3600
+    minutes = (delta.seconds % 3600) // 60
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
 
 async def _read_release_notes(changelog_path: str, version: str) -> str:
     try:

@@ -1,0 +1,9 @@
+{
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "exclude": [
+    "venv",
+    ".git",
+    "cogs/test_*.py"
+  ]
+}
