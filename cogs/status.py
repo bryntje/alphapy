@@ -165,6 +165,35 @@ def _format_uptime(start_dt: datetime) -> str:
     parts.append(f"{minutes}m")
     return " ".join(parts)
 
+async def _read_release_notes(changelog_path: str, version: str) -> str:
+    try:
+        loop = asyncio.get_event_loop()
+        content = await loop.run_in_executor(None, lambda: open(changelog_path, "r", encoding="utf-8").read())
+        # very simple parse: find header '## [version]' and capture until next '##'
+        start_marker = f"## [{version}]"
+        if start_marker not in content:
+            return ""
+        start = content.index(start_marker) + len(start_marker)
+        rest = content[start:]
+        end_idx = rest.find("\n## ")
+        section = rest[:end_idx] if end_idx != -1 else rest
+        return section.strip()
+    except Exception:
+        return ""
+
+def _format_uptime(start_dt: datetime) -> str:
+    delta = datetime.now(BRUSSELS_TZ) - start_dt
+    days = delta.days
+    hours = delta.seconds // 3600
+    minutes = (delta.seconds % 3600) // 60
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
+
 # ------------------ LOGGING MOCKS ------------------ #
 
 def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0):
