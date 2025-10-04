@@ -1,16 +1,18 @@
 import discord
 import asyncpg
 import re
+from typing import Optional
 from discord.ext import commands
 import config
 
 class ImportInvites(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = None
+        self.db: Optional[asyncpg.Pool] = None
 
     async def setup_database(self):
         self.db = await asyncpg.create_pool(config.DATABASE_URL)
+        assert self.db is not None
         async with self.db.acquire() as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS invite_tracker (
@@ -24,7 +26,7 @@ class ImportInvites(commands.Cog):
     async def import_invites(self, ctx):
         """Importeer invites vanuit het invite-tracker kanaal."""
         channel = self.bot.get_channel(config.INVITE_ANNOUNCEMENT_CHANNEL_ID)
-        if not channel:
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             await ctx.send("Kanaal niet gevonden!")
             return
 
@@ -47,6 +49,7 @@ class ImportInvites(commands.Cog):
             else:
                 print(f"❌ Geen match: {message.content}")  # ❌ Debug als er GEEN match is
 
+        assert self.db is not None
         async with self.db.acquire() as conn:
             for inviter, count in invite_counts.items():
                 print(f"📌 Opslaan: {inviter} → {count} invites")

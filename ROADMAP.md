@@ -11,6 +11,34 @@ This document outlines the planned work after v1.3.0 (TicketBot). It is designed
 
 ---
 
+## Whitepaper Prep – Runtime Configuration Roadmap
+
+| Phase | Status | Scope |
+| --- | --- | --- |
+| 0 | ✅ Done | Settings foundation (`SettingsService`, `/config` shell, embed watcher + reminders wired in) |
+| 1 | ✅ Done | Expand setting registrations (reminder scheduler options, GPT throttles, invite templates, GDPR toggles) |
+| 2 | 🔄 Next | Slashcommand UX polish: paginated `/config … show`, richer validation, autocomplete for channel/role targets |
+| 3 | 🔄 Next | Service listeners + cache refresh so cogs react instantly without restart; unify DB connection pooling |
+| 4 | 🔄 Next | Observability & safety: config audit trail to DB, unit tests for coercion, health check command |
+| 5 | 🔄 Next | Launch checklist + docs update: whitepaper excerpt, CHANGELOG, admin hand-off guide |
+
+### Implementation Checklist
+- [x] Create `SettingsService` with typed definitions and DB-backed overrides.
+- [x] Register core settings (log channel, embed watcher channel + offset) and expose `/config` commands.
+- [x] Refactor remaining cogs to consume `bot.settings` (TicketBot logs, GPT config, invite tracker templates, GDPR announcements).
+- [x] Add onboarding helpers: `/config reminders set-default-channel`, `/config gpt set-model`, `/config invites set-message`.
+- [x] Implement settings listeners for hot-reload behaviour (e.g., reminder interval, GPT rate limits).
+- [ ] Add tests (`tests/test_settings_service.py`) covering coercion, persistence and permission checks.
+- [ ] Document admin workflow in `docs/configuration.md` and surface summary in CHANGELOG.
+
+### Key Decisions & Open Questions
+- **Database migrations:** voorlopig blijven we bij cog-level `CREATE TABLE IF NOT EXISTS`; zodra we meer schemawijzigingen stapelen, herbekijken we een migrationtool.
+- **Permission tiers:** geen extra rol nodig; owners/admins blijven de enige configuratiemanagers.
+- **Secret storage:** secrets (`BOT_TOKEN`, `OPENAI_API_KEY`, DB credentials) blijven in `.env`/secrets manager; alles wat runtime bijsturing vereist (kanalen, offsets, toggles) gaat via de settings-service.
+- **Rollout volgorde:** we houden de volgorde embed/reminders → ticketbot → GPT → invites → GDPR → overige utilities aan.
+
+---
+
 ## Milestones
 
 ### M1 — FAQ Search & Autocomplete (Discord)

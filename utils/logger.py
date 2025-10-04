@@ -16,18 +16,19 @@ logging.basicConfig(
 
 
 from datetime import datetime
+from typing import Optional
 
 class GPTStatusLogs:
-    def __init__(self):
-        self.last_success_time = None
-        self.last_error_type = None
-        self.average_latency_ms = 0
-        self.total_tokens_today = 0
-        self.rate_limit_reset = "~"
-        self.current_model = "gpt-3.5-turbo"
-        self.last_user = None
-        self.success_count = 0
-        self.error_count = 0
+    def __init__(self) -> None:
+        self.last_success_time: Optional[datetime] = None
+        self.last_error_type: Optional[str] = None
+        self.average_latency_ms: int = 0
+        self.total_tokens_today: int = 0
+        self.rate_limit_reset: str = "~"
+        self.current_model: str = "gpt-3.5-turbo"
+        self.last_user: Optional[int] = None
+        self.success_count: int = 0
+        self.error_count: int = 0
 
 gpt_logs = GPTStatusLogs()
 

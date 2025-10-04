@@ -6,16 +6,18 @@ from utils.checks import is_owner_or_admin
 import csv
 import os
 import asyncpg
+from typing import Optional
 
 class DataQuery(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = None  # Database pool variabele
+        self.db: Optional[asyncpg.Pool] = None  # Database pool variabele
 
     async def setup_database(self):
         """Maakt de database connectie en tabel aan als die nog niet bestaat."""
         self.db = await asyncpg.create_pool(dsn=config.DATABASE_URL)
         
+        assert self.db is not None
         async with self.db.acquire() as connection:
             await connection.execute("""
                 CREATE TABLE IF NOT EXISTS onboarding (
@@ -37,6 +39,9 @@ class DataQuery(commands.Cog):
 
         csv_filename = "onboarding_data.csv"
         
+        if self.db is None:
+            await interaction.followup.send("⛔ Database niet beschikbaar.", ephemeral=True)
+            return
         async with self.db.acquire() as connection:
             rows = await connection.fetch("SELECT * FROM onboarding")
 

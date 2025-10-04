@@ -5,12 +5,9 @@ from discord import app_commands
 from cogs.gdpr import GDPRView
 from utils.logger import logger
 from gpt.helpers import set_bot_instance
-
-
-try:
-    import config_local as config
-except ImportError:
-    import config
+from utils.settings_service import SettingsService, SettingDefinition
+import config
+from typing import Optional
 
 from threading import Thread
 import uvicorn
@@ -28,6 +25,168 @@ intents.members = True  # ✅ Nodig om leden te herkennen
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+settings_service = SettingsService(getattr(config, "DATABASE_URL", None))
+settings_service.register(
+    SettingDefinition(
+        scope="system",
+        key="log_channel_id",
+        description="Kanaal voor status- en foutmeldingen.",
+        value_type="channel",
+        default=getattr(config, "WATCHER_LOG_CHANNEL", 0),
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="embedwatcher",
+        key="announcements_channel_id",
+        description="Kanaal dat gecontroleerd wordt op auto-reminder embeds.",
+        value_type="channel",
+        default=getattr(config, "ANNOUNCEMENTS_CHANNEL_ID", 0),
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="embedwatcher",
+        key="reminder_offset_minutes",
+        description="Aantal minuten vóór het event dat de reminder gepland wordt.",
+        value_type="int",
+        default=60,
+        min_value=0,
+        max_value=4320,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="ticketbot",
+        key="category_id",
+        description="Categorie waarin nieuwe ticketkanalen worden aangemaakt.",
+        value_type="channel",
+        default=getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275),
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="ticketbot",
+        key="staff_role_id",
+        description="Rol die toegang krijgt tot ticketkanalen.",
+        value_type="role",
+        default=getattr(config, "TICKET_ACCESS_ROLE_ID", None),
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="ticketbot",
+        key="escalation_role_id",
+        description="Rol voor escalatie van tickets.",
+        value_type="role",
+        default=getattr(config, "TICKET_ESCALATION_ROLE_ID", None),
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="gpt",
+        key="model",
+        description="Standaard OpenAI-model voor GPT commando's.",
+        value_type="str",
+        default="gpt-3.5-turbo",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="gpt",
+        key="temperature",
+        description="Temperatuur (creativiteit) voor GPT antwoorden.",
+        value_type="float",
+        default=0.7,
+        min_value=0.0,
+        max_value=2.0,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="invites",
+        key="enabled",
+        description="Schakel de invite tracker functionaliteit in.",
+        value_type="bool",
+        default=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="invites",
+        key="announcement_channel_id",
+        description="Kanaal voor automatische invite meldingen.",
+        value_type="channel",
+        default=getattr(config, "INVITE_ANNOUNCEMENT_CHANNEL_ID", 0),
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="invites",
+        key="with_inviter_template",
+        description="Berichttemplate wanneer een inviter gevonden is.",
+        value_type="str",
+        default="{member} joined! {inviter} now has {count} invites.",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="invites",
+        key="no_inviter_template",
+        description="Berichttemplate wanneer geen inviter gevonden is.",
+        value_type="str",
+        default="{member} joined, but no inviter data found.",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="gdpr",
+        key="enabled",
+        description="Schakel GDPR handler in voor command en button.",
+        value_type="bool",
+        default=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="gdpr",
+        key="channel_id",
+        description="Kanaal waarin het GDPR-document gepost wordt.",
+        value_type="channel",
+        default=getattr(config, "GDPR_CHANNEL_ID", 0),
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="reminders",
+        key="enabled",
+        description="Schakel de reminders functionaliteit in.",
+        value_type="bool",
+        default=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="reminders",
+        key="default_channel_id",
+        description="Standaard kanaal voor nieuwe reminders (optioneel).",
+        value_type="channel",
+        default=0,
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="reminders",
+        key="allow_everyone_mentions",
+        description="Sta @everyone toe bij reminders.",
+        value_type="bool",
+        default=getattr(config, "ENABLE_EVERYONE_MENTIONS", False),
+    )
+)
+
 # Event: Bot is klaar
 @bot.event
 async def on_ready():
@@ -43,7 +202,7 @@ async def on_ready():
     if config.GUILD_ID not in [guild.id for guild in bot.guilds]:
         logger.error("❌ Error: De bot is NIET geconnecteerd aan de juiste server! Controleer of je hem correct hebt gejoined.")
     
-    bot.add_view(GDPRView())
+    bot.add_view(GDPRView(bot))
 
 
 set_bot_instance(bot)
@@ -56,6 +215,9 @@ async def on_command_error(ctx, error):
 
 
 async def setup_hook():
+    await settings_service.setup()
+    setattr(bot, "settings", settings_service)
+
     await bot.load_extension("cogs.onboarding")
     await bot.load_extension("cogs.reaction_roles")
     await bot.load_extension("cogs.slash_utils")
@@ -73,6 +235,7 @@ async def setup_hook():
     await bot.load_extension("cogs.growth")
     await bot.load_extension("cogs.learn")
     await bot.load_extension("cogs.contentgen")
+    await bot.load_extension("cogs.configuration")
     await bot.load_extension("cogs.reminders")
     await bot.load_extension("cogs.embed_watcher")
     await bot.load_extension("cogs.ticketbot")
@@ -86,4 +249,7 @@ Thread(target=start_api, daemon=True).start()
 
 
 # Bot starten
-bot.run(config.BOT_TOKEN)
+token: Optional[str] = getattr(config, "BOT_TOKEN", None)
+if not token:
+    raise RuntimeError("BOT_TOKEN is niet ingesteld in de config.")
+bot.run(token)

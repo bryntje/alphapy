@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 import time
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import asyncpg
 import config
 import os
@@ -30,7 +30,7 @@ async def get_authenticated_user_id(x_user_id: str = Header(None)) -> str:
     return x_user_id
 
 # Database pool
-db_pool = None
+db_pool: Optional[asyncpg.Pool] = None
 router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])  # 👈 protect API routes
 
 @asynccontextmanager
@@ -39,7 +39,8 @@ async def lifespan(app: FastAPI):
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
     print("✅ DB pool created")
     yield
-    await db_pool.close()
+    if db_pool:
+        await db_pool.close()
     print("🔌 DB pool closed")
     
 app = FastAPI(lifespan=lifespan)
@@ -91,6 +92,8 @@ async def get_user_reminders(user_id: str, auth_user_id: str = Depends(get_authe
     if auth_user_id != user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
     try:
         async with db_pool.acquire() as conn:
             rows = await get_reminders_for_user(conn, user_id)
@@ -119,6 +122,8 @@ async def add_reminder(reminder: Reminder, auth_user_id: str = Depends(get_authe
     payload["created_by"] = payload.pop("user_id")
     if payload["created_by"] != auth_user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
     async with db_pool.acquire() as conn:
         await create_reminder(conn, payload)
     return {"success": True}
@@ -131,6 +136,8 @@ async def edit_reminder(reminder: Reminder, auth_user_id: str = Depends(get_auth
     payload["created_by"] = payload.pop("user_id")
     if payload["created_by"] != auth_user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
     async with db_pool.acquire() as conn:
         await update_reminder(conn, payload)
     return {"success": True}
@@ -141,6 +148,8 @@ async def remove_reminder(reminder_id: str, created_by: str, auth_user_id: str =
     if created_by != auth_user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
     async with db_pool.acquire() as conn:
         await delete_reminder(conn, int(reminder_id), created_by)
     return {"success": True}
