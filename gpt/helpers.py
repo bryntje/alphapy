@@ -4,8 +4,16 @@ import logging
 import asyncio
 import time
 from datetime import datetime
+from typing import Optional
+import discord
 from discord import Embed
+from discord.ext import commands
 from openai import AsyncOpenAI, OpenAIError
+
+try:
+    import config_local as config  # type: ignore
+except ImportError:
+    import config  # type: ignore
 
 logger = logging.getLogger("bot")
 
@@ -24,10 +32,10 @@ Je antwoord is helder, menselijk, en raakt zacht waar het mag — scherp waar he
 
 
 # Bot instance wordt later gezet
-bot_instance = None
+bot_instance: Optional[commands.Bot] = None
 LOG_CHANNEL_ID = 1336042713459593337
 
-def set_bot_instance(bot):
+def set_bot_instance(bot: commands.Bot) -> None:
     global bot_instance
     bot_instance = bot
     logger.info("🤖 Bot instance is now set in helpers.py")
@@ -73,7 +81,7 @@ async def log_to_channel(message: str, level: str = "info"):
         return
 
     channel = bot_instance.get_channel(LOG_CHANNEL_ID)
-    if not channel:
+    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
         logger.warning(f"⚠️ Could not find log channel with ID {LOG_CHANNEL_ID}")
         return
 
@@ -90,24 +98,73 @@ async def log_to_channel(message: str, level: str = "info"):
         logger.error(f"🚨 Failed to send log embed: {e}")
 
 # --- GPT ask wrapper ---
-openai_client = AsyncOpenAI()
+_api_key = getattr(config, "OPENAI_API_KEY", None)
+_api_key_missing = not _api_key
+if _api_key_missing:
+    logger.warning(
+        "⚠️ OPENAI_API_KEY ontbreekt. Stel deze in je .env of config_local.py om GPT-commando's te gebruiken."
+    )
+    openai_client = None
+else:
+    openai_client = AsyncOpenAI(api_key=_api_key)
 
-async def ask_gpt(messages, user_id=None, model="gpt-3.5-turbo"):
+def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
+    if bot_instance is None:
+        return default_model, None
+
+    settings = getattr(bot_instance, "settings", None)
+    if not settings:
+        return default_model, None
+
+    model_value = default_model
+    temperature_value: Optional[float] = None
+
+    try:
+        fetched_model = settings.get("gpt", "model")
+        if isinstance(fetched_model, str) and fetched_model.strip():
+            model_value = fetched_model.strip()
+    except KeyError:
+        pass
+
+    try:
+        fetched_temp = settings.get("gpt", "temperature")
+        if fetched_temp is not None:
+            temperature_value = float(fetched_temp)
+    except KeyError:
+        pass
+    except (TypeError, ValueError):
+        logger.warning("⚠️ GPT temperature setting ongeldig — fallback naar API default.")
+        temperature_value = None
+
+    return model_value, temperature_value
+
+
+async def ask_gpt(messages, user_id=None, model: Optional[str] = None):
     start = time.perf_counter()
 
     try:
+        if _api_key_missing or openai_client is None:
+            raise RuntimeError(
+                "OPENAI_API_KEY ontbreekt. Stel de sleutel in (.env of config_local.py) en herstart de bot."
+            )
+
         # 👉 Check of messages een string is (oude stijl prompt)
         if isinstance(messages, str):
             messages = [{"role": "user", "content": messages}]
         assert isinstance(messages, list) and all(isinstance(m, dict) for m in messages), "❌ Invalid messages format"
 
-        response = await openai_client.chat.completions.create(
-            model=model,
-            messages=[
+        resolved_model, temperature = _get_settings_values(model or "gpt-3.5-turbo")
+        chat_kwargs = {
+            "model": resolved_model,
+            "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 *messages
             ],
-        )
+        }
+        if temperature is not None:
+            chat_kwargs["temperature"] = temperature
+
+        response = await openai_client.chat.completions.create(**chat_kwargs)
         latency = (time.perf_counter() - start) * 1000 if response else 0  # in ms
         tokens = response.usage.total_tokens if response.usage else 0
 
