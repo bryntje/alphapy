@@ -33,7 +33,12 @@ class CustomSlashCommands(commands.Cog):
         channel="Het kanaal waarnaar het bericht verstuurd moet worden",
         message="Het bericht dat verstuurd moet worden. Gebruik \\n voor een nieuwe regel."
     )
-    async def sendto(self, interaction: discord.Interaction, channel: discord.TextChannel, message: str):
+    async def sendto(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+        message: str,
+    ):
         """
         Stuur een bericht naar het opgegeven kanaal.
         Voorbeeld:
@@ -51,8 +56,12 @@ class CustomSlashCommands(commands.Cog):
     @commands.is_owner()
     async def sync(self, ctx: commands.Context):
         await ctx.send("🔄 Synchroniseer alle slash commands...")
-        self.bot.tree.copy_global_to(guild=ctx.guild)  # ✅ Forceer een guild sync
-        await self.bot.tree.sync()
+        guild = ctx.guild
+        if guild is None:
+            await ctx.send("❌ Geen guild-context.")
+            return
+        self.bot.tree.copy_global_to(guild=guild)  # ✅ Forceer een guild sync
+        await self.bot.tree.sync(guild=guild)
         await ctx.send("✅ Alle slash commands zijn gesynchroniseerd!")
 
 

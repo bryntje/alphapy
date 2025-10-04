@@ -34,6 +34,7 @@ class TicketBot(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
+        self.settings = getattr(bot, "settings", None)
         # Start async setup zonder de event loop te blokkeren
         self.bot.loop.create_task(self.setup_db())
         # Register persistent view so the ticket button keeps working after restarts
@@ -175,7 +176,8 @@ class TicketBot(commands.Cog):
             color = color_map.get(level, 0x3498db)
             embed = discord.Embed(title=title, description=description, color=color)
             embed.set_footer(text="ticketbot")
-            channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+            channel_id = self._get_log_channel_id()
+            channel = self.bot.get_channel(channel_id)
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
@@ -257,31 +259,15 @@ class TicketBot(commands.Cog):
             if guild is None:
                 raise RuntimeError("Guild context ontbreekt")
 
-            # Category via config of fallback naar gegeven ID
-            category_id = int(getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275))
+            category_id = self._get_ticket_category_id()
+            if not category_id:
+                raise RuntimeError("Ticket categorie niet ingesteld")
             fetched_channel = guild.get_channel(category_id) or await self.bot.fetch_channel(category_id)
             if not isinstance(fetched_channel, discord.CategoryChannel):
                 raise RuntimeError("Category kanaal niet gevonden of geen category type")
             category = fetched_channel
 
-            # Support role bepalen: TICKET_ACCESS_ROLE_ID > ADMIN_ROLE_ID (fallback)
-            support_role_id_value: Optional[int] = None
-            srid = getattr(config, "TICKET_ACCESS_ROLE_ID", None)
-            if isinstance(srid, int):
-                support_role_id_value = srid
-            elif isinstance(srid, str) and srid.isdigit():
-                support_role_id_value = int(srid)
-            if support_role_id_value is None:
-                admin_candidate = getattr(config, "ADMIN_ROLE_ID", None)
-                if isinstance(admin_candidate, int):
-                    support_role_id_value = admin_candidate
-                elif isinstance(admin_candidate, list) and admin_candidate:
-                    first_role = admin_candidate[0]
-                    if isinstance(first_role, int):
-                        support_role_id_value = first_role
-                    elif isinstance(first_role, str) and first_role.isdigit():
-                        support_role_id_value = int(first_role)
-            support_role = guild.get_role(support_role_id_value) if support_role_id_value else None
+            support_role = self._resolve_support_role(guild)
 
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -427,29 +413,16 @@ class TicketBot(commands.Cog):
         if guild is None:
             await interaction.followup.send("❌ Guild context missing.")
             return
-        category_id = int(getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275))
+        category_id = self._get_ticket_category_id()
+        if not category_id:
+            await interaction.followup.send("❌ Ticket category not configured.")
+            return
         fetched = guild.get_channel(category_id) or await self.bot.fetch_channel(category_id)
         if not isinstance(fetched, discord.CategoryChannel):
             await interaction.followup.send("❌ Ticket category not found.")
             return
         category = fetched
-        # Determine support role
-        support_role: Optional[discord.Role] = None
-        srid = getattr(config, "TICKET_ACCESS_ROLE_ID", None)
-        if isinstance(srid, int):
-            support_role = guild.get_role(srid)
-        elif isinstance(srid, str) and srid.isdigit():
-            support_role = guild.get_role(int(srid))
-        if support_role is None:
-            admin_candidate = getattr(config, "ADMIN_ROLE_ID", None)
-            if isinstance(admin_candidate, int):
-                support_role = guild.get_role(admin_candidate)
-            elif isinstance(admin_candidate, list) and admin_candidate:
-                first_role = admin_candidate[0]
-                if isinstance(first_role, int):
-                    support_role = guild.get_role(first_role)
-                elif isinstance(first_role, str) and first_role.isdigit():
-                    support_role = guild.get_role(int(first_role))
+        support_role = self._resolve_support_role(guild)
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             user: discord.PermissionOverwrite(
@@ -566,6 +539,64 @@ class TicketBot(commands.Cog):
             key = row.get("similarity_key") or "-"
             topics[key] = int(row.get("cnt") or 0)
         return topics
+
+    def _settings_get(self, scope: str, key: str, fallback: Optional[int] = None):
+        if self.settings:
+            try:
+                return self.settings.get(scope, key)
+            except KeyError:
+                pass
+        return fallback
+
+    def _normalize_id(self, value: Optional[object]) -> Optional[int]:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return None
+
+    def _get_log_channel_id(self) -> int:
+        value = self._settings_get("system", "log_channel_id", getattr(config, "WATCHER_LOG_CHANNEL", 0))
+        return int(value) if value is not None else 0
+
+    def _get_ticket_category_id(self) -> Optional[int]:
+        value = self._settings_get(
+            "ticketbot",
+            "category_id",
+            getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275),
+        )
+        return self._normalize_id(value)
+
+    def _get_support_role_id(self) -> Optional[int]:
+        value = self._settings_get("ticketbot", "staff_role_id", getattr(config, "TICKET_ACCESS_ROLE_ID", None))
+        normalized = self._normalize_id(value)
+        if normalized is not None:
+            return normalized
+        admin_candidate = getattr(config, "ADMIN_ROLE_ID", None)
+        if isinstance(admin_candidate, int):
+            return admin_candidate
+        if isinstance(admin_candidate, (list, tuple, set)) and admin_candidate:
+            for candidate in admin_candidate:
+                normalized = self._normalize_id(candidate)
+                if normalized is not None:
+                    return normalized
+        return None
+
+    def _resolve_support_role(self, guild: discord.Guild) -> Optional[discord.Role]:
+        role_id = self._get_support_role_id()
+        if role_id:
+            role = guild.get_role(int(role_id))
+            if role:
+                return role
+        return None
+
+    def _get_escalation_role_id(self) -> Optional[int]:
+        value = self._settings_get(
+            "ticketbot",
+            "escalation_role_id",
+            getattr(config, "TICKET_ESCALATION_ROLE_ID", None),
+        )
+        return self._normalize_id(value)
 
     async def capture_metrics_snapshot(
         self,
@@ -831,6 +862,9 @@ class TicketActionView(discord.ui.View):
     async def _log(self, interaction: discord.Interaction, title: str, desc: str, level: str = "info") -> None:
         # Use channel send via embed helper from a new simple instance-less call
         try:
+            if self.cog:
+                await self.cog.send_log_embed(title=title, description=desc, level=level)
+                return
             color_map = {"info": 0x3498db, "debug": 0x95a5a6, "error": 0xe74c3c, "success": 0x2ecc71, "warning": 0xf1c40f}
             color = color_map.get(level, 0x3498db)
             embed = discord.Embed(title=title, description=desc, color=color)
@@ -969,7 +1003,12 @@ class TicketActionView(discord.ui.View):
                     btn.callback = add_faq_callback  # type: ignore
                     view.add_item(btn)
 
-                    channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+                    channel_id = None
+                    if self.cog:
+                        channel_id = self.cog._get_log_channel_id()
+                    if channel_id is None:
+                        channel_id = getattr(config, "WATCHER_LOG_CHANNEL", 0)
+                    channel = self.bot.get_channel(channel_id)
                     if channel and hasattr(channel, "send"):
                         text_channel = cast(discord.TextChannel, channel)
                         await text_channel.send(embed=embed, view=view)
@@ -1127,8 +1166,12 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
-        target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
-        escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None
+        escalated_to = None
+        if self.cog:
+            escalated_to = self.cog._get_escalation_role_id()
+        if escalated_to is None:
+            target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
+            escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None
         await self.conn.execute(
             "UPDATE support_tickets SET status='escalated', escalated_to=$1, updated_at = NOW() WHERE id = $2",
             escalated_to,

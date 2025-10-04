@@ -1,5 +1,4 @@
-__version__ = "1.4.0"
-CODENAME = "Support Sync"
-
+__version__ = "1.5.0"
+CODENAME = "Dynamic Config"
 
 

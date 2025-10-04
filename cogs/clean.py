@@ -15,8 +15,18 @@ class Clean(commands.Cog):
         """
         if limit > 100:
             limit = 100
-        await interaction.channel.purge(limit=limit)
-        await interaction.response.send_message(f"✅ {limit} berichten verwijderd.", ephemeral=True)
+        channel = interaction.channel
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message(
+                "❌ Dit commando werkt alleen in tekstkanalen.",
+                ephemeral=True,
+            )
+            return
+        await channel.purge(limit=limit)
+        await interaction.response.send_message(
+            f"✅ {limit} berichten verwijderd.",
+            ephemeral=True,
+        )
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Clean(bot))

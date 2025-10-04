@@ -4,15 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-- Automatische metriek-snapshots bij het sluiten van een ticket met onderwerp-inschatting (laatste ticket + top 30 dagen).
+- _Nog geen wijzigingen toegevoegd._
 
-### Fixed
-- Auto-reminder parser herkent nu datums die in de `Time:`-regel staan (bv. "Wednesday, October 01/10/25 – 19:30"), waardoor eenmalige evenementen correct worden opgeslagen.
-- Ticket panel knoppen blijven actief na een bot-restart dankzij registratie van de persistente view tijdens initialisatie.
+---
+
+## [1.5.0] - 2025-10-04
+
+### Added
+- Runtime configuratie: GPT-, reminders-, invites- en GDPR-instellingen worden via SettingsService beheerd en `/config`-subcommands (audit logging).
+- Invitetracker met enable-toggle, kanaaloverride en aanpasbare templates; reminders met standaardkanaal, @everyone-toggle en disable-optie.
+- GDPR-post en “I Agree”-knop volgen runtime settings; `/health` slashcommand toont DB/feature status.
+- Documentatie (`docs/configuration.md`) en pytest voor SettingsService.
 
 ### Changed
-- Ticket "Delete" knop archiveert tickets (status `archived`) en behoudt summaries voor rapportering.
+- Bot start faalt vroeg wanneer `BOT_TOKEN` ontbreekt; import-/slash-cogs gebruiken expliciete typeguards.
+
+### Fixed
+- Reminder scheduler gebruikt veilige reconnects (geen `None.execute`); import flows negeren ontbrekende embeds.
 
 ---
 
