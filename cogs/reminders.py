@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import asyncpg
+from asyncpg import exceptions as pg_exceptions
 import asyncio
 from datetime import datetime, time as dtime
 import config
@@ -21,58 +22,20 @@ class ReminderCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
+        self.settings = getattr(bot, "settings", None)
         self.bot.loop.create_task(self.setup())
 
     async def setup(self) -> None:
         await self.bot.wait_until_ready()
+        await self.bot.wait_until_ready()
         try:
-            conn = await asyncpg.connect(config.DATABASE_URL)
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS reminders (
-                    id SERIAL PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    channel_id BIGINT NOT NULL,
-                    time TIME,
-                    call_time TIME,
-                    days TEXT[],
-                    message TEXT,
-                    created_by BIGINT,
-                    origin_channel_id BIGINT,
-                    origin_message_id BIGINT,
-                    event_time TIMESTAMPTZ,
-                    location TEXT,
-                    last_sent_at TIMESTAMPTZ
-                );
-                """
-            )
-            # Ensure call_time column is present for recurring reminders
-            await conn.execute(
-                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
-            )
-            # Idempotency timestamp
-            await conn.execute(
-                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
-            )
-            
-            # Useful indexes for scheduler (avoid non-immutable expression indexes)
-            try:
-                await conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);"
-                )
-                # Replace expression index with simple index on event_time for planner support
-                await conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_reminders_event_time ON reminders(event_time);"
-                )
-            except Exception as idx_e:
-                # Index creation shouldn't block bot operation
-                logger.warning(f"⚠️ Index creation warning: {idx_e}")
-
-            self.conn = conn
-            logger.info("✅ Verbonden met database!")
+            await self._connect_database()
         except Exception as e:
             logger.error(f"❌ Fout bij verbinden met database: {e}")
-        self.check_reminders.start()
+            return
+
+        if not self.check_reminders.is_running():
+            self.check_reminders.start()
 
     async def send_log_embed(self, title: str, description: str, level: str = "info") -> None:
         try:
@@ -87,17 +50,80 @@ class ReminderCog(commands.Cog):
             from discord import Embed
             embed = Embed(title=title, description=description, color=color)
             embed.set_footer(text="reminders")
-            channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+            channel_id = self._get_log_channel_id()
+            channel = self.bot.get_channel(channel_id)
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
         except Exception as e:
             logger.warning(f"⚠️ Kon log embed niet versturen: {e}")
 
+    async def _connect_database(self) -> None:
+        conn = await asyncpg.connect(config.DATABASE_URL)
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reminders (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                time TIME,
+                call_time TIME,
+                days TEXT[],
+                message TEXT,
+                created_by BIGINT,
+                origin_channel_id BIGINT,
+                origin_message_id BIGINT,
+                event_time TIMESTAMPTZ,
+                location TEXT,
+                last_sent_at TIMESTAMPTZ
+            );
+            """
+        )
+        await conn.execute(
+            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
+        )
+        await conn.execute(
+            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
+        )
+
+        try:
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_event_time ON reminders(event_time);")
+        except Exception as idx_e:
+            logger.warning(f"⚠️ Index creation warning: {idx_e}")
+
+        if self.conn and not self.conn.is_closed():
+            try:
+                await self.conn.close()
+            except Exception:
+                pass
+
+        self.conn = conn
+        logger.info("✅ Verbonden met database!")
+
+    async def _ensure_connection(self) -> bool:
+        if self.conn and not self.conn.is_closed():
+            return True
+        try:
+            await self._connect_database()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Reminder DB reconnect failed: {e}")
+            return False
+
+    async def _handle_connection_lost(self, error: Exception) -> None:
+        logger.warning(f"⚠️ Reminder DB-verbinding verbroken: {error}")
+        if self.conn:
+            try:
+                await self.conn.close()
+            except Exception:
+                pass
+        self.conn = None
+
     @app_commands.command(name="add_reminder", description="Plan een herhaalbare of eenmalige reminder in via formulier of berichtlink.")
     @app_commands.describe(
         name="Naam van de reminder",
-        channel="Kanaal waar de reminder gestuurd moet worden",
+        channel="Kanaal waar de reminder gestuurd moet worden (optioneel indien standaard ingesteld)",
         time="Tijdstip in HH:MM formaat",
         days="Dagen van de week (bv. ma,di,wo)",
         message="De remindertekst",
@@ -107,7 +133,7 @@ class ReminderCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         name: str,
-        channel: discord.TextChannel,
+        channel: Optional[discord.TextChannel] = None,
         time: Optional[str] = None,
         days: Optional[str] = None,
         message: Optional[str] = None,
@@ -115,12 +141,17 @@ class ReminderCog(commands.Cog):
     ):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
-        if not self.conn:
+        if not self._is_enabled():
+            await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
+            return
+
+        if not await self._ensure_connection():
             await interaction.followup.send("⛔ Database niet verbonden. Probeer later opnieuw.", ephemeral=True)
             return
 
         origin_channel_id = origin_message_id = event_time = None
         debug_info: List[str] = []
+        days_input: Optional[Any] = None
 
         # 👇 Als een embed-link is opgegeven: fetch en parse de embed
         if link:
@@ -160,7 +191,7 @@ class ReminderCog(commands.Cog):
                     event_time = parsed["datetime"].astimezone(BRUSSELS_TZ)
                     debug_info.append(f"⏰ Tijd: `{time}`")
 
-                days_input: Optional[Any] = days
+                days_input = days
                 if parsed.get("days") is not None:
                     days_input = parsed["days"]
                     days_for_debug = list(days_input) if isinstance(days_input, list) else [str(days_input)]
@@ -185,14 +216,29 @@ class ReminderCog(commands.Cog):
             await interaction.followup.send("❌ Geen tijd opgegeven en geen geldige embed gevonden.", ephemeral=True)
             return
 
+        if channel is None:
+            default_channel_id = self._get_default_channel_id()
+            if default_channel_id:
+                resolved = self.bot.get_channel(default_channel_id)
+                if resolved is None:
+                    try:
+                        resolved = await self.bot.fetch_channel(default_channel_id)
+                    except Exception:
+                        resolved = None
+                if isinstance(resolved, discord.TextChannel):
+                    channel = resolved
+            if channel is None:
+                await interaction.followup.send(
+                    "❌ Geen kanaal opgegeven en geen standaard kanaal ingesteld voor reminders.",
+                    ephemeral=True,
+                )
+                return
+
         # ⏳ Parse time string naar datetime.time
         time_obj = datetime.strptime(time, "%H:%M").time()
 
         # Normaliseer days
-        if 'days_input' in locals() and days_input is not None:
-            raw_days = days_input
-        else:
-            raw_days = days
+        raw_days = days_input if days_input is not None else days
 
         if not raw_days:
             days_list: List[str] = []
@@ -211,7 +257,12 @@ class ReminderCog(commands.Cog):
         # Bepaal call_time: de daadwerkelijke event tijd of fallback naar time_obj
         call_time_obj = event_time.time() if event_time else time_obj
 
-        await self.conn.execute(
+        conn = self.conn
+        if conn is None:
+            await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
+            return
+
+        await conn.execute(
             """INSERT INTO reminders (name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                RETURNING id""",
@@ -226,7 +277,7 @@ class ReminderCog(commands.Cog):
             origin_message_id,
             event_time
         )
-        rid_row = await self.conn.fetchrow("SELECT currval(pg_get_serial_sequence('reminders','id')) AS id")
+        rid_row = await conn.fetchrow("SELECT currval(pg_get_serial_sequence('reminders','id')) AS id")
         rid = rid_row["id"] if rid_row else None
         logger.info(f"🟢 Reminder aangemaakt (ID={rid}): {name} @ {time_obj} days={days_list} channel={channel_id}")
         await self.send_log_embed(
@@ -250,13 +301,18 @@ class ReminderCog(commands.Cog):
 
     @app_commands.command(name="reminder_list", description="📋 Bekijk je actieve reminders")
     async def reminder_list(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not self._is_enabled():
+            await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
+            return
+        if not await self._ensure_connection():
+            await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
+            return
         if not self.conn:
-            await interaction.response.defer(ephemeral=True)
             await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
             return
         user_id = interaction.user.id
         channel_id = getattr(interaction.channel, "id", 0)
-        await interaction.response.defer(ephemeral=True)
 
         is_admin = await is_owner_or_admin_interaction(interaction)
 
@@ -274,7 +330,11 @@ class ReminderCog(commands.Cog):
             params = [user_id, channel_id]
 
         try:
-            rows = await self.conn.fetch(query, *params)
+            conn = self.conn
+            if conn is None:
+                await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
+                return
+            rows = await conn.fetch(query, *params)
             logger.info(f"🔍 Fetched {len(rows)} reminders ({'admin' if is_admin else 'user'})")
 
             if not rows:
@@ -305,38 +365,90 @@ class ReminderCog(commands.Cog):
     @app_commands.command(name="reminder_delete", description="🗑️ Verwijder een reminder via ID")
     @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
     async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int):
-        if not self.conn:
-            await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        if not self._is_enabled():
+            await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
+            return
+        if not await self._ensure_connection():
             await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
             return
-        await interaction.response.defer(ephemeral=True)
 
-        row = await self.conn.fetchrow("SELECT * FROM reminders WHERE id = $1", reminder_id)
+        conn = self.conn
+        if conn is None:
+            await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
+            return
+
+        row = await conn.fetchrow("SELECT * FROM reminders WHERE id = $1", reminder_id)
         
         if not row:
             await interaction.followup.send(f"❌ Geen reminder gevonden met ID `{reminder_id}`.")
             return
 
-        await self.conn.execute("DELETE FROM reminders WHERE id = $1", reminder_id)
+        await conn.execute("DELETE FROM reminders WHERE id = $1", reminder_id)
         await interaction.followup.send(
             f"🗑️ Reminder **{row['name']}** (ID: `{reminder_id}`) werd succesvol verwijderd."
         )
     
     @reminder_delete.autocomplete("reminder_id")
     async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str):
-        if not self.conn:
+        if not self._is_enabled():
             return []
-        rows = await self.conn.fetch("SELECT id, name FROM reminders ORDER BY id DESC LIMIT 25")
+        if not await self._ensure_connection():
+            return []
+        conn = self.conn
+        if conn is None:
+            return []
+        rows = await conn.fetch("SELECT id, name FROM reminders ORDER BY id DESC LIMIT 25")
         return [
             app_commands.Choice(name=f"ID {row['id']} – {row['name'][:30]}", value=row["id"])
             for row in rows if current.lower() in str(row["id"]) or current.lower() in row["name"].lower()
         ]
 
+    def _get_log_channel_id(self) -> int:
+        if self.settings:
+            try:
+                return int(self.settings.get("system", "log_channel_id"))
+            except KeyError:
+                pass
+        return getattr(config, "WATCHER_LOG_CHANNEL", 0)
+
+    def _is_enabled(self) -> bool:
+        if self.settings:
+            try:
+                return bool(self.settings.get("reminders", "enabled"))
+            except KeyError:
+                pass
+        return True
+
+    def _get_default_channel_id(self) -> Optional[int]:
+        if self.settings:
+            try:
+                value = self.settings.get("reminders", "default_channel_id")
+                if value:
+                    return int(value)
+            except KeyError:
+                pass
+            except (TypeError, ValueError):
+                logger.warning("⚠️ Reminders: default_channel_id ongeldig in settings.")
+        return None
+
+    def _allow_everyone_mentions(self) -> bool:
+        if self.settings:
+            try:
+                return bool(self.settings.get("reminders", "allow_everyone_mentions"))
+            except KeyError:
+                pass
+        return getattr(config, "ENABLE_EVERYONE_MENTIONS", False)
+
     @tasks.loop(seconds=60)
     async def check_reminders(self) -> None:
-        if not self.conn:
+        if not self._is_enabled():
+            return
+        if not await self._ensure_connection():
             logger.warning("⛔ Database connection not ready.")
             return
+
+        conn = cast(asyncpg.Connection, self.conn)
 
         now = datetime.now(BRUSSELS_TZ).replace(second=0, microsecond=0)
         current_time_str = now.strftime("%H:%M:%S")
@@ -346,7 +458,7 @@ class ReminderCog(commands.Cog):
         logger.debug(f"🔁 Reminder check: {current_time_str} op dag {current_day}")
 
         try:
-            rows = await self.conn.fetch(
+            rows = await conn.fetch(
                 """
                 SELECT id, channel_id, name, message, location,
                        origin_channel_id, origin_message_id, event_time, days, call_time,
@@ -373,7 +485,30 @@ class ReminderCog(commands.Cog):
                 """,
                 current_time_str, current_date , current_day
             )
+        except (pg_exceptions.InterfaceError, pg_exceptions.ConnectionDoesNotExistError, ConnectionResetError) as conn_err:
+            await self._handle_connection_lost(conn_err)
+            try:
+                await self.send_log_embed(
+                    title="🚨 Reminder loop error",
+                    description=f"Databaseverbinding verbroken: {conn_err}",
+                    level="error",
+                )
+            except Exception:
+                pass
+            return
+        except Exception as e:
+            logger.exception("🚨 Reminder loop error bij ophalen gegevens")
+            try:
+                await self.send_log_embed(
+                    title="🚨 Reminder loop error",
+                    description=str(e),
+                    level="error",
+                )
+            except Exception:
+                pass
+            return
 
+        try:
             logger.debug(f"🔎 Matching reminders op {current_time_str} (rows={len(rows)})")
             for row in rows:
                 # Idempotency guard: skip if already sent in this minute
@@ -388,7 +523,7 @@ class ReminderCog(commands.Cog):
                         continue
 
                 channel = self.bot.get_channel(int(row["channel_id"]))
-                if not channel or not hasattr(channel, "send"):
+                if not isinstance(channel, (discord.TextChannel, discord.Thread)):
                     logger.warning(f"⚠️ Kanaal {row['channel_id']} niet gevonden.")
                     continue
 
@@ -427,10 +562,12 @@ class ReminderCog(commands.Cog):
                     embed.add_field(name="🔗 Original", value=f"[Click here]({link})", inline=False)
 
                 text_channel = cast(discord.TextChannel, channel)
+                mention_enabled = self._allow_everyone_mentions()
+                content = "@everyone" if mention_enabled else None
                 await text_channel.send(
-                    "@everyone",
+                    content=content,
                     embed=embed,
-                    allowed_mentions=discord.AllowedMentions(everyone=config.ENABLE_EVERYONE_MENTIONS)
+                    allowed_mentions=discord.AllowedMentions(everyone=mention_enabled)
                 )
                 logger.info(f"📤 Reminder verzonden (ID={row['id']}) naar kanaal {row['channel_id']}: {row['name']}")
                 await self.send_log_embed(
@@ -446,7 +583,7 @@ class ReminderCog(commands.Cog):
                 )
                 # Update idempotency marker
                 try:
-                    await self.conn.execute(
+                    await conn.execute(
                         "UPDATE reminders SET last_sent_at = $1 WHERE id = $2",
                         now,
                         row["id"],
@@ -466,7 +603,7 @@ class ReminderCog(commands.Cog):
                         event_time_str = event_dt_for_delete.strftime("%H:%M:%S")
                         is_t0_send = (event_time_str == current_time_str)
                     if is_t0_send:
-                        await self.conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
+                        await conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
                         logger.info(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na T0-verzenden.")
                         await self.send_log_embed(
                             title="🗑️ Reminder verwijderd (one-off)",
@@ -480,12 +617,17 @@ class ReminderCog(commands.Cog):
                         )
 
         except Exception as e:
-            logger.exception("🚨 Reminder loop error")
-            await self.send_log_embed(
-                title="🚨 Reminder loop error",
-                description=str(e),
-                level="error",
-            )
+            if isinstance(e, (pg_exceptions.InterfaceError, pg_exceptions.ConnectionDoesNotExistError, ConnectionResetError)):
+                await self._handle_connection_lost(e)
+            logger.exception("🚨 Reminder loop error tijdens verzenden")
+            try:
+                await self.send_log_embed(
+                    title="🚨 Reminder loop error",
+                    description=str(e),
+                    level="error",
+                )
+            except Exception:
+                pass
 
 
 # Voor extern gebruik via FastAPI

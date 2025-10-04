@@ -4,9 +4,11 @@ import json
 import logging
 import uuid
 import re
+import asyncio
 from typing import Optional, Dict, Any, cast
 from config import ROLE_ID, LOG_CHANNEL_ID
 import asyncpg
+from asyncpg import exceptions as pg_exceptions
 import config
 
 # Configureer de logging
@@ -71,6 +73,8 @@ class Onboarding(commands.Cog):
                 }
             }
         ]
+
+        self.db: Optional[asyncpg.Pool] = None
         
     def _value_to_label(self, q_data: dict, value: object) -> str:
         options = q_data.get("options")
@@ -95,8 +99,11 @@ class Onboarding(commands.Cog):
 
     async def setup_database(self):
         """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
-        self.db = await asyncpg.create_pool(config.DATABASE_URL)
-        async with self.db.acquire() as conn:
+        await self._ensure_pool()
+
+    async def _connect_pool(self) -> None:
+        pool = await asyncpg.create_pool(config.DATABASE_URL)
+        async with pool.acquire() as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (
                     user_id BIGINT PRIMARY KEY,
@@ -104,6 +111,31 @@ class Onboarding(commands.Cog):
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             ''')
+        self.db = pool
+        logger.info("✅ Onboarding: DB pool ready")
+
+    async def _ensure_pool(self, *, attempts: int = 3, base_delay: float = 2.0) -> bool:
+        if self.db is not None:
+            return True
+
+        last_error: Optional[Exception] = None
+        for attempt in range(1, attempts + 1):
+            try:
+                await self._connect_pool()
+                return True
+            except (pg_exceptions.PostgresError, ConnectionError, OSError) as exc:
+                last_error = exc
+                logger.warning(
+                    f"⚠️ Onboarding: DB connect failed (attempt {attempt}/{attempts}): {exc}"
+                )
+                await asyncio.sleep(base_delay * attempt)
+            except Exception as exc:
+                last_error = exc
+                logger.exception("❌ Onboarding: onverwachte DB-init fout")
+                break
+
+        logger.error(f"❌ Onboarding: kon DB-verbinding niet opzetten: {last_error}")
+        return False
 
     async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: Optional[dict] = None):
         user_id = interaction.user.id
@@ -140,7 +172,12 @@ class Onboarding(commands.Cog):
                 await interaction.followup.send(embed=summary_embed, ephemeral=True)
 
             # Sla de onboarding data op in de database
-            await self.store_onboarding_data(user_id, answers)
+            stored = await self.store_onboarding_data(user_id, answers)
+            if not stored:
+                await interaction.followup.send(
+                    "⚠️ Onboarding data kon niet opgeslagen worden. Probeer later opnieuw of contacteer een admin.",
+                    ephemeral=True
+                )
 
             # Bouw en verstuur een log-embed naar het logkanaal
             log_embed = discord.Embed(
@@ -207,18 +244,28 @@ class Onboarding(commands.Cog):
         except discord.errors.InteractionResponded:
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-    async def store_onboarding_data(self, user_id, responses):
+    async def store_onboarding_data(self, user_id, responses) -> bool:
         """Slaat onboarding data op in de database."""
-        async with self.db.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO onboarding (user_id, responses)
-                VALUES ($1, $2)
-                ON CONFLICT(user_id) DO UPDATE SET responses = $2;
-                """,
-                user_id, json.dumps(responses)
-            )
-        logger.info(f"✅ Onboarding data opgeslagen voor {user_id}")
+        if not await self._ensure_pool():
+            logger.error("❌ Onboarding: database niet beschikbaar, data niet opgeslagen")
+            return False
+
+        assert self.db is not None
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO onboarding (user_id, responses)
+                    VALUES ($1, $2)
+                    ON CONFLICT(user_id) DO UPDATE SET responses = $2;
+                    """,
+                    user_id, json.dumps(responses)
+                )
+            logger.info(f"✅ Onboarding data opgeslagen voor {user_id}")
+            return True
+        except Exception as exc:
+            logger.exception(f"❌ Onboarding: opslaan mislukt voor {user_id}: {exc}")
+            return False
 
 class TextInputModal(discord.ui.Modal):
     def __init__(self, title: str, step: int, answers: dict, onboarding: 'Onboarding'):
