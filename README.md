@@ -177,6 +177,11 @@ Please follow the modular structure and keep the soul of the project intact 😌
 
 This project is licensed under the MIT License.
 
+## 📜 Legal
+
+- [Terms of Service](docs/terms-of-service.md)
+- [Privacy Policy](docs/privacy-policy.md)
+
 ---
 
 ## 📬 Contact
