@@ -1,7 +1,11 @@
 .env
+.env.*
 config.py
-credentials/
 config_local.py
+credentials/credentials.json
+credentials/*.secret.json
+!credentials/README.md
+!credentials/*.example.json
 venv/
 # Log files
 *.log
@@ -14,8 +18,4 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Examples and credentials
-.env
-.env.*
-credentials/
-config_local.py
+# Examples and templates
