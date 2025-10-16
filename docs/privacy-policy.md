@@ -1,3 +1,9 @@
+---
+layout: page
+title: Privacy Policy
+permalink: /privacy-policy/
+---
+
 # Alphapips Bot Privacy Policy
 
 _Last updated: 2025-10-16_
