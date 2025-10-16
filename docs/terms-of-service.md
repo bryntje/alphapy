@@ -1,3 +1,9 @@
+---
+layout: page
+title: Terms of Service
+permalink: /terms-of-service/
+---
+
 # Alphapips Bot Terms of Service
 
 _Last updated: 2025-10-16_
