@@ -45,6 +45,11 @@ async def health_cmd(interaction: discord.Interaction):
     embed = await _build_health_embed(interaction)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@app_commands.command(name="health", description="Toon configuratie en systeemstatus")
+async def health_cmd(interaction: discord.Interaction):
+    embed = await _build_health_embed(interaction)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # ------------------ SETUP FUNCTION ------------------ #
 
 async def setup(bot: commands.Bot):
@@ -104,6 +109,36 @@ async def get_gptstatus_embed():
     embed.add_field(name="🔹 Uptime", value=_format_uptime(BOOT_TIME), inline=True)
     embed.set_footer(text=f"📦 GPT Status • v{__version__} — {CODENAME} • Updated just now")
 
+    return embed
+
+
+async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed:
+    bot = interaction.client
+    settings = getattr(bot, "settings", None)
+
+    reminders_enabled = invites_enabled = gdpr_enabled = "?"
+    if settings:
+        try:
+            reminders_enabled = "✅" if settings.get("reminders", "enabled") else "🛑"
+            invites_enabled = "✅" if settings.get("invites", "enabled") else "🛑"
+            gdpr_enabled = "✅" if settings.get("gdpr", "enabled") else "🛑"
+        except KeyError:
+            pass
+
+    db_ok = "✅"
+    try:
+        conn = await asyncio.wait_for(asyncpg.connect(config.DATABASE_URL), timeout=3)
+    except Exception:
+        db_ok = "🛑"
+    else:
+        await conn.close()
+
+    embed = discord.Embed(title="🩺 Bot Health", color=discord.Color.green())
+    embed.add_field(name="Database", value=db_ok, inline=True)
+    embed.add_field(name="Reminders", value=reminders_enabled, inline=True)
+    embed.add_field(name="Invites", value=invites_enabled, inline=True)
+    embed.add_field(name="GDPR", value=gdpr_enabled, inline=True)
+    embed.add_field(name="Uptime", value=_format_uptime(BOOT_TIME), inline=True)
     return embed
 
 
