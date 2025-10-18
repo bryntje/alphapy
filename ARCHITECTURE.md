@@ -2,7 +2,7 @@
 
 ## High-level overview
 - Discord bot (discord.py) with modular cogs under `cogs/`
-- FastAPI app (`api.py`) for HTTP access to selected data (reminders)
+- FastAPI app (`api.py`) for HTTP access to reminders and dashboard telemetry
 - PostgreSQL for persistent storage (onboarding, reminders, GDPR, etc.)
 - GPT helpers under `gpt/` and utilities in `utils/`
 - Configuration via environment variables in `config.py`
@@ -48,6 +48,8 @@
 
 - `api.py`
   - FastAPI entrypoint, exposes read endpoints for dashboards/tools
+  - `/api/dashboard/metrics` aggregates live bot telemetry (uptime, latency, guilds, command count) via `utils/runtime_metrics.get_bot_snapshot`
+  - Reminder CRUD endpoints secured with API key + `X-User-Id`
 
 ## Data model (simplified)
 - `onboarding`
@@ -120,6 +122,7 @@
 ## Observability
 - Centralized logging via `utils/logger.py`
 - Discord log embeds to `WATCHER_LOG_CHANNEL` for created/sent/deleted/errors
+- `utils/runtime_metrics.py` snapshots Discord bot state for the dashboard API without blocking the event loop
 
 ## Security
 - Tokens and DB credentials via env only (no hardcoded secrets)
