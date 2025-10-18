@@ -151,9 +151,11 @@ python bot.py
 
 ---
 
-## 📊 Exports & Metrics
+## 📊 Metrics & Dashboard API
 
-- `/ticket_stats` – interactive stats (7d/30d/all, refresh), embeds include version/codename
+- `/api/dashboard/metrics` – FastAPI endpoint returning live bot status, GPT usage, reminder counts, and ticket stats (protected via API key + headers)
+- `utils/runtime_metrics.py` – safe bridge that snapshots Discord bot latency, uptime, guilds, and loaded commands for the dashboard
+- `/ticket_stats` – interactive Discord command (7d/30d/all, refresh) with versioned embeds
 - `ticket_metrics` table stores snapshots (scope, counts, avg cycle seconds, triggered_by)
 - `/export_tickets [scope]` – CSV export of tickets
 - `/export_faq` – CSV export of FAQ entries
