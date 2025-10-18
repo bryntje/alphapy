@@ -87,6 +87,7 @@ This document outlines the planned work after v1.3.0 (TicketBot). It is designed
   - Ticket volume by day, avg time-to-claim/close, status distribution
   - FAQ coverage: top search terms without hits
   - Implementation path: simple FastAPI endpoints consumed by a lightweight dashboard (e.g., Observable/Streamlit) or CSVs to GDrive
+  - ✅ Initial delivery: `/api/dashboard/metrics` serves live bot/GPT/reminder/ticket telemetry backed by `utils/runtime_metrics`
 
 ---
 

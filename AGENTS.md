@@ -80,7 +80,11 @@ Dit document beschrijft de actieve AI-agents en modulaire functies van de Alphap
 
 ---
 
-## 🌐 API Agent: FastAPI Reminder Endpoint
+## 🌐 API Agent: FastAPI Dashboard Endpoint
 
-- **Doel**: Toegang geven tot reminderdata via HTTP endpoint
-- **Gebruik**: Voor dashboards of externe tools
+- **Pad**: `api.py`
+- **Doel**: Exposeert reminders én realtime metrics voor dashboards
+- **Endpoints**:
+  - `/api/reminders/*` – CRUD voor gebruikersreminders (API key + `X-User-Id`)
+  - `/api/dashboard/metrics` – live bot status, GPT-logstatistieken, reminder- en ticketcounts
+- **Helpers**: `utils/runtime_metrics.get_bot_snapshot()` zorgt voor veilige cross-thread snapshots vanuit Discord

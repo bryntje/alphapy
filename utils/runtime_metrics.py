@@ -16,6 +16,13 @@ class GuildSnapshot:
 
 
 @dataclass
+class CommandSnapshot:
+    qualified_name: str
+    description: Optional[str]
+    type: str
+
+
+@dataclass
 class BotSnapshot:
     online: bool
     latency_ms: Optional[float]
@@ -23,6 +30,7 @@ class BotSnapshot:
     uptime_human: Optional[str]
     guilds: List[GuildSnapshot]
     commands_loaded: int
+    commands: List[CommandSnapshot]
 
 
 def _format_duration(delta: timedelta) -> str:
@@ -64,7 +72,23 @@ async def _snapshot_bot(bot: "commands.Bot") -> BotSnapshot:
     latency_raw = getattr(bot, "latency", None)
     latency_ms = round(latency_raw * 1000, 2) if isinstance(latency_raw, (int, float)) else None
 
-    commands_loaded = sum(1 for _ in bot.tree.walk_commands()) if hasattr(bot, "tree") else 0
+    commands_loaded = 0
+    commands: List[CommandSnapshot] = []
+    if hasattr(bot, "tree"):
+        for cmd in bot.tree.walk_commands():
+            commands_loaded += 1
+            qualified_name = getattr(cmd, "qualified_name", getattr(cmd, "name", ""))
+            description = getattr(cmd, "description", None)
+            cmd_type = cmd.__class__.__name__
+            commands.append(
+                CommandSnapshot(
+                    qualified_name=qualified_name or "",
+                    description=description,
+                    type=cmd_type,
+                )
+            )
+            if len(commands) >= 50:
+                break
 
     return BotSnapshot(
         online=bot.is_ready(),
@@ -73,6 +97,7 @@ async def _snapshot_bot(bot: "commands.Bot") -> BotSnapshot:
         uptime_human=uptime_human,
         guilds=guilds,
         commands_loaded=commands_loaded,
+        commands=commands,
     )
 
 
@@ -108,6 +133,7 @@ def serialize_snapshot(snapshot: Optional[BotSnapshot]) -> Dict[str, Any]:
             "uptime_human": None,
             "commands_loaded": 0,
             "guilds": [],
+            "commands": [],
         }
     return {
         "online": snapshot.online,
@@ -124,7 +150,15 @@ def serialize_snapshot(snapshot: Optional[BotSnapshot]) -> Dict[str, Any]:
             }
             for guild in snapshot.guilds
         ],
+        "commands": [
+            {
+                "qualified_name": cmd.qualified_name,
+                "description": cmd.description,
+                "type": cmd.type,
+            }
+            for cmd in snapshot.commands
+        ],
     }
 
 
-__all__ = ["get_bot_snapshot", "serialize_snapshot", "BotSnapshot", "GuildSnapshot"]
+__all__ = ["get_bot_snapshot", "serialize_snapshot", "BotSnapshot", "GuildSnapshot", "CommandSnapshot"]
