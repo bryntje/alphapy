@@ -1,6 +1,6 @@
 # Runtime Configuration Guide
 
-This document summarises how to inspect and update Alphapips bot settings at runtime.
+This document summarises how to inspect and update Innersync • Alphapy bot settings at runtime.
 
 ## Global pattern
 

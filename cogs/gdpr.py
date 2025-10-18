@@ -41,7 +41,7 @@ class GDPRAnnouncement(commands.Cog):
             "**Data Processing and Confidentiality Agreement for Server Members**\n\n"
             "**Effective Date:** 02/11/2025\n\n"
             "**1. Introduction**\n"
-            "As a member of AlphaPips™ - The Next Chapter (\"the Server\"), you may be granted access to certain personal data collected "
+            "As a member of Innersync • AlphaPips™ - The Next Chapter (\"the Server\"), you may be granted access to certain personal data collected "
             "through our onboarding process and other procedures. This document is intended to make you aware of your responsibilities "
             "regarding the processing, storage, and protection of such data in accordance with the General Data Protection Regulation (GDPR).\n\n"
             "**2. Definitions**\n"

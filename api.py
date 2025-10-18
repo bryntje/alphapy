@@ -80,6 +80,36 @@ app.add_middleware(
 startup_time = time.time()
 
 
+class HealthStatus(BaseModel):
+    service: str
+    version: str
+    uptime_seconds: int
+    db_status: str
+    timestamp: str
+
+
+@app.get("/health", response_model=HealthStatus, include_in_schema=False)
+async def health_check() -> HealthStatus:
+    uptime_seconds = int(time.time() - startup_time)
+    db_status = "not_initialized"
+
+    if db_pool:
+        try:
+            async with db_pool.acquire() as connection:
+                await connection.execute("SELECT 1")
+            db_status = "ok"
+        except Exception as error:
+            db_status = f"error:{error.__class__.__name__}"
+
+    return HealthStatus(
+        service=config.SERVICE_NAME,
+        version=__version__,
+        uptime_seconds=uptime_seconds,
+        db_status=db_status,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+
+
 @app.get("/status")
 def get_status():
     return {

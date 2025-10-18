@@ -31,7 +31,7 @@ class Onboarding(commands.Cog):
         # Nieuwe, compacte onboarding flow (4 vragen)
         self.questions = [
             {
-                "question": "📣 How did you hear about AlphaPips?",
+                "question": "📣 How did you hear about Innersync • Alphapips?",
                 "options": [
                     ("Invited by a friend", "friend"),
                     ("Social Media", "social"),

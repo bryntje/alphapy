@@ -34,9 +34,9 @@ class RuleAcceptanceView(discord.ui.View):
         self.rules = [
             ("🛡️ Respect Others", "Stay constructive & professional."),
             ("🚫 No Spam or Promotions", "External links, ads, and spam are forbidden."),
-            ("📚 Educational Content Only", "Do not share content outside Alphapips™."),
+            ("📚 Educational Content Only", "Do not share content outside Innersync • Alphapips™."),
             ("🌟 Ambassador Content Sharing", "Only approved ambassadors may share externally."),
-            ("💰 No Financial Advice", "Alphapips™ provides education, not financial advice.")
+            ("💰 No Financial Advice", "Innersync • Alphapips™ provides education, not financial advice.")
         ]
         self.update_buttons()
 
@@ -159,7 +159,7 @@ class ReactionRole(commands.Cog):
 
         if not persistent_message:
             embed = discord.Embed(
-                title="Welcome to Alphapips™",
+                title="Welcome to Innersync • Alphapips™",
                 description="The place where your learning and growth journey begins! 🌟\n\nTo get started, complete the verification by clicking the button below:",
                 color=discord.Color.blue()
             )

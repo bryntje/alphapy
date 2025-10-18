@@ -1,8 +1,8 @@
 # AGENTS.md
 
-## 🧠 Alphapips Bot – AI Agent Manifest
+## 🧠 Innersync • Alphapy Bot – AI Agent Manifest
 
-Dit document beschrijft de actieve AI-agents en modulaire functies van de Alphapips Discord Bot.
+Dit document beschrijft de actieve AI-agents en modulaire functies van de Innersync • Alphapy Discord Bot.
 
 ---
 
