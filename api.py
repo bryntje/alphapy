@@ -2,11 +2,11 @@ import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -20,6 +20,7 @@ from cogs.reminders import (
 from utils.logger import get_gpt_status_logs
 from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
 from utils.timezone import BRUSSELS_TZ
+from utils.supabase_auth import verify_supabase_token
 from version import CODENAME, __version__
 
 # ---------------------------------------------------------------------------
@@ -27,17 +28,56 @@ from version import CODENAME, __version__
 # ---------------------------------------------------------------------------
 
 
-async def verify_api_key(x_api_key: Optional[str] = Header(None)) -> None:
-    """Guard routes with an optional API key."""
+async def verify_api_key(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None),
+) -> None:
+    """Guard routes with a Supabase JWT or optional API key."""
+    claims: Optional[Dict[str, Any]] = None
+
+    if authorization:
+        try:
+            claims = verify_supabase_token(authorization)
+        except HTTPException:
+            # Invalid JWT; fall back to API key check if configured.
+            claims = None
+
+    if claims:
+        request.state.supabase_claims = claims
+        return
+
     configured_key = getattr(config, "API_KEY", None)
-    if configured_key and x_api_key != configured_key:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    if configured_key:
+        if x_api_key != configured_key:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        request.state.supabase_claims = None
+        return
+
+    # No Supabase claims and no API key configured — allow anonymous access.
+    request.state.supabase_claims = None
 
 
-async def get_authenticated_user_id(x_user_id: Optional[str] = Header(None)) -> str:
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="Missing X-User-Id header")
-    return x_user_id
+async def get_authenticated_user_id(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None),
+) -> str:
+    claims = getattr(request.state, "supabase_claims", None)
+
+    if not claims and authorization:
+        try:
+            claims = verify_supabase_token(authorization)
+        except HTTPException:
+            claims = None
+
+    if claims and "sub" in claims:
+        return str(claims["sub"])
+
+    if x_user_id:
+        return x_user_id
+
+    raise HTTPException(status_code=401, detail="Missing authentication context")
 
 
 # ---------------------------------------------------------------------------

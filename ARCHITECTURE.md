@@ -6,6 +6,7 @@
 - PostgreSQL for persistent storage (onboarding, reminders, GDPR, etc.)
 - GPT helpers under `gpt/` and utilities in `utils/`
 - Configuration via environment variables in `config.py`
+- Authentication via Supabase Auth (Google/GitHub/Discord OAuth, JWT validated in `utils/supabase_auth.py`)
 
 ## Key modules
 - `cogs/onboarding.py`

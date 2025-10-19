@@ -165,6 +165,11 @@ python bot.py
 Configure the API deployment with the shared Innersync domains so web clients and other services can connect without CORS issues.
 
 ```
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<public-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   # server-side only
+SUPABASE_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/jwks
+SUPABASE_JWT_AUDIENCE=authenticated
 APP_BASE_URL=https://app.innersync.tech
 MIND_BASE_URL=https://mind.innersync.tech
 ALPHAPY_BASE_URL=https://alphapy.innersync.tech
@@ -172,7 +177,7 @@ ALLOWED_ORIGINS=https://app.innersync.tech,https://mind.innersync.tech,https://a
 SERVICE_NAME=alphapy-service
 ```
 
-Set `API_KEY` if you want to require an internal key from callers such as the Alphamind dashboard proxy.
+Set `API_KEY` if you want to require an internal key from callers such as the Alphamind dashboard proxy. Supabase access tokens (Bearer) worden nu ook geaccepteerd voor authenticatie; zorg dat clients het Supabase access token meesturen in de `Authorization` header.
 - `/export_faq` – CSV export of FAQ entries
 
 
