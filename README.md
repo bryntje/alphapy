@@ -170,6 +170,7 @@ SUPABASE_ANON_KEY=<public-anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   # server-side only
 SUPABASE_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/certs
 SUPABASE_JWT_AUDIENCE=authenticated
+SUPABASE_WEBHOOK_SECRET=<optional-hmac-secret>
 APP_BASE_URL=https://app.innersync.tech
 MIND_BASE_URL=https://mind.innersync.tech
 ALPHAPY_BASE_URL=https://alphapy.innersync.tech
@@ -177,7 +178,7 @@ ALLOWED_ORIGINS=https://app.innersync.tech,https://mind.innersync.tech,https://a
 SERVICE_NAME=alphapy-service
 ```
 
-Set `API_KEY` if you want to require an internal key from callers such as the Alphamind dashboard proxy. Supabase access tokens (Bearer) worden nu ook geaccepteerd voor authenticatie; zorg dat clients het Supabase access token meesturen in de `Authorization` header.
+Set `API_KEY` if you want to require an internal key from callers such as the Alphamind dashboard proxy. Supabase access tokens (Bearer) worden nu ook geaccepteerd voor authenticatie; zorg dat clients het Supabase access token meesturen in de `Authorization` header. Gebruik `SUPABASE_WEBHOOK_SECRET` indien je Supabase Auth webhooks configureert; Alphapy verwacht een HMAC `supabase-signature` header op `/webhooks/supabase/auth`.
 - `/export_faq` – CSV export of FAQ entries
 
 
