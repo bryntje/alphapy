@@ -21,6 +21,7 @@ from utils.logger import get_gpt_status_logs
 from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
 from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
+from webhooks.supabase import router as supabase_webhook_router
 from version import CODENAME, __version__
 
 # ---------------------------------------------------------------------------
@@ -102,6 +103,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(supabase_webhook_router)
 
 # CORS settings
 _allowed_origins = getattr(config, "ALLOWED_ORIGINS", [])
