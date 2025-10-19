@@ -21,7 +21,10 @@ def _get_jwk_client() -> PyJWKClient:
             detail="Supabase JWKS URL is not configured.",
         )
     if _jwk_client is None:
-        _jwk_client = PyJWKClient(config.SUPABASE_JWKS_URL)
+        headers = None
+        if config.SUPABASE_ANON_KEY:
+            headers = {"apikey": config.SUPABASE_ANON_KEY}
+        _jwk_client = PyJWKClient(config.SUPABASE_JWKS_URL, headers=headers)
     return _jwk_client
 
 
