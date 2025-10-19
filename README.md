@@ -168,7 +168,7 @@ Configure the API deployment with the shared Innersync domains so web clients an
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_ANON_KEY=<public-anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   # server-side only
-SUPABASE_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/certs
+SUPABASE_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/jwks
 SUPABASE_JWT_AUDIENCE=authenticated
 APP_BASE_URL=https://app.innersync.tech
 MIND_BASE_URL=https://mind.innersync.tech
