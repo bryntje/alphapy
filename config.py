@@ -34,7 +34,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_JWKS_URL = os.getenv("SUPABASE_JWKS_URL") or (
-    f"{SUPABASE_URL}/auth/v1/certs" if SUPABASE_URL else None
+    f"{SUPABASE_URL}/auth/v1/jwks" if SUPABASE_URL else None
 )
 SUPABASE_JWT_AUDIENCE = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated")
 SUPABASE_ISSUER = os.getenv(
