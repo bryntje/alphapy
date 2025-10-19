@@ -1,4 +1,4 @@
-# AlphaPips – Roadmap (Phase 2)
+# 🧬 Innersync • Alphapy Roadmap (Phase 2)
 
 This document outlines the planned work after v1.3.0 (TicketBot). It is designed to be incremental, with shippable slices every 1–2 weeks.
 
@@ -19,7 +19,7 @@ This document outlines the planned work after v1.3.0 (TicketBot). It is designed
 | 1 | ✅ Done | Expand setting registrations (reminder scheduler options, GPT throttles, invite templates, GDPR toggles) |
 | 2 | 🔄 Next | Slashcommand UX polish: paginated `/config … show`, richer validation, autocomplete for channel/role targets |
 | 3 | 🔄 Next | Service listeners + cache refresh so cogs react instantly without restart; unify DB connection pooling |
-| 4 | 🔄 Next | Observability & safety: config audit trail to DB, unit tests for coercion, health check command |
+| 4 | 🔄 In progress | Observability & safety: FastAPI `/health` probe live; next up—config audit trail to DB and unit tests for coercion |
 | 5 | 🔄 Next | Launch checklist + docs update: whitepaper excerpt, CHANGELOG, admin hand-off guide |
 
 ### Implementation Checklist
@@ -28,8 +28,8 @@ This document outlines the planned work after v1.3.0 (TicketBot). It is designed
 - [x] Refactor remaining cogs to consume `bot.settings` (TicketBot logs, GPT config, invite tracker templates, GDPR announcements).
 - [x] Add onboarding helpers: `/config reminders set-default-channel`, `/config gpt set-model`, `/config invites set-message`.
 - [x] Implement settings listeners for hot-reload behaviour (e.g., reminder interval, GPT rate limits).
-- [ ] Add tests (`tests/test_settings_service.py`) covering coercion, persistence and permission checks.
-- [ ] Document admin workflow in `docs/configuration.md` and surface summary in CHANGELOG.
+- [x] Add tests (`tests/test_settings_service.py`) covering coercion, persistence and permission checks.
+- [x] Document admin workflow in `docs/configuration.md` and surface summary in CHANGELOG.
 
 ### Key Decisions & Open Questions
 - **Database migrations:** voorlopig blijven we bij cog-level `CREATE TABLE IF NOT EXISTS`; zodra we meer schemawijzigingen stapelen, herbekijken we een migrationtool.
@@ -88,6 +88,7 @@ This document outlines the planned work after v1.3.0 (TicketBot). It is designed
   - FAQ coverage: top search terms without hits
   - Implementation path: simple FastAPI endpoints consumed by a lightweight dashboard (e.g., Observable/Streamlit) or CSVs to GDrive
   - ✅ Initial delivery: `/api/dashboard/metrics` serves live bot/GPT/reminder/ticket telemetry backed by `utils/runtime_metrics`
+  - ✅ Infrastructure now has `/health` and shared `*.innersync.tech` base URLs exposed via `config.py`
 
 ---
 

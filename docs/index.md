@@ -1,12 +1,12 @@
 ---
 layout: page
-title: Alphapips Legal Hub
+title: Innersync • Alphapy Legal Hub
 permalink: /
 ---
 
-# Alphapips Legal Hub
+# Innersync • Alphapy Legal Hub
 
-Welcome! This mini-site hosts the legal documents for the Alphapips Discord Bot. Share the links below in the Discord Developer Portal or anywhere your community needs quick access.
+Welcome! This mini-site hosts the legal documents for the Innersync • Alphapy Discord Bot. Share the links below in the Discord Developer Portal or anywhere your community needs quick access.
 
 - [Terms of Service](terms-of-service.md)
 - [Privacy Policy](privacy-policy.md)

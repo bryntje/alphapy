@@ -17,7 +17,7 @@ class LearnTopic(commands.Cog):
 
         if not is_allowed_prompt(topic):
             await interaction.followup.send(
-                "❌ That question doesn’t align with Alphapips’ intent. Try a more purposeful topic.",
+                "❌ That question doesn’t align with Innersync • Alphapy’s intent. Try a more purposeful topic.",
                 ephemeral=True
             )
             log_gpt_error("filtered_prompt", user_id=interaction.user.id)

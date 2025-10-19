@@ -1,4 +1,4 @@
-# Alphapy Architecture
+# 🧬 Innersync • Alphapy Architecture
 
 ## High-level overview
 - Discord bot (discord.py) with modular cogs under `cogs/`
@@ -6,6 +6,7 @@
 - PostgreSQL for persistent storage (onboarding, reminders, GDPR, etc.)
 - GPT helpers under `gpt/` and utilities in `utils/`
 - Configuration via environment variables in `config.py`
+- Authentication via Supabase Auth (Google/GitHub/Discord OAuth, JWT validated in `utils/supabase_auth.py`)
 
 ## Key modules
 - `cogs/onboarding.py`
@@ -49,6 +50,7 @@
 - `api.py`
   - FastAPI entrypoint, exposes read endpoints for dashboards/tools
   - `/api/dashboard/metrics` aggregates live bot telemetry (uptime, latency, guilds, command count) via `utils/runtime_metrics.get_bot_snapshot`
+  - `/health` returns service metadata (name, version, uptime, timestamp) and performs a lightweight DB ping for readiness probes
   - Reminder CRUD endpoints secured with API key + `X-User-Id`
 
 ## Data model (simplified)
@@ -101,6 +103,7 @@
 
 ## Configuration (`config.py`)
 - Driven by env vars: `GUILD_ID`, `ROLE_ID`, `LOG_CHANNEL_ID`, `RULES_CHANNEL_ID`, `WATCHER_LOG_CHANNEL`, `ANNOUNCEMENTS_CHANNEL_ID`, `DATABASE_URL`, `ENABLE_EVERYONE_MENTIONS`, etc.
+- Defaults for `APP_BASE_URL`, `MIND_BASE_URL`, `ALPHAPY_BASE_URL`, and `ALLOWED_ORIGINS` point to the Innersync subdomains so web clients can connect without extra configuration.
 - Local overrides via optional `config_local.py`
 
 ## Control flow
@@ -122,6 +125,7 @@
 ## Observability
 - Centralized logging via `utils/logger.py`
 - Discord log embeds to `WATCHER_LOG_CHANNEL` for created/sent/deleted/errors
+- `/health` endpoint available for external uptime monitoring and DB sanity checks
 - `utils/runtime_metrics.py` snapshots Discord bot state for the dashboard API without blocking the event loop
 
 ## Security

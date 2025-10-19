@@ -4,17 +4,17 @@ title: Privacy Policy
 permalink: /privacy-policy/
 ---
 
-# Alphapips Bot Privacy Policy
+# Innersync • Alphapy Bot Privacy Policy
 
 _Last updated: 2025-10-16_
 
-This Privacy Policy explains how the Alphapips Discord Bot (“**Alphapips**”, “**Bot**”, “**we**”, “**us**”) collects, uses, and protects information when it operates on your Discord server. By installing or interacting with the Bot, you consent to the practices described here. If you do not agree with this Policy, do not use the Bot.
+This Privacy Policy explains how the Innersync • Alphapy Discord Bot (“**Innersync • Alphapy**”, “**Bot**”, “**we**”, “**us**”) collects, uses, and protects information when it operates on your Discord server. By installing or interacting with the Bot, you consent to the practices described here. If you do not agree with this Policy, do not use the Bot.
 
-> **At a glance:** Alphapips stores the minimum data required to deliver its reminder, ticketing, analytics, and AI-assisted features. We rely primarily on legitimate interest to process interaction data, keep it only as long as needed, and provide GDPR-friendly export and deletion options.
+> **At a glance:** Innersync • Alphapy stores the minimum data required to deliver its reminder, ticketing, analytics, and AI-assisted features. We rely primarily on legitimate interest to process interaction data, keep it only as long as needed, and provide GDPR-friendly export and deletion options.
 
 ## 1. Who is responsible?
 
-The Alphapips Bot is maintained by the project owner reachable at `bryan.dhaen@gmail.com`. This individual acts as the data controller for personal data processed by hosted instances of the Bot. If you self-host the Bot, you become the controller for that deployment and must adapt this Policy accordingly.
+The Innersync • Alphapy Bot is maintained by the project owner reachable at `bryan.dhaen@gmail.com`. This individual acts as the data controller for personal data processed by hosted instances of the Bot. If you self-host the Bot, you become the controller for that deployment and must adapt this Policy accordingly.
 
 ## 2. What data we collect
 
@@ -117,4 +117,4 @@ For questions, data requests, or concerns about this Policy, email `bryan.dhaen@
 
 ---
 
-By installing or using Alphapips, you acknowledge that you have read and understood this Privacy Policy.
+By installing or using Innersync • Alphapy, you acknowledge that you have read and understood this Privacy Policy.
