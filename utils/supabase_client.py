@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 import httpx
@@ -35,6 +36,34 @@ def _headers(prefer: Optional[Iterable[str]] = None) -> Dict[str, str]:
     if prefer:
         header["Prefer"] = ", ".join(prefer)
     return header
+
+
+async def _supabase_get(
+    table: str, params: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """Fetch rows from a Supabase table using the service role."""
+    _require_config()
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(url, headers=_headers(), params=params)
+
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:  # pragma: no cover - network path
+        logger.error(
+            "Supabase GET failed: table=%s status=%s body=%s",
+            table,
+            exc.response.status_code,
+            exc.response.text,
+        )
+        raise
+
+    data = response.json()
+    if isinstance(data, dict):
+        return data.get("data", [])
+    if isinstance(data, list):
+        return data
+    return []
 
 
 async def _supabase_post(
@@ -102,10 +131,68 @@ async def insert_insight(payload: Dict[str, Any]) -> None:
     await _supabase_post("insights", payload, upsert=False)
 
 
+async def get_user_id_for_discord(discord_id: str | int) -> Optional[str]:
+    """Resolve a Supabase user_id via the profiles table using a Discord id."""
+    try:
+        rows = await _supabase_get(
+            "profiles",
+            {
+                "select": "user_id,discord_id",
+                "discord_id": f"eq.{discord_id}",
+                "limit": 1,
+            },
+        )
+    except httpx.HTTPStatusError:
+        return None
+
+    if not rows:
+        return None
+
+    user_id = rows[0].get("user_id")
+    return str(user_id) if user_id else None
+
+
+async def insert_reflection_for_discord(
+    discord_id: int | str,
+    *,
+    reflection: str,
+    mantra: Optional[str] = None,
+    villain: Optional[str] = None,
+    future_message: Optional[str] = None,
+    date: Optional[datetime] = None,
+) -> bool:
+    """Insert a reflection entry for the Supabase user linked to the Discord id."""
+    user_id = await get_user_id_for_discord(discord_id)
+    if not user_id:
+        logger.debug(
+            "No Supabase profile linked to discord_id=%s – skipping reflection insert.",
+            discord_id,
+        )
+        return False
+
+    timestamp = date or datetime.now(timezone.utc)
+    payload = {
+        "user_id": user_id,
+        "date": timestamp.isoformat(),
+        "reflection": reflection,
+    }
+    if mantra:
+        payload["mantra"] = mantra
+    if villain:
+        payload["villain"] = villain
+    if future_message:
+        payload["future_message"] = future_message
+
+    await insert_reflection(payload)
+    return True
+
+
 __all__ = [
     "upsert_profile",
     "insert_reflection",
     "insert_trade",
     "insert_insight",
+    "get_user_id_for_discord",
+    "insert_reflection_for_discord",
     "SupabaseConfigurationError",
 ]
