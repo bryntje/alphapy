@@ -9,3 +9,4 @@ uvicorn
 pytz
 pytest>=7.0
 PyJWT[crypto]
+httpx
