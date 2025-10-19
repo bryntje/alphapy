@@ -23,7 +23,9 @@ async def gptstatus(interaction: discord.Interaction):
 
 @app_commands.command(name="version", description="Show bot version")
 async def version_cmd(interaction: discord.Interaction):
-    await interaction.response.send_message(f"Alphapips version: v{__version__} — {CODENAME}", ephemeral=True)
+    await interaction.response.send_message(
+        f"Innersync • Alphapy version: v{__version__} — {CODENAME}", ephemeral=True
+    )
 
 @app_commands.command(name="release", description="Show release notes for the current version")
 async def release_cmd(interaction: discord.Interaction):

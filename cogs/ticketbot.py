@@ -681,7 +681,9 @@ class TicketBot(commands.Cog):
         else:
             embed.add_field(name="Average cycle time (closed)", value="-", inline=False)
         now_bxl = datetime.now(BRUSSELS_TZ)
-        embed.set_footer(text=f"AlphaPips v{__version__} — {CODENAME} | Last updated: {now_bxl.strftime('%Y-%m-%d %H:%M')} BXL")
+        embed.set_footer(
+            text=f"Innersync • Alphapy v{__version__} — {CODENAME} | Last updated: {now_bxl.strftime('%Y-%m-%d %H:%M')} BXL"
+        )
         return embed
 
     class StatsView(discord.ui.View):

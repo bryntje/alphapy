@@ -4,13 +4,13 @@ title: Terms of Service
 permalink: /terms-of-service/
 ---
 
-# Alphapips Bot Terms of Service
+# Innersync • Alphapy Bot Terms of Service
 
 _Last updated: 2025-10-16_
 
-Thank you for using the Alphapips Discord Bot (“**Alphapips**”, “**Bot**”, “**we**”, “**us**”, “**our**”). These Terms of Service (“**Terms**”) set out the rules that govern how you access and use the Bot and its related functionality. By inviting the Bot to a Discord server, configuring it, or interacting with any of its commands, you agree to be bound by these Terms. If you do not agree, do not use the Bot.
+Thank you for using the Innersync • Alphapy Discord Bot (“**Innersync • Alphapy**”, “**Bot**”, “**we**”, “**us**”, “**our**”). These Terms of Service (“**Terms**”) set out the rules that govern how you access and use the Bot and its related functionality. By inviting the Bot to a Discord server, configuring it, or interacting with any of its commands, you agree to be bound by these Terms. If you do not agree, do not use the Bot.
 
-> **Quick summary (not a substitute for the full Terms):** You must follow Discord’s rules and keep the Bot configured responsibly. Alphapips is provided “as is”, without financial advice, and we may modify or remove features at any time. You are responsible for ensuring the Bot fits your community’s needs.
+> **Quick summary (not a substitute for the full Terms):** You must follow Discord’s rules and keep the Bot configured responsibly. Innersync • Alphapy is provided “as is”, without financial advice, and we may modify or remove features at any time. You are responsible for ensuring the Bot fits your community’s needs.
 
 ## 1. Eligibility and Accounts
 
@@ -20,7 +20,7 @@ Thank you for using the Alphapips Discord Bot (“**Alphapips**”, “**Bot**�
 
 ## 2. Description of Service
 
-Alphapips offers modular features designed for community management and growth support. Current capabilities are described in `README.md` and may include:
+Innersync • Alphapy offers modular features designed for community management and growth support. Current capabilities are described in `README.md` and may include:
 
 - **Reminder tools**: automated reminders based on embeds, schedules, or manual input.
 - **AI interactions**: GPT-powered commands such as `/learn_topic`, `/growthcheckin`, and `/create_caption`.
@@ -43,7 +43,7 @@ We reserve the right to suspend or decline service for misuse, security concerns
 
 ## 4. Data and Privacy
 
-Your use of the Bot is also governed by the [Alphapips Privacy Policy](./privacy-policy.md), which explains what data we collect, how we store it, and the choices available to you and your members. Installing or using the Bot signifies acceptance of that document.
+Your use of the Bot is also governed by the [Innersync • Alphapy Privacy Policy](./privacy-policy.md), which explains what data we collect, how we store it, and the choices available to you and your members. Installing or using the Bot signifies acceptance of that document.
 
 ## 5. Configuration Data and Member Content
 
@@ -54,7 +54,7 @@ Your use of the Bot is also governed by the [Alphapips Privacy Policy](./privacy
 
 ## 6. Financial and Educational Disclaimer
 
-Alphapips serves communities that discuss trading and personal growth. Nothing generated or surfaced by the Bot should be construed as financial, investment, legal, or mental-health advice. You act on any information at your own risk. Always consult qualified professionals before making decisions.
+Innersync • Alphapy serves communities that discuss trading and personal growth. Nothing generated or surfaced by the Bot should be construed as financial, investment, legal, or mental-health advice. You act on any information at your own risk. Always consult qualified professionals before making decisions.
 
 ## 7. Availability and Support
 
@@ -73,8 +73,8 @@ We may revise these Terms when we update the Bot or our policies. Significant ch
 
 ## 10. Intellectual Property
 
-- The Alphapips codebase is released under the MIT License (see `LICENSE` or `README.md`). Respect the license terms when forking or self-hosting.
-- Alphapips, related artwork, and documentation remain our intellectual property. Third-party trademarks remain the property of their respective owners.
+- The Innersync • Alphapy codebase is released under the MIT License (see `LICENSE` or `README.md`). Respect the license terms when forking or self-hosting.
+- Innersync • Alphapy, related artwork, and documentation remain our intellectual property. Third-party trademarks remain the property of their respective owners.
 
 ## 11. Third-Party Services
 
@@ -96,7 +96,7 @@ Our aggregate liability for any claim related to the Bot will not exceed €100.
 
 ## 14. Governing Law
 
-These Terms are governed by the laws of Belgium, without regard to conflict-of-law principles. If you operate Alphapips from a different jurisdiction, update this section before publishing.
+These Terms are governed by the laws of Belgium, without regard to conflict-of-law principles. If you operate Innersync • Alphapy from a different jurisdiction, update this section before publishing.
 
 ## 15. Contact
 
@@ -104,4 +104,4 @@ Questions about these Terms? Contact the project maintainer at `bryan.dhaen@gmai
 
 ---
 
-By installing or using Alphapips, you confirm that you have read, understood, and agree to these Terms.
+By installing or using Innersync • Alphapy, you confirm that you have read, understood, and agree to these Terms.

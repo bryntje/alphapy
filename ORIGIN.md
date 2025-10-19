@@ -1,7 +1,7 @@
-# 🌱 ORIGIN.md — Het ontstaan van AlphaPy
+# 🌱 ORIGIN.md — Het ontstaan van Innersync • AlphaPy
 
 ## Inleiding
-AlphaPy is ontstaan uit iets eenvoudigs: een `!ping` command. Maar onder die bescheiden eerste stap schuilde een groter idee — het bouwen van een slimme, schaalbare, en toekomstgerichte digitale assistent voor Discord communities. Dit bestand documenteert het ontstaan, de groeistappen, en de visie die AlphaPy vorm hebben gegeven.
+Innersync • AlphaPy is ontstaan uit iets eenvoudigs: een `!ping` command. Maar onder die bescheiden eerste stap schuilde een groter idee — het bouwen van een slimme, schaalbare, en toekomstgerichte digitale assistent voor Discord communities. Dit bestand documenteert het ontstaan, de groeistappen, en de visie die Innersync • AlphaPy vorm hebben gegeven.
 
 ---
 
@@ -59,8 +59,6 @@ AlphaPy draait rond **bewust bouwen**:
 ---
 
 ## 📅 Volgende stappen
-- `ORIGIN.md` documenteren in alle branches
-- `ROADMAP.md` opstellen met doelen per kwartaal
 - GPT-buddy verder trainen op projectstijl
 - Openstellen als template of boilerplate voor andere devs
 

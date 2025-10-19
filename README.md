@@ -1,12 +1,12 @@
-# 🤖 Alphapips Discord Bot
+# 🧬 Innersync • Alphapy API
 
-A powerful, modular Discord bot built for conscious communities — blending practical server tools with AI-enhanced features.
+Een krachtige, modulaire Discord-bot en API, onderdeel van het **Innersync** ecosysteem en gebouwd voor bewuste communities — praktische servertools gecombineerd met AI-functies.
 
 ---
 
 ## 🌱 Overview
 
-**Alphapips Bot** is designed to support a value-driven trading community.
+**Innersync • Alphapy** ondersteunt de Innersync • Alphapips community met waarde-gedreven trading workflows.
 It combines essential Discord utilities (onboarding, leaderboards, quizzes, role logic) with an optional AI layer that adds depth and reflection.
 
 This includes:
@@ -158,6 +158,26 @@ python bot.py
 - `/ticket_stats` – interactive Discord command (7d/30d/all, refresh) with versioned embeds
 - `ticket_metrics` table stores snapshots (scope, counts, avg cycle seconds, triggered_by)
 - `/export_tickets [scope]` – CSV export of tickets
+- `/health` – JSON health probe (`service`, `version`, `uptime_seconds`, `db_status`, `timestamp`) for infrastructure checks
+
+### Environment variables (API service)
+
+Configure the API deployment with the shared Innersync domains so web clients and other services can connect without CORS issues.
+
+```
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<public-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   # server-side only
+SUPABASE_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/jwks
+SUPABASE_JWT_AUDIENCE=authenticated
+APP_BASE_URL=https://app.innersync.tech
+MIND_BASE_URL=https://mind.innersync.tech
+ALPHAPY_BASE_URL=https://alphapy.innersync.tech
+ALLOWED_ORIGINS=https://app.innersync.tech,https://mind.innersync.tech,https://alphapy.innersync.tech
+SERVICE_NAME=alphapy-service
+```
+
+Set `API_KEY` if you want to require an internal key from callers such as the Alphamind dashboard proxy. Supabase access tokens (Bearer) worden nu ook geaccepteerd voor authenticatie; zorg dat clients het Supabase access token meesturen in de `Authorization` header.
 - `/export_faq` – CSV export of FAQ entries
 
 
