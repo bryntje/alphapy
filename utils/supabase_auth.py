@@ -24,6 +24,7 @@ def _get_jwk_client() -> PyJWKClient:
         headers = None
         if config.SUPABASE_ANON_KEY:
             headers = {"apikey": config.SUPABASE_ANON_KEY}
+        logger.info("Initializing JWKS client for %s", config.SUPABASE_JWKS_URL)
         _jwk_client = PyJWKClient(config.SUPABASE_JWKS_URL, headers=headers)
     return _jwk_client
 
