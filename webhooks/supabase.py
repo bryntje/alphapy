@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Request, status
 
 import config
+from utils.supabase_client import SupabaseConfigurationError, upsert_profile
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,34 @@ async def supabase_auth_webhook(request: Request) -> Dict[str, str]:
         event_type or "UNKNOWN",
         user_id,
     )
+
+    if event_type in {"USER_CREATED", "USER_SIGNED_UP", "USER_UPDATED"} and user_id:
+        profile_payload: Dict[str, Any] = {"user_id": user_id}
+        record = payload.get("record") or payload.get("user") or {}
+        raw_meta = record.get("raw_user_meta_data") or {}
+
+        nickname = raw_meta.get("full_name") or raw_meta.get("user_name")
+        discord_id = (
+            raw_meta.get("provider_id")
+            if raw_meta.get("provider") == "discord"
+            else None
+        )
+
+        if nickname:
+            profile_payload["nickname"] = nickname
+        if discord_id:
+            profile_payload["discord_id"] = str(discord_id)
+
+        try:
+            await upsert_profile(profile_payload)
+        except SupabaseConfigurationError:
+            logger.debug(
+                "Supabase service role key not configured; skipping profile sync."
+            )
+        except Exception as exc:  # pragma: no cover - network path
+            logger.warning(
+                "Failed to upsert profile for user_id=%s: %s", user_id, exc
+            )
 
     if event_type in {"USER_DELETED", "USER_DESTROYED"} and user_id:
         # TODO: purge user data when data ownership contracts are finalised.
