@@ -1,7 +1,17 @@
+import asyncio
+import logging
+
 import discord
 from discord.ext import commands
 from discord import app_commands
+
 from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
+from utils.supabase_client import (
+    SupabaseConfigurationError,
+    insert_insight_for_discord,
+)
+
+logger = logging.getLogger(__name__)
 
 STYLES = [
     "punchy",
@@ -42,6 +52,32 @@ Avoid clichés.
             reply = await ask_gpt(messages, user_id=interaction.user.id)
             log_gpt_success(user_id=interaction.user.id)
             await interaction.followup.send(reply.strip(), ephemeral=True)
+
+            async def _store_caption_insight() -> None:
+                try:
+                    success = await insert_insight_for_discord(
+                        interaction.user.id,
+                        summary=reply.strip(),
+                        source="system",
+                        tags=["content", style.value],
+                    )
+                    if not success:
+                        logger.debug(
+                            "Skipping content insight sync: no profile for discord_id=%s",
+                            interaction.user.id,
+                        )
+                except SupabaseConfigurationError:
+                    logger.debug(
+                        "Supabase credentials missing; skipping content insight sync."
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to sync content insight for discord_id=%s: %s",
+                        interaction.user.id,
+                        exc,
+                    )
+
+            asyncio.create_task(_store_caption_insight())
         except Exception as e:
             log_gpt_error("create_caption", user_id=interaction.user.id)
             await interaction.followup.send("❌ Couldn't generate the caption. Try again later.", ephemeral=True)
