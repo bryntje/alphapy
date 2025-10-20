@@ -187,6 +187,35 @@ async def insert_reflection_for_discord(
     return True
 
 
+async def insert_insight_for_discord(
+    discord_id: int | str,
+    *,
+    summary: str,
+    source: str = "system",
+    tags: Optional[List[str]] = None,
+) -> bool:
+    """Insert an insight entry linked to the Supabase user for the Discord id."""
+
+    user_id = await get_user_id_for_discord(discord_id)
+    if not user_id:
+        logger.debug(
+            "No Supabase profile linked to discord_id=%s – skipping insight insert.",
+            discord_id,
+        )
+        return False
+
+    payload = {
+        "user_id": user_id,
+        "summary": summary,
+        "source": source,
+    }
+    if tags:
+        payload["tags"] = tags
+
+    await insert_insight(payload)
+    return True
+
+
 __all__ = [
     "upsert_profile",
     "insert_reflection",
@@ -194,5 +223,6 @@ __all__ = [
     "insert_insight",
     "get_user_id_for_discord",
     "insert_reflection_for_discord",
+    "insert_insight_for_discord",
     "SupabaseConfigurationError",
 ]
