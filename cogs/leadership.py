@@ -1,9 +1,18 @@
+import asyncio
+import logging
+
 import discord
 from discord.ext import commands
 from discord import app_commands
+
 from utils.logger import logger
-from config import LOG_CHANNEL_ID
 from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
+from utils.supabase_client import (
+    SupabaseConfigurationError,
+    insert_insight_for_discord,
+)
+
+metrics_logger = logging.getLogger(__name__)
 
 class LeaderHelp(commands.Cog):
     def __init__(self, bot):
@@ -52,6 +61,32 @@ class ChallengeSelect(discord.ui.Select):
             reply = await ask_gpt([{"role": "user", "content": prompt}])
             log_gpt_success(user_id=interaction.user.id)
             await interaction.followup.send(reply, ephemeral=True)
+
+            async def _store_insight() -> None:
+                try:
+                    success = await insert_insight_for_discord(
+                        interaction.user.id,
+                        summary=reply,
+                        source="system",
+                        tags=["leadership", struggle],
+                    )
+                    if not success:
+                        metrics_logger.debug(
+                            "Skipping leadership insight sync: no profile for discord_id=%s",
+                            interaction.user.id,
+                        )
+                except SupabaseConfigurationError:
+                    metrics_logger.debug(
+                        "Supabase credentials missing; skipping leadership insight sync."
+                    )
+                except Exception as exc:
+                    metrics_logger.warning(
+                        "Failed to sync leadership insight for discord_id=%s: %s",
+                        interaction.user.id,
+                        exc,
+                    )
+
+            asyncio.create_task(_store_insight())
         except Exception as e:
             logger.exception(f"Unhandled GPT error (ChallengeSelect) by {interaction.user}: {e}")
             log_gpt_error("challenge_select", user_id=interaction.user.id)
@@ -89,7 +124,33 @@ class AskQuestionButton(discord.ui.Button):
         
             log_gpt_success(user_id=interaction.user.id)
             await interaction.followup.send(reply, ephemeral=True)
-        
+
+            async def _store_question_insight() -> None:
+                try:
+                    success = await insert_insight_for_discord(
+                        interaction.user.id,
+                        summary=reply,
+                        source="system",
+                        tags=["leadership", "ask_question"],
+                    )
+                    if not success:
+                        metrics_logger.debug(
+                            "Skipping leadership Q&A insight sync: no profile for discord_id=%s",
+                            interaction.user.id,
+                        )
+                except SupabaseConfigurationError:
+                    metrics_logger.debug(
+                        "Supabase credentials missing; skipping leadership insight sync."
+                    )
+                except Exception as exc:
+                    metrics_logger.warning(
+                        "Failed to sync leadership question insight for discord_id=%s: %s",
+                        interaction.user.id,
+                        exc,
+                    )
+
+            asyncio.create_task(_store_question_insight())
+
         except Exception as e:
             logger.exception(f"Unhandled GPT error (AskQuestionButton) by {interaction.user}: {e}")
             log_gpt_error("ask_question", user_id=interaction.user.id)
