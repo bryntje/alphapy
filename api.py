@@ -1,7 +1,8 @@
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 import asyncpg
@@ -553,6 +554,140 @@ async def _collect_infrastructure_metrics() -> InfrastructureMetrics:
     )
 
 
+def _count_recent_events(events: List[GPTLogEvent], hours: int = 24) -> int:
+    if not events:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    count = 0
+    for evt in events:
+        ts = getattr(evt, "timestamp", None)
+        if not ts:
+            continue
+        try:
+            dt = datetime.fromisoformat(ts)
+        except ValueError:
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        if dt >= cutoff:
+            count += 1
+    return count
+
+
+async def _persist_telemetry_snapshot(
+    bot_metrics: BotMetrics,
+    gpt_metrics: GPTMetrics,
+    ticket_stats: TicketStats,
+) -> None:
+    global db_pool
+    if db_pool is None:
+        return
+
+    try:
+        async with db_pool.acquire() as conn:
+            command_events_24h = 0
+            try:
+                command_events_24h = await conn.fetchval(
+                    """
+                    SELECT COUNT(*)
+                    FROM audit_logs
+                    WHERE created_at >= timezone('utc', now()) - interval '24 hours'
+                    """
+                )
+                if command_events_24h is None:
+                    command_events_24h = 0
+            except Exception as exc:
+                print("[WARN] telemetry audit count failed:", exc)
+                command_events_24h = 0
+
+            gpt_successes_24h = _count_recent_events(gpt_metrics.recent_successes)
+            gpt_errors_24h = _count_recent_events(gpt_metrics.recent_errors)
+
+            total_activity_24h = int(command_events_24h + gpt_successes_24h + gpt_errors_24h)
+
+            error_rate = 0.0
+            if gpt_successes_24h + gpt_errors_24h > 0:
+                error_rate = round(
+                    gpt_errors_24h / float(gpt_successes_24h + gpt_errors_24h), 2
+                )
+
+            latency_ms = bot_metrics.latency_ms or 0.0
+            latency_p50 = int(latency_ms or 0)
+            latency_p95 = int(round((latency_ms or 0) * 1.5))
+
+            throughput_per_minute = 0.0
+            if total_activity_24h:
+                throughput_per_minute = round(total_activity_24h / (24 * 60), 2)
+
+            queue_depth = ticket_stats.open_count
+            active_bots = len(bot_metrics.guilds) or None
+
+            incidents_open = ticket_stats.open_count + gpt_errors_24h
+            if not bot_metrics.online:
+                status = "outage"
+            elif incidents_open > 5:
+                status = "outage"
+            elif incidents_open > 0:
+                status = "degraded"
+            else:
+                status = "operational"
+
+            notes = (
+                f"{total_activity_24h} events/24h · {ticket_stats.open_count} open tickets · "
+                f"GPT errors 24h: {gpt_errors_24h}"
+            )
+
+            await conn.execute(
+                """
+                insert into telemetry.subsystem_snapshots (
+                    subsystem,
+                    label,
+                    status,
+                    uptime_seconds,
+                    throughput_per_minute,
+                    error_rate,
+                    latency_p50,
+                    latency_p95,
+                    queue_depth,
+                    active_bots,
+                    notes,
+                    last_updated
+                )
+                values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, timezone('utc', now()))
+                on conflict (subsystem) do update set
+                    label = excluded.label,
+                    status = excluded.status,
+                    uptime_seconds = excluded.uptime_seconds,
+                    throughput_per_minute = excluded.throughput_per_minute,
+                    error_rate = excluded.error_rate,
+                    latency_p50 = excluded.latency_p50,
+                    latency_p95 = excluded.latency_p95,
+                    queue_depth = excluded.queue_depth,
+                    active_bots = excluded.active_bots,
+                    notes = excluded.notes,
+                    last_updated = excluded.last_updated
+                """,
+                "alphapy",
+                "Alphapy Agents",
+                status,
+                bot_metrics.uptime_seconds or 0,
+                throughput_per_minute,
+                error_rate,
+                latency_p50,
+                latency_p95,
+                queue_depth,
+                active_bots,
+                notes,
+            )
+    except Exception as exc:
+        print("[WARN] telemetry snapshot failed:", exc)
+
+
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)
 async def get_dashboard_metrics(auth_user_id: str = Depends(get_authenticated_user_id)):
     snapshot = await get_bot_snapshot()
@@ -562,13 +697,21 @@ async def get_dashboard_metrics(auth_user_id: str = Depends(get_authenticated_us
         codename=CODENAME,
         **bot_payload,
     )
+    gpt_metrics = _collect_gpt_metrics()
+    reminder_stats = await _fetch_reminder_stats()
+    ticket_stats = await _fetch_ticket_stats()
+    infrastructure = await _collect_infrastructure_metrics()
+
+    # Persist a telemetry snapshot asynchronously; ignore failures.
+    asyncio.create_task(_persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats))
+
     return DashboardMetrics(
         bot=bot_metrics,
-        gpt=_collect_gpt_metrics(),
-        reminders=await _fetch_reminder_stats(),
-        tickets=await _fetch_ticket_stats(),
+        gpt=gpt_metrics,
+        reminders=reminder_stats,
+        tickets=ticket_stats,
         settings_overrides=await _fetch_settings_overrides(),
-        infrastructure=await _collect_infrastructure_metrics(),
+        infrastructure=infrastructure,
     )
 
 
