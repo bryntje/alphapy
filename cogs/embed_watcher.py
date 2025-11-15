@@ -65,7 +65,7 @@ class EmbedReminderWatcher(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.id == getattr(self.bot.user, 'id', None):
             return  # Skip messages from the bot itself
-        announcements_channel_id = self._get_announcements_channel_id()
+        announcements_channel_id = self._get_announcements_channel_id(message.guild.id)
         if message.channel.id != announcements_channel_id or not message.embeds:
             logger.debug(f"[📣] Kanal ID: {message.channel.id} - embeds: {bool(message.embeds)}")
             return
@@ -81,7 +81,7 @@ class EmbedReminderWatcher(commands.Cog):
         logger.debug(f"[🐛] DB connection aanwezig? {self.conn is not None}")
 
         if parsed and parsed["reminder_time"]:
-            log_channel_id = self._get_log_channel_id()
+            log_channel_id = self._get_log_channel_id(message.guild.id)
             log_channel = self.bot.get_channel(log_channel_id)
             if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
                 await log_channel.send(
@@ -359,7 +359,7 @@ class EmbedReminderWatcher(commands.Cog):
                 call_time_obj
             )
 
-            log_channel_id = self._get_log_channel_id()
+            log_channel_id = self._get_log_channel_id(message.guild.id)
             log_channel = self.bot.get_channel(log_channel_id)
             logger.debug(f"[🪵] Log channel: {log_channel}")
             if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
@@ -404,7 +404,7 @@ class EmbedReminderWatcher(commands.Cog):
     def _get_announcements_channel_id(self) -> int:
         if self.settings:
             try:
-                return int(self.settings.get("embedwatcher", "announcements_channel_id"))
+                return int(self.settings.get("embedwatcher", "announcements_channel_id", guild_id))
             except KeyError:
                 pass
         return getattr(config, "ANNOUNCEMENTS_CHANNEL_ID", 0)
@@ -412,7 +412,7 @@ class EmbedReminderWatcher(commands.Cog):
     def _get_log_channel_id(self) -> int:
         if self.settings:
             try:
-                return int(self.settings.get("system", "log_channel_id"))
+                return int(self.settings.get("system", "log_channel_id", guild_id))
             except KeyError:
                 pass
         return getattr(config, "WATCHER_LOG_CHANNEL", 0)
@@ -420,7 +420,7 @@ class EmbedReminderWatcher(commands.Cog):
     def _get_reminder_offset(self) -> int:
         if self.settings:
             try:
-                return int(self.settings.get("embedwatcher", "reminder_offset_minutes"))
+                return int(self.settings.get("embedwatcher", "reminder_offset_minutes", guild_id))
             except KeyError:
                 pass
         return 60

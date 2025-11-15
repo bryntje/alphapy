@@ -30,7 +30,7 @@ class SettingsService:
         self._dsn = dsn
         self._pool: Optional[asyncpg.Pool] = None
         self._definitions: Dict[Tuple[str, str], SettingDefinition] = {}
-        self._overrides: Dict[Tuple[str, str], Any] = {}
+        self._overrides: Dict[Tuple[int, str, str], Any] = {}
         self._listeners: Dict[Tuple[str, str], List[SettingListener]] = {}
         self._ready = False
 
@@ -73,21 +73,22 @@ class SettingsService:
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS bot_settings (
+                    guild_id BIGINT NOT NULL,
                     scope TEXT NOT NULL,
                     key TEXT NOT NULL,
                     value JSONB NOT NULL,
                     value_type TEXT,
                     updated_by BIGINT,
                     updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    PRIMARY KEY(scope, key)
+                    PRIMARY KEY(guild_id, scope, key)
                 );
                 """
             )
 
-            rows = await conn.fetch("SELECT scope, key, value FROM bot_settings")
+            rows = await conn.fetch("SELECT guild_id, scope, key, value FROM bot_settings")
             for row in rows:
-                composite_key = (row["scope"], row["key"])
-                definition = self._definitions.get(composite_key)
+                composite_key = (row["guild_id"], row["scope"], row["key"])
+                definition = self._definitions.get((row["scope"], row["key"]))
                 if not definition:
                     continue  # Unknown setting stored earlier; ignore gracefully.
                 decoded = self._decode_value(row["value"], definition)
@@ -95,37 +96,37 @@ class SettingsService:
 
         self._pool = pool
 
-    def get(self, scope: str, key: str, fallback: Optional[Any] = None) -> Any:
+    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Optional[Any] = None) -> Any:
         definition = self._definitions.get((scope, key))
         if not definition:
             raise KeyError(f"Setting '{scope}.{key}' is not registered")
 
-        if (scope, key) in self._overrides:
-            return self._overrides[(scope, key)]
+        if (guild_id, scope, key) in self._overrides:
+            return self._overrides[(guild_id, scope, key)]
 
         if fallback is not None:
             return fallback
 
         return definition.default
 
-    def is_overridden(self, scope: str, key: str) -> bool:
-        return (scope, key) in self._overrides
+    def is_overridden(self, scope: str, key: str, guild_id: int = 0) -> bool:
+        return (guild_id, scope, key) in self._overrides
 
     def scopes(self) -> List[str]:
         return sorted({scope for scope, _ in self._definitions})
 
-    def list_scope(self, scope: str) -> List[Tuple[SettingDefinition, Any, bool]]:
+    def list_scope(self, scope: str, guild_id: int = 0) -> List[Tuple[SettingDefinition, Any, bool]]:
         items: List[Tuple[SettingDefinition, Any, bool]] = []
         for (registered_scope, registered_key), definition in self._definitions.items():
             if registered_scope != scope:
                 continue
-            value = self.get(registered_scope, registered_key)
-            overridden = self.is_overridden(registered_scope, registered_key)
+            value = self.get(registered_scope, registered_key, guild_id)
+            overridden = self.is_overridden(registered_scope, registered_key, guild_id)
             items.append((definition, value, overridden))
         items.sort(key=lambda item: item[0].key)
         return items
 
-    async def set(self, scope: str, key: str, value: Any, updated_by: Optional[int] = None) -> Any:
+    async def set(self, scope: str, key: str, value: Any, guild_id: int = 0, updated_by: Optional[int] = None) -> Any:
         definition = self._definitions.get((scope, key))
         if not definition:
             raise KeyError(f"Setting '{scope}.{key}' is not registered")
@@ -134,7 +135,7 @@ class SettingsService:
 
         if not self._dsn or not self._pool:
             # Run in-memory mode (useful for tests) if no database is configured.
-            self._overrides[(scope, key)] = coerced
+            self._overrides[(guild_id, scope, key)] = coerced
             await self._notify(scope, key, coerced)
             return coerced
 
@@ -142,12 +143,13 @@ class SettingsService:
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO bot_settings (scope, key, value, value_type, updated_by, updated_at)
-                VALUES ($1, $2, $3::jsonb, $4, $5, NOW())
-                ON CONFLICT(scope, key)
+                INSERT INTO bot_settings (guild_id, scope, key, value, value_type, updated_by, updated_at)
+                VALUES ($1, $2, $3, $4::jsonb, $5, $6, NOW())
+                ON CONFLICT(guild_id, scope, key)
                 DO UPDATE SET value = EXCLUDED.value, value_type = EXCLUDED.value_type,
                               updated_by = EXCLUDED.updated_by, updated_at = NOW();
                 """,
+                guild_id,
                 scope,
                 key,
                 payload,
@@ -155,24 +157,25 @@ class SettingsService:
                 updated_by,
             )
 
-        self._overrides[(scope, key)] = coerced
+        self._overrides[(guild_id, scope, key)] = coerced
         await self._notify(scope, key, coerced)
         return coerced
 
-    async def clear(self, scope: str, key: str, updated_by: Optional[int] = None) -> None:
-        if (scope, key) not in self._overrides:
+    async def clear(self, scope: str, key: str, guild_id: int = 0, updated_by: Optional[int] = None) -> None:
+        if (guild_id, scope, key) not in self._overrides:
             return
 
         if self._dsn and self._pool:
             async with self._pool.acquire() as conn:
                 await conn.execute(
-                    "DELETE FROM bot_settings WHERE scope = $1 AND key = $2",
+                    "DELETE FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
+                    guild_id,
                     scope,
                     key,
                 )
 
-        self._overrides.pop((scope, key), None)
-        value = self.get(scope, key)
+        self._overrides.pop((guild_id, scope, key), None)
+        value = self.get(scope, key, guild_id)
         await self._notify(scope, key, value)
 
     def add_listener(self, scope: str, key: str, listener: SettingListener) -> None:
