@@ -19,3 +19,15 @@ __pycache__/
 .DS_Store
 
 # Examples and templates
+
+# Database backups and migration files
+backup_*/
+*.backup
+backup_*.sql
+migrate_guild_settings.py
+backup_database.py
+MIGRATION_README.md
+
+# Temporary development files
+multi_guild_audit_prompt.md
+test_guild_settings.py

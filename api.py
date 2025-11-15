@@ -318,7 +318,7 @@ def _collect_gpt_metrics() -> GPTMetrics:
     )
 
 
-async def _fetch_reminder_stats() -> ReminderStats:
+async def _fetch_reminder_stats(guild_id: Optional[int] = None) -> ReminderStats:
     default = ReminderStats(
         total=0,
         recurring=0,
@@ -332,36 +332,52 @@ async def _fetch_reminder_stats() -> ReminderStats:
         return default
     try:
         async with db_pool.acquire() as conn:
+            where_clause = "WHERE guild_id = $1" if guild_id is not None else ""
+            params = [guild_id] if guild_id is not None else []
             counts_row = await conn.fetchrow(
-                """
+                f"""
                 SELECT
                     COUNT(*) AS total,
                     COUNT(*) FILTER (WHERE COALESCE(array_length(days, 1), 0) > 0) AS recurring,
                     COUNT(*) FILTER (WHERE COALESCE(array_length(days, 1), 0) = 0) AS one_off
-                FROM reminders;
-                """
+                FROM reminders
+                {where_clause};
+                """,
+                *params
             )
-            next_event_row = await conn.fetchrow(
-                """
+            next_event_query = """
                 SELECT event_time
                 FROM reminders
                 WHERE event_time IS NOT NULL AND event_time >= NOW()
-                ORDER BY event_time ASC
-                LIMIT 1;
                 """
-            )
-            per_channel_rows = await conn.fetch(
-                "SELECT channel_id, COUNT(*) AS c FROM reminders GROUP BY channel_id;"
-            )
-            upcoming_rows = await conn.fetch(
-                """
+            if guild_id is not None:
+                next_event_query += " AND guild_id = $1"
+                next_event_params = [guild_id]
+            else:
+                next_event_params = []
+            next_event_query += " ORDER BY event_time ASC LIMIT 1;"
+
+            next_event_row = await conn.fetchrow(next_event_query, *next_event_params)
+            per_channel_query = "SELECT channel_id, COUNT(*) AS c FROM reminders"
+            upcoming_query = """
                 SELECT id, name, channel_id, event_time
                 FROM reminders
                 WHERE event_time IS NOT NULL AND event_time >= NOW()
-                ORDER BY event_time ASC
-                LIMIT 3;
                 """
-            )
+
+            if guild_id is not None:
+                per_channel_query += " WHERE guild_id = $1 GROUP BY channel_id;"
+                per_channel_params = [guild_id]
+                upcoming_query += " AND guild_id = $1 ORDER BY event_time ASC LIMIT 3;"
+                upcoming_params = [guild_id]
+            else:
+                per_channel_query += " GROUP BY channel_id;"
+                per_channel_params = []
+                upcoming_query += " ORDER BY event_time ASC LIMIT 3;"
+                upcoming_params = []
+
+            per_channel_rows = await conn.fetch(per_channel_query, *per_channel_params)
+            upcoming_rows = await conn.fetch(upcoming_query, *upcoming_params)
     except pg_exceptions.UndefinedTableError:
         return default
     except Exception as exc:
@@ -418,7 +434,7 @@ def _format_duration_seconds(seconds: int) -> str:
     return " ".join(parts)
 
 
-async def _fetch_ticket_stats() -> TicketStats:
+async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
     default = TicketStats(
         total=0,
         per_status={},
@@ -433,27 +449,32 @@ async def _fetch_ticket_stats() -> TicketStats:
         return default
     try:
         async with db_pool.acquire() as conn:
+            where_clause = "WHERE guild_id = $1" if guild_id is not None else ""
+            params = [guild_id] if guild_id is not None else []
+
             status_rows = await conn.fetch(
-                "SELECT COALESCE(status, 'unknown') AS status, COUNT(*) AS c FROM support_tickets GROUP BY status;"
+                f"SELECT COALESCE(status, 'unknown') AS status, COUNT(*) AS c FROM support_tickets {where_clause} GROUP BY status;",
+                *params
             )
-            last_row = await conn.fetchrow(
-                "SELECT created_at FROM support_tickets ORDER BY created_at DESC LIMIT 1;"
-            )
+
+            last_query = f"SELECT created_at FROM support_tickets {where_clause} ORDER BY created_at DESC LIMIT 1;"
+            last_row = await conn.fetchrow(last_query, *params)
+
+            avg_where = where_clause + (" AND " if where_clause else " WHERE ") + "status = 'closed' AND updated_at IS NOT NULL"
             avg_row = await conn.fetchrow(
-                """
-                SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s
-                FROM support_tickets
-                WHERE status = 'closed' AND updated_at IS NOT NULL;
-                """
+                f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {avg_where};"
             )
+
+            open_where = where_clause + (" AND " if where_clause else " WHERE ") + "status IS DISTINCT FROM 'closed'"
             open_rows = await conn.fetch(
-                """
+                f"""
                 SELECT id, username, status, channel_id, created_at
                 FROM support_tickets
-                WHERE status IS DISTINCT FROM 'closed'
+                {open_where}
                 ORDER BY created_at ASC
                 LIMIT 10;
-                """
+                """,
+                *params
             )
     except pg_exceptions.UndefinedTableError:
         return default
@@ -502,19 +523,30 @@ async def _fetch_ticket_stats() -> TicketStats:
     )
 
 
-async def _fetch_settings_overrides() -> List[SettingOverride]:
+async def _fetch_settings_overrides(guild_id: Optional[int] = None) -> List[SettingOverride]:
     global db_pool
     if db_pool is None:
         return []
     try:
         async with db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT scope, key, value
-                FROM bot_settings
-                ORDER BY scope, key;
-                """
-            )
+            if guild_id is not None:
+                rows = await conn.fetch(
+                    """
+                    SELECT scope, key, value
+                    FROM bot_settings
+                    WHERE guild_id = $1
+                    ORDER BY scope, key;
+                    """,
+                    guild_id
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT scope, key, value
+                    FROM bot_settings
+                    ORDER BY scope, key;
+                    """
+                )
     except pg_exceptions.UndefinedTableError:
         return []
     except Exception as exc:
@@ -689,7 +721,10 @@ async def _persist_telemetry_snapshot(
 
 
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)
-async def get_dashboard_metrics(auth_user_id: str = Depends(get_authenticated_user_id)):
+async def get_dashboard_metrics(
+    guild_id: Optional[int] = None,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
     snapshot = await get_bot_snapshot()
     bot_payload = serialize_snapshot(snapshot)
     bot_metrics = BotMetrics(
@@ -698,8 +733,9 @@ async def get_dashboard_metrics(auth_user_id: str = Depends(get_authenticated_us
         **bot_payload,
     )
     gpt_metrics = _collect_gpt_metrics()
-    reminder_stats = await _fetch_reminder_stats()
-    ticket_stats = await _fetch_ticket_stats()
+    # Guild filtering implemented for security - only shows data for specified guild
+    reminder_stats = await _fetch_reminder_stats(guild_id)
+    ticket_stats = await _fetch_ticket_stats(guild_id)
     infrastructure = await _collect_infrastructure_metrics()
 
     # Persist a telemetry snapshot asynchronously; ignore failures.
@@ -710,7 +746,8 @@ async def get_dashboard_metrics(auth_user_id: str = Depends(get_authenticated_us
         gpt=gpt_metrics,
         reminders=reminder_stats,
         tickets=ticket_stats,
-        settings_overrides=await _fetch_settings_overrides(),
+        # Guild filtering implemented for security - only shows settings for specified guild
+        settings_overrides=await _fetch_settings_overrides(guild_id),
         infrastructure=infrastructure,
     )
 

@@ -193,14 +193,12 @@ async def on_ready():
     await bot.wait_until_ready()
     
     logger.info(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
-    logger.info(f"🔍 Ingeladen GUILD_ID vanuit config: {config.GUILD_ID}")
 
     logger.info("📡 Bekende guilds:")
     for guild in bot.guilds:
         logger.info(f"🔹 {guild.name} (ID: {guild.id})")
 
-    if config.GUILD_ID not in [guild.id for guild in bot.guilds]:
-        logger.error("❌ Error: De bot is NIET geconnecteerd aan de juiste server! Controleer of je hem correct hebt gejoined.")
+    logger.info(f"✅ Bot is succesvol opgestart en verbonden met {len(bot.guilds)} server(s)!")
     
     bot.add_view(GDPRView(bot))
 

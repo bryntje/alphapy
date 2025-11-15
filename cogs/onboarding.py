@@ -106,9 +106,11 @@ class Onboarding(commands.Cog):
         async with pool.acquire() as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (
-                    user_id BIGINT PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
                     responses JSONB,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(guild_id, user_id)
                 );
             ''')
         self.db = pool
@@ -172,7 +174,7 @@ class Onboarding(commands.Cog):
                 await interaction.followup.send(embed=summary_embed, ephemeral=True)
 
             # Sla de onboarding data op in de database
-            stored = await self.store_onboarding_data(user_id, answers)
+            stored = await self.store_onboarding_data(interaction.guild.id, user_id, answers)
             if not stored:
                 await interaction.followup.send(
                     "⚠️ Onboarding data kon niet opgeslagen worden. Probeer later opnieuw of contacteer een admin.",
@@ -244,7 +246,7 @@ class Onboarding(commands.Cog):
         except discord.errors.InteractionResponded:
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-    async def store_onboarding_data(self, user_id, responses) -> bool:
+    async def store_onboarding_data(self, guild_id: int, user_id, responses) -> bool:
         """Slaat onboarding data op in de database."""
         if not await self._ensure_pool():
             logger.error("❌ Onboarding: database niet beschikbaar, data niet opgeslagen")
@@ -255,11 +257,11 @@ class Onboarding(commands.Cog):
             async with self.db.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO onboarding (user_id, responses)
-                    VALUES ($1, $2)
-                    ON CONFLICT(user_id) DO UPDATE SET responses = $2;
+                    INSERT INTO onboarding (guild_id, user_id, responses)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT(guild_id, user_id) DO UPDATE SET responses = $3;
                     """,
-                    user_id, json.dumps(responses)
+                    guild_id, user_id, json.dumps(responses)
                 )
             logger.info(f"✅ Onboarding data opgeslagen voor {user_id}")
             return True

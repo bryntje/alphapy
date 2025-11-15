@@ -1,4 +1,4 @@
-__version__ = "1.5.0"
-CODENAME = "Dynamic Config"
+__version__ = "1.7.0"
+CODENAME = "Multi-Guild Horizon"
 
 

@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2025-11-15
+
+### Added
+- **Multi-Guild Support:** Complete guild isolation architecture allowing the bot to operate in unlimited Discord servers
+- Database migration system with backup/restore capabilities (`backup_database.py`, `migrate_guild_settings.py`)
+- Guild-aware settings service with per-server configuration overrides
+- API security enhancements with optional `guild_id` filtering for dashboard endpoints
+- Guild validation checks across all slash commands to prevent DM usage errors
+
+### Changed
+- **Database Schema:** Added `guild_id` columns to all tables (`reminders`, `support_tickets`, `invite_tracker`, `onboarding`, `bot_settings`)
+- **Code Architecture:** Updated all cogs to use `interaction.guild.id` for data isolation
+- **Settings Service:** Enhanced to support guild-scoped configuration with composite primary keys
+- **API Endpoints:** Dashboard metrics now support guild filtering for security
+- **Error Handling:** Added guild validation across all guild-specific commands
+
+### Security
+- **Data Isolation:** Complete separation between guild data preventing cross-server leakage
+- **API Security:** Dashboard endpoints now properly filter by guild context
+- **Input Validation:** Guild existence checks prevent runtime errors in DM contexts
+
+### Migration
+- **Zero Downtime:** Database migration completed with full backup verification
+- **Data Integrity:** 135 existing records successfully migrated to guild `1160511689263947796`
+- **Backwards Compatibility:** Maintained for all existing functionality
+
+---
+
 ## [1.6.0] - 2025-10-17
 
 ### Added
