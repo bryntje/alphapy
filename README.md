@@ -214,22 +214,78 @@ Reach out via `bryan.dhaen@gmail.com` or open an issue on GitHub.
 
 ---
 
-## 🧭 Operational Playbook (Reminders & Logging)
+## 🧭 Operational Playbook (Multi-Guild Setup & Reminders)
 
-Use this quick checklist after deploys or config changes to validate reminder behavior and logs.
+Use this quick checklist after adding the bot to a new server to configure it properly.
 
-1) Pre-flight
-- Ensure env vars are set: `DATABASE_URL`, `WATCHER_LOG_CHANNEL`, `ENABLE_EVERYONE_MENTIONS`. (GUILD_ID is auto-detected for multi-guild support)
-- Bot has permissions to read/send in announcement and log channels.
+### Multi-Guild Configuration (Required for each server)
 
-2) Startup verification
-- Start the bot and watch the process logs; you should see DB connection OK.
-- Confirm the `reminders` table includes `call_time` and `last_sent_at`.
+1) **System Configuration**
+   ```bash
+   # Set log channel for bot messages and errors
+   /config system set_log_channel #logs
 
-3) One-off reminder test (embed-driven)
-- Post an announcement embed with a concrete date/time.
-- Expect two sends: at T−60 and at T0 (event time).
-- After T0 send, the reminder should be deleted.
+   # Set rules channel for onboarding
+   /config system set_rules_channel #rules
+
+   # Set onboarding channel for welcome messages
+   /config system set_onboarding_channel #welcome
+   ```
+
+2) **Feature-Specific Configuration**
+   ```bash
+   # Embed watcher for auto-reminders
+   /config embedwatcher announcements_channel_id #announcements
+
+   # Invite tracker
+   /config invites announcement_channel_id #invites
+
+   # GDPR compliance
+   /config gdpr channel_id #gdpr
+
+   # Ticket system
+   /config ticketbot category_id [ticket-category-id]
+   /config ticketbot staff_role_id @Staff
+   /config ticketbot escalation_role_id @Moderators
+   ```
+
+3) **Optional Settings**
+   ```bash
+   # Allow @everyone mentions in reminders (use carefully!)
+   /config reminders allow_everyone_mentions true
+
+   # Set default reminder channel
+   /config reminders default_channel_id #general
+   ```
+
+### Pre-flight Checklist
+
+- ✅ `DATABASE_URL` environment variable is set
+- ✅ Bot has administrator permissions in the server
+- ✅ All required channels exist and bot can read/send messages
+- ✅ Bot can create channels and roles (for ticket system)
+
+### Startup Verification
+
+- Start the bot and watch the process logs; you should see:
+  - ✅ "DB pool created"
+  - ✅ "✅ Bot is succesvol opgestart en verbonden met X server(s)!"
+  - ✅ Guild enumeration with server names and IDs
+
+### Testing Functionality
+
+1) **Embed-driven reminder test**
+   - Post an embed in the announcements channel with date/time
+   - Bot should detect it and schedule a reminder
+   - Check `/config system show` to verify channel settings
+
+2) **Manual reminder test**
+   - Use `/reminder add` command
+   - Verify reminder appears in list and triggers at correct time
+
+3) **Import functionality test**
+   - Use `/import_onboarding` and `/import_invites` commands (owner only)
+   - Ensure proper channels are configured first
 - Check `WATCHER_LOG_CHANNEL` for “created”, “sent”, and “deleted” log embeds.
 
 4) Recurring reminder test
