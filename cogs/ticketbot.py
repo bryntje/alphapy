@@ -229,6 +229,55 @@ class TicketBot(commands.Cog):
         except Exception as e:
             log_with_guild(f"Kon ticketbot log embed niet versturen: {e}", guild_id, "error")
 
+    @app_commands.command(name="ticket_migrate", description="[ADMIN] Manually run ticket migration")
+    @app_checks.is_owner()
+    async def ticket_migrate(self, interaction: discord.Interaction):
+        """Manually trigger ticket ID migration for existing data."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Ensure DB connection
+            if self.conn is None:
+                try:
+                    await self.setup_db()
+                except Exception as e:
+                    await interaction.followup.send(f"❌ Database connection failed: {e}", ephemeral=True)
+                    return
+
+            conn_safe = cast(asyncpg.Connection, self.conn)
+
+            # Check if migration is needed
+            has_guild_ticket_id = await conn_safe.fetchval(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'guild_ticket_id'"
+            )
+
+            if not has_guild_ticket_id:
+                await interaction.followup.send("❌ guild_ticket_id column does not exist. Migration will run on next bot restart.", ephemeral=True)
+                return
+
+            # Run migration
+            result = await conn_safe.execute("""
+                UPDATE support_tickets
+                SET guild_ticket_id = sub.row_num
+                FROM (
+                    SELECT id, ROW_NUMBER() OVER (PARTITION BY guild_id ORDER BY created_at) as row_num
+                    FROM support_tickets
+                    WHERE guild_ticket_id IS NULL OR guild_ticket_id = id
+                ) sub
+                WHERE support_tickets.id = sub.id;
+            """)
+
+            # Get affected row count
+            rows_affected = result.split()[1] if result else "0"
+            await interaction.followup.send(f"✅ Ticket migration completed. {rows_affected} records updated.", ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Migration failed: {e}", ephemeral=True)
+
     @app_commands.command(name="ticket", description="Create a support ticket")
     @app_checks.cooldown(1, 30.0)  # simple user cooldown
     @app_commands.describe(description="Short description of your issue")
