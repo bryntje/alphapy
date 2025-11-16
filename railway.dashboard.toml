@@ -1,8 +1,8 @@
 [build]
 builder = "Dockerfile"
+dockerfilePath = "shared/innersync-core/Dockerfile"
 
 [deploy]
-sourceDirectory = "shared/innersync-core"
 healthcheckPath = "/api/health"
 restartPolicyType = "on_failure"
 startCommand = "node server.js"
