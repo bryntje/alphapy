@@ -207,7 +207,7 @@ class TicketBot(commands.Cog):
     @app_commands.command(name="ticket", description="Create a support ticket")
     @app_checks.cooldown(1, 30.0)  # simple user cooldown
     @app_commands.describe(description="Short description of your issue")
-    async def ticket(self, interaction: discord.Interaction, description: str):
+    async def ticket(self, interaction: discord.Interaction, description: str) -> None:
         """Slash command to create a new ticket.
 
         - Stores the ticket in `support_tickets`
@@ -383,7 +383,7 @@ class TicketBot(commands.Cog):
         )
 
     @app_commands.command(name="ticket_panel_post", description="Post a ticket panel with a Create ticket button")
-    async def ticket_panel_post(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+    async def ticket_panel_post(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None) -> None:
         if not await is_owner_or_admin_interaction(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -726,7 +726,7 @@ class TicketBot(commands.Cog):
             self.public = public
             self.scope = scope  # 'all' | '7d' | '30d'
 
-        async def _update(self, interaction: discord.Interaction, scope: Optional[str] = None):
+        async def _update(self, interaction: discord.Interaction, scope: Optional[str] = None) -> None:
             if scope:
                 self.scope = scope
             if not await is_owner_or_admin_interaction(interaction):
@@ -754,24 +754,24 @@ class TicketBot(commands.Cog):
                 pass
 
         @discord.ui.button(label="Last 7d", style=discord.ButtonStyle.secondary, custom_id="stats_7d")
-        async def last7(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async def last7(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
             await self._update(interaction, "7d")
 
         @discord.ui.button(label="Last 30d", style=discord.ButtonStyle.secondary, custom_id="stats_30d")
-        async def last30(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async def last30(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
             await self._update(interaction, "30d")
 
         @discord.ui.button(label="All time", style=discord.ButtonStyle.secondary, custom_id="stats_all")
-        async def alltime(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async def alltime(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
             await self._update(interaction, "all")
 
         @discord.ui.button(label="Refresh 🔄", style=discord.ButtonStyle.primary, custom_id="stats_refresh")
-        async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
             await self._update(interaction, None)
 
     @app_commands.command(name="ticket_stats", description="Show ticket statistics (admin)")
     @app_commands.describe(public="Post in channel instead of ephemeral (default: false)")
-    async def ticket_stats(self, interaction: discord.Interaction, public: bool = False):
+    async def ticket_stats(self, interaction: discord.Interaction, public: bool = False) -> None:
         if not await is_owner_or_admin_interaction(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -1014,7 +1014,7 @@ class TicketActionView(discord.ui.View):
                     # Lightweight view with a placeholder button
                     view = discord.ui.View()
 
-                    async def add_faq_callback(interaction: discord.Interaction):
+                    async def add_faq_callback(interaction: discord.Interaction) -> None:
                         if not await is_owner_or_admin_interaction(interaction):
                             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                             return
@@ -1059,7 +1059,7 @@ class TicketActionView(discord.ui.View):
             return None
 
     @discord.ui.button(label="🎟️ Claim ticket", style=discord.ButtonStyle.primary, custom_id="ticket_claim_btn")
-    async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te claimen.", ephemeral=True)
             return
@@ -1100,7 +1100,7 @@ class TicketActionView(discord.ui.View):
         )
 
     @discord.ui.button(label="🔒 Close ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_btn")
-    async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te sluiten.", ephemeral=True)
             return
@@ -1189,7 +1189,7 @@ class TicketActionView(discord.ui.View):
                 )
 
     @discord.ui.button(label="⏳ Wait for user", style=discord.ButtonStyle.secondary, custom_id="ticket_wait_btn")
-    async def wait_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def wait_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -1201,7 +1201,7 @@ class TicketActionView(discord.ui.View):
         await self._log(interaction, "🕒 Ticket status", f"id={self.ticket_id} → waiting_for_user")
 
     @discord.ui.button(label="🚩 Escalate", style=discord.ButtonStyle.secondary, custom_id="ticket_escalate_btn")
-    async def escalate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def escalate_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -1220,7 +1220,7 @@ class TicketActionView(discord.ui.View):
         await self._log(interaction, "🚩 Ticket escalated", f"id={self.ticket_id} • to={escalated_to or '-'}")
 
     @discord.ui.button(label="🗄 Archive ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_archive_btn", disabled=True)
-    async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         # Admin-only
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
@@ -1263,7 +1263,7 @@ class TicketActionView(discord.ui.View):
         )
     
     @discord.ui.button(label="💡 Suggest reply", style=discord.ButtonStyle.success, custom_id="ticket_suggest_btn")
-    async def suggest_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def suggest_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -1300,7 +1300,7 @@ class TicketOpenView(discord.ui.View):
         self.cog = cog
 
     @discord.ui.button(label="📨 Create ticket", style=discord.ButtonStyle.primary, custom_id="ticket_open_btn")
-    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.defer(ephemeral=True)
         await self.cog.create_ticket_for_user(interaction, description="New ticket")
 
