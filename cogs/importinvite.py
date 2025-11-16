@@ -29,8 +29,12 @@ class ImportInvites(commands.Cog):
         # Gebruik guild-specifieke announcement kanaal setting
         try:
             announcement_channel_id = int(self.bot.settings.get("invites", "announcement_channel_id", ctx.guild.id))
+            if announcement_channel_id == 0:
+                await ctx.send("❌ Invite announcement kanaal niet geconfigureerd voor deze server. Stel eerst `/config invites announcement_channel_id #invites` in.")
+                return
         except (KeyError, ValueError):
-            announcement_channel_id = config.INVITE_ANNOUNCEMENT_CHANNEL_ID
+            await ctx.send("❌ Invite announcement kanaal niet geconfigureerd voor deze server. Stel eerst `/config invites announcement_channel_id #invites` in.")
+            return
 
         channel = self.bot.get_channel(announcement_channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):

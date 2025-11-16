@@ -407,7 +407,7 @@ class EmbedReminderWatcher(commands.Cog):
                 return int(self.settings.get("embedwatcher", "announcements_channel_id", guild_id))
             except KeyError:
                 pass
-        return getattr(config, "ANNOUNCEMENTS_CHANNEL_ID", 0)
+        return 0  # Moet geconfigureerd worden via /config embedwatcher announcements_channel_id
 
     def _get_log_channel_id(self) -> int:
         if self.settings:
@@ -415,7 +415,7 @@ class EmbedReminderWatcher(commands.Cog):
                 return int(self.settings.get("system", "log_channel_id", guild_id))
             except KeyError:
                 pass
-        return getattr(config, "WATCHER_LOG_CHANNEL", 0)
+        return 0  # Moet geconfigureerd worden via /config system set_log_channel
 
     def _get_reminder_offset(self) -> int:
         if self.settings:

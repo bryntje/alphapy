@@ -30,8 +30,12 @@ class ImportData(commands.Cog):
         # Gebruik guild-specifieke log kanaal setting
         try:
             log_channel_id = int(self.bot.settings.get("system", "log_channel_id", ctx.guild.id))
+            if log_channel_id == 0:
+                await ctx.send("❌ Log kanaal niet geconfigureerd voor deze server. Stel eerst `/config system set_log_channel #logs` in.")
+                return
         except (KeyError, ValueError):
-            log_channel_id = config.LOG_CHANNEL_ID
+            await ctx.send("❌ Log kanaal niet geconfigureerd voor deze server. Stel eerst `/config system set_log_channel #logs` in.")
+            return
 
         channel = self.bot.get_channel(log_channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):

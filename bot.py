@@ -32,7 +32,7 @@ settings_service.register(
         key="log_channel_id",
         description="Kanaal voor status- en foutmeldingen.",
         value_type="channel",
-        default=getattr(config, "WATCHER_LOG_CHANNEL", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -41,7 +41,7 @@ settings_service.register(
         key="rules_channel_id",
         description="Kanaal voor rules en onboarding (#rules).",
         value_type="channel",
-        default=getattr(config, "RULES_CHANNEL_ID", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -50,7 +50,7 @@ settings_service.register(
         key="onboarding_channel_id",
         description="Kanaal waar onboarding plaatsvindt.",
         value_type="channel",
-        default=getattr(config, "ONBOARDING_CHANNEL_ID", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -59,7 +59,7 @@ settings_service.register(
         key="announcements_channel_id",
         description="Kanaal dat gecontroleerd wordt op auto-reminder embeds.",
         value_type="channel",
-        default=getattr(config, "ANNOUNCEMENTS_CHANNEL_ID", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -79,7 +79,7 @@ settings_service.register(
         key="category_id",
         description="Categorie waarin nieuwe ticketkanalen worden aangemaakt.",
         value_type="channel",
-        default=getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -88,7 +88,7 @@ settings_service.register(
         key="staff_role_id",
         description="Rol die toegang krijgt tot ticketkanalen.",
         value_type="role",
-        default=getattr(config, "TICKET_ACCESS_ROLE_ID", None),
+        default=None,  # Moet per guild geconfigureerd worden
         allow_null=True,
     )
 )
@@ -98,7 +98,7 @@ settings_service.register(
         key="escalation_role_id",
         description="Rol voor escalatie van tickets.",
         value_type="role",
-        default=getattr(config, "TICKET_ESCALATION_ROLE_ID", None),
+        default=None,  # Moet per guild geconfigureerd worden
         allow_null=True,
     )
 )
@@ -137,7 +137,7 @@ settings_service.register(
         key="announcement_channel_id",
         description="Kanaal voor automatische invite meldingen.",
         value_type="channel",
-        default=getattr(config, "INVITE_ANNOUNCEMENT_CHANNEL_ID", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -173,7 +173,7 @@ settings_service.register(
         key="channel_id",
         description="Kanaal waarin het GDPR-document gepost wordt.",
         value_type="channel",
-        default=getattr(config, "GDPR_CHANNEL_ID", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -191,7 +191,7 @@ settings_service.register(
         key="default_channel_id",
         description="Standaard kanaal voor nieuwe reminders (optioneel).",
         value_type="channel",
-        default=0,
+        default=0,  # Moet per guild geconfigureerd worden
         allow_null=True,
     )
 )
@@ -201,7 +201,7 @@ settings_service.register(
         key="allow_everyone_mentions",
         description="Sta @everyone toe bij reminders.",
         value_type="bool",
-        default=getattr(config, "ENABLE_EVERYONE_MENTIONS", False),
+        default=False,  # Moet per guild geconfigureerd worden
     )
 )
 
