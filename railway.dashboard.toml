@@ -5,7 +5,6 @@ dockerfilePath = "shared/innersync-core/Dockerfile"
 [deploy]
 healthcheckPath = "/api/health"
 restartPolicyType = "on_failure"
-startCommand = "node server.js"
 
 # Next.js dashboard service for Alphapy Discord bot
 # Serves the web configuration interface at alphapy.innersync.tech
