@@ -9,12 +9,6 @@ from utils.settings_service import SettingsService, SettingDefinition
 import config
 from typing import Optional
 
-from threading import Thread
-import uvicorn
-
-def start_api():
-    uvicorn.run("api:app", host="0.0.0.0", port=8000)
-
 
 # Intentions instellen
 intents = discord.Intents.default()
@@ -289,8 +283,7 @@ async def setup_hook():
 
 
 bot.setup_hook = setup_hook
-# API server DRAIT WEL MEE voor health checks en monitoring data naar Mind
-Thread(target=start_api, daemon=True).start()
+# API server wordt apart gedraaid in de dashboard service
 
 
 # Start bot
