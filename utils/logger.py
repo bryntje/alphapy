@@ -77,3 +77,46 @@ def log_gpt_error(error_type: str = "unknown", user_id: Optional[int] = None) ->
 
 
 logger = logging.getLogger("bot")
+
+
+def log_with_guild(message: str, guild_id: int = None, level: str = "info", extra: dict = None) -> None:
+    """Enhanced logging function with guild context"""
+    if guild_id:
+        message = f"[Guild:{guild_id}] {message}"
+
+    if extra:
+        message = f"{message} {extra}"
+
+    if level == "debug":
+        logger.debug(message)
+    elif level == "info":
+        logger.info(message)
+    elif level == "warning":
+        logger.warning(message)
+    elif level == "error":
+        logger.error(message)
+    elif level == "critical":
+        logger.critical(message)
+    else:
+        logger.info(message)
+
+
+def log_guild_action(guild_id: int, action: str, user: str = None, details: str = None, level: str = "info") -> None:
+    """Log guild-specific actions with structured format"""
+    parts = [f"GUILD:{guild_id}"]
+    if user:
+        parts.append(f"USER:{user}")
+    parts.append(f"ACTION:{action}")
+    if details:
+        parts.append(f"DETAILS:{details}")
+
+    message = " | ".join(parts)
+    log_with_guild(message, guild_id, level)
+
+
+def log_database_event(event: str, guild_id: int = None, details: str = None, level: str = "info") -> None:
+    """Log database-related events"""
+    message = f"DATABASE: {event}"
+    if details:
+        message += f" - {details}"
+    log_with_guild(message, guild_id, level)

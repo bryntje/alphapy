@@ -7,13 +7,14 @@ import json
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List, Dict, cast
+from utils.settings_service import SettingsService
 
 try:
     import config_local as config  # type: ignore
 except ImportError:
     import config  # type: ignore
 
-from utils.logger import logger
+from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
 from gpt.helpers import ask_gpt
 from utils.checks_interaction import is_owner_or_admin_interaction
 from utils.timezone import BRUSSELS_TZ
@@ -34,7 +35,10 @@ class TicketBot(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
-        self.settings = getattr(bot, "settings", None)
+        settings = getattr(bot, "settings", None)
+        if settings is None or not hasattr(settings, 'get'):
+            raise RuntimeError("SettingsService not available on bot instance")
+        self.settings = settings  # type: ignore
         # Start async setup zonder de event loop te blokkeren
         self.bot.loop.create_task(self.setup_db())
         # Register persistent view so the ticket button keeps working after restarts
@@ -47,6 +51,7 @@ class TicketBot(commands.Cog):
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
         try:
             conn = await asyncpg.connect(config.DATABASE_URL)
+            log_database_event("DB_CONNECTED", details="TicketBot database connection established")
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS support_tickets (
@@ -158,14 +163,18 @@ class TicketBot(commands.Cog):
                 pass
             self.conn = conn
             logger.info("✅ TicketBot: DB ready (support_tickets)")
+            log_database_event("DB_READY", details="TicketBot database fully initialized")
         except Exception as e:
+            log_database_event("DB_INIT_ERROR", details=f"TicketBot setup failed: {e}")
             logger.error(f"❌ TicketBot: DB init error: {e}")
 
     async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
-        """Stuur een log-embed naar het `WATCHER_LOG_CHANNEL` kanaal.
+        """Send log embed to the correct guild's log channel"""
+        if guild_id == 0:
+            # Fallback for legacy calls without guild_id
+            logger.warning("⚠️ TicketBot send_log_embed called without guild_id - skipping Discord log")
+            return
 
-        Houdt gelijke stijl aan als andere cogs. Vervangt kleur per level.
-        """
         try:
             color_map = {
                 "info": 0x3498db,
@@ -176,14 +185,24 @@ class TicketBot(commands.Cog):
             }
             color = color_map.get(level, 0x3498db)
             embed = discord.Embed(title=title, description=description, color=color)
-            embed.set_footer(text="ticketbot")
+            embed.set_footer(text=f"ticketbot | Guild: {guild_id}")
+
             channel_id = self._get_log_channel_id(guild_id)
+            if channel_id == 0:
+                # No log channel configured for this guild
+                log_with_guild(f"No log channel configured for ticketbot logging", guild_id, "debug")
+                return
+
             channel = self.bot.get_channel(channel_id)
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
+                log_guild_action(guild_id, "LOG_SENT", details=f"ticketbot: {title}")
+            else:
+                log_with_guild(f"Log channel {channel_id} not found or not accessible", guild_id, "warning")
+
         except Exception as e:
-            logger.warning(f"⚠️ TicketBot: kon log embed niet versturen: {e}")
+            log_with_guild(f"Kon ticketbot log embed niet versturen: {e}", guild_id, "error")
 
     @app_commands.command(name="ticket", description="Create a support ticket")
     @app_checks.cooldown(1, 30.0)  # simple user cooldown
@@ -569,7 +588,7 @@ class TicketBot(commands.Cog):
         return None
 
     def _get_log_channel_id(self, guild_id: int) -> int:
-        value = self._settings_get("system", "log_channel_id", guild_id, getattr(config, "WATCHER_LOG_CHANNEL", 0))
+        value = self._settings_get("system", "log_channel_id", guild_id, 0)  # Moet geconfigureerd worden via /config system set_log_channel
         return int(value) if value is not None else 0
 
     def _get_ticket_category_id(self, guild_id: int) -> Optional[int]:
@@ -889,7 +908,7 @@ class TicketActionView(discord.ui.View):
             color = color_map.get(level, 0x3498db)
             embed = discord.Embed(title=title, description=desc, color=color)
             embed.set_footer(text="ticketbot")
-            channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+            channel = self.bot.get_channel(0)  # Moet geconfigureerd worden via /config system set_log_channel
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
@@ -1027,7 +1046,7 @@ class TicketActionView(discord.ui.View):
                     if self.cog and interaction.guild:
                         channel_id = self.cog._get_log_channel_id(interaction.guild.id)
                     if channel_id is None:
-                        channel_id = getattr(config, "WATCHER_LOG_CHANNEL", 0)
+                        channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
                     channel = self.bot.get_channel(channel_id)
                     if channel and hasattr(channel, "send"):
                         text_channel = cast(discord.TextChannel, channel)

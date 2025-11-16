@@ -18,6 +18,21 @@ Meer dan een echo — het was een bewijs dat de bot leefde. En dat was genoeg.
 
 ## 📚 De evolutie
 
+### 2025: Multi-Guild Horizon
+Na een jaar van single-guild operaties, werd de fundamentele beperking duidelijk: de bot kon maar in één Discord server tegelijk werken. Dit veranderde alles.
+
+**De grote migratie:**
+- **Database schema:** Alle tabellen kregen `guild_id` kolommen met composite primary keys
+- **Code isolation:** Elke feature werd volledig guild-aware gemaakt
+- **Configuration freedom:** Admins kunnen nu elke server onafhankelijk configureren
+- **Zero defaults:** Geen enkele fallback naar hardcoded Alphapips-specifieke waarden
+
+**Resultaat:** Een bot die in honderden servers tegelijk kan werken, met complete data-isolatie en onafhankelijke configuratie per community.
+
+---
+
+## 📚 De evolutie (vervolg)
+
 ### 🔹 Onboarding Flow
 Wat begon met manueel rollen toekennen, groeide uit tot een:
 - 4-stappen flow met modals en follow-ups

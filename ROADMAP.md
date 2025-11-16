@@ -2,11 +2,11 @@
 
 This document outlines the planned work after v1.3.0 (TicketBot). **Phase 1.5 (Multi-Guild Support) is now complete!** 🎉
 
-## ✅ COMPLETED: Multi-Guild Architecture (Phase 1.5)
+## ✅ COMPLETED: Multi-Guild Architecture + Advanced Onboarding (Phase 1.5)
 
 **Status:** ✅ **Fully Implemented & Deployed**
 
-The bot now supports unlimited Discord servers with complete data isolation between guilds. All features (reminders, tickets, invites, settings, onboarding) work independently per server.
+The bot now supports unlimited Discord servers with complete data isolation between guilds. All features (reminders, tickets, invites, settings, onboarding) work independently per server, enhanced with a comprehensive modular onboarding system.
 
 ### What Was Implemented:
 - **Database Schema:** Added `guild_id` columns to all tables with composite primary keys
@@ -15,12 +15,52 @@ The bot now supports unlimited Discord servers with complete data isolation betw
 - **API Security:** Dashboard endpoints now support optional `guild_id` filtering
 - **Migration Tools:** Safe database migration scripts with backup/restore capabilities
 - **Error Handling:** Guild validation checks across all commands
+- **Modular Onboarding:** Complete onboarding system with configurable questions, rules, and completion roles
+- **Panel Management:** Admin commands to post onboarding start buttons in any channel
+- **Question Types:** Support for select, multiselect, text, and email input with modal handling
+- **Type Safety:** Zero pyright errors with complete type checking implementation
 
 ### Deployment Summary:
 - ✅ **135 data entries** successfully migrated to guild `1160511689263947796`
 - ✅ **Zero downtime** deployment with backup verification
 - ✅ **Full backwards compatibility** maintained
 - ✅ **Security hardening** - no cross-guild data leakage
+
+---
+
+## 🔄 **Phase 1.75: Web Configuration Interface**
+
+**Status:** 📋 **Planned - Post Multi-Guild Release**
+
+Transform the extensive slash command configuration system into a user-friendly web interface for server administrators.
+
+### Why This Matters:
+- **20+ settings** currently managed via slash commands
+- Not all admins prefer Discord command-line interfaces
+- Web interface enables better UX, batch operations, and mobile access
+- Aligns with modern admin dashboard expectations
+
+### Implementation Scope:
+- **Discord OAuth2 Integration** - Secure login with guild permissions
+- **Settings Dashboard** - Visual overview of all guild configurations
+- **Batch Operations** - Update multiple settings simultaneously
+- **Rule/Question Builders** - Drag-and-drop onboarding customization
+- **Visual Previews** - See how changes affect user experience
+- **Settings History** - Audit trail and rollback capabilities
+- **Community Templates** - Pre-built configurations for common use cases
+
+### Technical Foundation:
+- **Frontend:** Next.js (extends existing `shared/innersync-core`)
+- **Backend:** Extend FastAPI `/api/dashboard/*` endpoints
+- **Database:** Direct access to guild settings tables
+- **Auth:** Discord OAuth2 with per-guild permission checks
+- **Hosting:** Railway (same platform as bot)
+
+### Success Metrics:
+- Reduced configuration time for server admins
+- Increased adoption of advanced features
+- Positive feedback from mobile users
+- Fewer support questions about configuration
 
 ---
 

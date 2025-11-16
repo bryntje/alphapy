@@ -2,19 +2,45 @@
 import unittest
 from datetime import datetime
 from cogs.embed_watcher import EmbedReminderWatcher
+from utils.settings_service import SettingsService
 import discord
+from discord.ext import commands
+from typing import cast
+
+class MockSettingsService:
+    def get(self, scope, key, guild_id):
+        # Return default values for tests
+        if scope == "embedwatcher" and (key == "reminder_offset" or key == "reminder_offset_minutes"):
+            return 60  # default 60 minutes
+        return None
+
+    def set(self, scope, key, value, guild_id):
+        pass
+
+    def is_overridden(self, scope, key, guild_id):
+        return False
+
+    def list_scope(self, scope, guild_id):
+        return {}
+
+    def clear(self, scope, key, guild_id):
+        pass
 
 class DummyBot:
+    def __init__(self):
+        self.settings = MockSettingsService()
+
     def get_channel(self, *_):
         return None
 
 class TestEmbedParser(unittest.TestCase):
     def setUp(self):
-        self.w = EmbedReminderWatcher(DummyBot())
+        self.w = EmbedReminderWatcher(cast(commands.Bot, DummyBot()))
 
     def test_parse_datetime_with_full_date(self):
         dt, tz = self.w.parse_datetime("12 March 2025", "Time: 14:30")
         self.assertIsNotNone(dt)
+        assert dt is not None  # For type checker
         self.assertEqual(dt.year, 2025)
         self.assertEqual(dt.month, 3)
         self.assertEqual(dt.day, 12)
@@ -24,6 +50,7 @@ class TestEmbedParser(unittest.TestCase):
     def test_parse_datetime_without_date(self):
         dt, tz = self.w.parse_datetime(None, "Time: 09:15")
         self.assertIsNotNone(dt)
+        assert dt is not None  # For type checker
         self.assertEqual(dt.hour, 9)
         self.assertEqual(dt.minute, 15)
 

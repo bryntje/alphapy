@@ -4,6 +4,7 @@ import json
 from discord.ext import commands
 from typing import Optional
 import config
+from utils.logger import log_with_guild
 
 class ImportData(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -26,9 +27,19 @@ class ImportData(commands.Cog):
     @commands.is_owner()
     async def import_onboarding(self, ctx):
         """Importeer onboarding data uit embed berichten in het logkanaal."""
-        channel = self.bot.get_channel(config.LOG_CHANNEL_ID)
+        # Gebruik guild-specifieke log kanaal setting
+        try:
+            log_channel_id = int(self.bot.settings.get("system", "log_channel_id", ctx.guild.id))
+            if log_channel_id == 0:
+                await ctx.send("❌ Log kanaal niet geconfigureerd voor deze server. Stel eerst `/config system set_log_channel #logs` in.")
+                return
+        except (KeyError, ValueError):
+            await ctx.send("❌ Log kanaal niet geconfigureerd voor deze server. Stel eerst `/config system set_log_channel #logs` in.")
+            return
+
+        channel = self.bot.get_channel(log_channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await ctx.send("Kanaal niet gevonden!")
+            await ctx.send("Log kanaal niet gevonden! Configureer eerst `/config system log_channel_id` voor deze server.")
             return
 
         async for message in channel.history(limit=1000):  # Pas aan indien nodig
