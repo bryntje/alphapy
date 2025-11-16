@@ -6,7 +6,6 @@ import uuid
 import re
 import asyncio
 from typing import Optional, Dict, Any, cast
-from config import ROLE_ID, LOG_CHANNEL_ID
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import config
@@ -464,22 +463,10 @@ class Onboarding(commands.Cog):
                 answer_text = self._format_answer(question, raw_answer)
                 log_embed.add_field(name=question['question'], value=f"➜ {answer_text}", inline=False)
 
-            log_channel = self.bot.get_channel(LOG_CHANNEL_ID)
+            log_channel_id = self.bot.settings.get("system", "log_channel_id", interaction.guild.id)
+            log_channel = self.bot.get_channel(log_channel_id) if log_channel_id else None
             if log_channel:
                 await log_channel.send(embed=log_embed)
-
-            # Automatische roltoewijzing
-            try:
-                guild = interaction.guild
-                if guild:
-                    member = guild.get_member(user_id)
-                    if member:
-                        role = guild.get_role(ROLE_ID)
-                        if role:
-                            await member.add_roles(role)
-                            logger.info(f"Assigned role {role.name} to {member.display_name}")
-            except Exception as e:
-                logger.error(f"Error assigning role to user {user_id}: {e}")
 
             return
 
