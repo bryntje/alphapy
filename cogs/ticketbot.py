@@ -1051,18 +1051,22 @@ class TicketActionView(discord.ui.View):
                     btn.callback = add_faq_callback  # type: ignore
                     view.add_item(btn)
 
-                channel_id = None
-                    if self.cog and interaction.guild:
-                        channel_id = self.cog._get_log_channel_id(interaction.guild.id)
-                if channel_id is None:
-                    channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
-                channel = self.bot.get_channel(channel_id)
-                if channel and hasattr(channel, "send"):
-                    text_channel = cast(discord.TextChannel, channel)
-                    await text_channel.send(embed=embed, view=view)
-                except Exception:
-                    pass
-            return key
+                    # Send to log channel
+                    try:
+                        channel_id = None
+                        if self.cog and interaction.guild:
+                            channel_id = self.cog._get_log_channel_id(interaction.guild.id)
+                        if channel_id is None:
+                            channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
+                        channel = self.bot.get_channel(channel_id)
+                        if channel and hasattr(channel, "send"):
+                            text_channel = cast(discord.TextChannel, channel)
+                            await text_channel.send(embed=embed, view=view)
+                    except Exception:
+                        pass
+                    return key  # Return key only when FAQ is proposed
+
+            return None  # Normal case: no FAQ proposed
         except Exception:
             # Do not block on summary registration failures
             return None
