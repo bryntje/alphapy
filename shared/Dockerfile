@@ -14,11 +14,8 @@ FROM base AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
-# Copy essential Next.js files from shared/ directory
-COPY shared/app ./app
-COPY shared/public ./public
-COPY shared/next.config.ts ./
-COPY shared/package.json ./
+# Copy entire shared directory contents
+COPY shared/ ./
 RUN pnpm run build
 
 FROM base AS runner
