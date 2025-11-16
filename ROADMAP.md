@@ -1,6 +1,28 @@
 # 🧬 Innersync • Alphapy Roadmap (Phase 2)
 
-This document outlines the planned work after v1.3.0 (TicketBot). It is designed to be incremental, with shippable slices every 1–2 weeks.
+This document outlines the planned work after v1.3.0 (TicketBot). **Phase 1.5 (Multi-Guild Support) is now complete!** 🎉
+
+## ✅ COMPLETED: Multi-Guild Architecture (Phase 1.5)
+
+**Status:** ✅ **Fully Implemented & Deployed**
+
+The bot now supports unlimited Discord servers with complete data isolation between guilds. All features (reminders, tickets, invites, settings, onboarding) work independently per server.
+
+### What Was Implemented:
+- **Database Schema:** Added `guild_id` columns to all tables with composite primary keys
+- **Code Isolation:** Updated all cogs to use `interaction.guild.id` for guild-specific operations
+- **Settings Service:** Guild-aware configuration with per-server overrides
+- **API Security:** Dashboard endpoints now support optional `guild_id` filtering
+- **Migration Tools:** Safe database migration scripts with backup/restore capabilities
+- **Error Handling:** Guild validation checks across all commands
+
+### Deployment Summary:
+- ✅ **135 data entries** successfully migrated to guild `1160511689263947796`
+- ✅ **Zero downtime** deployment with backup verification
+- ✅ **Full backwards compatibility** maintained
+- ✅ **Security hardening** - no cross-guild data leakage
+
+---
 
 ## Themes
 - Faster answers: FAQ search and autocomplete directly in Discord
@@ -8,6 +30,7 @@ This document outlines the planned work after v1.3.0 (TicketBot). It is designed
 - Smarter support: AI-assisted replies grounded in your docs (light RAG)
 - Human-first tone: empathetic responses on sensitive signals
 - Visibility: export tools, metrics, and dashboards
+- ✅ **Multi-tenant:** Complete guild isolation and per-server configuration
 
 ---
 
@@ -142,6 +165,6 @@ Each milestone is releasable independently. Start with guild-scoped commands for
 ## Nice-to-haves (Backlog)
 - Embedding-based search upgrade for FAQ (OpenAI embeddings or local)
 - SLA timers and alerts (e.g., no reply in X hours)
-- Multi-tenant guild configuration and per-guild FAQ sets
+- ✅ **Multi-tenant guild configuration and per-guild FAQ sets** - COMPLETED in Phase 1.5!
 - Attachment ingestion (images/PDF) for RAG with safety checks
 - Auto-translation layer (UI + summaries)

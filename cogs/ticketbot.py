@@ -51,6 +51,7 @@ class TicketBot(commands.Cog):
                 """
                 CREATE TABLE IF NOT EXISTS support_tickets (
                     id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
                     user_id BIGINT NOT NULL,
                     username TEXT,
                     description TEXT NOT NULL,
@@ -160,7 +161,7 @@ class TicketBot(commands.Cog):
         except Exception as e:
             logger.error(f"❌ TicketBot: DB init error: {e}")
 
-    async def send_log_embed(self, title: str, description: str, level: str = "info") -> None:
+    async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
         """Stuur een log-embed naar het `WATCHER_LOG_CHANNEL` kanaal.
 
         Houdt gelijke stijl aan als andere cogs. Vervangt kleur per level.
@@ -176,7 +177,7 @@ class TicketBot(commands.Cog):
             color = color_map.get(level, 0x3498db)
             embed = discord.Embed(title=title, description=description, color=color)
             embed.set_footer(text="ticketbot")
-            channel_id = self._get_log_channel_id()
+            channel_id = self._get_log_channel_id(guild_id)
             channel = self.bot.get_channel(channel_id)
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
@@ -194,6 +195,9 @@ class TicketBot(commands.Cog):
         - Sends a confirmation embed with details
         - Logs to `WATCHER_LOG_CHANNEL`
         """
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
 
         # Zorg dat DB klaar is
@@ -212,10 +216,11 @@ class TicketBot(commands.Cog):
             conn_safe = cast(asyncpg.Connection, self.conn)
             row = await conn_safe.fetchrow(
                 """
-                INSERT INTO support_tickets (user_id, username, description)
-                VALUES ($1, $2, $3)
+                INSERT INTO support_tickets (guild_id, user_id, username, description)
+                VALUES ($1, $2, $3, $4)
                 RETURNING id, created_at
                 """,
+                interaction.guild.id,
                 int(user.id),
                 str(user),
                 description.strip(),
@@ -226,6 +231,7 @@ class TicketBot(commands.Cog):
                 title="🚨 Ticket creation failed",
                 description=f"User: {user_display}\nError: {e}",
                 level="error",
+                guild_id=interaction.guild.id,
             )
             await interaction.followup.send("❌ Something went wrong creating your ticket.")
             return
@@ -259,7 +265,7 @@ class TicketBot(commands.Cog):
             if guild is None:
                 raise RuntimeError("Guild context ontbreekt")
 
-            category_id = self._get_ticket_category_id()
+            category_id = self._get_ticket_category_id(guild.id)
             if not category_id:
                 raise RuntimeError("Ticket categorie niet ingesteld")
             fetched_channel = guild.get_channel(category_id) or await self.bot.fetch_channel(category_id)
@@ -298,9 +304,10 @@ class TicketBot(commands.Cog):
             try:
                 conn_safe2 = cast(asyncpg.Connection, self.conn)
                 await conn_safe2.execute(
-                    "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2",
+                    "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
                     int(channel.id),
                     ticket_id,
+                    interaction.guild.id,
                 )
             except Exception as e:
                 logger.warning(f"⚠️ TicketBot: kon channel_id niet opslaan: {e}")
@@ -353,6 +360,7 @@ class TicketBot(commands.Cog):
                 f"Description: {description}"
             ),
             level="success",
+            guild_id=interaction.guild.id,
         )
 
     @app_commands.command(name="ticket_panel_post", description="Post a ticket panel with a Create ticket button")
@@ -389,10 +397,11 @@ class TicketBot(commands.Cog):
             conn_safe = cast(asyncpg.Connection, self.conn)
             row = await conn_safe.fetchrow(
                 """
-                INSERT INTO support_tickets (user_id, username, description)
-                VALUES ($1, $2, $3)
+                INSERT INTO support_tickets (guild_id, user_id, username, description)
+                VALUES ($1, $2, $3, $4)
                 RETURNING id, created_at
                 """,
+                interaction.guild.id,
                 int(user.id),
                 str(user),
                 (description or "").strip() or "—",
@@ -403,6 +412,7 @@ class TicketBot(commands.Cog):
                 title="🚨 Ticket creation failed",
                 description=f"User: {user_display}\nError: {e}",
                 level="error",
+                guild_id=interaction.guild.id,
             )
             await interaction.followup.send("❌ Something went wrong creating your ticket.")
             return
@@ -413,7 +423,7 @@ class TicketBot(commands.Cog):
         if guild is None:
             await interaction.followup.send("❌ Guild context missing.")
             return
-        category_id = self._get_ticket_category_id()
+        category_id = self._get_ticket_category_id(guild.id)
         if not category_id:
             await interaction.followup.send("❌ Ticket category not configured.")
             return
@@ -450,8 +460,8 @@ class TicketBot(commands.Cog):
         try:
             conn_safe2 = cast(asyncpg.Connection, self.conn)
             await conn_safe2.execute(
-                "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2",
-                int(channel.id), ticket_id
+                "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
+                int(channel.id), ticket_id, interaction.guild.id
             )
         except Exception:
             pass
@@ -494,22 +504,25 @@ class TicketBot(commands.Cog):
         parts.append(f"{mins}m")
         return " ".join(parts)
 
-    async def _compute_stats(self, scope: str) -> tuple[dict, Optional[int]]:
+    async def _compute_stats(self, scope: str, guild_id: Optional[int] = None) -> tuple[dict, Optional[int]]:
         # scope: 'all' | '7d' | '30d'
         if not self.conn:
             return {}, None
-        where = ""
+        where_parts = []
+        if guild_id is not None:
+            where_parts.append(f"guild_id = {guild_id}")
         if scope == "7d":
-            where = "WHERE created_at >= NOW() - INTERVAL '7 days'"
+            where_parts.append("created_at >= NOW() - INTERVAL '7 days'")
         elif scope == "30d":
-            where = "WHERE created_at >= NOW() - INTERVAL '30 days'"
+            where_parts.append("created_at >= NOW() - INTERVAL '30 days'")
+        where = "WHERE " + " AND ".join(where_parts) if where_parts else ""
         counts = await self.conn.fetch(f"SELECT status, COUNT(*) c FROM support_tickets {where} GROUP BY status")
         status_to_count = {r["status"] or "-": int(r["c"]) for r in counts}
         # average cycle (closed only)
+        avg_where_parts = where_parts + ["status='closed'"] if where_parts else ["status='closed'"]
+        avg_where = "WHERE " + " AND ".join(avg_where_parts) if avg_where_parts else ""
         avg_row = await self.conn.fetchrow(
-            f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {where} AND status='closed'"
-            if where else
-            "SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets WHERE status='closed'"
+            f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {avg_where}"
         )
         avg_seconds: Optional[int] = None
         if avg_row and avg_row["avg_s"] is not None:
@@ -540,10 +553,10 @@ class TicketBot(commands.Cog):
             topics[key] = int(row.get("cnt") or 0)
         return topics
 
-    def _settings_get(self, scope: str, key: str, fallback: Optional[int] = None):
+    def _settings_get(self, scope: str, key: str, guild_id: int, fallback: Optional[int] = None):
         if self.settings:
             try:
-                return self.settings.get(scope, key)
+                return self.settings.get(scope, key, guild_id)
             except KeyError:
                 pass
         return fallback
@@ -555,20 +568,21 @@ class TicketBot(commands.Cog):
             return int(value)
         return None
 
-    def _get_log_channel_id(self) -> int:
-        value = self._settings_get("system", "log_channel_id", getattr(config, "WATCHER_LOG_CHANNEL", 0))
+    def _get_log_channel_id(self, guild_id: int) -> int:
+        value = self._settings_get("system", "log_channel_id", guild_id, getattr(config, "WATCHER_LOG_CHANNEL", 0))
         return int(value) if value is not None else 0
 
-    def _get_ticket_category_id(self) -> Optional[int]:
+    def _get_ticket_category_id(self, guild_id: int) -> Optional[int]:
         value = self._settings_get(
             "ticketbot",
             "category_id",
+            guild_id,
             getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275),
         )
         return self._normalize_id(value)
 
-    def _get_support_role_id(self) -> Optional[int]:
-        value = self._settings_get("ticketbot", "staff_role_id", getattr(config, "TICKET_ACCESS_ROLE_ID", None))
+    def _get_support_role_id(self, guild_id: int) -> Optional[int]:
+        value = self._settings_get("ticketbot", "staff_role_id", guild_id, getattr(config, "TICKET_ACCESS_ROLE_ID", None))
         normalized = self._normalize_id(value)
         if normalized is not None:
             return normalized
@@ -583,14 +597,14 @@ class TicketBot(commands.Cog):
         return None
 
     def _resolve_support_role(self, guild: discord.Guild) -> Optional[discord.Role]:
-        role_id = self._get_support_role_id()
+        role_id = self._get_support_role_id(guild.id)
         if role_id:
             role = guild.get_role(int(role_id))
             if role:
                 return role
         return None
 
-    def _get_escalation_role_id(self) -> Optional[int]:
+    def _get_escalation_role_id(self, guild_id: int) -> Optional[int]:
         value = self._settings_get(
             "ticketbot",
             "escalation_role_id",
@@ -610,7 +624,7 @@ class TicketBot(commands.Cog):
         if not self.conn:
             return
 
-        counts, avg_seconds = await self._compute_stats("all")
+        counts, avg_seconds = await self._compute_stats("all", None)
         snapshot: Dict[str, object] = {
             "counts": counts,
             "avg": avg_seconds,
@@ -699,7 +713,7 @@ class TicketBot(commands.Cog):
             if not await is_owner_or_admin_interaction(interaction):
                 await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                 return
-            counts, avg_seconds = await self.cog._compute_stats(self.scope)
+            counts, avg_seconds = await self.cog._compute_stats(self.scope, interaction.guild.id)
             embed = self.cog._stats_embed(counts, avg_seconds)
             await interaction.response.edit_message(embed=embed, view=self)
             try:
@@ -747,7 +761,7 @@ class TicketBot(commands.Cog):
         if not self.conn:
             await interaction.followup.send("❌ Database not connected.", ephemeral=not public)
             return
-        counts, avg_seconds = await self._compute_stats("all")
+        counts, avg_seconds = await self._compute_stats("all", None)
         embed = self._stats_embed(counts, avg_seconds)
         view = TicketBot.StatsView(self, public=public, scope="all")
         await interaction.followup.send(embed=embed, view=view, ephemeral=not public)
@@ -803,30 +817,34 @@ class TicketBot(commands.Cog):
         try:
             if new_status == "escalated":
                 await self.conn.execute(
-                    "UPDATE support_tickets SET status=$1, escalated_to=$2, updated_at=NOW() WHERE id=$3",
+                    "UPDATE support_tickets SET status=$1, escalated_to=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
                     new_status,
                     int(escalate_to.id) if escalate_to else None,
                     id,
+                    interaction.guild.id,
                 )
             elif new_status == "claimed":
                 await self.conn.execute(
-                    "UPDATE support_tickets SET status=$1, updated_at=NOW(), claimed_by=COALESCE(claimed_by,$2), claimed_at=COALESCE(claimed_at,NOW()) WHERE id=$3",
+                    "UPDATE support_tickets SET status=$1, updated_at=NOW(), claimed_by=COALESCE(claimed_by,$2), claimed_at=COALESCE(claimed_at,NOW()) WHERE id=$3 AND guild_id=$4",
                     new_status,
                     int(interaction.user.id),
                     id,
+                    interaction.guild.id,
                 )
             elif new_status == "archived":
                 await self.conn.execute(
-                    "UPDATE support_tickets SET status=$1, archived_at=NOW(), archived_by=$2, updated_at=NOW() WHERE id=$3",
+                    "UPDATE support_tickets SET status=$1, archived_at=NOW(), archived_by=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
                     new_status,
                     int(interaction.user.id),
                     id,
+                    interaction.guild.id,
                 )
             else:
                 await self.conn.execute(
-                    "UPDATE support_tickets SET status=$1, updated_at=NOW() WHERE id=$2",
+                    "UPDATE support_tickets SET status=$1, updated_at=NOW() WHERE id=$2 AND guild_id=$3",
                     new_status,
                     id,
+                    interaction.guild.id,
                 )
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to update status: {e}", ephemeral=True)
@@ -1006,8 +1024,8 @@ class TicketActionView(discord.ui.View):
                     view.add_item(btn)
 
                     channel_id = None
-                    if self.cog:
-                        channel_id = self.cog._get_log_channel_id()
+                    if self.cog and interaction.guild:
+                        channel_id = self.cog._get_log_channel_id(interaction.guild.id)
                     if channel_id is None:
                         channel_id = getattr(config, "WATCHER_LOG_CHANNEL", 0)
                     channel = self.bot.get_channel(channel_id)
@@ -1170,7 +1188,7 @@ class TicketActionView(discord.ui.View):
             return
         escalated_to = None
         if self.cog:
-            escalated_to = self.cog._get_escalation_role_id()
+            escalated_to = self.cog._get_escalation_role_id(guild.id)
         if escalated_to is None:
             target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
             escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None

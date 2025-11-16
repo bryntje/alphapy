@@ -37,7 +37,7 @@ class ReminderCog(commands.Cog):
         if not self.check_reminders.is_running():
             self.check_reminders.start()
 
-    async def send_log_embed(self, title: str, description: str, level: str = "info") -> None:
+    async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
         try:
             color_map = {
                 "info": 0x3498db,
@@ -50,7 +50,7 @@ class ReminderCog(commands.Cog):
             from discord import Embed
             embed = Embed(title=title, description=description, color=color)
             embed.set_footer(text="reminders")
-            channel_id = self._get_log_channel_id()
+            channel_id = self._get_log_channel_id(guild_id)
             channel = self.bot.get_channel(channel_id)
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
@@ -60,25 +60,26 @@ class ReminderCog(commands.Cog):
 
     async def _connect_database(self) -> None:
         conn = await asyncpg.connect(config.DATABASE_URL)
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS reminders (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                channel_id BIGINT NOT NULL,
-                time TIME,
-                call_time TIME,
-                days TEXT[],
-                message TEXT,
-                created_by BIGINT,
-                origin_channel_id BIGINT,
-                origin_message_id BIGINT,
-                event_time TIMESTAMPTZ,
-                location TEXT,
-                last_sent_at TIMESTAMPTZ
-            );
-            """
-        )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reminders (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    name TEXT NOT NULL,
+                    channel_id BIGINT NOT NULL,
+                    time TIME,
+                    call_time TIME,
+                    days TEXT[],
+                    message TEXT,
+                    created_by BIGINT,
+                    origin_channel_id BIGINT,
+                    origin_message_id BIGINT,
+                    event_time TIMESTAMPTZ,
+                    location TEXT,
+                    last_sent_at TIMESTAMPTZ
+                );
+                """
+            )
         await conn.execute(
             "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
         )
@@ -141,7 +142,7 @@ class ReminderCog(commands.Cog):
     ):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
-        if not self._is_enabled():
+        if not self._is_enabled(interaction.guild.id):
             await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
             return
 
@@ -217,7 +218,7 @@ class ReminderCog(commands.Cog):
             return
 
         if channel is None:
-            default_channel_id = self._get_default_channel_id()
+            default_channel_id = self._get_default_channel_id(interaction.guild.id)
             if default_channel_id:
                 resolved = self.bot.get_channel(default_channel_id)
                 if resolved is None:
@@ -262,10 +263,12 @@ class ReminderCog(commands.Cog):
             await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
             return
 
+        guild_id = interaction.guild.id
         await conn.execute(
-            """INSERT INTO reminders (name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            """INSERT INTO reminders (guild_id, name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                RETURNING id""",
+            guild_id,
             name,
             channel_id,
             time_obj,
@@ -291,6 +294,7 @@ class ReminderCog(commands.Cog):
                 f"Dagen: `{', '.join(days_list) if days_list else '—'}`"
             ),
             level="success",
+            guild_id=interaction.guild.id,
         )
 
         debug_str = "\n".join(debug_info) if debug_info else "ℹ️ Geen extra info uit embed gehaald."
@@ -301,8 +305,11 @@ class ReminderCog(commands.Cog):
 
     @app_commands.command(name="reminder_list", description="📋 Bekijk je actieve reminders")
     async def reminder_list(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
-        if not self._is_enabled():
+        if not self._is_enabled(interaction.guild.id):
             await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
             return
         if not await self._ensure_connection():
@@ -316,18 +323,19 @@ class ReminderCog(commands.Cog):
 
         is_admin = await is_owner_or_admin_interaction(interaction)
 
+        guild_id = interaction.guild.id
         if is_admin:
-            query = "SELECT id, name, time, days FROM reminders ORDER BY time;"
-            params: List[Any] = []
+            query = "SELECT id, name, time, days FROM reminders WHERE guild_id = $1 ORDER BY time;"
+            params: List[Any] = [guild_id]
         else:
             query = (
                 """
                 SELECT id, name, time, days FROM reminders
-                WHERE created_by = $1 OR channel_id = $2
+                WHERE guild_id = $1 AND (created_by = $2 OR channel_id = $3)
                 ORDER BY time;
                 """
             )
-            params = [user_id, channel_id]
+            params = [guild_id, user_id, channel_id]
 
         try:
             conn = self.conn
@@ -366,7 +374,7 @@ class ReminderCog(commands.Cog):
     @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
     async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int):
         await interaction.response.defer(ephemeral=True)
-        if not self._is_enabled():
+        if not self._is_enabled(interaction.guild.id):
             await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
             return
         if not await self._ensure_connection():
@@ -378,52 +386,54 @@ class ReminderCog(commands.Cog):
             await interaction.followup.send("⛔ Database niet verbonden.", ephemeral=True)
             return
 
-        row = await conn.fetchrow("SELECT * FROM reminders WHERE id = $1", reminder_id)
+        guild_id = interaction.guild.id
+        row = await conn.fetchrow("SELECT * FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)
         
         if not row:
             await interaction.followup.send(f"❌ Geen reminder gevonden met ID `{reminder_id}`.")
             return
 
-        await conn.execute("DELETE FROM reminders WHERE id = $1", reminder_id)
+        await conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)
         await interaction.followup.send(
             f"🗑️ Reminder **{row['name']}** (ID: `{reminder_id}`) werd succesvol verwijderd."
         )
     
     @reminder_delete.autocomplete("reminder_id")
     async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str):
-        if not self._is_enabled():
+        if not self._is_enabled(interaction.guild.id):
             return []
         if not await self._ensure_connection():
             return []
         conn = self.conn
         if conn is None:
             return []
-        rows = await conn.fetch("SELECT id, name FROM reminders ORDER BY id DESC LIMIT 25")
+        guild_id = interaction.guild.id
+        rows = await conn.fetch("SELECT id, name FROM reminders WHERE guild_id = $1 ORDER BY id DESC LIMIT 25", guild_id)
         return [
             app_commands.Choice(name=f"ID {row['id']} – {row['name'][:30]}", value=row["id"])
             for row in rows if current.lower() in str(row["id"]) or current.lower() in row["name"].lower()
         ]
 
-    def _get_log_channel_id(self) -> int:
+    def _get_log_channel_id(self, guild_id: int) -> int:
         if self.settings:
             try:
-                return int(self.settings.get("system", "log_channel_id"))
+                return int(self.settings.get("system", "log_channel_id", guild_id))
             except KeyError:
                 pass
         return getattr(config, "WATCHER_LOG_CHANNEL", 0)
 
-    def _is_enabled(self) -> bool:
+    def _is_enabled(self, guild_id: int) -> bool:
         if self.settings:
             try:
-                return bool(self.settings.get("reminders", "enabled"))
+                return bool(self.settings.get("reminders", "enabled", guild_id))
             except KeyError:
                 pass
         return True
 
-    def _get_default_channel_id(self) -> Optional[int]:
+    def _get_default_channel_id(self, guild_id: int) -> Optional[int]:
         if self.settings:
             try:
-                value = self.settings.get("reminders", "default_channel_id")
+                value = self.settings.get("reminders", "default_channel_id", guild_id)
                 if value:
                     return int(value)
             except KeyError:
@@ -432,18 +442,16 @@ class ReminderCog(commands.Cog):
                 logger.warning("⚠️ Reminders: default_channel_id ongeldig in settings.")
         return None
 
-    def _allow_everyone_mentions(self) -> bool:
+    def _allow_everyone_mentions(self, guild_id: int) -> bool:
         if self.settings:
             try:
-                return bool(self.settings.get("reminders", "allow_everyone_mentions"))
+                return bool(self.settings.get("reminders", "allow_everyone_mentions", guild_id))
             except KeyError:
                 pass
         return getattr(config, "ENABLE_EVERYONE_MENTIONS", False)
 
     @tasks.loop(seconds=60)
     async def check_reminders(self) -> None:
-        if not self._is_enabled():
-            return
         if not await self._ensure_connection():
             logger.warning("⛔ Database connection not ready.")
             return
@@ -460,7 +468,7 @@ class ReminderCog(commands.Cog):
         try:
             rows = await conn.fetch(
                 """
-                SELECT id, channel_id, name, message, location,
+                SELECT id, guild_id, channel_id, name, message, location,
                        origin_channel_id, origin_message_id, event_time, days, call_time,
                        last_sent_at
                 FROM reminders
@@ -562,7 +570,7 @@ class ReminderCog(commands.Cog):
                     embed.add_field(name="🔗 Original", value=f"[Click here]({link})", inline=False)
 
                 text_channel = cast(discord.TextChannel, channel)
-                mention_enabled = self._allow_everyone_mentions()
+                mention_enabled = self._allow_everyone_mentions(row["guild_id"])
                 content = "@everyone" if mention_enabled else None
                 await text_channel.send(
                     content=content,
@@ -580,13 +588,15 @@ class ReminderCog(commands.Cog):
                         f"Tijd (weergave): `{call_time_obj.strftime('%H:%M')}`"
                     ),
                     level="info",
+                    guild_id=row["guild_id"],
                 )
                 # Update idempotency marker
                 try:
                     await conn.execute(
-                        "UPDATE reminders SET last_sent_at = $1 WHERE id = $2",
+                        "UPDATE reminders SET last_sent_at = $1 WHERE id = $2 AND guild_id = $3",
                         now,
                         row["id"],
+                        row["guild_id"],
                     )
                 except Exception:
                     logger.exception("⚠️ Kon last_sent_at niet updaten")
@@ -603,7 +613,7 @@ class ReminderCog(commands.Cog):
                         event_time_str = event_dt_for_delete.strftime("%H:%M:%S")
                         is_t0_send = (event_time_str == current_time_str)
                     if is_t0_send:
-                        await conn.execute("DELETE FROM reminders WHERE id = $1", row["id"])
+                        await conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", row["id"], row["guild_id"])
                         logger.info(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na T0-verzenden.")
                         await self.send_log_embed(
                             title="🗑️ Reminder verwijderd (one-off)",
@@ -614,6 +624,7 @@ class ReminderCog(commands.Cog):
                                 f"Verwijderd na T0 op {now.strftime('%Y-%m-%d %H:%M')}"
                             ),
                             level="warning",
+                            guild_id=row["guild_id"],
                         )
 
         except Exception as e:

@@ -16,11 +16,11 @@ class GDPRAnnouncement(commands.Cog):
         """
         Post the GDPR Data Processing and Confidentiality Agreement in the designated channel and pin the message.
         """
-        if not self._is_enabled():
+        if not self._is_enabled(ctx.guild.id):
             await ctx.send("⚠️ GDPR-functionaliteit is momenteel uitgeschakeld.")
             return
 
-        channel_id = self._get_channel_id()
+        channel_id = self._get_channel_id(ctx.guild.id)
         if not channel_id:
             await ctx.send("⚠️ Geen GDPR kanaal ingesteld.")
             return
@@ -85,18 +85,18 @@ class GDPRAnnouncement(commands.Cog):
         await message.pin()
         await ctx.send("GDPR document posted and pinned.")
 
-    def _is_enabled(self) -> bool:
+    def _is_enabled(self, guild_id: int) -> bool:
         if self.settings:
             try:
-                return bool(self.settings.get("gdpr", "enabled"))
+                return bool(self.settings.get("gdpr", "enabled", guild_id))
             except KeyError:
                 pass
         return True
 
-    def _get_channel_id(self) -> Optional[int]:
+    def _get_channel_id(self, guild_id: int) -> Optional[int]:
         if self.settings:
             try:
-                value = self.settings.get("gdpr", "channel_id")
+                value = self.settings.get("gdpr", "channel_id", guild_id)
                 if value:
                     return int(value)
             except KeyError:
@@ -119,16 +119,16 @@ class GDPRButton(discord.ui.Button):
         self.settings = getattr(bot, "settings", None)
     
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not self._is_enabled():
+        if not self._is_enabled(ctx.guild.id):
             await interaction.response.send_message("⚠️ GDPR-functionaliteit is momenteel uitgeschakeld.", ephemeral=True)
             return
         await store_gdpr_acceptance(interaction.user.id)
         await interaction.response.send_message("Thank you for accepting the GDPR terms.", ephemeral=True)
 
-    def _is_enabled(self) -> bool:
+    def _is_enabled(self, guild_id: int) -> bool:
         if self.settings:
             try:
-                return bool(self.settings.get("gdpr", "enabled"))
+                return bool(self.settings.get("gdpr", "enabled", guild_id))
             except KeyError:
                 pass
         return True
