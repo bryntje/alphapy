@@ -19,9 +19,6 @@ class InviteTracker(commands.Cog):
     async def on_ready(self):
         """Laad de bestaande invites bij bot-start."""
         await self.bot.wait_until_ready()  # Wacht tot de bot klaar is
-        if not self._is_enabled():
-            logger.info("📴 InviteTracker staat uit; cache wordt niet geladen.")
-            return
         for guild in self.bot.guilds:
             try:
                 self.invites_cache[guild.id] = await guild.invites()
@@ -34,61 +31,63 @@ class InviteTracker(commands.Cog):
         conn = await asyncpg.connect(config.DATABASE_URL)
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS invite_tracker (
-                user_id BIGINT PRIMARY KEY,
-                invite_count INTEGER DEFAULT 0
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                invite_count INTEGER DEFAULT 0,
+                PRIMARY KEY(guild_id, user_id)
             );
         ''')
         await conn.close()
 
-    async def update_invite_count(self, inviter_id: int, count: int = None):
+    async def update_invite_count(self, guild_id: int, inviter_id: int, count: Optional[int] = None):
         """Verhoog of stel de invite count in de database in."""
         conn = await asyncpg.connect(config.DATABASE_URL)
-    
+
         if count is None:
             # Verhoog de invites met 1 als er geen specifieke waarde wordt gegeven
             await conn.execute(
                 """
-                INSERT INTO invite_tracker (user_id, invite_count)
-                VALUES ($1, 1)
-                ON CONFLICT(user_id) DO UPDATE SET invite_count = invite_tracker.invite_count + 1;
+                INSERT INTO invite_tracker (guild_id, user_id, invite_count)
+                VALUES ($1, $2, 1)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET invite_count = invite_tracker.invite_count + 1;
                 """,
-                inviter_id
+                guild_id, inviter_id
             )
         else:
             # Stel het aantal invites handmatig in
             await conn.execute(
                 """
-                INSERT INTO invite_tracker (user_id, invite_count)
-                VALUES ($1, $2)
-                ON CONFLICT(user_id) DO UPDATE SET invite_count = $2;
+                INSERT INTO invite_tracker (guild_id, user_id, invite_count)
+                VALUES ($1, $2, $3)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET invite_count = $3;
                 """,
-                inviter_id, count
+                guild_id, inviter_id, count
             )
-    
+
         await conn.close()
     
-    async def get_invite_leaderboard(self, limit=10):
+    async def get_invite_leaderboard(self, guild_id: int, limit=10):
         """Haal de top gebruikers op met de meeste invites."""
         conn = await asyncpg.connect(config.DATABASE_URL)
         rows = await conn.fetch(
-            "SELECT user_id, invite_count FROM invite_tracker ORDER BY invite_count DESC LIMIT $1",
-            limit
+            "SELECT user_id, invite_count FROM invite_tracker WHERE guild_id = $1 ORDER BY invite_count DESC LIMIT $2",
+            guild_id, limit
         )
         await conn.close()
         return rows
 
-    def _is_enabled(self) -> bool:
+    def _is_enabled(self, guild_id: int) -> bool:
         if self.settings:
             try:
-                return bool(self.settings.get("invites", "enabled"))
+                return bool(self.settings.get("invites", "enabled", guild_id))
             except KeyError:
                 pass
         return True
 
-    def _get_announcement_channel_id(self) -> Optional[int]:
+    def _get_announcement_channel_id(self, guild_id: int) -> Optional[int]:
         if self.settings:
             try:
-                value = self.settings.get("invites", "announcement_channel_id")
+                value = self.settings.get("invites", "announcement_channel_id", guild_id)
                 if value:
                     return int(value)
             except KeyError:
@@ -97,11 +96,11 @@ class InviteTracker(commands.Cog):
                 logger.warning("⚠️ InviteTracker: announcement_channel_id ongeldig in settings.")
         return getattr(config, "INVITE_ANNOUNCEMENT_CHANNEL_ID", 0)
 
-    def _get_template(self, *, with_inviter: bool) -> str:
+    def _get_template(self, *, with_inviter: bool, guild_id: int) -> str:
         key = "with_inviter_template" if with_inviter else "no_inviter_template"
         if self.settings:
             try:
-                value = self.settings.get("invites", key)
+                value = self.settings.get("invites", key, guild_id)
                 if isinstance(value, str) and value.strip():
                     return value
             except KeyError:
@@ -139,10 +138,14 @@ class InviteTracker(commands.Cog):
 
     @app_commands.command(name="inviteleaderboard", description="Toon een leaderboard van de hoogste invite counts.")
     async def inviteleaderboard(self, interaction: discord.Interaction, limit: int = 10):
-        if not self._is_enabled():
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.")
+            return
+
+        if not self._is_enabled(interaction.guild.id):
             await interaction.response.send_message("⚠️ Invite tracker staat momenteel uit.")
             return
-        rows = await self.get_invite_leaderboard(limit)
+        rows = await self.get_invite_leaderboard(interaction.guild.id, limit)
         if not rows:
             await interaction.response.send_message("Er is nog geen invite data beschikbaar.")
             return
@@ -157,24 +160,30 @@ class InviteTracker(commands.Cog):
     @app_commands.command(name="setinvites", description="Stelt handmatig het aantal invites voor een gebruiker in.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def setinvites(self, interaction: discord.Interaction, member: discord.Member, count: int):
-        if not self._is_enabled():
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.")
+            return
+        if not self._is_enabled(interaction.guild.id):
             await interaction.response.send_message("⚠️ Invite tracker staat momenteel uit.")
             return
-        await self.update_invite_count(member.id, count)
+        await self.update_invite_count(interaction.guild.id, member.id, count)
         await interaction.response.send_message(f"Invite count for {member.display_name} is set to {count}.")
 
     @app_commands.command(name="resetinvites", description="Reset het invite aantal voor een gebruiker naar 0.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def resetinvites(self, interaction: discord.Interaction, member: discord.Member):
-        if not self._is_enabled():
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.")
+            return
+        if not self._is_enabled(interaction.guild.id):
             await interaction.response.send_message("⚠️ Invite tracker staat momenteel uit.")
             return
-        await self.update_invite_count(member.id, 0)
+        await self.update_invite_count(interaction.guild.id, member.id, 0)
         await interaction.response.send_message(f"Invite count for {member.display_name} has been reset to 0.")
     
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        if not self._is_enabled():
+        if not self._is_enabled(member.guild.id):
             return
         await self.bot.wait_until_ready()  # Zorg dat de bot klaar is
 
@@ -202,7 +211,7 @@ class InviteTracker(commands.Cog):
         self.invites_cache[guild.id] = new_invites
 
         # Stuur een bericht in het kanaal
-        channel_id = self._get_announcement_channel_id()
+        channel_id = self._get_announcement_channel_id(guild.id)
         if not channel_id:
             logger.warning("⚠️ InviteTracker: announcement channel niet ingesteld.")
             return
@@ -219,11 +228,14 @@ class InviteTracker(commands.Cog):
         conn: Optional[asyncpg.Connection] = None
 
         if inviter:
-            await self.update_invite_count(inviter.id)
+            await self.update_invite_count(member.guild.id, inviter.id)
             # Haal de huidige invite count op na de update
             try:
                 conn = await asyncpg.connect(config.DATABASE_URL)
-                row = await conn.fetchrow("SELECT invite_count FROM invite_tracker WHERE user_id = $1", inviter.id)
+                if conn is not None:
+                    row = await conn.fetchrow("SELECT invite_count FROM invite_tracker WHERE guild_id = $1 AND user_id = $2", member.guild.id, inviter.id)
+                else:
+                    row = None
             except Exception as e:
                 logger.warning(f"⚠️ InviteTracker: DB-fout bij ophalen invite_count: {e}")
                 row = None
@@ -236,7 +248,7 @@ class InviteTracker(commands.Cog):
 
             invite_count = row["invite_count"] if row else 0
             message = self._render_template(
-                self._get_template(with_inviter=True),
+                self._get_template(with_inviter=True, guild_id=member.guild.id),
                 member=member,
                 inviter=inviter,
                 count=invite_count,
@@ -244,7 +256,7 @@ class InviteTracker(commands.Cog):
             await channel.send(message)
         else:
             message = self._render_template(
-                self._get_template(with_inviter=False),
+                self._get_template(with_inviter=False, guild_id=member.guild.id),
                 member=member,
                 inviter=None,
                 count=None,
