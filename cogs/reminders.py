@@ -60,26 +60,26 @@ class ReminderCog(commands.Cog):
 
     async def _connect_database(self) -> None:
         conn = await asyncpg.connect(config.DATABASE_URL)
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS reminders (
-                    id SERIAL PRIMARY KEY,
-                    guild_id BIGINT NOT NULL,
-                    name TEXT NOT NULL,
-                    channel_id BIGINT NOT NULL,
-                    time TIME,
-                    call_time TIME,
-                    days TEXT[],
-                    message TEXT,
-                    created_by BIGINT,
-                    origin_channel_id BIGINT,
-                    origin_message_id BIGINT,
-                    event_time TIMESTAMPTZ,
-                    location TEXT,
-                    last_sent_at TIMESTAMPTZ
-                );
-                """
-            )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reminders (
+                id SERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                name TEXT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                time TIME,
+                call_time TIME,
+                days TEXT[],
+                message TEXT,
+                created_by BIGINT,
+                origin_channel_id BIGINT,
+                origin_message_id BIGINT,
+                event_time TIMESTAMPTZ,
+                location TEXT,
+                last_sent_at TIMESTAMPTZ
+            );
+            """
+        )
         await conn.execute(
             "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
         )
@@ -92,6 +92,8 @@ class ReminderCog(commands.Cog):
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_event_time ON reminders(event_time);")
         except Exception as idx_e:
             logger.warning(f"⚠️ Index creation warning: {idx_e}")
+        finally:
+            await conn.close()
 
         if self.conn and not self.conn.is_closed():
             try:
