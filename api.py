@@ -1251,6 +1251,143 @@ async def reorder_onboarding_items(
         raise HTTPException(status_code=500, detail="Failed to reorder items")
 
 
+# ---------------------------------------------------------------------------
+# Settings History Endpoints (Web Configuration Interface)
+# ---------------------------------------------------------------------------
+
+class SettingsHistoryEntry(BaseModel):
+    id: int
+    scope: str
+    key: str
+    old_value: Optional[Any] = None
+    new_value: Any
+    value_type: Optional[str] = None
+    changed_by: Optional[int] = None
+    changed_at: str
+    change_type: str  # 'created', 'updated', 'deleted'
+
+
+@router.get("/dashboard/{guild_id}/settings/history", response_model=List[SettingsHistoryEntry])
+async def get_settings_history(
+    guild_id: int,
+    scope: Optional[str] = None,
+    key: Optional[str] = None,
+    limit: int = 50,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get settings change history for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            query = """
+                SELECT id, scope, key, old_value, new_value, value_type, changed_by, changed_at, change_type
+                FROM settings_history
+                WHERE guild_id = $1
+            """
+            params = [guild_id]
+
+            if scope:
+                query += " AND scope = $2"
+                params.append(scope)
+                if key:
+                    query += " AND key = $3"
+                    params.append(key)
+
+            query += " ORDER BY changed_at DESC LIMIT $"
+            params.append(limit if not scope else limit + 1)
+            query += str(len(params))
+
+            rows = await conn.fetch(query, *params)
+
+            history = []
+            for row in rows:
+                history.append(SettingsHistoryEntry(
+                    id=row["id"],
+                    scope=row["scope"],
+                    key=row["key"],
+                    old_value=row["old_value"],
+                    new_value=row["new_value"],
+                    value_type=row["value_type"],
+                    changed_by=row["changed_by"],
+                    changed_at=row["changed_at"].isoformat(),
+                    change_type=row["change_type"]
+                ))
+
+            return history
+
+    except Exception as exc:
+        print("[ERROR] Failed to get settings history:", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch settings history")
+
+
+@router.post("/dashboard/{guild_id}/settings/rollback/{history_id}")
+async def rollback_setting_change(
+    guild_id: int,
+    history_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Rollback a setting to a previous value from history."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Get the history entry
+            history_row = await conn.fetchrow(
+                """
+                SELECT scope, key, old_value, change_type
+                FROM settings_history
+                WHERE id = $1 AND guild_id = $2
+                """,
+                history_id, guild_id
+            )
+
+            if not history_row:
+                raise HTTPException(status_code=404, detail="History entry not found")
+
+            scope = history_row["scope"]
+            key = history_row["key"]
+            old_value = history_row["old_value"]
+            change_type = history_row["change_type"]
+
+            # Only allow rollback for updated entries with old values
+            if change_type != "updated" or old_value is None:
+                raise HTTPException(status_code=400, detail="Cannot rollback this type of change")
+
+            # Update the setting back to the old value
+            await conn.execute(
+                """
+                UPDATE bot_settings
+                SET value = $1, updated_by = $2, updated_at = NOW()
+                WHERE guild_id = $3 AND scope = $4 AND key = $5
+                """,
+                old_value, int(auth_user_id), guild_id, scope, key
+            )
+
+            # Record the rollback in history
+            await conn.execute(
+                """
+                INSERT INTO settings_history
+                (guild_id, scope, key, old_value, new_value, value_type, changed_by, change_type)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, 'rollback')
+                """,
+                guild_id, scope, key, history_row["old_value"], old_value,
+                history_row["value_type"], int(auth_user_id)
+            )
+
+            return {"success": True, "message": f"Rolled back {scope}.{key} to previous value"}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("[ERROR] Failed to rollback setting:", exc)
+        raise HTTPException(status_code=500, detail="Failed to rollback setting")
+
+
 app.include_router(router)
 
 
