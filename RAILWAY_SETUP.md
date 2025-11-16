@@ -45,9 +45,19 @@ restartPolicyType = "on_failure"
 ## 🔧 Dockerfile Build Context Fix
 Dockerfile is aangepast voor Railway build context:
 ```dockerfile
-# Kopieert specifiek shared/ directory naar /app
+# Kopieert specifiek shared/ inhoud naar /app
 COPY shared/package.json shared/pnpm-lock.yaml ./
-COPY shared/ .
+# Individuele directories kopiëren om nested structuur te vermijden
+COPY shared/app ./app
+COPY shared/components ./components
+COPY shared/lib ./lib
+COPY shared/public ./public
+COPY shared/styles ./styles
+COPY shared/types ./types
+COPY shared/next.config.ts ./
+COPY shared/postcss.config.js ./
+COPY shared/tailwind.config.ts ./
+COPY shared/tsconfig.json ./
 ```
 Dit lost de "Couldn't find any pages or app directory" error op.
 
