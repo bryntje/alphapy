@@ -1,30 +1,42 @@
-# Use Python 3.9 slim image
-FROM python:3.9-slim
+FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@10.19.0 --activate
 
-# Set working directory
+# === DEPS ===
+FROM base AS deps
 WORKDIR /app
+COPY shared/package.json shared/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# === BUILD ===
+FROM base AS build
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Kopieer node_modules
+COPY --from=deps /app/node_modules ./node_modules
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Kopieer Next.js essentials EXPLICIET (Railway heeft problemen met wildcard copies)
+COPY shared/package.json ./
+COPY shared/tsconfig.json ./
+COPY shared/next.config.ts ./
+COPY shared/app ./app
+COPY shared/public ./public
 
-# Copy the rest of the application
-COPY . .
+# Nu ziet Next.js app/ of pages/ in /app
+RUN pnpm run build
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
-USER app
+# === RUNNER ===
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=8080
 
-# Expose port for FastAPI (optional, Discord bot doesn't need it)
-EXPOSE 8000
+COPY --from=build /app/public ./public
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
 
-# Start the bot
-CMD ["python3", "bot.py"]
+EXPOSE 8080
+CMD ["node", "server.js"]
