@@ -154,12 +154,6 @@ async def health_check() -> HealthStatus:
     )
 
 
-# Alias endpoint voor backward compatibility
-@app.get("/health", response_model=HealthStatus, include_in_schema=False)
-async def health_alias() -> HealthStatus:
-    return await health_check()
-
-
 @app.get("/status")
 def get_status():
     return {
