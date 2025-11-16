@@ -66,5 +66,7 @@ class DataQuery(commands.Cog):
         os.remove(csv_filename)
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(DataQuery(bot))  
-    await bot.tree.sync(guild=discord.Object(id=config.GUILD_ID))
+    await bot.add_cog(DataQuery(bot))
+    # Voor multi-guild support: sync global slash commands
+    # Individuele guilds kunnen hun eigen command overrides hebben
+    await bot.tree.sync()

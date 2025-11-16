@@ -102,7 +102,7 @@
   - `last_sent_at TIMESTAMPTZ` (idempotency per minute)
 
 ## Configuration (`config.py`)
-- Driven by env vars: `GUILD_ID`, `ROLE_ID`, `LOG_CHANNEL_ID`, `RULES_CHANNEL_ID`, `WATCHER_LOG_CHANNEL`, `ANNOUNCEMENTS_CHANNEL_ID`, `DATABASE_URL`, `ENABLE_EVERYONE_MENTIONS`, etc.
+- Driven by env vars: `ROLE_ID`, `LOG_CHANNEL_ID`, `RULES_CHANNEL_ID`, `WATCHER_LOG_CHANNEL`, `ANNOUNCEMENTS_CHANNEL_ID`, `DATABASE_URL`, `ENABLE_EVERYONE_MENTIONS`, etc. (GUILD_ID auto-detected for multi-guild)
 - Defaults for `APP_BASE_URL`, `MIND_BASE_URL`, `ALPHAPY_BASE_URL`, and `ALLOWED_ORIGINS` point to the Innersync subdomains so web clients can connect without extra configuration.
 - Local overrides via optional `config_local.py`
 

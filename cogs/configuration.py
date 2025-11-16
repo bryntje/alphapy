@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from utils.checks_interaction import is_owner_or_admin_interaction
 from utils.settings_service import SettingsService, SettingDefinition
+from utils.logger import log_with_guild, log_guild_action
 
 
 def requires_admin():
@@ -137,6 +138,78 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⚙️ Instelling hersteld",
             f"`system.log_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @system_group.command(name="set_rules_channel", description="Stel het rules kanaal in (#rules)")
+    @requires_admin()
+    async def system_set_rules_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.set("system", "rules_channel_id", channel.id, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Rules kanaal ingesteld op {channel.mention}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "⚙️ Instelling bijgewerkt",
+            f"`system.rules_channel_id` ingesteld op {channel.mention} door {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @system_group.command(name="reset_rules_channel", description="Herstel rules kanaal naar standaardwaarde")
+    @requires_admin()
+    async def system_reset_rules_channel(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.clear("system", "rules_channel_id", interaction.guild.id, interaction.user.id)
+        default_value = self.settings.get("system", "rules_channel_id", interaction.guild.id)
+        formatted = f"<#{default_value}>" if default_value else "—"
+        await interaction.followup.send(
+            f"↩️ Rules kanaal teruggezet naar standaard: {formatted}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "⚙️ Instelling hersteld",
+            f"`system.rules_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @system_group.command(name="set_onboarding_channel", description="Stel het onboarding kanaal in")
+    @requires_admin()
+    async def system_set_onboarding_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.set("system", "onboarding_channel_id", channel.id, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Onboarding kanaal ingesteld op {channel.mention}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "⚙️ Instelling bijgewerkt",
+            f"`system.onboarding_channel_id` ingesteld op {channel.mention} door {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @system_group.command(name="reset_onboarding_channel", description="Herstel onboarding kanaal naar standaardwaarde")
+    @requires_admin()
+    async def system_reset_onboarding_channel(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.clear("system", "onboarding_channel_id", interaction.guild.id, interaction.user.id)
+        default_value = self.settings.get("system", "onboarding_channel_id", interaction.guild.id)
+        formatted = f"<#{default_value}>" if default_value else "—"
+        await interaction.followup.send(
+            f"↩️ Onboarding kanaal teruggezet naar standaard: {formatted}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "⚙️ Instelling hersteld",
+            f"`system.onboarding_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
             interaction.guild.id,
         )
 
@@ -724,18 +797,27 @@ class Configuration(commands.Cog):
         return f"`{value}`"
 
     async def _send_audit_log(self, title: str, message: str, guild_id: int) -> None:
+        """Send audit log to the correct guild's log channel"""
         try:
             channel_id = int(self.settings.get("system", "log_channel_id", guild_id))
         except Exception:
+            # No log channel configured for this guild
+            log_with_guild(f"No audit log channel configured for configuration changes", guild_id, "debug")
             return
 
         channel = self.bot.get_channel(channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            log_with_guild(f"Audit log channel {channel_id} not found or not accessible", guild_id, "warning")
             return
 
         embed = discord.Embed(title=title, description=message, color=discord.Color.orange())
-        embed.set_footer(text="config")
-        await channel.send(embed=embed)
+        embed.set_footer(text=f"config | Guild: {guild_id}")
+
+        try:
+            await channel.send(embed=embed)
+            log_guild_action(guild_id, "AUDIT_LOG", details=f"config: {title}")
+        except Exception as e:
+            log_with_guild(f"Kon audit log niet versturen: {e}", guild_id, "error")
 
 
 async def setup(bot: commands.Bot):

@@ -11,9 +11,9 @@ import re
 from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
 from typing import Optional, List, Dict, Any, cast
-from config import GUILD_ID
+# from config import GUILD_ID  # Removed - no longer needed for multi-guild support
 from cogs.embed_watcher import parse_embed_for_reminder
-from utils.logger import logger
+from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
 
 # All logging timestamps in this module use Brussels time for clarity.
 
@@ -31,6 +31,7 @@ class ReminderCog(commands.Cog):
         try:
             await self._connect_database()
         except Exception as e:
+            log_database_event("DB_CONNECT_FAILED", details=f"Initial connection: {e}")
             logger.error(f"❌ Fout bij verbinden met database: {e}")
             return
 
@@ -38,6 +39,12 @@ class ReminderCog(commands.Cog):
             self.check_reminders.start()
 
     async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
+        """Send log embed to the correct guild's log channel"""
+        if guild_id == 0:
+            # Fallback for legacy calls without guild_id
+            logger.warning("⚠️ send_log_embed called without guild_id - skipping Discord log")
+            return
+
         try:
             color_map = {
                 "info": 0x3498db,
@@ -49,18 +56,35 @@ class ReminderCog(commands.Cog):
             color = color_map.get(level, 0x3498db)
             from discord import Embed
             embed = Embed(title=title, description=description, color=color)
-            embed.set_footer(text="reminders")
+            embed.set_footer(text=f"reminders | Guild: {guild_id}")
+
             channel_id = self._get_log_channel_id(guild_id)
+            if channel_id == 0:
+                # No log channel configured for this guild
+                log_with_guild(f"No log channel configured for reminders logging", guild_id, "debug")
+                return
+
             channel = self.bot.get_channel(channel_id)
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
+                log_guild_action(guild_id, "LOG_SENT", details=f"reminders: {title}")
+            else:
+                log_with_guild(f"Log channel {channel_id} not found or not accessible", guild_id, "warning")
+
         except Exception as e:
-            logger.warning(f"⚠️ Kon log embed niet versturen: {e}")
+            log_with_guild(f"Kon reminders log embed niet versturen: {e}", guild_id, "error")
 
     async def _connect_database(self) -> None:
-        conn = await asyncpg.connect(config.DATABASE_URL)
-        await conn.execute(
+        try:
+            conn = await asyncpg.connect(config.DATABASE_URL)
+            log_database_event("DB_CONNECTED", details="Reminders database connection established")
+        except Exception as e:
+            log_database_event("DB_CONNECT_ERROR", details=f"Failed to connect: {e}")
+            raise
+
+        try:
+            await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reminders (
                 id SERIAL PRIMARY KEY,
@@ -568,7 +592,7 @@ class ReminderCog(commands.Cog):
                     embed.add_field(name="📍 Location", value=row["location"], inline=False)
                 # Link naar origineel bericht
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
-                    link = f"https://discord.com/channels/{config.GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
+                    link = f"https://discord.com/channels/{row['guild_id']}/{row['origin_channel_id']}/{row['origin_message_id']}"
                     embed.add_field(name="🔗 Original", value=f"[Click here]({link})", inline=False)
 
                 text_channel = cast(discord.TextChannel, channel)

@@ -31,3 +31,9 @@ MIGRATION_README.md
 # Temporary development files
 multi_guild_audit_prompt.md
 test_guild_settings.py
+migrate_bot_settings.sql
+migrate_guild_settings.py
+migrate_guild_settings.py
+migrate_guild_settings.sql
+migrate_guild_settings.py
+migrate_guild_settings.py

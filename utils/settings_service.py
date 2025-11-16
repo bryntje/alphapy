@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Corouti
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
+from utils.logger import log_database_event
 
 
 SettingListener = Callable[[Any], Coroutine[Any, Any, None]]
@@ -53,23 +54,45 @@ class SettingsService:
         for attempt in range(1, attempts + 1):
             try:
                 await self._create_pool()
+                log_database_event("POOL_INITIALIZED", details=f"Attempt {attempt}/{attempts}")
                 return
             except (pg_exceptions.PostgresError, ConnectionError, OSError) as exc:
                 last_error = exc
+                log_database_event("POOL_INIT_RETRY", details=f"Attempt {attempt}/{attempts} failed: {exc}")
                 delay = base_delay * attempt
                 await asyncio.sleep(delay)
             except Exception as exc:
                 last_error = exc
+                log_database_event("POOL_INIT_ERROR", details=f"Fatal error: {exc}")
                 raise
 
+        log_database_event("POOL_INIT_FAILED", details=f"All {attempts} attempts failed: {last_error}")
         raise RuntimeError(f"SettingsService: kon databasepool niet initialiseren: {last_error}")
 
     async def _create_pool(self) -> None:
         if not self._dsn:
             return
 
-        pool = await asyncpg.create_pool(self._dsn)
+        # Create pool with better connection settings for Railway
+        pool = await asyncpg.create_pool(
+            self._dsn,
+            min_size=1,          # Minimum connections in pool
+            max_size=10,         # Maximum connections in pool
+            max_queries=50000,   # Maximum queries per connection
+            max_inactive_connection_lifetime=300.0,  # 5 minutes
+            command_timeout=60.0,  # 60 second timeout
+            init=None,
+            setup=None,
+            server_settings={
+                'application_name': 'alphapy_bot_settings'
+            }
+        )
+
         async with pool.acquire() as conn:
+            # Test connection
+            await conn.execute("SELECT 1")
+
+            # Create table if it doesn't exist
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS bot_settings (
@@ -85,16 +108,23 @@ class SettingsService:
                 """
             )
 
+            # Load existing settings
             rows = await conn.fetch("SELECT guild_id, scope, key, value FROM bot_settings")
+            loaded_count = 0
             for row in rows:
                 composite_key = (row["guild_id"], row["scope"], row["key"])
                 definition = self._definitions.get((row["scope"], row["key"]))
                 if not definition:
+                    log_database_event("UNKNOWN_SETTING", details=f"Guild {row['guild_id']}: {row['scope']}.{row['key']}")
                     continue  # Unknown setting stored earlier; ignore gracefully.
                 decoded = self._decode_value(row["value"], definition)
                 self._overrides[composite_key] = decoded
+                loaded_count += 1
+
+            log_database_event("SETTINGS_LOADED", details=f"Loaded {loaded_count} settings from database")
 
         self._pool = pool
+        log_database_event("POOL_CREATED", details=f"Pool created with min_size=1, max_size=10")
 
     def get(self, scope: str, key: str, guild_id: int = 0, fallback: Optional[Any] = None) -> Any:
         definition = self._definitions.get((scope, key))
@@ -140,22 +170,48 @@ class SettingsService:
             return coerced
 
         payload = json.dumps(coerced)
-        async with self._pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO bot_settings (guild_id, scope, key, value, value_type, updated_by, updated_at)
-                VALUES ($1, $2, $3, $4::jsonb, $5, $6, NOW())
-                ON CONFLICT(guild_id, scope, key)
-                DO UPDATE SET value = EXCLUDED.value, value_type = EXCLUDED.value_type,
-                              updated_by = EXCLUDED.updated_by, updated_at = NOW();
-                """,
-                guild_id,
-                scope,
-                key,
-                payload,
-                definition.value_type,
-                updated_by,
-            )
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO bot_settings (guild_id, scope, key, value, value_type, updated_by, updated_at)
+                    VALUES ($1, $2, $3, $4::jsonb, $5, $6, NOW())
+                    ON CONFLICT(guild_id, scope, key)
+                    DO UPDATE SET value = EXCLUDED.value, value_type = EXCLUDED.value_type,
+                                  updated_by = EXCLUDED.updated_by, updated_at = NOW();
+                    """,
+                    guild_id,
+                    scope,
+                    key,
+                    payload,
+                    definition.value_type,
+                    updated_by,
+                )
+        except (pg_exceptions.PostgresError, ConnectionError, OSError) as e:
+            log_database_event("CONNECTION_LOST", guild_id=guild_id, details=f"During set operation: {e}")
+            # Try to reconnect and retry once
+            try:
+                await self._init_pool_with_retry(attempts=3)
+                async with self._pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        INSERT INTO bot_settings (guild_id, scope, key, value, value_type, updated_by, updated_at)
+                        VALUES ($1, $2, $3, $4::jsonb, $5, $6, NOW())
+                        ON CONFLICT(guild_id, scope, key)
+                        DO UPDATE SET value = EXCLUDED.value, value_type = EXCLUDED.value_type,
+                                      updated_by = EXCLUDED.updated_by, updated_at = NOW();
+                        """,
+                        guild_id,
+                        scope,
+                        key,
+                        payload,
+                        definition.value_type,
+                        updated_by,
+                    )
+                log_database_event("RECONNECT_SUCCESS", guild_id=guild_id, details="Successfully reconnected and saved setting")
+            except Exception as retry_error:
+                log_database_event("RECONNECT_FAILED", guild_id=guild_id, details=f"Failed to reconnect: {retry_error}")
+                raise retry_error
 
         self._overrides[(guild_id, scope, key)] = coerced
         await self._notify(scope, key, coerced)
@@ -166,13 +222,30 @@ class SettingsService:
             return
 
         if self._dsn and self._pool:
-            async with self._pool.acquire() as conn:
-                await conn.execute(
-                    "DELETE FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
-                    guild_id,
-                    scope,
-                    key,
-                )
+            try:
+                async with self._pool.acquire() as conn:
+                    await conn.execute(
+                        "DELETE FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
+                        guild_id,
+                        scope,
+                        key,
+                    )
+            except (pg_exceptions.PostgresError, ConnectionError, OSError) as e:
+                log_database_event("CONNECTION_LOST", guild_id=guild_id, details=f"During clear operation: {e}")
+                # Try to reconnect and retry once
+                try:
+                    await self._init_pool_with_retry(attempts=3)
+                    async with self._pool.acquire() as conn:
+                        await conn.execute(
+                            "DELETE FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
+                            guild_id,
+                            scope,
+                            key,
+                        )
+                    log_database_event("RECONNECT_SUCCESS", guild_id=guild_id, details="Successfully reconnected and cleared setting")
+                except Exception as retry_error:
+                    log_database_event("RECONNECT_FAILED", guild_id=guild_id, details=f"Failed to reconnect: {retry_error}")
+                    raise retry_error
 
         self._overrides.pop((guild_id, scope, key), None)
         value = self.get(scope, key, guild_id)

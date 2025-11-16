@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import config
+from utils.logger import log_with_guild
 
 class StartOnboardingView(discord.ui.View):
     """View met een knop om direct de onboarding te starten."""
@@ -122,52 +123,64 @@ class ReactionRole(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        """Plaats de onboarding-knop in #rules zodra de bot opstart (indien nog niet aanwezig)."""
-        guild = self.bot.get_guild(config.GUILD_ID)
-        if not guild:
-            print(f"⚠️ Guild {config.GUILD_ID} niet gevonden. Sla plaatsen onboarding-knop over.")
-            return
-        channel = guild.get_channel(config.RULES_CHANNEL_ID)
-        if not channel:
-            print(f"⚠️ Kanaal {config.RULES_CHANNEL_ID} niet gevonden in guild {guild.name}.")
-            return
-
-        # Helper: check of een bericht de Start Onboarding-knop bevat via custom_id
-        def has_start_button(message: discord.Message) -> bool:
+        """Plaats de onboarding-knop in #rules voor alle guilds waar de bot in zit."""
+        for guild in self.bot.guilds:
+            # Haal rules channel op uit settings voor deze guild
             try:
-                for row in getattr(message, "components", []) or []:
-                    # ActionRow kan 'children' (discord.py UI) of 'components' (API representatie) hebben
-                    children = getattr(row, "children", None) or getattr(row, "components", [])
-                    for comp in children:
-                        if getattr(comp, "custom_id", None) == "start_onboarding":
-                            return True
-                return False
-            except Exception:
-                return False
+                rules_channel_id = int(self.bot.settings.get("system", "rules_channel_id", guild.id))
+                if rules_channel_id == 0:
+                    # Geen kanaal geconfigureerd voor deze guild
+                    log_with_guild(f"Geen rules kanaal geconfigureerd voor guild {guild.name}", guild.id, "debug")
+                    continue
+                channel = guild.get_channel(rules_channel_id)
+                if not channel:
+                    log_with_guild(f"Rules kanaal {rules_channel_id} niet gevonden in guild {guild.name}", guild.id, "warning")
+                    continue
+            except (KeyError, ValueError):
+                # Geen kanaal geconfigureerd, sla over
+                log_with_guild(f"Geen rules kanaal ingesteld voor guild {guild.name}", guild.id, "debug")
+                continue
 
-        # Controleer of er al een bericht met de onboarding-knop staat op basis van custom_id
-        try:
-            messages = [message async for message in channel.history(limit=100)]
-        except Exception as e:
-            print(f"⚠️ Kon channel history niet lezen: {e}")
-            return
-        persistent_message = None
-        for msg in messages:
-            if has_start_button(msg):
-                persistent_message = msg
-                break
+            # Helper: check of een bericht de Start Onboarding-knop bevat via custom_id
+            def has_start_button(message: discord.Message) -> bool:
+                try:
+                    for row in getattr(message, "components", []) or []:
+                        # ActionRow kan 'children' (discord.py UI) of 'components' (API representatie) hebben
+                        children = getattr(row, "children", None) or getattr(row, "components", [])
+                        for comp in children:
+                            if getattr(comp, "custom_id", None) == "start_onboarding":
+                                return True
+                    return False
+                except Exception:
+                    return False
 
-        if not persistent_message:
-            embed = discord.Embed(
-                title="Welcome to Innersync • Alphapips™",
-                description="The place where your learning and growth journey begins! 🌟\n\nTo get started, complete the verification by clicking the button below:",
-                color=discord.Color.blue()
-            )
-            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
-            await channel.send(embed=embed, view=StartOnboardingView())
-            print("✅ Onboarding-knop geplaatst in #rules!")
-        else:
-            print("✅ Persistent onboarding message gevonden; geen duplicate verstuurd.")
+            # Controleer of er al een bericht met de onboarding-knop staat op basis van custom_id
+            try:
+                messages = [message async for message in channel.history(limit=100)]
+            except Exception as e:
+                print(f"⚠️ Kon channel history niet lezen in guild {guild.name}: {e}")
+                continue
+
+            persistent_message = None
+            for msg in messages:
+                if has_start_button(msg):
+                    persistent_message = msg
+                    break
+
+            if not persistent_message:
+                embed = discord.Embed(
+                    title=f"Welcome to {guild.name}",
+                    description="The place where your learning and growth journey begins! 🌟\n\nTo get started, complete the verification by clicking the button below:",
+                    color=discord.Color.blue()
+                )
+                embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
+                try:
+                    await channel.send(embed=embed, view=StartOnboardingView())
+                    print(f"✅ Onboarding-knop geplaatst in #{channel.name} voor guild {guild.name}!")
+                except Exception as e:
+                    print(f"⚠️ Kon onboarding-knop niet plaatsen in guild {guild.name}: {e}")
+            else:
+                print(f"✅ Persistent onboarding message gevonden voor guild {guild.name}; geen duplicate verstuurd.")
 
 async def setup(bot):
     await bot.add_cog(ReactionRole(bot))

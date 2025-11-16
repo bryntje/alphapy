@@ -4,6 +4,7 @@ import re
 from typing import Optional
 from discord.ext import commands
 import config
+from utils.logger import log_with_guild
 
 class ImportInvites(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -25,9 +26,15 @@ class ImportInvites(commands.Cog):
     @commands.is_owner()
     async def import_invites(self, ctx):
         """Importeer invites vanuit het invite-tracker kanaal."""
-        channel = self.bot.get_channel(config.INVITE_ANNOUNCEMENT_CHANNEL_ID)
+        # Gebruik guild-specifieke announcement kanaal setting
+        try:
+            announcement_channel_id = int(self.bot.settings.get("invites", "announcement_channel_id", ctx.guild.id))
+        except (KeyError, ValueError):
+            announcement_channel_id = config.INVITE_ANNOUNCEMENT_CHANNEL_ID
+
+        channel = self.bot.get_channel(announcement_channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await ctx.send("Kanaal niet gevonden!")
+            await ctx.send("Invite announcement kanaal niet gevonden! Configureer eerst `/config invites announcement_channel_id` voor deze server.")
             return
 
         invite_counts = {}
@@ -35,7 +42,7 @@ class ImportInvites(commands.Cog):
         pattern_joined = re.compile(r'<@(\d+)> joined! <@(\d+)> now has (\d+) invites?\.')
 
 
-        print(f"🔍 Kanaal check: {channel} (ID: {config.INVITE_ANNOUNCEMENT_CHANNEL_ID})")
+        print(f"🔍 Kanaal check: {channel} (ID: {announcement_channel_id}) voor guild {ctx.guild.name}")
         async for message in channel.history(limit=1000):  # Pas aan indien nodig
             match = pattern_invited.search(message.content) or pattern_joined.search(message.content)
             print(f"📩 Bericht gevonden: {message.content}")
