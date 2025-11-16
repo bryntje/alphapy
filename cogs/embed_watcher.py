@@ -99,7 +99,7 @@ class EmbedReminderWatcher(commands.Cog):
                 logger.warning("⚠️  Logkanaal niet gevonden of niet toegankelijk.")
 
             if self.conn:
-                await self.store_parsed_reminder(parsed, int(message.channel.id), int(message.author.id))
+                await self.store_parsed_reminder(parsed, int(message.channel.id), int(message.author.id), message.guild.id)
 
     def parse_embed_for_reminder(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:
         all_text = embed.description or ""
@@ -321,7 +321,7 @@ class EmbedReminderWatcher(commands.Cog):
         print(f"⚠️ Fallback triggered in parse_days — geen geldige days_line: '{days_line}' → weekday van dt: {dt.strftime('%A')} ({dt.weekday()})")
         return str(dt.weekday())
 
-    async def store_parsed_reminder(self, parsed: dict, channel: int, created_by: int, origin_channel_id: Optional[int]=None, origin_message_id: Optional[int]=None) -> None:
+    async def store_parsed_reminder(self, parsed: dict, channel: int, created_by: int, guild_id: int, origin_channel_id: Optional[int]=None, origin_message_id: Optional[int]=None) -> None:
         dt = parsed["datetime"]
         channel = int(channel)
         created_by = int(created_by)
@@ -345,16 +345,17 @@ class EmbedReminderWatcher(commands.Cog):
             await self.conn.execute(
                 """
                 INSERT INTO reminders (
-                    name, channel_id, days, message, created_by, 
-                    location, origin_channel_id, origin_message_id, 
+                    name, channel_id, days, message, created_by, guild_id,
+                    location, origin_channel_id, origin_message_id,
                     event_time, time, call_time
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 """,
                 name,
                 channel,
                 days_arr,  # geef als array door
                 message,
                 created_by,
+                guild_id,
                 location,
                 origin_channel_id,
                 origin_message_id,
