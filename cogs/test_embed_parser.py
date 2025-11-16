@@ -4,6 +4,8 @@ from datetime import datetime
 from cogs.embed_watcher import EmbedReminderWatcher
 from utils.settings_service import SettingsService
 import discord
+from discord.ext import commands
+from typing import cast
 
 class MockSettingsService:
     def get(self, scope, key, guild_id):
@@ -33,11 +35,12 @@ class DummyBot:
 
 class TestEmbedParser(unittest.TestCase):
     def setUp(self):
-        self.w = EmbedReminderWatcher(DummyBot())
+        self.w = EmbedReminderWatcher(cast(commands.Bot, DummyBot()))
 
     def test_parse_datetime_with_full_date(self):
         dt, tz = self.w.parse_datetime("12 March 2025", "Time: 14:30")
         self.assertIsNotNone(dt)
+        assert dt is not None  # For type checker
         self.assertEqual(dt.year, 2025)
         self.assertEqual(dt.month, 3)
         self.assertEqual(dt.day, 12)
@@ -47,6 +50,7 @@ class TestEmbedParser(unittest.TestCase):
     def test_parse_datetime_without_date(self):
         dt, tz = self.w.parse_datetime(None, "Time: 09:15")
         self.assertIsNotNone(dt)
+        assert dt is not None  # For type checker
         self.assertEqual(dt.hour, 9)
         self.assertEqual(dt.minute, 15)
 
