@@ -99,6 +99,9 @@ class Onboarding(commands.Cog):
             return self.default_questions
 
         try:
+            if self.db is None:
+                logger.error("Database pool is None")
+                return False
             async with self.db.acquire() as conn:
                 rows = await conn.fetch("""
                     SELECT question, question_type, options, followup, required
@@ -146,6 +149,9 @@ class Onboarding(commands.Cog):
             return False
 
         try:
+            if self.db is None:
+                logger.error("Database pool is None")
+                return False
             async with self.db.acquire() as conn:
                 # Convert options from tuple format to JSONB
                 options_json = None
@@ -196,6 +202,9 @@ class Onboarding(commands.Cog):
             return False
 
         try:
+            if self.db is None:
+                logger.error("Database pool is None")
+                return False
             async with self.db.acquire() as conn:
                 await conn.execute("""
                     DELETE FROM guild_onboarding_questions
@@ -223,6 +232,9 @@ class Onboarding(commands.Cog):
             return self.default_rules
 
         try:
+            if self.db is None:
+                logger.error("Database pool is None")
+                return self.default_rules
             async with self.db.acquire() as conn:
                 rows = await conn.fetch("""
                     SELECT title, description
@@ -250,6 +262,9 @@ class Onboarding(commands.Cog):
             return False
 
         try:
+            if self.db is None:
+                logger.error("Database pool is None")
+                return False
             async with self.db.acquire() as conn:
                 await conn.execute("""
                     INSERT INTO guild_rules
@@ -283,6 +298,9 @@ class Onboarding(commands.Cog):
             return False
 
         try:
+            if self.db is None:
+                logger.error("Database pool is None")
+                return False
             async with self.db.acquire() as conn:
                 await conn.execute("""
                     DELETE FROM guild_rules
@@ -513,6 +531,9 @@ class Onboarding(commands.Cog):
 
         assert self.db is not None
         try:
+            if self.db is None:
+                logger.error("Database pool is None")
+                return False
             async with self.db.acquire() as conn:
                 await conn.execute(
                     """

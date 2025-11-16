@@ -80,7 +80,7 @@ class EmbedReminderWatcher(commands.Cog):
             logger.debug("[🔁] Embed genegeerd (auto-reminder tag gevonden)")
             return
 
-        parsed = self.parse_embed_for_reminder(embed)
+        parsed = self.parse_embed_for_reminder(embed, message.guild.id)
         logger.debug(f"[🐛] Parsed result: {parsed}")
         logger.debug(f"[🐛] DB connection aanwezig? {self.conn is not None}")
 
@@ -101,7 +101,7 @@ class EmbedReminderWatcher(commands.Cog):
             if self.conn:
                 await self.store_parsed_reminder(parsed, int(message.channel.id), int(message.author.id))
 
-    def parse_embed_for_reminder(self, embed: discord.Embed) -> Optional[dict]:
+    def parse_embed_for_reminder(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:
         all_text = embed.description or ""
         for field in embed.fields:
             all_text += f"\n{field.name}\n{field.value}"
@@ -158,7 +158,7 @@ class EmbedReminderWatcher(commands.Cog):
                 logger.warning("⚠️ Geen geldige datum gevonden en geen tijd/datum in description. Reminder wordt niet gemaakt.")
                 return None
 
-            offset_minutes = self._get_reminder_offset(message.guild.id)
+            offset_minutes = self._get_reminder_offset(guild_id)
             reminder_time = dt - timedelta(minutes=offset_minutes)
 
             # Decide recurrence: only use parse_days when explicitly provided.
@@ -389,7 +389,7 @@ class EmbedReminderWatcher(commands.Cog):
         for msg in messages:
             if msg.embeds:
                 embed = msg.embeds[0]
-                parsed = self.parse_embed_for_reminder(embed)
+                parsed = self.parse_embed_for_reminder(embed, interaction.guild.id)
                 if parsed:
                     response = (
                         f"🧠 **Parsed data:**\n"
@@ -430,10 +430,10 @@ class EmbedReminderWatcher(commands.Cog):
         return 60
 
 
-def parse_embed_for_reminder(embed: discord.Embed):
+def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
     """Convenience wrapper to parse a reminder embed outside of the cog."""
     parser = EmbedReminderWatcher(cast(commands.Bot, None))
-    return parser.parse_embed_for_reminder(embed)
+    return parser.parse_embed_for_reminder(embed, guild_id)
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)
