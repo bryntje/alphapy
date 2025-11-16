@@ -496,8 +496,14 @@ class Onboarding(commands.Cog):
         q_data = questions[step]
 
         # If this question requires free text input, send a modal
-        if q_data.get("input"):
-            modal = TextInputModal(title=q_data["question"], step=step, answers=answers or {}, onboarding=self)
+        if q_data.get("input") or q_data.get("type") in ["email", "text"]:
+            modal = TextInputModal(
+                title=q_data["question"],
+                step=step,
+                answers=answers or {},
+                onboarding=self,
+                optional=q_data.get("optional", False)
+            )
             await interaction.response.send_modal(modal)
             return
 
@@ -556,18 +562,21 @@ class Onboarding(commands.Cog):
             return False
 
 class TextInputModal(discord.ui.Modal):
-    def __init__(self, title: str, step: int, answers: dict, onboarding: 'Onboarding'):
+    def __init__(self, title: str, step: int, answers: dict, onboarding: 'Onboarding', optional: bool = False):
         # Set the modal title to the question
         super().__init__(title=title)
         self.step = step
         self.answers = answers
         self.onboarding = onboarding
+        self.optional = optional
 
         # Add a text input field. You can add extra validation here if needed.
+        placeholder = "Type your answer here..." if not optional else "Type your answer here (or leave empty to skip)..."
         self.input_field = discord.ui.TextInput(
-            label=title, 
-            placeholder="Type your answer here...",
-            style=discord.TextStyle.short
+            label=title,
+            placeholder=placeholder,
+            style=discord.TextStyle.short,
+            required=not optional  # Make field required only if not optional
         )
         self.add_item(self.input_field)
 
