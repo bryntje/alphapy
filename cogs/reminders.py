@@ -104,21 +104,28 @@ class ReminderCog(commands.Cog):
             );
             """
         )
-        await conn.execute(
-            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
-        )
-        await conn.execute(
-            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
-        )
+        except Exception as table_e:
+            log_database_event("DB_TABLE_CREATE_ERROR", details=f"Failed to create reminders table: {table_e}")
+            raise
+
+        try:
+            await conn.execute(
+                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
+            )
+            await conn.execute(
+                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
+            )
+        except Exception as alter_e:
+            log_database_event("DB_ALTER_ERROR", details=f"Failed to alter reminders table: {alter_e}")
+            raise
 
         try:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_event_time ON reminders(event_time);")
         except Exception as idx_e:
             logger.warning(f"⚠️ Index creation warning: {idx_e}")
-        finally:
-            await conn.close()
 
+        # Store the connection for future use (don't close it)
         if self.conn and not self.conn.is_closed():
             try:
                 await self.conn.close()
@@ -127,6 +134,7 @@ class ReminderCog(commands.Cog):
 
         self.conn = conn
         logger.info("✅ Verbonden met database!")
+        log_database_event("DB_CONNECTION_ESTABLISHED", details="Reminders database ready")
 
     async def _ensure_connection(self) -> bool:
         if self.conn and not self.conn.is_closed():
