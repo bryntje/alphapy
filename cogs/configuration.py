@@ -5,6 +5,7 @@ from discord.ext import commands
 from utils.checks_interaction import is_owner_or_admin_interaction
 from utils.settings_service import SettingsService, SettingDefinition
 from utils.logger import log_with_guild, log_guild_action
+from cogs.reaction_roles import StartOnboardingView
 def requires_admin():
     async def predicate(interaction: discord.Interaction) -> bool:
         if await is_owner_or_admin_interaction(interaction):
@@ -1075,9 +1076,36 @@ class Configuration(commands.Cog):
                 "📝 Onboarding",
                 f"Questions reset to default by {interaction.user.mention}.",
                 interaction.guild.id
-        )
+            )
         else:
             await interaction.followup.send("❌ Database not available.", ephemeral=True)
+
+    @onboarding_group.command(name="panel_post", description="Post an onboarding panel with a Start button")
+    @requires_admin()
+    async def onboarding_panel_post(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        target = channel or cast(discord.TextChannel, interaction.channel)
+        if target is None:
+            await interaction.response.send_message("❌ No channel specified.", ephemeral=True)
+            return
+
+        # Check if onboarding is enabled for this guild
+        enabled = self.settings.get("onboarding", "enabled", interaction.guild.id)
+        if not enabled:
+            await interaction.response.send_message("⚠️ Onboarding is not enabled for this server. Enable it first with `/config onboarding enable`.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title=f"Welcome to {interaction.guild.name}!",
+            description="To get started and learn about our community, click the button below to begin the onboarding process.",
+            color=discord.Color.green(),
+        )
+        embed.set_footer(text="Complete the onboarding to gain access to the full server!")
+
+        view = StartOnboardingView()
+        await target.send(embed=embed, view=view)
+        await interaction.response.send_message("✅ Onboarding panel posted.", ephemeral=True)
+
     def _format_value(self, definition: SettingDefinition, value: Any) -> str:
         if value is None:
             return "—"
