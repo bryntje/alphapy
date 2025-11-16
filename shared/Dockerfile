@@ -21,6 +21,9 @@ COPY --from=deps /app/node_modules ./node_modules
 # Kopieer ALLE code uit shared/ naar /app (project root)
 COPY shared/ ./
 
+# EXPLICIET: Kopieer app directory apart (omdat COPY shared/ ./ het overslaat)
+COPY shared/app ./app
+
 # DEBUG: Check what got copied
 RUN echo "=== ROOT DIR ===" && ls -la && echo "=== SHARED DIR EXISTS? ===" && ls -d shared 2>/dev/null || echo "shared dir not found" && echo "=== APP DIR ===" && ls -la app/ 2>/dev/null || echo "app/ not found"
 
