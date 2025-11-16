@@ -3,7 +3,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, Literal
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
@@ -974,7 +974,7 @@ async def update_guild_settings(
 class OnboardingQuestion(BaseModel):
     id: Optional[int] = None
     question: str
-    question_type: str  # 'select', 'multiselect', 'text', 'email'
+    question_type: Literal['select', 'multiselect', 'text', 'email']
     options: Optional[List[Dict[str, str]]] = None  # [{"label": "Option 1", "value": "value1"}]
     followup: Optional[Dict[str, Any]] = None  # {"value": {"question": "Followup question"}}
     required: bool = True
@@ -1214,10 +1214,14 @@ async def delete_guild_onboarding_rule(
         raise HTTPException(status_code=500, detail="Failed to delete rule")
 
 
+class ReorderRequest(BaseModel):
+    questions: Optional[List[int]] = None
+    rules: Optional[List[int]] = None
+
 @router.post("/dashboard/{guild_id}/onboarding/reorder")
 async def reorder_onboarding_items(
     guild_id: int,
-    request: Dict[str, List[int]],  # {"questions": [1,2,3], "rules": [1,2,3]}
+    request: ReorderRequest,
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Reorder onboarding questions and rules."""
@@ -1229,16 +1233,16 @@ async def reorder_onboarding_items(
         async with db_pool.acquire() as conn:
             async with conn.transaction():
                 # Update question order
-                if "questions" in request:
-                    for i, question_id in enumerate(request["questions"]):
+                if request.questions:
+                    for i, question_id in enumerate(request.questions):
                         await conn.execute(
                             "UPDATE guild_onboarding_questions SET step_order = $1 WHERE guild_id = $2 AND id = $3",
                             i + 1, guild_id, question_id
                         )
 
                 # Update rule order
-                if "rules" in request:
-                    for i, rule_id in enumerate(request["rules"]):
+                if request.rules:
+                    for i, rule_id in enumerate(request.rules):
                         await conn.execute(
                             "UPDATE guild_rules SET rule_order = $1 WHERE guild_id = $2 AND id = $3",
                             i + 1, guild_id, rule_id
@@ -1264,7 +1268,7 @@ class SettingsHistoryEntry(BaseModel):
     value_type: Optional[str] = None
     changed_by: Optional[int] = None
     changed_at: str
-    change_type: str  # 'created', 'updated', 'deleted'
+    change_type: Literal['created', 'updated', 'deleted', 'rollback']
 
 
 @router.get("/dashboard/{guild_id}/settings/history", response_model=List[SettingsHistoryEntry])
@@ -1282,23 +1286,30 @@ async def get_settings_history(
 
     try:
         async with db_pool.acquire() as conn:
-            query = """
-                SELECT id, scope, key, old_value, new_value, value_type, changed_by, changed_at, change_type
-                FROM settings_history
-                WHERE guild_id = $1
-            """
-            params = [guild_id]
-
-            if scope:
-                query += " AND scope = $2"
-                params.append(scope)
-                if key:
-                    query += " AND key = $3"
-                    params.append(key)
-
-            query += " ORDER BY changed_at DESC LIMIT $"
-            params.append(limit if not scope else limit + 1)
-            query += str(len(params))
+            if scope and key:
+                query = """
+                    SELECT id, scope, key, old_value, new_value, value_type, changed_by, changed_at, change_type
+                    FROM settings_history
+                    WHERE guild_id = $1 AND scope = $2 AND key = $3
+                    ORDER BY changed_at DESC LIMIT $4
+                """
+                params = [guild_id, scope, key, limit]
+            elif scope:
+                query = """
+                    SELECT id, scope, key, old_value, new_value, value_type, changed_by, changed_at, change_type
+                    FROM settings_history
+                    WHERE guild_id = $1 AND scope = $2
+                    ORDER BY changed_at DESC LIMIT $3
+                """
+                params = [guild_id, scope, limit]
+            else:
+                query = """
+                    SELECT id, scope, key, old_value, new_value, value_type, changed_by, changed_at, change_type
+                    FROM settings_history
+                    WHERE guild_id = $1
+                    ORDER BY changed_at DESC LIMIT $2
+                """
+                params = [guild_id, limit]
 
             rows = await conn.fetch(query, *params)
 
