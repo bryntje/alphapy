@@ -452,7 +452,7 @@ class MockBot:
 
 def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
     """Convenience wrapper to parse a reminder embed outside of the cog."""
-    parser = EmbedReminderWatcher(MockBot())
+    parser = EmbedReminderWatcher(cast(commands.Bot, MockBot()))
     return parser.parse_embed_for_reminder(embed, guild_id)
 
 async def setup(bot):
