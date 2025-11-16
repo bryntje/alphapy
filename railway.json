@@ -4,7 +4,7 @@
   },
   "deploy": {
     "startCommand": "python3 bot.py",
-    "healthcheckPath": "/health",
+    "healthcheckPath": "/api/health",
     "restartPolicyType": "on_failure",
     "port": 8000
   }
