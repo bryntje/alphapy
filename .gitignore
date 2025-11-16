@@ -38,3 +38,11 @@ migrate_guild_settings.sql
 migrate_guild_settings.py
 migrate_guild_settings.py
 .railway/
+
+# Railway build files (copied from submodule)
+app/
+components/
+lib/
+public/
+*.config.*
+*.ts

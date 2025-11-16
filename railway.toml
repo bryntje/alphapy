@@ -1,6 +1,7 @@
 [build]
 builder = "Dockerfile"
 dockerfilePath = "Dockerfile.dashboard"
+buildCommand = "git submodule update --init --recursive && cat shared/innersync-core/package.json"
 
 [deploy]
 sourceDirectory = "shared/innersync-core"
