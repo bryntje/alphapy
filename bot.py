@@ -289,7 +289,8 @@ async def setup_hook():
 
 
 bot.setup_hook = setup_hook
-Thread(target=start_api, daemon=True).start()
+# API server wordt apart gedraaid in de dashboard service (Next.js heeft eigen API routes)
+# Thread(target=start_api, daemon=True).start()
 
 
 # Start bot

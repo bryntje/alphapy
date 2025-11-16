@@ -132,7 +132,7 @@ class HealthStatus(BaseModel):
     timestamp: str
 
 
-@app.get("/api/health", response_model=HealthStatus, include_in_schema=False)
+@app.get("/health", response_model=HealthStatus, include_in_schema=False)
 async def health_check() -> HealthStatus:
     uptime_seconds = int(time.time() - startup_time)
     db_status = "not_initialized"

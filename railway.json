@@ -3,9 +3,6 @@
     "builder": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "python3 bot_only.py",
-    "healthcheckPath": "/api/health",
-    "restartPolicyType": "on_failure",
-    "port": 8000
+    "startCommand": "python3 bot.py"
   }
 }
