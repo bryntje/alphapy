@@ -3,6 +3,7 @@
 ## ✅ Completed Setup
 - ✅ Removed Innersync_Core submodule
 - ✅ Cleaned up .git/modules and .gitmodules
+- ✅ Removed unnecessary GitHub Actions workflow (flatten-deploy.yml)
 - ✅ Copied Innersync_Core code to `shared/` as regular directory
 - ✅ Updated `shared/railway.toml` to point to correct Dockerfile
 - ✅ Committed all changes to branch `f/submodules`
