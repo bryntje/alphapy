@@ -6,7 +6,7 @@ load_dotenv()  # Laad variabelen uit .env bestand
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-GUILD_ID = int(os.getenv("GUILD_ID", "1160511689263947796"))
+# GUILD_ID = int(os.getenv("GUILD_ID", "1160511689263947796"))  # Deprecated - bot detecteert guilds automatisch
 ROLE_ID = int(os.getenv("ROLE_ID", "1336043451489452144"))
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "1338611872299090092"))
 ONBOARDING_CHANNEL_ID = int(os.getenv("ONBOARDING_CHANNEL_ID", "1336039005917155510"))  # Kanaal waar onboarding plaatsvindt

@@ -13,7 +13,7 @@ try:
 except ImportError:
     import config  # type: ignore
 
-from utils.logger import logger
+from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
 from gpt.helpers import ask_gpt
 from utils.checks_interaction import is_owner_or_admin_interaction
 from utils.timezone import BRUSSELS_TZ
@@ -47,6 +47,7 @@ class TicketBot(commands.Cog):
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
         try:
             conn = await asyncpg.connect(config.DATABASE_URL)
+            log_database_event("DB_CONNECTED", details="TicketBot database connection established")
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS support_tickets (
@@ -158,14 +159,18 @@ class TicketBot(commands.Cog):
                 pass
             self.conn = conn
             logger.info("✅ TicketBot: DB ready (support_tickets)")
+            log_database_event("DB_READY", details="TicketBot database fully initialized")
         except Exception as e:
+            log_database_event("DB_INIT_ERROR", details=f"TicketBot setup failed: {e}")
             logger.error(f"❌ TicketBot: DB init error: {e}")
 
     async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
-        """Stuur een log-embed naar het `WATCHER_LOG_CHANNEL` kanaal.
+        """Send log embed to the correct guild's log channel"""
+        if guild_id == 0:
+            # Fallback for legacy calls without guild_id
+            logger.warning("⚠️ TicketBot send_log_embed called without guild_id - skipping Discord log")
+            return
 
-        Houdt gelijke stijl aan als andere cogs. Vervangt kleur per level.
-        """
         try:
             color_map = {
                 "info": 0x3498db,
@@ -176,14 +181,24 @@ class TicketBot(commands.Cog):
             }
             color = color_map.get(level, 0x3498db)
             embed = discord.Embed(title=title, description=description, color=color)
-            embed.set_footer(text="ticketbot")
+            embed.set_footer(text=f"ticketbot | Guild: {guild_id}")
+
             channel_id = self._get_log_channel_id(guild_id)
+            if channel_id == 0:
+                # No log channel configured for this guild
+                log_with_guild(f"No log channel configured for ticketbot logging", guild_id, "debug")
+                return
+
             channel = self.bot.get_channel(channel_id)
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
+                log_guild_action(guild_id, "LOG_SENT", details=f"ticketbot: {title}")
+            else:
+                log_with_guild(f"Log channel {channel_id} not found or not accessible", guild_id, "warning")
+
         except Exception as e:
-            logger.warning(f"⚠️ TicketBot: kon log embed niet versturen: {e}")
+            log_with_guild(f"Kon ticketbot log embed niet versturen: {e}", guild_id, "error")
 
     @app_commands.command(name="ticket", description="Create a support ticket")
     @app_checks.cooldown(1, 30.0)  # simple user cooldown

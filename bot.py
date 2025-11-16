@@ -37,6 +37,24 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="system",
+        key="rules_channel_id",
+        description="Kanaal voor rules en onboarding (#rules).",
+        value_type="channel",
+        default=getattr(config, "RULES_CHANNEL_ID", 0),
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="system",
+        key="onboarding_channel_id",
+        description="Kanaal waar onboarding plaatsvindt.",
+        value_type="channel",
+        default=getattr(config, "ONBOARDING_CHANNEL_ID", 0),
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="embedwatcher",
         key="announcements_channel_id",
         description="Kanaal dat gecontroleerd wordt op auto-reminder embeds.",

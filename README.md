@@ -219,7 +219,7 @@ Reach out via `bryan.dhaen@gmail.com` or open an issue on GitHub.
 Use this quick checklist after deploys or config changes to validate reminder behavior and logs.
 
 1) Pre-flight
-- Ensure env vars are set: `DATABASE_URL`, `WATCHER_LOG_CHANNEL`, `GUILD_ID`, `ENABLE_EVERYONE_MENTIONS`.
+- Ensure env vars are set: `DATABASE_URL`, `WATCHER_LOG_CHANNEL`, `ENABLE_EVERYONE_MENTIONS`. (GUILD_ID is auto-detected for multi-guild support)
 - Bot has permissions to read/send in announcement and log channels.
 
 2) Startup verification
