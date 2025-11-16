@@ -1,0 +1,11 @@
+{
+    "build": {
+      "builder": "Dockerfile",
+      "dockerfilePath": "core-api/Dockerfile"
+    },
+    "deploy": {
+      "healthcheckPath": "/health",
+      "restartPolicyType": "on_failure"
+    }
+  }
+  
