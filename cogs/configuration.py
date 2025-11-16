@@ -148,8 +148,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⚙️ Instelling hersteld",
             f"`system.log_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
+            interaction.guild.id
+        )
 
     @system_group.command(name="set_rules_channel", description="Stel het rules kanaal in (#rules)")
     @requires_admin()
@@ -168,8 +168,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⚙️ Instelling bijgewerkt",
             f"`system.rules_channel_id` ingesteld op {channel.mention} door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
+            interaction.guild.id
+        )
 
     @system_group.command(name="reset_rules_channel", description="Herstel rules kanaal naar standaardwaarde")
     @requires_admin()
@@ -186,9 +186,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⚙️ Instelling hersteld",
             f"`system.rules_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @system_group.command(name="set_onboarding_channel", description="Stel het onboarding kanaal in")
     @requires_admin()
     async def system_set_onboarding_channel(
@@ -206,9 +205,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⚙️ Instelling bijgewerkt",
             f"`system.onboarding_channel_id` ingesteld op {channel.mention} door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @system_group.command(name="reset_onboarding_channel", description="Herstel onboarding kanaal naar standaardwaarde")
     @requires_admin()
     async def system_reset_onboarding_channel(self, interaction: discord.Interaction):
@@ -224,9 +222,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⚙️ Instelling hersteld",
             f"`system.onboarding_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @embedwatcher_group.command(name="show", description="Toon embed watcher instellingen")
     @requires_admin()
     async def embedwatcher_show(self, interaction: discord.Interaction):
@@ -259,9 +256,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🔔 Embed watcher",
             f"`embedwatcher.announcements_channel_id` → {channel.mention} door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @embedwatcher_group.command(name="reset_announcements", description="Herstel announcement kanaal naar standaard")
     @requires_admin()
     async def embedwatcher_reset_announcements(self, interaction: discord.Interaction):
@@ -277,9 +273,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🔔 Embed watcher",
             f"`embedwatcher.announcements_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @embedwatcher_group.command(name="set_offset", description="Stel reminder offset in (minuten)")
     @requires_admin()
     async def embedwatcher_set_offset(
@@ -297,9 +292,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🔁 Reminder offset",
             f"`embedwatcher.reminder_offset_minutes` → {minutes} door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @embedwatcher_group.command(name="reset_offset", description="Herstel reminder offset naar standaard")
     @requires_admin()
     async def embedwatcher_reset_offset(self, interaction: discord.Interaction):
@@ -314,9 +308,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🔁 Reminder offset",
             f"`embedwatcher.reminder_offset_minutes` teruggezet naar standaard door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @ticketbot_group.command(name="show", description="Toon TicketBot instellingen")
     @requires_admin()
     async def ticketbot_show(self, interaction: discord.Interaction):
@@ -349,9 +342,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎟️ TicketBot",
             f"`ticketbot.category_id` → {category.mention} door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @ticketbot_group.command(name="reset_category", description="Herstel ticketcategorie naar standaard")
     @requires_admin()
     async def ticketbot_reset_category(self, interaction: discord.Interaction):
@@ -367,9 +359,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎟️ TicketBot",
             f"`ticketbot.category_id` teruggezet naar standaard door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @ticketbot_group.command(name="set_staff_role", description="Stel de supportrol in")
     @requires_admin()
     async def ticketbot_set_staff_role(
@@ -387,9 +378,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎟️ TicketBot",
             f"`ticketbot.staff_role_id` → {role.mention} door {interaction.user.mention}.",
-            interaction.guild.id,
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @ticketbot_group.command(name="reset_staff_role", description="Herstel supportrol naar standaard")
     @requires_admin()
     async def ticketbot_reset_staff_role(self, interaction: discord.Interaction):
@@ -406,7 +396,7 @@ class Configuration(commands.Cog):
             "🎟️ TicketBot",
             f"`ticketbot.staff_role_id` teruggezet naar standaard door {interaction.user.mention}.",
             interaction.guild.id
-        , interaction.guild.id)
+        )
 
     @ticketbot_group.command(name="set_escalation_role", description="Stel de escalatierol in")
     @requires_admin()
@@ -425,7 +415,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎟️ TicketBot",
             f"`ticketbot.escalation_role_id` → {role.mention} door {interaction.user.mention}.",
-        , interaction.guild.id)
+            interaction.guild.id
+        )
 
     @ticketbot_group.command(name="reset_escalation_role", description="Herstel escalatierol naar standaard")
     @requires_admin()
@@ -442,8 +433,8 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎟️ TicketBot",
             f"`ticketbot.escalation_role_id` teruggezet naar standaard door {interaction.user.mention}.",
-        , interaction.guild.id)
-
+            interaction.guild.id
+        )
     @gpt_group.command(name="show", description="Toon GPT instellingen")
     @requires_admin()
     async def gpt_show(self, interaction: discord.Interaction):
@@ -475,7 +466,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🤖 GPT",
             f"`gpt.model` → `{model_clean}` door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @gpt_group.command(name="reset_model", description="Herstel GPT model naar standaard")
     @requires_admin()
@@ -491,7 +482,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🤖 GPT",
             f"`gpt.model` teruggezet naar standaard door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @gpt_group.command(name="set_temperature", description="Stel de GPT temperatuur in")
     @requires_admin()
@@ -510,7 +501,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🤖 GPT",
             f"`gpt.temperature` → {temperature} door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @gpt_group.command(name="reset_temperature", description="Herstel GPT temperatuur naar standaard")
     @requires_admin()
@@ -526,7 +517,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🤖 GPT",
             f"`gpt.temperature` teruggezet naar standaard door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @invites_group.command(name="show", description="Toon invite tracker instellingen")
     @requires_admin()
@@ -553,7 +544,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎉 Invites",
             f"`invites.enabled` → True door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @invites_group.command(name="disable", description="Schakel de invite tracker uit")
     @requires_admin()
@@ -565,7 +556,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎉 Invites",
             f"`invites.enabled` → False door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @invites_group.command(name="set_channel", description="Stel het invite announcement kanaal in")
     @requires_admin()
@@ -584,7 +575,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎉 Invites",
             f"`invites.announcement_channel_id` → {channel.mention} door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @invites_group.command(name="reset_channel", description="Herstel invite kanaal naar standaard")
     @requires_admin()
@@ -601,7 +592,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎉 Invites",
             f"`invites.announcement_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @invites_group.command(name="set_template", description="Stel het invite bericht in")
     @requires_admin()
@@ -627,7 +618,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎉 Invites",
             f"`invites.{key}` ingesteld door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @invites_group.command(name="reset_template", description="Herstel invite template naar standaard")
     @requires_admin()
@@ -653,7 +644,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🎉 Invites",
             f"`invites.{key}` teruggezet naar standaard door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @reminders_group.command(name="show", description="Toon reminder instellingen")
     @requires_admin()
@@ -680,7 +671,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⏰ Reminders",
             f"`reminders.enabled` → True door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @reminders_group.command(name="disable", description="Schakel reminders uit")
     @requires_admin()
@@ -692,7 +683,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⏰ Reminders",
             f"`reminders.enabled` → False door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @reminders_group.command(name="set_default_channel", description="Stel een standaard reminder kanaal in")
     @requires_admin()
@@ -711,7 +702,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⏰ Reminders",
             f"`reminders.default_channel_id` → {channel.mention} door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @reminders_group.command(name="reset_default_channel", description="Herstel standaard reminder kanaal")
     @requires_admin()
@@ -728,7 +719,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⏰ Reminders",
             f"`reminders.default_channel_id` teruggezet naar standaard door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @reminders_group.command(name="set_everyone", description="Sta @everyone mentions toe of niet")
     @requires_admin()
@@ -748,7 +739,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⏰ Reminders",
             f"`reminders.allow_everyone_mentions` → {allow} door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @gdpr_group.command(name="show", description="Toon GDPR instellingen")
     @requires_admin()
@@ -775,7 +766,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🔒 GDPR",
             f"`gdpr.enabled` → True door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @gdpr_group.command(name="disable", description="Schakel GDPR functionaliteit uit")
     @requires_admin()
@@ -787,7 +778,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🔒 GDPR",
             f"`gdpr.enabled` → False door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @gdpr_group.command(name="set_channel", description="Stel het GDPR kanaal in")
     @requires_admin()
@@ -806,7 +797,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🔒 GDPR",
             f"`gdpr.channel_id` → {channel.mention} door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @gdpr_group.command(name="reset_channel", description="Herstel GDPR kanaal naar standaard")
     @requires_admin()
@@ -823,7 +814,7 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "🔒 GDPR",
             f"`gdpr.channel_id` teruggezet naar standaard door {interaction.user.mention}.",
-        , interaction.guild.id)
+        )
 
     @onboarding_group.command(name="show", description="Show onboarding configuration")
     @requires_admin()
@@ -887,7 +878,7 @@ class Configuration(commands.Cog):
             "📝 Onboarding",
             f"Onboarding enabled by {interaction.user.mention}.",
             interaction.guild.id
-        , interaction.guild.id)
+        )
 
     @onboarding_group.command(name="disable", description="Disable onboarding for this server")
     @requires_admin()
@@ -900,7 +891,7 @@ class Configuration(commands.Cog):
             "📝 Onboarding",
             f"Onboarding disabled by {interaction.user.mention}.",
             interaction.guild.id
-        , interaction.guild.id)
+        )
 
     @onboarding_group.command(name="set_mode", description="Set onboarding mode")
     @app_commands.describe(mode="Choose the onboarding flow type")
@@ -925,7 +916,7 @@ class Configuration(commands.Cog):
             "📝 Onboarding",
             f"Mode set to '{mode}' by {interaction.user.mention}.",
             interaction.guild.id
-        , interaction.guild.id)
+        )
 
     @onboarding_group.command(name="set_role", description="Set role to assign after onboarding completion")
     @requires_admin()
@@ -945,7 +936,7 @@ class Configuration(commands.Cog):
             "📝 Onboarding",
             f"Completion role set to {role.mention} by {interaction.user.mention}.",
             interaction.guild.id
-        , interaction.guild.id)
+        )
 
     @onboarding_group.command(name="reset_role", description="Remove completion role assignment")
     @requires_admin()
@@ -958,7 +949,7 @@ class Configuration(commands.Cog):
             "📝 Onboarding",
             f"Completion role reset by {interaction.user.mention}.",
             interaction.guild.id
-        , interaction.guild.id)
+        )
 
     @onboarding_group.command(name="add_question", description="Add a new onboarding question")
     @requires_admin()
@@ -1002,7 +993,7 @@ class Configuration(commands.Cog):
                 "📝 Onboarding",
                 f"Question '{question}' added at position {step} by {interaction.user.mention}.",
                 interaction.guild.id
-            , interaction.guild.id)
+        )
         else:
             await interaction.followup.send("❌ Could not save question.", ephemeral=True)
 
@@ -1027,7 +1018,7 @@ class Configuration(commands.Cog):
                 "📝 Onboarding",
                 f"Question at position {step} deleted by {interaction.user.mention}.",
                 interaction.guild.id
-            , interaction.guild.id)
+        )
         else:
             await interaction.followup.send("❌ Could not delete question.", ephemeral=True)
 
@@ -1054,7 +1045,7 @@ class Configuration(commands.Cog):
                 "📝 Onboarding",
                 f"Rule '{title}' added at position {rule_order} by {interaction.user.mention}.",
                 interaction.guild.id
-            , interaction.guild.id)
+        )
         else:
             await interaction.followup.send("❌ Could not save rule.", ephemeral=True)
 
@@ -1079,7 +1070,7 @@ class Configuration(commands.Cog):
                 "📝 Onboarding",
                 f"Rule at position {rule_order} deleted by {interaction.user.mention}.",
                 interaction.guild.id
-            , interaction.guild.id)
+        )
         else:
             await interaction.followup.send("❌ Could not delete rule.", ephemeral=True)
 
@@ -1107,7 +1098,7 @@ class Configuration(commands.Cog):
                 "📝 Onboarding",
                 f"Rules reset to default by {interaction.user.mention}.",
                 interaction.guild.id
-            , interaction.guild.id)
+        )
         else:
             await interaction.followup.send("❌ Database not available.", ephemeral=True)
 
@@ -1135,7 +1126,7 @@ class Configuration(commands.Cog):
                 "📝 Onboarding",
                 f"Questions reset to default by {interaction.user.mention}.",
                 interaction.guild.id
-            , interaction.guild.id)
+        )
         else:
             await interaction.followup.send("❌ Database not available.", ephemeral=True)
 
@@ -1151,8 +1142,13 @@ class Configuration(commands.Cog):
             return "✅ aan" if value else "🚫 uit"
         return f"`{value}`"
 
-    async def _send_audit_log(self, title: str, message: str, guild_id: int) -> None:
+    async def _send_audit_log(self, title: str, message: str, guild_id: Optional[int] = None) -> None:
         """Send audit log to the correct guild's log channel"""
+        if guild_id is None:
+            # Backwards compatibility - skip logging if no guild_id provided
+            logger.debug("⚠️ _send_audit_log called without guild_id")
+            return
+
         try:
             channel_id = int(self.settings.get("system", "log_channel_id", guild_id))
         except Exception:
