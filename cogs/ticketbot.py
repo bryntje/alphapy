@@ -7,6 +7,7 @@ import json
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List, Dict, cast
+from utils.settings_service import SettingsService
 
 try:
     import config_local as config  # type: ignore
@@ -34,7 +35,10 @@ class TicketBot(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
-        self.settings = getattr(bot, "settings", None)
+        settings = getattr(bot, "settings", None)
+        if not isinstance(settings, SettingsService):
+            raise RuntimeError("SettingsService not available on bot instance")
+        self.settings: SettingsService = settings
         # Start async setup zonder de event loop te blokkeren
         self.bot.loop.create_task(self.setup_db())
         # Register persistent view so the ticket button keeps working after restarts

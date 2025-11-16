@@ -3,12 +3,16 @@ from discord.ext import commands
 import asyncpg
 import config
 from typing import Any, Optional
+from utils.settings_service import SettingsService
 from utils.logger import logger
 
 class GDPRAnnouncement(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.settings = getattr(bot, "settings", None)
+        settings = getattr(bot, "settings", None)
+        if not isinstance(settings, SettingsService):
+            raise RuntimeError("SettingsService not available on bot instance")
+        self.settings: SettingsService = settings
 
     @commands.command(name="postgdpr")
     @commands.is_owner()
