@@ -1,4 +1,12 @@
-# 🌐 Web Configuration Interface
+# 🔧 Alphapy Bot Web Configuration Interface
+
+**⚠️ IMPORTANT: This is NOT the same as `app.innersync.tech`**
+
+This dashboard is specifically for **configuring your Alphapy Discord bot** across your servers. It is designed exclusively for **server administrators** to manage bot settings, reminders, onboarding, and more.
+
+**For personal reflection and growth tracking, visit [`app.innersync.tech`](https://app.innersync.tech) instead.**
+
+---
 
 **Phase 1.75 Feature** - Modern web-based administration dashboard for Alphapy Discord bot.
 
