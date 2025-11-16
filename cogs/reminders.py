@@ -446,7 +446,7 @@ class ReminderCog(commands.Cog):
                 return int(self.settings.get("system", "log_channel_id", guild_id))
             except KeyError:
                 pass
-        return getattr(config, "WATCHER_LOG_CHANNEL", 0)
+        return 0  # Moet geconfigureerd worden via /config system set_log_channel
 
     def _is_enabled(self, guild_id: int) -> bool:
         if self.settings:
@@ -474,7 +474,7 @@ class ReminderCog(commands.Cog):
                 return bool(self.settings.get("reminders", "allow_everyone_mentions", guild_id))
             except KeyError:
                 pass
-        return getattr(config, "ENABLE_EVERYONE_MENTIONS", False)
+        return False  # Moet geconfigureerd worden via /config reminders allow_everyone_mentions
 
     @tasks.loop(seconds=60)
     async def check_reminders(self) -> None:

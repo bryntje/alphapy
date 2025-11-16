@@ -584,7 +584,7 @@ class TicketBot(commands.Cog):
         return None
 
     def _get_log_channel_id(self, guild_id: int) -> int:
-        value = self._settings_get("system", "log_channel_id", guild_id, getattr(config, "WATCHER_LOG_CHANNEL", 0))
+        value = self._settings_get("system", "log_channel_id", guild_id, 0)  # Moet geconfigureerd worden via /config system set_log_channel
         return int(value) if value is not None else 0
 
     def _get_ticket_category_id(self, guild_id: int) -> Optional[int]:
@@ -904,7 +904,7 @@ class TicketActionView(discord.ui.View):
             color = color_map.get(level, 0x3498db)
             embed = discord.Embed(title=title, description=desc, color=color)
             embed.set_footer(text="ticketbot")
-            channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+            channel = self.bot.get_channel(0)  # Moet geconfigureerd worden via /config system set_log_channel
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
@@ -1042,7 +1042,7 @@ class TicketActionView(discord.ui.View):
                     if self.cog and interaction.guild:
                         channel_id = self.cog._get_log_channel_id(interaction.guild.id)
                     if channel_id is None:
-                        channel_id = getattr(config, "WATCHER_LOG_CHANNEL", 0)
+                        channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
                     channel = self.bot.get_channel(channel_id)
                     if channel and hasattr(channel, "send"):
                         text_channel = cast(discord.TextChannel, channel)
