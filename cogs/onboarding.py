@@ -547,14 +547,32 @@ class Onboarding(commands.Cog):
                 logger.error("Database pool is None")
                 return False
             async with self.db.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO onboarding (guild_id, user_id, responses)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT(guild_id, user_id) DO UPDATE SET responses = $3;
-                    """,
+                # First try to update existing record for this guild+user combination
+                result = await conn.fetchrow(
+                    "UPDATE onboarding SET responses = $3 WHERE guild_id = $1 AND user_id = $2 RETURNING user_id",
                     guild_id, user_id, json.dumps(responses)
                 )
+
+                if not result:
+                    # No existing record found, insert new one
+                    try:
+                        await conn.execute(
+                            """
+                            INSERT INTO onboarding (guild_id, user_id, responses)
+                            VALUES ($1, $2, $3)
+                            """,
+                            guild_id, user_id, json.dumps(responses)
+                        )
+                    except Exception as insert_exc:
+                        # If insert fails due to old user_id constraint, try updating by user_id only
+                        if "onboarding_user_id_key" in str(insert_exc):
+                            logger.warning(f"⚠️ Fallback: updating existing record by user_id only for {user_id}")
+                            await conn.execute(
+                                "UPDATE onboarding SET responses = $2, guild_id = $3 WHERE user_id = $1",
+                                user_id, json.dumps(responses), guild_id
+                            )
+                        else:
+                            raise insert_exc
             logger.info(f"✅ Onboarding data opgeslagen voor {user_id}")
             return True
         except Exception as exc:
