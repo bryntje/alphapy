@@ -1266,7 +1266,7 @@ class TicketActionView(discord.ui.View):
         if current_status != 'open':
             await self._update_view_for_status(current_status)
             await interaction.response.edit_message(view=self)
-            await interaction.response.send_message(f"❌ Ticket is niet meer open (status: {current_status}). View bijgewerkt.", ephemeral=True)
+            # Don't send additional message to avoid InteractionResponded error
             return
 
         if not await self._is_staff(interaction):
@@ -1315,7 +1315,7 @@ class TicketActionView(discord.ui.View):
         if current_status == 'closed':
             await self._update_view_for_status(current_status)
             await interaction.response.edit_message(view=self)
-            await interaction.response.send_message("❌ Ticket is al gesloten. View bijgewerkt.", ephemeral=True)
+            # Don't send additional message to avoid InteractionResponded error
             return
 
         if not await self._is_staff(interaction):
@@ -1412,7 +1412,7 @@ class TicketActionView(discord.ui.View):
         if current_status != 'claimed':
             await self._update_view_for_status(current_status)
             await interaction.response.edit_message(view=self)
-            await interaction.response.send_message(f"❌ Ticket moet claimed zijn voor wait (status: {current_status}). View bijgewerkt.", ephemeral=True)
+            # Don't send additional message to avoid InteractionResponded error
             return
 
         if not await self._is_staff(interaction):
@@ -1422,6 +1422,9 @@ class TicketActionView(discord.ui.View):
             "UPDATE support_tickets SET status='waiting_for_user', updated_at = NOW() WHERE id = $1",
             int(self.ticket_id),
         )
+        # Update view to show waiting_for_user state
+        await self._update_view_for_status('waiting_for_user')
+        await interaction.response.edit_message(view=self)
         await interaction.response.send_message("✅ Status set to waiting_for_user.", ephemeral=True)
         await self._log(interaction, "🕒 Ticket status", f"id={self.ticket_id} → waiting_for_user")
 
@@ -1451,6 +1454,9 @@ class TicketActionView(discord.ui.View):
             escalated_to,
             int(self.ticket_id),
         )
+        # Update view to show escalated state
+        await self._update_view_for_status('escalated')
+        await interaction.response.edit_message(view=self)
         await interaction.response.send_message("✅ Ticket escalated.", ephemeral=True)
         await self._log(interaction, "🚩 Ticket escalated", f"id={self.ticket_id} • to={escalated_to or '-'}")
 
@@ -1461,7 +1467,7 @@ class TicketActionView(discord.ui.View):
         if current_status != 'closed':
             await self._update_view_for_status(current_status)
             await interaction.response.edit_message(view=self)
-            await interaction.response.send_message(f"❌ Ticket moet gesloten zijn om te archiveren (status: {current_status}). View bijgewerkt.", ephemeral=True)
+            # Don't send additional message to avoid InteractionResponded error
             return
 
         # Admin-only
