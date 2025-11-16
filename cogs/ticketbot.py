@@ -400,7 +400,7 @@ class TicketBot(commands.Cog):
         await self.send_log_embed(
             title="🟢 Ticket created",
             description=(
-                f"ID: {ticket_id}\n"
+                f"ID: {guild_ticket_id}\n"
                 f"User: {user_display}\n"
                 f"Timestamp: {created_at.isoformat()}\n"
                 f"Channel: {channel_mention_text}\n"
@@ -738,6 +738,7 @@ class TicketBot(commands.Cog):
                     f"topic: {topic or '-'}"
                 ),
                 level="info",
+                guild_id=0,  # Global metrics, no specific guild
             )
         except Exception:
             pass
@@ -777,6 +778,7 @@ class TicketBot(commands.Cog):
                     title="📊 Ticket stats (button)",
                     description=f"by={interaction.user.id} • scope={self.scope} • counts={counts}",
                     level="info",
+                    guild_id=interaction.guild.id,
                 )
                 if self.cog.conn:
                     await self.cog.conn.execute(
@@ -825,6 +827,7 @@ class TicketBot(commands.Cog):
             title="📊 Ticket stats",
             description=f"by={interaction.user.id} • scope=all • public={public} • counts={counts}",
             level="info",
+            guild_id=0,  # Global stats across all guilds
         )
         try:
             await self.conn.execute(
@@ -918,6 +921,7 @@ class TicketBot(commands.Cog):
                     + (f"\nEscalated to: <@&{escalate_to.id}>" if (new_status == 'escalated' and escalate_to) else "")
                 ),
                 level="info",
+                guild_id=interaction.guild.id,
             )
         except Exception:
             pass
@@ -939,7 +943,7 @@ class TicketActionView(discord.ui.View):
         # Use channel send via embed helper from a new simple instance-less call
         try:
             if self.cog:
-                await self.cog.send_log_embed(title=title, description=desc, level=level)
+                await self.cog.send_log_embed(title=title, description=desc, level=level, guild_id=interaction.guild.id)
                 return
             color_map = {"info": 0x3498db, "debug": 0x95a5a6, "error": 0xe74c3c, "success": 0x2ecc71, "warning": 0xf1c40f}
             color = color_map.get(level, 0x3498db)
