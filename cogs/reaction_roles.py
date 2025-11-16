@@ -4,45 +4,47 @@ import config
 from utils.logger import log_with_guild
 
 class StartOnboardingView(discord.ui.View):
-    """View met een knop om direct de onboarding te starten."""
+    """View with a button to start onboarding directly."""
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(StartOnboardingButton())
 
 class StartOnboardingButton(discord.ui.Button):
-    """Knop om de regels te accepteren en direct de onboarding te starten."""
+    """Button to accept rules and start onboarding directly."""
     def __init__(self):
-        # Gebruik een vaste custom_id zodat dit als persistent view herkend wordt.
+        # Use a fixed custom_id so this is recognized as a persistent view.
         super().__init__(label="🚀 Start Onboarding", style=discord.ButtonStyle.success, custom_id="start_onboarding")
         
     async def callback(self, interaction: discord.Interaction):
         member = interaction.user
-        # Start met de regels
-        rules_view = RuleAcceptanceView(member)
+        # Start with the rules
+        rules_view = RuleAcceptanceView(member, interaction.guild.id)
         await interaction.response.send_message(
             "📜 Please accept each rule one by one before proceeding:",
             view=rules_view,
-            ephemeral=True  # Houd het bericht privé
+            ephemeral=True  # Keep the message private
         )
 
 class RuleAcceptanceView(discord.ui.View):
-    """View waarin gebruikers regels één voor één moeten accepteren voordat ze doorgaan naar onboarding."""
-    def __init__(self, member):
+    """View where users must accept rules one by one before proceeding to onboarding."""
+    def __init__(self, member, guild_id: int):
         super().__init__(timeout=None)
         self.member = member
+        self.guild_id = guild_id
         self.current_rule = 0
         self.accepted_rules = set()
+        # Default rules - in the future this should be configurable per guild
         self.rules = [
             ("🛡️ Respect Others", "Stay constructive & professional."),
             ("🚫 No Spam or Promotions", "External links, ads, and spam are forbidden."),
-            ("📚 Educational Content Only", "Do not share content outside Innersync • Alphapips™."),
-            ("🌟 Ambassador Content Sharing", "Only approved ambassadors may share externally."),
-            ("💰 No Financial Advice", "Innersync • Alphapips™ provides education, not financial advice.")
+            ("📚 Educational Content Only", "Share only educational content relevant to this community."),
+            ("🌟 Community Guidelines", "Follow server-specific rules and guidelines."),
+            ("💰 No Financial Advice", "This community provides education, not financial advice.")
         ]
         self.update_buttons()
 
     def update_buttons(self):
-        """Update de knoppen zodat alleen de huidige regel getoond wordt."""
+        """Update the buttons so only the current rule is shown."""
         self.clear_items()
         if self.current_rule < len(self.rules):
             rule_text, _ = self.rules[self.current_rule]
@@ -51,7 +53,7 @@ class RuleAcceptanceView(discord.ui.View):
             self.add_item(FinalAcceptButton())
 
 class RuleButton(discord.ui.Button):
-    """Knop om een regel te accepteren."""
+    """Button to accept a rule."""
     def __init__(self, rule_index: int, rule_text: str, view: RuleAcceptanceView):
         super().__init__(label="✅ I Accept", style=discord.ButtonStyle.primary, custom_id=f"rule_{rule_index}")
         self.rule_index = rule_index
@@ -86,7 +88,7 @@ class RuleButton(discord.ui.Button):
             await interaction.response.edit_message(view=view_obj)
 
 class FinalAcceptButton(discord.ui.Button):
-    """Knop waarmee een gebruiker aangeeft alle regels te accepteren en onboarding start."""
+    """Button where user indicates they accept all rules and onboarding starts."""
     def __init__(self):
         super().__init__(label="✅ Accept All Rules & Start Onboarding", style=discord.ButtonStyle.success, custom_id="final_accept")
 
@@ -107,45 +109,45 @@ class FinalAcceptButton(discord.ui.Button):
         bot_client = interaction.client
         onboarding_cog = getattr(bot_client, "get_cog", lambda name: None)("Onboarding")
         if onboarding_cog:
-            print("✅ Onboarding Cog gevonden! Start onboarding...")
+            print("✅ Onboarding Cog found! Starting onboarding...")
             await interaction.response.defer()
             await interaction.followup.send("✅ All rules accepted! Starting onboarding...", ephemeral=True)
             await onboarding_cog.send_next_question(interaction)
         else:
-            print("❌ Onboarding Cog niet gevonden! Controleer of de onboarding module correct is geladen en actief is!")
+            print("❌ Onboarding Cog not found! Check if the onboarding module is loaded and active!")
 
 class ReactionRole(commands.Cog):
-    """Regelsysteem dat onboarding start via een knop in #rules."""
+    """Rule system that starts onboarding via a button in #rules."""
     def __init__(self, bot):
         self.bot = bot
-        # Registreer de persistent view voor de start-knop
+        # Register the persistent view for the start button
         self.bot.add_view(StartOnboardingView())
 
     @commands.Cog.listener()
     async def on_ready(self):
-        """Plaats de onboarding-knop in #rules voor alle guilds waar de bot in zit."""
+        """Place the onboarding button in #rules for all guilds the bot is in."""
         for guild in self.bot.guilds:
-            # Haal rules channel op uit settings voor deze guild
+            # Get rules channel from settings for this guild
             try:
                 rules_channel_id = int(self.bot.settings.get("system", "rules_channel_id", guild.id))
                 if rules_channel_id == 0:
-                    # Geen kanaal geconfigureerd voor deze guild
-                    log_with_guild(f"Geen rules kanaal geconfigureerd voor guild {guild.name}", guild.id, "debug")
+                    # No channel configured for this guild
+                    log_with_guild(f"No rules channel configured for guild {guild.name}", guild.id, "debug")
                     continue
                 channel = guild.get_channel(rules_channel_id)
                 if not channel:
-                    log_with_guild(f"Rules kanaal {rules_channel_id} niet gevonden in guild {guild.name}", guild.id, "warning")
+                    log_with_guild(f"Rules channel {rules_channel_id} not found in guild {guild.name}", guild.id, "warning")
                     continue
             except (KeyError, ValueError):
-                # Geen kanaal geconfigureerd, sla over
-                log_with_guild(f"Geen rules kanaal ingesteld voor guild {guild.name}", guild.id, "debug")
+                # No channel configured, skip
+                log_with_guild(f"No rules channel set for guild {guild.name}", guild.id, "debug")
                 continue
 
-            # Helper: check of een bericht de Start Onboarding-knop bevat via custom_id
+            # Helper: check if a message contains the Start Onboarding button via custom_id
             def has_start_button(message: discord.Message) -> bool:
                 try:
                     for row in getattr(message, "components", []) or []:
-                        # ActionRow kan 'children' (discord.py UI) of 'components' (API representatie) hebben
+                        # ActionRow can have 'children' (discord.py UI) or 'components' (API representation)
                         children = getattr(row, "children", None) or getattr(row, "components", [])
                         for comp in children:
                             if getattr(comp, "custom_id", None) == "start_onboarding":
@@ -154,11 +156,11 @@ class ReactionRole(commands.Cog):
                 except Exception:
                     return False
 
-            # Controleer of er al een bericht met de onboarding-knop staat op basis van custom_id
+            # Check if there's already a message with the onboarding button based on custom_id
             try:
                 messages = [message async for message in channel.history(limit=100)]
             except Exception as e:
-                print(f"⚠️ Kon channel history niet lezen in guild {guild.name}: {e}")
+                print(f"⚠️ Could not read channel history in guild {guild.name}: {e}")
                 continue
 
             persistent_message = None
@@ -176,11 +178,11 @@ class ReactionRole(commands.Cog):
                 embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
                 try:
                     await channel.send(embed=embed, view=StartOnboardingView())
-                    print(f"✅ Onboarding-knop geplaatst in #{channel.name} voor guild {guild.name}!")
+                    print(f"✅ Onboarding button placed in #{channel.name} for guild {guild.name}!")
                 except Exception as e:
-                    print(f"⚠️ Kon onboarding-knop niet plaatsen in guild {guild.name}: {e}")
+                    print(f"⚠️ Could not place onboarding button in guild {guild.name}: {e}")
             else:
-                print(f"✅ Persistent onboarding message gevonden voor guild {guild.name}; geen duplicate verstuurd.")
+                print(f"✅ Persistent onboarding message found for guild {guild.name}; no duplicate sent.")
 
 async def setup(bot):
     await bot.add_cog(ReactionRole(bot))
