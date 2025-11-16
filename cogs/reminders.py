@@ -346,7 +346,7 @@ class ReminderCog(commands.Cog):
         )
 
     @app_commands.command(name="reminder_list", description="📋 Bekijk je actieve reminders")
-    async def reminder_list(self, interaction: discord.Interaction):
+    async def reminder_list(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
             return
@@ -414,7 +414,7 @@ class ReminderCog(commands.Cog):
 
     @app_commands.command(name="reminder_delete", description="🗑️ Verwijder een reminder via ID")
     @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
-    async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int):
+    async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int) -> None:
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild:
             await interaction.followup.send("❌ Dit commando werkt alleen in een server.", ephemeral=True)
@@ -444,7 +444,7 @@ class ReminderCog(commands.Cog):
         )
     
     @reminder_delete.autocomplete("reminder_id")
-    async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str):
+    async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str) -> None:
         if not interaction.guild:
             return []
         if not self._is_enabled(interaction.guild.id):
