@@ -7,14 +7,16 @@ RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
 FROM base AS deps
 WORKDIR /app
-COPY shared/innersync-core/package.json shared/innersync-core/pnpm-lock.yaml ./
+# Copy package files from .railway directory (prepared for Railway build)
+COPY .railway/package.json .railway/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 FROM base AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
-COPY shared/innersync-core/ ./
+# Copy entire app source from .railway directory
+COPY .railway/ ./
 RUN pnpm run build
 
 FROM base AS runner
