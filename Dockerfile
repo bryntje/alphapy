@@ -7,7 +7,7 @@ RUN corepack enable && corepack prepare pnpm@10.19.0 --activate
 # === DEPS ===
 FROM base AS deps
 WORKDIR /app
-COPY shared/package.json shared/pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # === BUILD ===
@@ -18,12 +18,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Kopieer node_modules
 COPY --from=deps /app/node_modules ./node_modules
 
-# Kopieer Next.js essentials EXPLICIET (Railway heeft problemen met wildcard copies)
-COPY shared/package.json ./
-COPY shared/tsconfig.json ./
-COPY shared/next.config.ts ./
-COPY shared/app ./app
-COPY shared/public ./public
+# Kopieer Next.js essentials van root (standaard setup)
+COPY package.json ./
+COPY tsconfig.json ./
+COPY next.config.ts ./
+COPY app ./app
+COPY public ./public
 
 # Nu ziet Next.js app/ of pages/ in /app
 RUN pnpm run build

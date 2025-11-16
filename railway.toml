@@ -1,0 +1,10 @@
+[build]
+builder = "Dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+restartPolicyType = "on_failure"
+
+# Next.js dashboard service for Alphapy Discord bot
+# Serves the web configuration interface at alphapy.innersync.tech

@@ -1,0 +1,9 @@
+# Ignore everything except Next.js essentials
+*
+!app/
+!public/
+!package.json
+!pnpm-lock.yaml
+!next.config.ts
+!tsconfig.json
+!Dockerfile
