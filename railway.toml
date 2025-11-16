@@ -1,0 +1,11 @@
+[build]
+builder = "Dockerfile"
+
+[deploy]
+sourceDirectory = "shared/innersync-core"
+healthcheckPath = "/api/health"
+restartPolicyType = "on_failure"
+
+# Railway configuration for Alphapy bot web interface
+# Deploys the Next.js dashboard from shared/innersync-core submodule
+# Domain: alphapy.innersync.tech
