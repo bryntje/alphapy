@@ -810,6 +810,20 @@ class Configuration(commands.Cog):
         else:
             lines.append("**Completion Role:** Not set")
 
+        # Show rules if mode includes rules
+        if mode in ["rules_only", "rules_with_questions"]:
+            onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+            if onboarding_cog:
+                rules = await onboarding_cog.get_guild_rules(interaction.guild.id)
+                if rules:
+                    lines.append("\n**Rules:**")
+                    for i, (title, description) in enumerate(rules, 1):
+                        lines.append(f"{i}. **{title}** - {description}")
+                else:
+                    lines.append("\n⚠️ No rules configured")
+            else:
+                lines.append("\n❌ Onboarding module not available")
+
         # Show questions only if mode includes questions
         if mode in ["rules_with_questions", "questions_only"]:
             onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
@@ -977,6 +991,86 @@ class Configuration(commands.Cog):
             )
         else:
             await interaction.followup.send("❌ Could not delete question.", ephemeral=True)
+
+    @onboarding_group.command(name="add_rule", description="Add a new onboarding rule")
+    @requires_admin()
+    async def onboarding_add_rule(
+        self,
+        interaction: discord.Interaction,
+        rule_order: app_commands.Range[int, 1, 20],
+        title: str,
+        description: str
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+        if not onboarding_cog:
+            await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
+            return
+
+        success = await onboarding_cog.save_guild_rule(interaction.guild.id, rule_order, title, description)
+        if success:
+            await interaction.followup.send(f"✅ Rule added at position {rule_order}.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Rule '{title}' added at position {rule_order} by {interaction.user.mention}.",
+                interaction.guild.id
+            )
+        else:
+            await interaction.followup.send("❌ Could not save rule.", ephemeral=True)
+
+    @onboarding_group.command(name="delete_rule", description="Delete an onboarding rule")
+    @requires_admin()
+    async def onboarding_delete_rule(
+        self,
+        interaction: discord.Interaction,
+        rule_order: app_commands.Range[int, 1, 20]
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+        if not onboarding_cog:
+            await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
+            return
+
+        success = await onboarding_cog.delete_guild_rule(interaction.guild.id, rule_order)
+        if success:
+            await interaction.followup.send(f"✅ Rule at position {rule_order} deleted.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Rule at position {rule_order} deleted by {interaction.user.mention}.",
+                interaction.guild.id
+            )
+        else:
+            await interaction.followup.send("❌ Could not delete rule.", ephemeral=True)
+
+    @onboarding_group.command(name="reset_rules", description="Reset to default onboarding rules")
+    @requires_admin()
+    async def onboarding_reset_rules(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+        if not onboarding_cog:
+            await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
+            return
+
+        # Delete all custom rules for this guild
+        if onboarding_cog.db:
+            async with onboarding_cog.db.acquire() as conn:
+                await conn.execute("DELETE FROM guild_rules WHERE guild_id = $1", interaction.guild.id)
+
+            # Clear cache
+            if interaction.guild.id in onboarding_cog.guild_rules_cache:
+                del onboarding_cog.guild_rules_cache[interaction.guild.id]
+
+            await interaction.followup.send("✅ Onboarding rules reset to default.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Rules reset to default by {interaction.user.mention}.",
+                interaction.guild.id
+            )
+        else:
+            await interaction.followup.send("❌ Database not available.", ephemeral=True)
 
     @onboarding_group.command(name="reset_questions", description="Reset to default onboarding questions")
     @requires_admin()

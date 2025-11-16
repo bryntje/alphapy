@@ -41,6 +41,7 @@ class StartOnboardingButton(discord.ui.Button):
         elif mode in ["rules_only", "rules_with_questions"]:
             # Start with the rules
             rules_view = RuleAcceptanceView(member, interaction.guild.id)
+            await rules_view.load_rules(interaction.client)
             await interaction.response.send_message(
                 "📜 Please accept each rule one by one before proceeding:",
                 view=rules_view,
@@ -58,14 +59,23 @@ class RuleAcceptanceView(discord.ui.View):
         self.guild_id = guild_id
         self.current_rule = 0
         self.accepted_rules = set()
-        # Default rules - in the future this should be configurable per guild
-        self.rules = [
-            ("🛡️ Respect Others", "Stay constructive & professional."),
-            ("🚫 No Spam or Promotions", "External links, ads, and spam are forbidden."),
-            ("📚 Educational Content Only", "Share only educational content relevant to this community."),
-            ("🌟 Community Guidelines", "Follow server-specific rules and guidelines."),
-            ("💰 No Financial Advice", "This community provides education, not financial advice.")
-        ]
+        self.rules = []  # Will be loaded asynchronously
+        # Don't call update_buttons() here - it will be called after rules are loaded
+
+    async def load_rules(self, bot):
+        """Load rules for this guild."""
+        onboarding_cog = bot.get_cog("Onboarding")
+        if onboarding_cog:
+            self.rules = await onboarding_cog.get_guild_rules(self.guild_id)
+        else:
+            # Fallback to default rules if onboarding cog not available
+            self.rules = [
+                ("🛡️ Respect Others", "Stay constructive & professional."),
+                ("🚫 No Spam or Promotions", "External links, ads, and spam are forbidden."),
+                ("📚 Educational Content Only", "Share only educational content relevant to this community."),
+                ("🌟 Community Guidelines", "Follow server-specific rules and guidelines."),
+                ("💰 No Financial Advice", "This community provides education, not financial advice.")
+            ]
         self.update_buttons()
 
     def update_buttons(self):

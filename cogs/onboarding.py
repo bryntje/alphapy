@@ -75,6 +75,17 @@ class Onboarding(commands.Cog):
 
         # Cache for guild questions (guild_id -> questions list)
         self.guild_questions_cache = {}
+        # Cache for guild rules (guild_id -> rules list)
+        self.guild_rules_cache = {}
+
+        # Default rules (used when no custom rules are configured for a guild)
+        self.default_rules = [
+            ("🛡️ Respect Others", "Stay constructive & professional."),
+            ("🚫 No Spam or Promotions", "External links, ads, and spam are forbidden."),
+            ("📚 Educational Content Only", "Share only educational content relevant to this community."),
+            ("🌟 Community Guidelines", "Follow server-specific rules and guidelines."),
+            ("💰 No Financial Advice", "This community provides education, not financial advice.")
+        ]
 
         self.db: Optional[asyncpg.Pool] = None
 
@@ -201,7 +212,94 @@ class Onboarding(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to delete question for guild {guild_id}: {e}")
             return False
-        
+
+    async def get_guild_rules(self, guild_id: int) -> list:
+        """Load rules for a specific guild from database, or use defaults if none configured."""
+        # Check cache first
+        if guild_id in self.guild_rules_cache:
+            return self.guild_rules_cache[guild_id]
+
+        if not await self._ensure_pool():
+            logger.warning(f"Database not available, using default rules for guild {guild_id}")
+            return self.default_rules
+
+        try:
+            async with self.db.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT title, description
+                    FROM guild_rules
+                    WHERE guild_id = $1 AND enabled = TRUE
+                    ORDER BY rule_order
+                """, guild_id)
+
+                if rows:
+                    rules = [(row["title"], row["description"]) for row in rows]
+                    self.guild_rules_cache[guild_id] = rules
+                    return rules
+                else:
+                    # No custom rules configured, use defaults
+                    self.guild_rules_cache[guild_id] = self.default_rules
+                    return self.default_rules
+
+        except Exception as e:
+            logger.error(f"Failed to load rules for guild {guild_id}: {e}")
+            return self.default_rules
+
+    async def save_guild_rule(self, guild_id: int, rule_order: int, title: str, description: str) -> bool:
+        """Save a rule for a specific guild."""
+        if not await self._ensure_pool():
+            return False
+
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO guild_rules
+                    (guild_id, rule_order, title, description, enabled)
+                    VALUES ($1, $2, $3, $4, TRUE)
+                    ON CONFLICT (guild_id, rule_order)
+                    DO UPDATE SET
+                        title = EXCLUDED.title,
+                        description = EXCLUDED.description,
+                        updated_at = CURRENT_TIMESTAMP
+                """,
+                guild_id,
+                rule_order,
+                title,
+                description
+                )
+
+                # Clear cache for this guild
+                if guild_id in self.guild_rules_cache:
+                    del self.guild_rules_cache[guild_id]
+
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to save rule for guild {guild_id}: {e}")
+            return False
+
+    async def delete_guild_rule(self, guild_id: int, rule_order: int) -> bool:
+        """Delete a rule for a specific guild."""
+        if not await self._ensure_pool():
+            return False
+
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute("""
+                    DELETE FROM guild_rules
+                    WHERE guild_id = $1 AND rule_order = $2
+                """, guild_id, rule_order)
+
+                # Clear cache for this guild
+                if guild_id in self.guild_rules_cache:
+                    del self.guild_rules_cache[guild_id]
+
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete rule for guild {guild_id}: {e}")
+            return False
+
     def _value_to_label(self, q_data: dict, value: object) -> str:
         options = q_data.get("options")
         if not isinstance(options, list):
@@ -253,6 +351,19 @@ class Onboarding(commands.Cog):
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(guild_id, step_order)
+                );
+            ''')
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS guild_rules (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    rule_order INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    enabled BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(guild_id, rule_order)
                 );
             ''')
         self.db = pool
