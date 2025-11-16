@@ -10,9 +10,9 @@ class GDPRAnnouncement(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         settings = getattr(bot, "settings", None)
-        if not isinstance(settings, SettingsService):
+        if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
-        self.settings: SettingsService = settings
+        self.settings = settings  # type: ignore
 
     @commands.command(name="postgdpr")
     @commands.is_owner()

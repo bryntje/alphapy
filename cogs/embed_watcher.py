@@ -58,9 +58,9 @@ class EmbedReminderWatcher(commands.Cog):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
         settings = getattr(bot, "settings", None)
-        if not isinstance(settings, SettingsService):
+        if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
-        self.settings: SettingsService = settings
+        self.settings = settings  # type: ignore
 
     async def setup_db(self) -> None:
         self.conn = await asyncpg.connect(config.DATABASE_URL)
@@ -436,9 +436,23 @@ class EmbedReminderWatcher(commands.Cog):
         return 60
 
 
+class MockSettingsService:
+    def get(self, scope, key, guild_id):
+        # Return default values for testing
+        if scope == "embedwatcher" and (key == "reminder_offset" or key == "reminder_offset_minutes"):
+            return 60  # default 60 minutes
+        return None
+
+class MockBot:
+    def __init__(self):
+        self.settings = MockSettingsService()
+
+    def get_channel(self, *_):
+        return None
+
 def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
     """Convenience wrapper to parse a reminder embed outside of the cog."""
-    parser = EmbedReminderWatcher(cast(commands.Bot, None))
+    parser = EmbedReminderWatcher(MockBot())
     return parser.parse_embed_for_reminder(embed, guild_id)
 
 async def setup(bot):

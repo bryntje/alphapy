@@ -2,9 +2,32 @@
 import unittest
 from datetime import datetime
 from cogs.embed_watcher import EmbedReminderWatcher
+from utils.settings_service import SettingsService
 import discord
 
+class MockSettingsService:
+    def get(self, scope, key, guild_id):
+        # Return default values for tests
+        if scope == "embedwatcher" and (key == "reminder_offset" or key == "reminder_offset_minutes"):
+            return 60  # default 60 minutes
+        return None
+
+    def set(self, scope, key, value, guild_id):
+        pass
+
+    def is_overridden(self, scope, key, guild_id):
+        return False
+
+    def list_scope(self, scope, guild_id):
+        return {}
+
+    def clear(self, scope, key, guild_id):
+        pass
+
 class DummyBot:
+    def __init__(self):
+        self.settings = MockSettingsService()
+
     def get_channel(self, *_):
         return None
 
