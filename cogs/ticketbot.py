@@ -977,6 +977,36 @@ class TicketBot(commands.Cog):
             return
 
         await interaction.followup.send(f"✅ Ticket `{id}` status set to **{new_status}**.", ephemeral=True)
+
+        # Update the view in the ticket channel if it exists
+        try:
+            channel_row = await self.conn.fetchrow(
+                "SELECT channel_id FROM support_tickets WHERE id = $1",
+                id
+            )
+            if channel_row and channel_row["channel_id"]:
+                channel = interaction.guild.get_channel(channel_row["channel_id"])
+                if channel and isinstance(channel, discord.TextChannel):
+                    # Find the bot's message with the ticket view
+                    async for message in channel.history(limit=10):
+                        if message.author == self.bot.user and message.components:
+                            # Create updated view with new status
+                            view = TicketActionView(
+                                bot=self.bot,
+                                conn=self.conn,
+                                ticket_id=id,
+                                support_role_id=self._get_support_role_id(interaction.guild.id),
+                                cog=self,
+                                timeout=None,
+                            )
+                            # Update view based on new status
+                            await view._update_view_for_status(new_status)
+                            await message.edit(view=view)
+                            break
+        except Exception as e:
+            # Don't fail the command if view update fails
+            pass
+
         # Log
         try:
             await self.send_log_embed(
@@ -1005,6 +1035,63 @@ class TicketActionView(discord.ui.View):
 
     async def _is_staff(self, interaction: discord.Interaction) -> bool:
         return await is_owner_or_admin_interaction(interaction)
+
+    async def _get_current_status(self) -> Optional[str]:
+        """Get the current ticket status from database."""
+        try:
+            if self.conn:
+                row = await self.conn.fetchrow(
+                    "SELECT status FROM support_tickets WHERE id = $1",
+                    int(self.ticket_id)
+                )
+                return row["status"] if row else None
+        except Exception:
+            pass
+        return None
+
+    async def _update_view_for_status(self, status: Optional[str]) -> None:
+        """Update the view buttons based on the current ticket status."""
+        if status == 'closed':
+            # Disable all buttons except archive
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    if child.custom_id == "ticket_archive_btn":
+                        child.disabled = False
+                        child.style = discord.ButtonStyle.danger
+                    else:
+                        child.disabled = True
+        elif status == 'waiting_for_user':
+            # Enable only close button, disable others
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    if child.custom_id == "ticket_close_btn":
+                        child.disabled = False
+                    elif child.custom_id == "ticket_archive_btn":
+                        child.disabled = True
+                    else:
+                        child.disabled = True
+        elif status == 'escalated':
+            # Keep escalated appearance but disable claim
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    if child.custom_id == "ticket_claim_btn":
+                        child.disabled = True
+                    elif child.custom_id == "ticket_escalate_btn":
+                        child.style = discord.ButtonStyle.danger
+                        child.label = "🚩 Escalated"
+        elif status == 'open':
+            # Reset to default state
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    child.disabled = False
+                    if child.custom_id == "ticket_claim_btn":
+                        child.style = discord.ButtonStyle.primary
+                        child.label = "🎟️ Claim ticket"
+                    elif child.custom_id == "ticket_escalate_btn":
+                        child.style = discord.ButtonStyle.secondary
+                        child.label = "🚩 Escalate"
+                    elif child.custom_id == "ticket_archive_btn":
+                        child.disabled = True
 
     async def _log(self, interaction: discord.Interaction, title: str, desc: str, level: str = "info") -> None:
         # Use channel send via embed helper from a new simple instance-less call
@@ -1174,6 +1261,14 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="🎟️ Claim ticket", style=discord.ButtonStyle.primary, custom_id="ticket_claim_btn")
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status != 'open':
+            await self._update_view_for_status(current_status)
+            await interaction.response.edit_message(view=self)
+            await interaction.response.send_message(f"❌ Ticket is niet meer open (status: {current_status}). View bijgewerkt.", ephemeral=True)
+            return
+
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te claimen.", ephemeral=True)
             return
@@ -1215,6 +1310,14 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Close ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_btn")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status == 'closed':
+            await self._update_view_for_status(current_status)
+            await interaction.response.edit_message(view=self)
+            await interaction.response.send_message("❌ Ticket is al gesloten. View bijgewerkt.", ephemeral=True)
+            return
+
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te sluiten.", ephemeral=True)
             return
@@ -1304,6 +1407,14 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="⏳ Wait for user", style=discord.ButtonStyle.secondary, custom_id="ticket_wait_btn")
     async def wait_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status != 'claimed':
+            await self._update_view_for_status(current_status)
+            await interaction.response.edit_message(view=self)
+            await interaction.response.send_message(f"❌ Ticket moet claimed zijn voor wait (status: {current_status}). View bijgewerkt.", ephemeral=True)
+            return
+
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -1319,6 +1430,13 @@ class TicketActionView(discord.ui.View):
         if not interaction.guild:
             await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
             return
+
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status == 'escalated':
+            await interaction.response.send_message("❌ Ticket is al escalated.", ephemeral=True)
+            return
+
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -1338,6 +1456,14 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="🗄 Archive ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_archive_btn", disabled=True)
     async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status != 'closed':
+            await self._update_view_for_status(current_status)
+            await interaction.response.edit_message(view=self)
+            await interaction.response.send_message(f"❌ Ticket moet gesloten zijn om te archiveren (status: {current_status}). View bijgewerkt.", ephemeral=True)
+            return
+
         # Admin-only
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
