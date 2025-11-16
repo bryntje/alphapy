@@ -69,6 +69,8 @@ class EmbedReminderWatcher(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.id == getattr(self.bot.user, 'id', None):
             return  # Skip messages from the bot itself
+        if not message.guild:
+            return  # Skip messages not in a guild
         announcements_channel_id = self._get_announcements_channel_id(message.guild.id)
         if message.channel.id != announcements_channel_id or not message.embeds:
             logger.debug(f"[📣] Kanal ID: {message.channel.id} - embeds: {bool(message.embeds)}")
@@ -364,7 +366,7 @@ class EmbedReminderWatcher(commands.Cog):
                 call_time_obj
             )
 
-            log_channel_id = self._get_log_channel_id(message.guild.id)
+            log_channel_id = self._get_log_channel_id(guild_id)
             log_channel = self.bot.get_channel(log_channel_id)
             logger.debug(f"[🪵] Log channel: {log_channel}")
             if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
@@ -382,6 +384,9 @@ class EmbedReminderWatcher(commands.Cog):
     @app_commands.command(name="debug_parse_embed", description="Parse de laatste embed in het kanaal voor test.")
     async def debug_parse_embed(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        if not interaction.guild:
+            await interaction.followup.send("⚠️ Dit commando werkt enkel in servers.")
+            return
         if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
             await interaction.followup.send("⚠️ Dit commando werkt enkel in tekstkanalen.")
             return
