@@ -263,7 +263,7 @@ class TicketBot(commands.Cog):
                 "SELECT COALESCE(MAX(guild_ticket_id), 0) FROM support_tickets WHERE guild_id = $1",
                 interaction.guild.id
             )
-            next_guild_ticket_id = cast(int, max_guild_ticket) + 1
+            next_guild_ticket_id = (max_guild_ticket or 0) + 1
 
             row = await conn_safe.fetchrow(
                 """
@@ -458,7 +458,7 @@ class TicketBot(commands.Cog):
                 "SELECT COALESCE(MAX(guild_ticket_id), 0) FROM support_tickets WHERE guild_id = $1",
                 interaction.guild.id
             )
-            next_guild_ticket_id = cast(int, max_guild_ticket) + 1
+            next_guild_ticket_id = (max_guild_ticket or 0) + 1
 
             row = await conn_safe.fetchrow(
                 """
