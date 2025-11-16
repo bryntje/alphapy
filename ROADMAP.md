@@ -24,6 +24,42 @@ The bot now supports unlimited Discord servers with complete data isolation betw
 
 ---
 
+## 🔄 **Phase 1.75: Web Configuration Interface**
+
+**Status:** 📋 **Planned - Post Multi-Guild Release**
+
+Transform the extensive slash command configuration system into a user-friendly web interface for server administrators.
+
+### Why This Matters:
+- **20+ settings** currently managed via slash commands
+- Not all admins prefer Discord command-line interfaces
+- Web interface enables better UX, batch operations, and mobile access
+- Aligns with modern admin dashboard expectations
+
+### Implementation Scope:
+- **Discord OAuth2 Integration** - Secure login with guild permissions
+- **Settings Dashboard** - Visual overview of all guild configurations
+- **Batch Operations** - Update multiple settings simultaneously
+- **Rule/Question Builders** - Drag-and-drop onboarding customization
+- **Visual Previews** - See how changes affect user experience
+- **Settings History** - Audit trail and rollback capabilities
+- **Community Templates** - Pre-built configurations for common use cases
+
+### Technical Foundation:
+- **Frontend:** Next.js (extends existing `shared/innersync-core`)
+- **Backend:** Extend FastAPI `/api/dashboard/*` endpoints
+- **Database:** Direct access to guild settings tables
+- **Auth:** Discord OAuth2 with per-guild permission checks
+- **Hosting:** Railway (same platform as bot)
+
+### Success Metrics:
+- Reduced configuration time for server admins
+- Increased adoption of advanced features
+- Positive feedback from mobile users
+- Fewer support questions about configuration
+
+---
+
 ## Themes
 - Faster answers: FAQ search and autocomplete directly in Discord
 - Better workflows: richer ticket statuses and handoffs
