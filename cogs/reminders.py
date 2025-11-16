@@ -444,7 +444,7 @@ class ReminderCog(commands.Cog):
         )
     
     @reminder_delete.autocomplete("reminder_id")
-    async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str) -> None:
+    async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str) -> List[discord.app_commands.Choice[str]]:
         if not interaction.guild:
             return []
         if not self._is_enabled(interaction.guild.id):
