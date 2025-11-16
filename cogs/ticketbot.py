@@ -57,6 +57,7 @@ class TicketBot(commands.Cog):
                 CREATE TABLE IF NOT EXISTS support_tickets (
                     id SERIAL PRIMARY KEY,
                     guild_id BIGINT NOT NULL,
+                    guild_ticket_id INT NOT NULL,
                     user_id BIGINT NOT NULL,
                     username TEXT,
                     description TEXT NOT NULL,
@@ -72,6 +73,30 @@ class TicketBot(commands.Cog):
                 )
             except Exception as e:
                 logger.warning(f"⚠️ TicketBot: kon kolom channel_id niet toevoegen: {e}")
+
+            # Guild-local ticket ID voor per-guild nummering
+            try:
+                await conn.execute(
+                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS guild_ticket_id INT;"
+                )
+                # Vul bestaande records met juiste lokale IDs per guild
+                # Gebruik een window function om per guild een lokale teller te maken
+                await conn.execute("""
+                    UPDATE support_tickets
+                    SET guild_ticket_id = sub.row_num
+                    FROM (
+                        SELECT id, ROW_NUMBER() OVER (PARTITION BY guild_id ORDER BY created_at) as row_num
+                        FROM support_tickets
+                        WHERE guild_ticket_id IS NULL
+                    ) sub
+                    WHERE support_tickets.id = sub.id;
+                """)
+                # Maak index voor performance
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_support_tickets_guild_ticket_id ON support_tickets(guild_id, guild_ticket_id);"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ TicketBot: kon kolom guild_ticket_id niet toevoegen: {e}")
             # Backwards compatible schema upgrades
             try:
                 await conn.execute(
@@ -204,6 +229,55 @@ class TicketBot(commands.Cog):
         except Exception as e:
             log_with_guild(f"Kon ticketbot log embed niet versturen: {e}", guild_id, "error")
 
+    @app_commands.command(name="ticket_migrate", description="[ADMIN] Manually run ticket migration")
+    @commands.is_owner()
+    async def ticket_migrate(self, interaction: discord.Interaction):
+        """Manually trigger ticket ID migration for existing data."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Ensure DB connection
+            if self.conn is None:
+                try:
+                    await self.setup_db()
+                except Exception as e:
+                    await interaction.followup.send(f"❌ Database connection failed: {e}", ephemeral=True)
+                    return
+
+            conn_safe = cast(asyncpg.Connection, self.conn)
+
+            # Check if migration is needed
+            has_guild_ticket_id = await conn_safe.fetchval(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'guild_ticket_id'"
+            )
+
+            if not has_guild_ticket_id:
+                await interaction.followup.send("❌ guild_ticket_id column does not exist. Migration will run on next bot restart.", ephemeral=True)
+                return
+
+            # Run migration
+            result = await conn_safe.execute("""
+                UPDATE support_tickets
+                SET guild_ticket_id = sub.row_num
+                FROM (
+                    SELECT id, ROW_NUMBER() OVER (PARTITION BY guild_id ORDER BY created_at) as row_num
+                    FROM support_tickets
+                    WHERE guild_ticket_id IS NULL OR guild_ticket_id = id
+                ) sub
+                WHERE support_tickets.id = sub.id;
+            """)
+
+            # Get affected row count
+            rows_affected = result.split()[1] if result else "0"
+            await interaction.followup.send(f"✅ Ticket migration completed. {rows_affected} records updated.", ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Migration failed: {e}", ephemeral=True)
+
     @app_commands.command(name="ticket", description="Create a support ticket")
     @app_checks.cooldown(1, 30.0)  # simple user cooldown
     @app_commands.describe(description="Short description of your issue")
@@ -233,13 +307,21 @@ class TicketBot(commands.Cog):
 
         try:
             conn_safe = cast(asyncpg.Connection, self.conn)
+            # Bereken de volgende guild_ticket_id voor deze guild
+            max_guild_ticket = await conn_safe.fetchval(
+                "SELECT COALESCE(MAX(guild_ticket_id), 0) FROM support_tickets WHERE guild_id = $1",
+                interaction.guild.id
+            )
+            next_guild_ticket_id = (max_guild_ticket or 0) + 1
+
             row = await conn_safe.fetchrow(
                 """
-                INSERT INTO support_tickets (guild_id, user_id, username, description)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, created_at
+                INSERT INTO support_tickets (guild_id, guild_ticket_id, user_id, username, description)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id, guild_ticket_id, created_at
                 """,
                 interaction.guild.id,
+                next_guild_ticket_id,
                 int(user.id),
                 str(user),
                 description.strip(),
@@ -255,14 +337,17 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Something went wrong creating your ticket.")
             return
 
-        ticket_id: int
+        ticket_id: int  # globale ID voor database operaties
+        guild_ticket_id: int  # lokale ID voor display
         created_at: datetime
         if row:
             ticket_id = int(row["id"])  # not None after successful insert
+            guild_ticket_id = int(row["guild_ticket_id"])
             created_at = row["created_at"]
         else:
             # Fallback: should not happen, but keep types safe
             ticket_id = 0
+            guild_ticket_id = 0
             created_at = datetime.utcnow()
 
         # Confirmation embed to the user (ephemeral followup)
@@ -272,7 +357,7 @@ class TicketBot(commands.Cog):
             color=discord.Color.green(),
             timestamp=created_at,
         )
-        confirm.add_field(name="Ticket ID", value=str(ticket_id), inline=True)
+        confirm.add_field(name="Ticket ID", value=str(guild_ticket_id), inline=True)
         confirm.add_field(name="User", value=f"{user.mention}", inline=True)
         confirm.add_field(name="Status", value="open", inline=True)
         confirm.add_field(name="Description", value=description[:1024] or "—", inline=False)
@@ -313,10 +398,10 @@ class TicketBot(commands.Cog):
                 )
 
             channel = await guild.create_text_channel(
-                name=f"ticket-{ticket_id}",
+                name=f"ticket-{guild_ticket_id}",
                 category=category,
                 overwrites=overwrites,
-                reason=f"Ticket {ticket_id} aangemaakt door {user}"
+                reason=f"Ticket {guild_ticket_id} aangemaakt door {user}"
             )
 
             # Update DB met channel_id
@@ -337,7 +422,7 @@ class TicketBot(commands.Cog):
                 color=discord.Color.green(),
                 timestamp=created_at,
                 description=(
-                    f"Ticket ID: `{ticket_id}`\n"
+                    f"Ticket ID: `{guild_ticket_id}`\n"
                     f"User: {user.mention}\n"
                     f"Status: **open**\n\n"
                     f"Description:\n{description}"
@@ -346,7 +431,7 @@ class TicketBot(commands.Cog):
             view = TicketActionView(
                 bot=self.bot,
                 conn=conn_safe2,
-                ticket_id=ticket_id,
+                ticket_id=ticket_id,  # globale ID voor database
                 support_role_id=support_role.id if support_role else None,
                 cog=self,
                 timeout=None,
@@ -372,7 +457,7 @@ class TicketBot(commands.Cog):
         await self.send_log_embed(
             title="🟢 Ticket created",
             description=(
-                f"ID: {ticket_id}\n"
+                f"ID: {guild_ticket_id}\n"
                 f"User: {user_display}\n"
                 f"Timestamp: {created_at.isoformat()}\n"
                 f"Channel: {channel_mention_text}\n"
@@ -401,6 +486,9 @@ class TicketBot(commands.Cog):
         await interaction.response.send_message("✅ Ticket panel posted.", ephemeral=True)
 
     async def create_ticket_for_user(self, interaction: discord.Interaction, description: str) -> None:
+        if not interaction.guild:
+            await interaction.followup.send("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
         # Ensure DB
         if self.conn is None:
             try:
@@ -414,13 +502,21 @@ class TicketBot(commands.Cog):
         user_display = f"{user} ({user.id})"
         try:
             conn_safe = cast(asyncpg.Connection, self.conn)
+            # Bereken de volgende guild_ticket_id voor deze guild
+            max_guild_ticket = await conn_safe.fetchval(
+                "SELECT COALESCE(MAX(guild_ticket_id), 0) FROM support_tickets WHERE guild_id = $1",
+                interaction.guild.id
+            )
+            next_guild_ticket_id = (max_guild_ticket or 0) + 1
+
             row = await conn_safe.fetchrow(
                 """
-                INSERT INTO support_tickets (guild_id, user_id, username, description)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, created_at
+                INSERT INTO support_tickets (guild_id, guild_ticket_id, user_id, username, description)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id, guild_ticket_id, created_at
                 """,
                 interaction.guild.id,
+                next_guild_ticket_id,
                 int(user.id),
                 str(user),
                 (description or "").strip() or "—",
@@ -435,7 +531,8 @@ class TicketBot(commands.Cog):
             )
             await interaction.followup.send("❌ Something went wrong creating your ticket.")
             return
-        ticket_id = int(row["id"]) if row else 0
+        ticket_id = int(row["id"]) if row else 0  # globale ID
+        guild_ticket_id = int(row["guild_ticket_id"]) if row else 0  # lokale ID voor display
         created_at: datetime = row["created_at"] if row else datetime.utcnow()
         # Build channel and send initial message — duplicate logic kept for clarity
         guild = interaction.guild
@@ -470,10 +567,10 @@ class TicketBot(commands.Cog):
                 manage_messages=True,
             )
         channel = await guild.create_text_channel(
-            name=f"ticket-{ticket_id}",
+            name=f"ticket-{guild_ticket_id}",
             category=category,
             overwrites=overwrites,
-            reason=f"Ticket {ticket_id} created by {user}"
+            reason=f"Ticket {guild_ticket_id} created by {user}"
         )
         # Store channel id
         try:
@@ -489,7 +586,7 @@ class TicketBot(commands.Cog):
             color=discord.Color.green(),
             timestamp=created_at,
             description=(
-                f"Ticket ID: `{ticket_id}`\n"
+                f"Ticket ID: `{guild_ticket_id}`\n"
                 f"User: {user.mention}\n"
                 f"Status: **open**\n\n"
                 f"Description:\n{description or '—'}"
@@ -627,6 +724,7 @@ class TicketBot(commands.Cog):
         value = self._settings_get(
             "ticketbot",
             "escalation_role_id",
+            guild_id,
             getattr(config, "TICKET_ESCALATION_ROLE_ID", None),
         )
         return self._normalize_id(value)
@@ -701,6 +799,7 @@ class TicketBot(commands.Cog):
                     f"topic: {topic or '-'}"
                 ),
                 level="info",
+                guild_id=0,  # Global metrics, no specific guild
             )
         except Exception:
             pass
@@ -729,6 +828,9 @@ class TicketBot(commands.Cog):
         async def _update(self, interaction: discord.Interaction, scope: Optional[str] = None):
             if scope:
                 self.scope = scope
+            if not interaction.guild:
+                await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+                return
             if not await is_owner_or_admin_interaction(interaction):
                 await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                 return
@@ -740,6 +842,7 @@ class TicketBot(commands.Cog):
                     title="📊 Ticket stats (button)",
                     description=f"by={interaction.user.id} • scope={self.scope} • counts={counts}",
                     level="info",
+                    guild_id=interaction.guild.id,
                 )
                 if self.cog.conn:
                     await self.cog.conn.execute(
@@ -788,6 +891,7 @@ class TicketBot(commands.Cog):
             title="📊 Ticket stats",
             description=f"by={interaction.user.id} • scope=all • public={public} • counts={counts}",
             level="info",
+            guild_id=0,  # Global stats across all guilds
         )
         try:
             await self.conn.execute(
@@ -823,6 +927,9 @@ class TicketBot(commands.Cog):
         status: app_commands.Choice[str],
         escalate_to: Optional[discord.Role] = None,
     ):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
         if not await is_owner_or_admin_interaction(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -870,6 +977,36 @@ class TicketBot(commands.Cog):
             return
 
         await interaction.followup.send(f"✅ Ticket `{id}` status set to **{new_status}**.", ephemeral=True)
+
+        # Update the view in the ticket channel if it exists
+        try:
+            channel_row = await self.conn.fetchrow(
+                "SELECT channel_id FROM support_tickets WHERE id = $1",
+                id
+            )
+            if channel_row and channel_row["channel_id"]:
+                channel = interaction.guild.get_channel(channel_row["channel_id"])
+                if channel and isinstance(channel, discord.TextChannel):
+                    # Find the bot's message with the ticket view
+                    async for message in channel.history(limit=10):
+                        if message.author == self.bot.user and message.components:
+                            # Create updated view with new status
+                            view = TicketActionView(
+                                bot=self.bot,
+                                conn=self.conn,
+                                ticket_id=id,
+                                support_role_id=self._get_support_role_id(interaction.guild.id),
+                                cog=self,
+                                timeout=None,
+                            )
+                            # Update view based on new status
+                            await view._update_view_for_status(new_status)
+                            await message.edit(view=view)
+                            break
+        except Exception as e:
+            # Don't fail the command if view update fails
+            pass
+
         # Log
         try:
             await self.send_log_embed(
@@ -881,6 +1018,7 @@ class TicketBot(commands.Cog):
                     + (f"\nEscalated to: <@&{escalate_to.id}>" if (new_status == 'escalated' and escalate_to) else "")
                 ),
                 level="info",
+                guild_id=interaction.guild.id,
             )
         except Exception:
             pass
@@ -898,11 +1036,68 @@ class TicketActionView(discord.ui.View):
     async def _is_staff(self, interaction: discord.Interaction) -> bool:
         return await is_owner_or_admin_interaction(interaction)
 
+    async def _get_current_status(self) -> Optional[str]:
+        """Get the current ticket status from database."""
+        try:
+            if self.conn:
+                row = await self.conn.fetchrow(
+                    "SELECT status FROM support_tickets WHERE id = $1",
+                    int(self.ticket_id)
+                )
+                return row["status"] if row else None
+        except Exception:
+            pass
+        return None
+
+    async def _update_view_for_status(self, status: Optional[str]) -> None:
+        """Update the view buttons based on the current ticket status."""
+        if status == 'closed':
+            # Disable all buttons except archive
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    if child.custom_id == "ticket_archive_btn":
+                        child.disabled = False
+                        child.style = discord.ButtonStyle.danger
+                    else:
+                        child.disabled = True
+        elif status == 'waiting_for_user':
+            # Enable only close button, disable others
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    if child.custom_id == "ticket_close_btn":
+                        child.disabled = False
+                    elif child.custom_id == "ticket_archive_btn":
+                        child.disabled = True
+                    else:
+                        child.disabled = True
+        elif status == 'escalated':
+            # Keep escalated appearance but disable claim
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    if child.custom_id == "ticket_claim_btn":
+                        child.disabled = True
+                    elif child.custom_id == "ticket_escalate_btn":
+                        child.style = discord.ButtonStyle.danger
+                        child.label = "🚩 Escalated"
+        elif status == 'open':
+            # Reset to default state
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    child.disabled = False
+                    if child.custom_id == "ticket_claim_btn":
+                        child.style = discord.ButtonStyle.primary
+                        child.label = "🎟️ Claim ticket"
+                    elif child.custom_id == "ticket_escalate_btn":
+                        child.style = discord.ButtonStyle.secondary
+                        child.label = "🚩 Escalate"
+                    elif child.custom_id == "ticket_archive_btn":
+                        child.disabled = True
+
     async def _log(self, interaction: discord.Interaction, title: str, desc: str, level: str = "info") -> None:
         # Use channel send via embed helper from a new simple instance-less call
         try:
-            if self.cog:
-                await self.cog.send_log_embed(title=title, description=desc, level=level)
+            if self.cog and interaction.guild:
+                await self.cog.send_log_embed(title=title, description=desc, level=level, guild_id=interaction.guild.id)
                 return
             color_map = {"info": 0x3498db, "debug": 0x95a5a6, "error": 0xe74c3c, "success": 0x2ecc71, "warning": 0xf1c40f}
             color = color_map.get(level, 0x3498db)
@@ -915,7 +1110,7 @@ class TicketActionView(discord.ui.View):
         except Exception:
             pass
 
-    async def _post_summary(self, channel: discord.TextChannel) -> Optional[Dict[str, str]]:
+    async def _post_summary(self, channel: discord.TextChannel, guild: discord.Guild) -> Optional[Dict[str, str]]:
         """Generate, post and persist a GPT-based summary for this ticket.
 
         Returns a dict with `summary` and `key` when successful so callers can
@@ -923,6 +1118,8 @@ class TicketActionView(discord.ui.View):
         generated.
         """
         messages: List[str] = []
+        # Store guild reference for the entire function
+        current_guild = guild
         try:
             async for msg in channel.history(limit=100, oldest_first=True):
                 if not msg.author.bot:
@@ -1015,6 +1212,9 @@ class TicketActionView(discord.ui.View):
                     view = discord.ui.View()
 
                     async def add_faq_callback(interaction: discord.Interaction):
+                        if not interaction.guild:
+                            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+                            return
                         if not await is_owner_or_admin_interaction(interaction):
                             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                             return
@@ -1039,20 +1239,21 @@ class TicketActionView(discord.ui.View):
                             await interaction.response.send_message(f"❌ Failed to add FAQ: {e}", ephemeral=True)
 
                     btn = discord.ui.Button(label="Add to FAQ", style=discord.ButtonStyle.success)
-                    btn.callback = add_faq_callback  # type: ignore
+                    btn.callback = add_faq_callback
                     view.add_item(btn)
-
-                    channel_id = None
-                    if self.cog and interaction.guild:
-                        channel_id = self.cog._get_log_channel_id(interaction.guild.id)
-                    if channel_id is None:
-                        channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
-                    channel = self.bot.get_channel(channel_id)
-                    if channel and hasattr(channel, "send"):
-                        text_channel = cast(discord.TextChannel, channel)
-                        await text_channel.send(embed=embed, view=view)
                 except Exception:
                     pass
+
+                # Send to log channel
+                channel_id = None
+                if self.cog:
+                    channel_id = self.cog._get_log_channel_id(current_guild.id)  # type: ignore
+                if channel_id is None:
+                    channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
+                channel = self.bot.get_channel(channel_id)
+                if channel and hasattr(channel, "send"):
+                    text_channel = cast(discord.TextChannel, channel)
+                    await text_channel.send(embed=embed, view=view)
             return key
         except Exception:
             # Do not block on summary registration failures
@@ -1060,6 +1261,14 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="🎟️ Claim ticket", style=discord.ButtonStyle.primary, custom_id="ticket_claim_btn")
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status != 'open':
+            await self._update_view_for_status(current_status)
+            await interaction.response.edit_message(view=self)
+            # Don't send additional message to avoid InteractionResponded error
+            return
+
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te claimen.", ephemeral=True)
             return
@@ -1101,6 +1310,14 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Close ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_btn")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status == 'closed':
+            await self._update_view_for_status(current_status)
+            await interaction.response.edit_message(view=self)
+            # Don't send additional message to avoid InteractionResponded error
+            return
+
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te sluiten.", ephemeral=True)
             return
@@ -1167,8 +1384,8 @@ class TicketActionView(discord.ui.View):
         )
         # Post GPT summary last to satisfy required execution order
         summary_meta: Optional[Dict[str, str]] = None
-        if isinstance(interaction.channel, discord.TextChannel):
-            summary_meta = await self._post_summary(interaction.channel)
+        if isinstance(interaction.channel, discord.TextChannel) and interaction.guild:
+            summary_meta = await self._post_summary(interaction.channel, interaction.guild)
 
         # Automatically capture a metrics snapshot (counts, cycle time, topics)
         if self.cog and hasattr(self.cog, "capture_metrics_snapshot"):
@@ -1190,6 +1407,14 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="⏳ Wait for user", style=discord.ButtonStyle.secondary, custom_id="ticket_wait_btn")
     async def wait_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status != 'claimed':
+            await self._update_view_for_status(current_status)
+            await interaction.response.edit_message(view=self)
+            # Don't send additional message to avoid InteractionResponded error
+            return
+
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -1197,17 +1422,30 @@ class TicketActionView(discord.ui.View):
             "UPDATE support_tickets SET status='waiting_for_user', updated_at = NOW() WHERE id = $1",
             int(self.ticket_id),
         )
+        # Update view to show waiting_for_user state
+        await self._update_view_for_status('waiting_for_user')
+        await interaction.response.edit_message(view=self)
         await interaction.response.send_message("✅ Status set to waiting_for_user.", ephemeral=True)
         await self._log(interaction, "🕒 Ticket status", f"id={self.ticket_id} → waiting_for_user")
 
     @discord.ui.button(label="🚩 Escalate", style=discord.ButtonStyle.secondary, custom_id="ticket_escalate_btn")
     async def escalate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
+
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status == 'escalated':
+            await interaction.response.send_message("❌ Ticket is al escalated.", ephemeral=True)
+            return
+
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
         escalated_to = None
         if self.cog:
-            escalated_to = self.cog._get_escalation_role_id(guild.id)
+            escalated_to = self.cog._get_escalation_role_id(interaction.guild.id)
         if escalated_to is None:
             target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
             escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None
@@ -1216,11 +1454,22 @@ class TicketActionView(discord.ui.View):
             escalated_to,
             int(self.ticket_id),
         )
+        # Update view to show escalated state
+        await self._update_view_for_status('escalated')
+        await interaction.response.edit_message(view=self)
         await interaction.response.send_message("✅ Ticket escalated.", ephemeral=True)
         await self._log(interaction, "🚩 Ticket escalated", f"id={self.ticket_id} • to={escalated_to or '-'}")
 
     @discord.ui.button(label="🗄 Archive ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_archive_btn", disabled=True)
     async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check current status and update view accordingly
+        current_status = await self._get_current_status()
+        if current_status != 'closed':
+            await self._update_view_for_status(current_status)
+            await interaction.response.edit_message(view=self)
+            # Don't send additional message to avoid InteractionResponded error
+            return
+
         # Admin-only
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
