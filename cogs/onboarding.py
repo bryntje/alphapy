@@ -507,11 +507,13 @@ class Onboarding(commands.Cog):
 
         if q_data.get("multiple"):
             # Multi-select: toon enkel de select; geen confirm-knop nodig
-            view.add_item(OnboardingSelect(step=step, options=q_data["options"], onboarding=self, view_id=view.view_id))
+            if "options" in q_data:
+                view.add_item(OnboardingSelect(step=step, options=q_data["options"], onboarding=self, view_id=view.view_id))
         else:
             # Voeg knoppen toe voor single-select vragen
-            for label, value in q_data["options"]:
-                view.add_item(OnboardingButton(label=label, value=value, step=step, onboarding=self))
+            if "options" in q_data:
+                for label, value in q_data["options"]:
+                    view.add_item(OnboardingButton(label=label, value=value, step=step, onboarding=self))
 
         # Alleen confirm-knop voor single-select vragen
         if not q_data.get("multiple"):
