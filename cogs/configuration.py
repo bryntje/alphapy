@@ -62,9 +62,9 @@ class Configuration(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         settings = getattr(bot, "settings", None)
-        if not isinstance(settings, SettingsService):
+        if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService niet beschikbaar op bot instance")
-        self.settings: SettingsService = settings
+        self.settings = settings  # type: ignore
     @config.command(name="scopes", description="Toon alle beschikbare setting scopes")
     @requires_admin()
     async def config_scopes(self, interaction: discord.Interaction):

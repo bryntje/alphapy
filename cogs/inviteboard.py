@@ -15,9 +15,9 @@ class InviteTracker(commands.Cog):
         self.bot = bot
         self.invites_cache = {}  # Hier slaan we de invites op
         settings = getattr(bot, "settings", None)
-        if not isinstance(settings, SettingsService):
+        if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
-        self.settings: SettingsService = settings
+        self.settings = settings  # type: ignore
         
     @commands.Cog.listener()
     async def on_ready(self):

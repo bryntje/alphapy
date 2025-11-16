@@ -24,9 +24,9 @@ class ReminderCog(commands.Cog):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
         settings = getattr(bot, "settings", None)
-        if not isinstance(settings, SettingsService):
+        if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
-        self.settings: SettingsService = settings
+        self.settings = settings  # type: ignore
         self.bot.loop.create_task(self.setup())
 
     async def setup(self) -> None:

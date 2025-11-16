@@ -36,9 +36,9 @@ class TicketBot(commands.Cog):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
         settings = getattr(bot, "settings", None)
-        if not isinstance(settings, SettingsService):
+        if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
-        self.settings: SettingsService = settings
+        self.settings = settings  # type: ignore
         # Start async setup zonder de event loop te blokkeren
         self.bot.loop.create_task(self.setup_db())
         # Register persistent view so the ticket button keeps working after restarts
