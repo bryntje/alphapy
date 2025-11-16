@@ -47,17 +47,11 @@ Dockerfile is aangepast voor Railway build context:
 ```dockerfile
 # Kopieert specifiek shared/ inhoud naar /app
 COPY shared/package.json shared/pnpm-lock.yaml ./
-# Individuele directories kopiëren om nested structuur te vermijden
+# Alleen essentiële Next.js files kopiëren
 COPY shared/app ./app
-COPY shared/components ./components
-COPY shared/lib ./lib
 COPY shared/public ./public
-COPY shared/styles ./styles
-COPY shared/types ./types
 COPY shared/next.config.ts ./
-COPY shared/postcss.config.js ./
-COPY shared/tailwind.config.ts ./
-COPY shared/tsconfig.json ./
+COPY shared/package.json ./
 ```
 Dit lost de "Couldn't find any pages or app directory" error op.
 
