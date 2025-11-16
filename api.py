@@ -758,6 +758,16 @@ async def get_dashboard_metrics(
     )
 
 
+# Alias voor Mind monitoring systeem - verwacht /api/metrics
+@router.get("/metrics", response_model=DashboardMetrics)
+async def get_metrics(
+    guild_id: Optional[int] = None,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Alias endpoint voor Mind monitoring systeem"""
+    return await get_dashboard_metrics(guild_id, auth_user_id)
+
+
 # ---------------------------------------------------------------------------
 # Reminder REST endpoints (existing behaviour)
 # ---------------------------------------------------------------------------
