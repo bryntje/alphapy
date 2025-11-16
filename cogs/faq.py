@@ -107,7 +107,7 @@ class FAQ(commands.Cog):
 
     async def _log_embed(self, title: str, description: str) -> None:
         try:
-            channel = self.bot.get_channel(getattr(config, "WATCHER_LOG_CHANNEL", 0))
+            channel = self.bot.get_channel(0)  # Moet geconfigureerd worden via /config system set_log_channel
             if channel and hasattr(channel, "send"):
                 embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
                 text_channel = cast(discord.TextChannel, channel)

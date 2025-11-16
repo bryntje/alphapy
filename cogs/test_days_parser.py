@@ -2,10 +2,11 @@
 
 import re
 import unittest
+from typing import Optional
 from utils.timezone import BRUSSELS_TZ
 from datetime import datetime, timedelta
 
-def parse_days_line(days_line: str, dt: datetime | None = None) -> str:
+def parse_days_line(days_line: str, dt: Optional[datetime] = None) -> str:
     days_str = None
     if dt is None:
         dt = datetime.now(BRUSSELS_TZ)

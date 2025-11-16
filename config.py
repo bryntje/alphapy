@@ -1,18 +1,18 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()  # Laad variabelen uit .env bestand
+load_dotenv()  # Load variables from .env file
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-GUILD_ID = int(os.getenv("GUILD_ID", "1160511689263947796"))
-ROLE_ID = int(os.getenv("ROLE_ID", "1336043451489452144"))
-LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "1338611872299090092"))
-ONBOARDING_CHANNEL_ID = int(os.getenv("ONBOARDING_CHANNEL_ID", "1336039005917155510"))  # Kanaal waar onboarding plaatsvindt
-RULES_CHANNEL_ID = int(os.getenv("RULES_CHANNEL_ID", "1336039005917155510"))
-GDPR_CHANNEL_ID = int(os.getenv("GDPR_CHANNEL_ID", "1338623097175146638"))  # Vervang dit door het ID van het kanaal waar je het GDPR document wilt plaatsen
-INVITE_ANNOUNCEMENT_CHANNEL_ID = int(os.getenv("INVITE_ANNOUNCEMENT_CHANNEL_ID", "1336041753966416026"))  # Vervang dit door het ID van het kanaal waar de invite-berichten moeten komen
+# # GUILD_ID = int(os.getenv("GUILD_ID", "1160511689263947796"))  # Deprecated - bot automatically detects guilds
+ROLE_ID = int(os.getenv("ROLE_ID", "0"))  # Legacy - no longer used in multi-guild setup
+# LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "1338611872299090092"))  # Deprecated - use /config system set_log_channel per guild
+# ONBOARDING_CHANNEL_ID = int(os.getenv("ONBOARDING_CHANNEL_ID", "1336039005917155510"))  # Deprecated - use /config system set_onboarding_channel per guild
+# RULES_CHANNEL_ID = int(os.getenv("RULES_CHANNEL_ID", "1336039005917155510"))  # Deprecated - use /config system set_rules_channel per guild
+# GDPR_CHANNEL_ID = int(os.getenv("GDPR_CHANNEL_ID", "1338623097175146638"))  # Deprecated - use /config gdpr set_channel per guild
+# INVITE_ANNOUNCEMENT_CHANNEL_ID = int(os.getenv("INVITE_ANNOUNCEMENT_CHANNEL_ID", "1336041753966416026"))  # Deprecated - use /config invites set_announcement_channel per guild
 # Database & API security
 DATABASE_URL = os.getenv("DATABASE_URL")
 API_KEY = os.getenv("API_KEY")
@@ -42,9 +42,9 @@ SUPABASE_ISSUER = os.getenv(
     f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else None,
 )
 SUPABASE_WEBHOOK_SECRET = os.getenv("SUPABASE_WEBHOOK_SECRET")
-ENABLE_EVERYONE_MENTIONS = os.getenv("ENABLE_EVERYONE_MENTIONS", "false").strip().lower() == "true"
-WATCHER_LOG_CHANNEL = int(os.getenv("WATCHER_LOG_CHANNEL", "1336042713459593337"))
-ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv("ANNOUNCEMENTS_CHANNEL_ID", "1336038676727206030"))
+# ENABLE_EVERYONE_MENTIONS = os.getenv("ENABLE_EVERYONE_MENTIONS", "false").strip().lower() == "true"  # Deprecated - gebruik /config reminders allow_everyone_mentions per guild
+# WATCHER_LOG_CHANNEL = int(os.getenv("WATCHER_LOG_CHANNEL", "1336042713459593337"))  # Deprecated - gebruik /config system set_log_channel per guild
+# ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv("ANNOUNCEMENTS_CHANNEL_ID", "1336038676727206030"))  # Deprecated - gebruik /config embedwatcher announcements_channel_id per guild
 
 
 

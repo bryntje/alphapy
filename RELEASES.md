@@ -4,35 +4,57 @@ All notable releases of Alphapy will be documented in this file.
 
 ---
 
-## [1.7.0] - 2025-11-15 - "Multi-Guild Horizon"
+## [1.7.0] - 2025-11-16 - "Multi-Guild Horizon"
 
-### 🎉 Major Feature: Complete Multi-Guild Support
+### 🎉 Major Feature: Complete Multi-Guild Support + Advanced Onboarding
 
-Alphapy now supports unlimited Discord servers with complete data isolation and independent configuration for each guild.
+Alphapy now supports unlimited Discord servers with complete data isolation, independent configuration, and a comprehensive onboarding system.
 
 #### What's New
 - **Guild Isolation**: All features (reminders, tickets, invites, settings, onboarding) work independently per server
+- **Modular Onboarding**: Fully configurable onboarding flows with custom questions, rules, and completion roles
+- **Onboarding Panels**: Admin commands to post onboarding start buttons in any channel
+- **Email/Text Support**: Modal-based input handling for all question types including optional fields
 - **Database Schema**: Added `guild_id` columns to all tables with composite primary keys for data separation
-- **API Security**: Dashboard endpoints now support optional `guild_id` filtering to prevent cross-guild data leakage
+- **API Security**: Dashboard endpoints with optional `guild_id` filtering to prevent cross-guild data leakage
 - **Migration Tools**: Safe database migration scripts with backup/restore capabilities
-- **Error Handling**: Guild validation checks prevent runtime errors in DM contexts
+- **Error Handling**: Comprehensive guild validation and duplicate record handling
 
 #### Migration Summary
-- ✅ **135 data entries** successfully migrated to guild `1160511689263947796`
+- ✅ **All tables migrated** with `guild_id` support and composite primary keys
 - ✅ **Zero downtime** deployment with full backup verification
 - ✅ **Complete backwards compatibility** maintained
 - ✅ **Security hardening** - no cross-guild data leakage possible
 
+#### Onboarding System Features
+- **Question Types**: Support for select, multiselect, text, and email input types
+- **Optional Questions**: Users can skip optional fields (like email addresses)
+- **Custom Rules**: Guild admins can define custom server rules during onboarding
+- **Completion Roles**: Automatic role assignment upon onboarding completion
+- **Panel Management**: `/config onboarding panel_post` to place onboarding buttons anywhere
+- **Re-onboarding**: Users can update their responses and redo onboarding
+
 #### Technical Improvements
-- **Settings Service**: Enhanced to support guild-scoped configuration with per-server overrides
-- **Code Architecture**: Updated all cogs to use `interaction.guild.id` for data isolation
+- **Type Safety**: Zero pyright errors with complete type checking
+- **Settings Service**: Guild-scoped configuration with per-server overrides
+- **Code Architecture**: All cogs updated with `interaction.guild.id` validation
 - **Database**: Composite primary keys `(guild_id, user_id)` or `(guild_id, id)` across all tables
 - **API Endpoints**: Guild filtering implemented for security in dashboard metrics
+- **Modal Handling**: Robust text input modals with optional field support
+- **Error Recovery**: Graceful handling of duplicate records and migration edge cases
 
 #### Security Enhancements
 - **Data Isolation**: Complete separation between guild data preventing unauthorized access
 - **Input Validation**: Guild existence checks prevent DM usage errors
 - **API Filtering**: Dashboard endpoints properly filter by guild context
+- **Migration Safety**: Backup verification and rollback capabilities
+
+#### Bug Fixes
+- **Onboarding Flow**: Fixed crashes when processing email/text questions
+- **Database Constraints**: Resolved duplicate key violations in onboarding records
+- **Modal Handling**: Added support for optional text input fields
+- **Type Checking**: Eliminated all pyright errors across the codebase
+- **Syntax Errors**: Fixed import and compilation issues
 
 ---
 

@@ -11,9 +11,10 @@ import re
 from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
 from typing import Optional, List, Dict, Any, cast
-from config import GUILD_ID
+from utils.settings_service import SettingsService
+# from config import GUILD_ID  # Removed - no longer needed for multi-guild support
 from cogs.embed_watcher import parse_embed_for_reminder
-from utils.logger import logger
+from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
 
 # All logging timestamps in this module use Brussels time for clarity.
 
@@ -22,7 +23,10 @@ class ReminderCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
-        self.settings = getattr(bot, "settings", None)
+        settings = getattr(bot, "settings", None)
+        if settings is None or not hasattr(settings, 'get'):
+            raise RuntimeError("SettingsService not available on bot instance")
+        self.settings = settings  # type: ignore
         self.bot.loop.create_task(self.setup())
 
     async def setup(self) -> None:
@@ -31,6 +35,7 @@ class ReminderCog(commands.Cog):
         try:
             await self._connect_database()
         except Exception as e:
+            log_database_event("DB_CONNECT_FAILED", details=f"Initial connection: {e}")
             logger.error(f"❌ Fout bij verbinden met database: {e}")
             return
 
@@ -38,6 +43,12 @@ class ReminderCog(commands.Cog):
             self.check_reminders.start()
 
     async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
+        """Send log embed to the correct guild's log channel"""
+        if guild_id == 0:
+            # Fallback for legacy calls without guild_id
+            logger.warning("⚠️ send_log_embed called without guild_id - skipping Discord log")
+            return
+
         try:
             color_map = {
                 "info": 0x3498db,
@@ -49,18 +60,35 @@ class ReminderCog(commands.Cog):
             color = color_map.get(level, 0x3498db)
             from discord import Embed
             embed = Embed(title=title, description=description, color=color)
-            embed.set_footer(text="reminders")
+            embed.set_footer(text=f"reminders | Guild: {guild_id}")
+
             channel_id = self._get_log_channel_id(guild_id)
+            if channel_id == 0:
+                # No log channel configured for this guild
+                log_with_guild(f"No log channel configured for reminders logging", guild_id, "debug")
+                return
+
             channel = self.bot.get_channel(channel_id)
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
+                log_guild_action(guild_id, "LOG_SENT", details=f"reminders: {title}")
+            else:
+                log_with_guild(f"Log channel {channel_id} not found or not accessible", guild_id, "warning")
+
         except Exception as e:
-            logger.warning(f"⚠️ Kon log embed niet versturen: {e}")
+            log_with_guild(f"Kon reminders log embed niet versturen: {e}", guild_id, "error")
 
     async def _connect_database(self) -> None:
-        conn = await asyncpg.connect(config.DATABASE_URL)
-        await conn.execute(
+        try:
+            conn = await asyncpg.connect(config.DATABASE_URL)
+            log_database_event("DB_CONNECTED", details="Reminders database connection established")
+        except Exception as e:
+            log_database_event("DB_CONNECT_ERROR", details=f"Failed to connect: {e}")
+            raise
+
+        try:
+            await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reminders (
                 id SERIAL PRIMARY KEY,
@@ -80,21 +108,28 @@ class ReminderCog(commands.Cog):
             );
             """
         )
-        await conn.execute(
-            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
-        )
-        await conn.execute(
-            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
-        )
+        except Exception as table_e:
+            log_database_event("DB_TABLE_CREATE_ERROR", details=f"Failed to create reminders table: {table_e}")
+            raise
+
+        try:
+            await conn.execute(
+                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS call_time TIME;"
+            )
+            await conn.execute(
+                "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
+            )
+        except Exception as alter_e:
+            log_database_event("DB_ALTER_ERROR", details=f"Failed to alter reminders table: {alter_e}")
+            raise
 
         try:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_event_time ON reminders(event_time);")
         except Exception as idx_e:
             logger.warning(f"⚠️ Index creation warning: {idx_e}")
-        finally:
-            await conn.close()
 
+        # Store the connection for future use (don't close it)
         if self.conn and not self.conn.is_closed():
             try:
                 await self.conn.close()
@@ -103,6 +138,7 @@ class ReminderCog(commands.Cog):
 
         self.conn = conn
         logger.info("✅ Verbonden met database!")
+        log_database_event("DB_CONNECTION_ESTABLISHED", details="Reminders database ready")
 
     async def _ensure_connection(self) -> bool:
         if self.conn and not self.conn.is_closed():
@@ -143,6 +179,10 @@ class ReminderCog(commands.Cog):
         link: Optional[str] = None,
     ):
         await interaction.response.defer(thinking=True, ephemeral=True)
+
+        if not interaction.guild:
+            await interaction.followup.send("❌ Dit commando werkt alleen in een server.", ephemeral=True)
+            return
 
         if not self._is_enabled(interaction.guild.id):
             await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
@@ -376,6 +416,9 @@ class ReminderCog(commands.Cog):
     @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
     async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int):
         await interaction.response.defer(ephemeral=True)
+        if not interaction.guild:
+            await interaction.followup.send("❌ Dit commando werkt alleen in een server.", ephemeral=True)
+            return
         if not self._is_enabled(interaction.guild.id):
             await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
             return
@@ -402,6 +445,8 @@ class ReminderCog(commands.Cog):
     
     @reminder_delete.autocomplete("reminder_id")
     async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str):
+        if not interaction.guild:
+            return []
         if not self._is_enabled(interaction.guild.id):
             return []
         if not await self._ensure_connection():
@@ -422,7 +467,7 @@ class ReminderCog(commands.Cog):
                 return int(self.settings.get("system", "log_channel_id", guild_id))
             except KeyError:
                 pass
-        return getattr(config, "WATCHER_LOG_CHANNEL", 0)
+        return 0  # Moet geconfigureerd worden via /config system set_log_channel
 
     def _is_enabled(self, guild_id: int) -> bool:
         if self.settings:
@@ -450,7 +495,7 @@ class ReminderCog(commands.Cog):
                 return bool(self.settings.get("reminders", "allow_everyone_mentions", guild_id))
             except KeyError:
                 pass
-        return getattr(config, "ENABLE_EVERYONE_MENTIONS", False)
+        return False  # Moet geconfigureerd worden via /config reminders allow_everyone_mentions
 
     @tasks.loop(seconds=60)
     async def check_reminders(self) -> None:
@@ -568,7 +613,7 @@ class ReminderCog(commands.Cog):
                     embed.add_field(name="📍 Location", value=row["location"], inline=False)
                 # Link naar origineel bericht
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
-                    link = f"https://discord.com/channels/{config.GUILD_ID}/{row['origin_channel_id']}/{row['origin_message_id']}"
+                    link = f"https://discord.com/channels/{row['guild_id']}/{row['origin_channel_id']}/{row['origin_message_id']}"
                     embed.add_field(name="🔗 Original", value=f"[Click here]({link})", inline=False)
 
                 text_channel = cast(discord.TextChannel, channel)

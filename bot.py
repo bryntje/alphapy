@@ -32,7 +32,53 @@ settings_service.register(
         key="log_channel_id",
         description="Kanaal voor status- en foutmeldingen.",
         value_type="channel",
-        default=getattr(config, "WATCHER_LOG_CHANNEL", 0),
+        default=0,  # Moet per guild geconfigureerd worden
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="system",
+        key="rules_channel_id",
+        description="Channel for rules and onboarding (#rules).",
+        value_type="channel",
+        default=0,  # Must be configured per guild
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="system",
+        key="onboarding_channel_id",
+        description="Channel where onboarding takes place.",
+        value_type="channel",
+        default=0,  # Must be configured per guild
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="onboarding",
+        key="enabled",
+        description="Whether onboarding is enabled for this guild.",
+        value_type="boolean",
+        default=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="onboarding",
+        key="mode",
+        description="Onboarding mode: 'disabled', 'rules_only', 'rules_with_questions', 'questions_only'",
+        value_type="string",
+        default="rules_with_questions",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="onboarding",
+        key="completion_role_id",
+        description="Role to assign after onboarding completion.",
+        value_type="role",
+        default=None,  # Optional - no role assigned if not set
+        allow_null=True,
     )
 )
 settings_service.register(
@@ -41,7 +87,7 @@ settings_service.register(
         key="announcements_channel_id",
         description="Kanaal dat gecontroleerd wordt op auto-reminder embeds.",
         value_type="channel",
-        default=getattr(config, "ANNOUNCEMENTS_CHANNEL_ID", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -59,18 +105,18 @@ settings_service.register(
     SettingDefinition(
         scope="ticketbot",
         key="category_id",
-        description="Categorie waarin nieuwe ticketkanalen worden aangemaakt.",
+        description="Category where new ticket channels are created.",
         value_type="channel",
-        default=getattr(config, "TICKET_CATEGORY_ID", 1416148921960628275),
+        default=0,  # Must be configured per guild
     )
 )
 settings_service.register(
     SettingDefinition(
         scope="ticketbot",
         key="staff_role_id",
-        description="Rol die toegang krijgt tot ticketkanalen.",
+        description="Role that gets access to ticket channels.",
         value_type="role",
-        default=getattr(config, "TICKET_ACCESS_ROLE_ID", None),
+        default=None,  # Must be configured per guild
         allow_null=True,
     )
 )
@@ -80,7 +126,7 @@ settings_service.register(
         key="escalation_role_id",
         description="Rol voor escalatie van tickets.",
         value_type="role",
-        default=getattr(config, "TICKET_ESCALATION_ROLE_ID", None),
+        default=None,  # Must be configured per guild
         allow_null=True,
     )
 )
@@ -119,7 +165,7 @@ settings_service.register(
         key="announcement_channel_id",
         description="Kanaal voor automatische invite meldingen.",
         value_type="channel",
-        default=getattr(config, "INVITE_ANNOUNCEMENT_CHANNEL_ID", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -155,7 +201,7 @@ settings_service.register(
         key="channel_id",
         description="Kanaal waarin het GDPR-document gepost wordt.",
         value_type="channel",
-        default=getattr(config, "GDPR_CHANNEL_ID", 0),
+        default=0,  # Moet per guild geconfigureerd worden
     )
 )
 settings_service.register(
@@ -173,7 +219,7 @@ settings_service.register(
         key="default_channel_id",
         description="Standaard kanaal voor nieuwe reminders (optioneel).",
         value_type="channel",
-        default=0,
+        default=0,  # Moet per guild geconfigureerd worden
         allow_null=True,
     )
 )
@@ -183,7 +229,7 @@ settings_service.register(
         key="allow_everyone_mentions",
         description="Sta @everyone toe bij reminders.",
         value_type="bool",
-        default=getattr(config, "ENABLE_EVERYONE_MENTIONS", False),
+        default=False,  # Moet per guild geconfigureerd worden
     )
 )
 
@@ -194,11 +240,11 @@ async def on_ready():
     
     logger.info(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
 
-    logger.info("📡 Bekende guilds:")
+    logger.info("📡 Known guilds:")
     for guild in bot.guilds:
         logger.info(f"🔹 {guild.name} (ID: {guild.id})")
 
-    logger.info(f"✅ Bot is succesvol opgestart en verbonden met {len(bot.guilds)} server(s)!")
+    logger.info(f"✅ Bot has successfully started and connected to {len(bot.guilds)} server(s)!")
     
     bot.add_view(GDPRView(bot))
 
@@ -246,8 +292,8 @@ bot.setup_hook = setup_hook
 Thread(target=start_api, daemon=True).start()
 
 
-# Bot starten
+# Start bot
 token: Optional[str] = getattr(config, "BOT_TOKEN", None)
 if not token:
-    raise RuntimeError("BOT_TOKEN is niet ingesteld in de config.")
+    raise RuntimeError("BOT_TOKEN is not set in the config.")
 bot.run(token)

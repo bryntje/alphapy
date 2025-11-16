@@ -101,10 +101,41 @@
   - `location TEXT`
   - `last_sent_at TIMESTAMPTZ` (idempotency per minute)
 
-## Configuration (`config.py`)
-- Driven by env vars: `GUILD_ID`, `ROLE_ID`, `LOG_CHANNEL_ID`, `RULES_CHANNEL_ID`, `WATCHER_LOG_CHANNEL`, `ANNOUNCEMENTS_CHANNEL_ID`, `DATABASE_URL`, `ENABLE_EVERYONE_MENTIONS`, etc.
-- Defaults for `APP_BASE_URL`, `MIND_BASE_URL`, `ALPHAPY_BASE_URL`, and `ALLOWED_ORIGINS` point to the Innersync subdomains so web clients can connect without extra configuration.
-- Local overrides via optional `config_local.py`
+## Configuration System
+
+### Environment Variables (`config.py`)
+- **Required:** `DATABASE_URL`, `BOT_TOKEN`, `OPENAI_API_KEY`
+- **Optional:** `API_KEY`, `SUPABASE_*` vars for web integration
+- **Legacy:** Most channel/role IDs are now **deprecated** - use `/config` commands instead
+
+### Guild-Specific Settings (Database-Driven)
+Each Discord server configures its own settings via `/config` commands:
+
+**System Settings:**
+- `system.log_channel_id` - Bot logging and error messages
+- `system.rules_channel_id` - Rules channel for onboarding
+- `system.onboarding_channel_id` - Welcome/onboarding channel
+
+**Feature Settings:**
+- `embedwatcher.announcements_channel_id` - Auto-reminder detection
+- `invites.announcement_channel_id` - Invite tracking messages
+- `gdpr.channel_id` - GDPR compliance documents
+- `ticketbot.category_id` - Ticket channel category
+- `ticketbot.staff_role_id` - Staff role for tickets
+- `ticketbot.escalation_role_id` - Escalation role
+
+**Behavior Settings:**
+- `reminders.allow_everyone_mentions` - @everyone permissions
+- `reminders.default_channel_id` - Default reminder channel
+- `gpt.model` - AI model selection
+- `gpt.temperature` - AI creativity level
+
+### Multi-Guild Architecture
+- ✅ **Complete isolation:** Each guild's data/settings are separate
+- ✅ **Dynamic detection:** Bot automatically detects all joined servers
+- ✅ **Per-guild configuration:** No hardcoded server-specific values
+- ✅ **Admin control:** Server admins configure via Discord commands
+- ✅ **Zero defaults:** All channels/roles must be explicitly configured
 
 ## Control flow
 1. User presses Start Onboarding → `ReactionRole` shows rules → starts `Onboarding`.

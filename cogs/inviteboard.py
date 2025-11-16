@@ -6,6 +6,7 @@ import config
 import asyncio
 
 from typing import Optional, Dict
+from utils.settings_service import SettingsService
 
 from utils.logger import logger
 
@@ -13,7 +14,10 @@ class InviteTracker(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.invites_cache = {}  # Hier slaan we de invites op
-        self.settings = getattr(bot, "settings", None)
+        settings = getattr(bot, "settings", None)
+        if settings is None or not hasattr(settings, 'get'):
+            raise RuntimeError("SettingsService not available on bot instance")
+        self.settings = settings  # type: ignore
         
     @commands.Cog.listener()
     async def on_ready(self):
