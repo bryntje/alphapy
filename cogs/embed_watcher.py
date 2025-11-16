@@ -8,6 +8,7 @@ import asyncpg
 from typing import Optional, Tuple, List, cast
 from utils.logger import logger
 from utils.timezone import BRUSSELS_TZ
+from utils.settings_service import SettingsService
 
 
 # All logging timestamps in this module use Brussels time for clarity.
@@ -56,7 +57,10 @@ class EmbedReminderWatcher(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
-        self.settings = getattr(bot, "settings", None)
+        settings = getattr(bot, "settings", None)
+        if not isinstance(settings, SettingsService):
+            raise RuntimeError("SettingsService not available on bot instance")
+        self.settings: SettingsService = settings
 
     async def setup_db(self) -> None:
         self.conn = await asyncpg.connect(config.DATABASE_URL)
@@ -154,7 +158,7 @@ class EmbedReminderWatcher(commands.Cog):
                 logger.warning("⚠️ Geen geldige datum gevonden en geen tijd/datum in description. Reminder wordt niet gemaakt.")
                 return None
 
-            offset_minutes = self._get_reminder_offset()
+            offset_minutes = self._get_reminder_offset(message.guild.id)
             reminder_time = dt - timedelta(minutes=offset_minutes)
 
             # Decide recurrence: only use parse_days when explicitly provided.
@@ -401,7 +405,7 @@ class EmbedReminderWatcher(commands.Cog):
         await interaction.followup.send("⚠️ Geen embed gevonden in de laatste 10 berichten.")
 
 
-    def _get_announcements_channel_id(self) -> int:
+    def _get_announcements_channel_id(self, guild_id: int) -> int:
         if self.settings:
             try:
                 return int(self.settings.get("embedwatcher", "announcements_channel_id", guild_id))
@@ -409,7 +413,7 @@ class EmbedReminderWatcher(commands.Cog):
                 pass
         return 0  # Moet geconfigureerd worden via /config embedwatcher announcements_channel_id
 
-    def _get_log_channel_id(self) -> int:
+    def _get_log_channel_id(self, guild_id: int) -> int:
         if self.settings:
             try:
                 return int(self.settings.get("system", "log_channel_id", guild_id))
@@ -417,7 +421,7 @@ class EmbedReminderWatcher(commands.Cog):
                 pass
         return 0  # Moet geconfigureerd worden via /config system set_log_channel
 
-    def _get_reminder_offset(self) -> int:
+    def _get_reminder_offset(self, guild_id: int) -> int:
         if self.settings:
             try:
                 return int(self.settings.get("embedwatcher", "reminder_offset_minutes", guild_id))

@@ -11,6 +11,7 @@ import re
 from datetime import timedelta
 from utils.checks_interaction import is_owner_or_admin_interaction
 from typing import Optional, List, Dict, Any, cast
+from utils.settings_service import SettingsService
 # from config import GUILD_ID  # Removed - no longer needed for multi-guild support
 from cogs.embed_watcher import parse_embed_for_reminder
 from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
@@ -22,7 +23,10 @@ class ReminderCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.conn: Optional[asyncpg.Connection] = None
-        self.settings = getattr(bot, "settings", None)
+        settings = getattr(bot, "settings", None)
+        if not isinstance(settings, SettingsService):
+            raise RuntimeError("SettingsService not available on bot instance")
+        self.settings: SettingsService = settings
         self.bot.loop.create_task(self.setup())
 
     async def setup(self) -> None:
