@@ -967,6 +967,290 @@ async def update_guild_settings(
         raise HTTPException(status_code=500, detail="Failed to update settings")
 
 
+# ---------------------------------------------------------------------------
+# Onboarding Questions & Rules Management Endpoints (Web Configuration Interface)
+# ---------------------------------------------------------------------------
+
+class OnboardingQuestion(BaseModel):
+    id: Optional[int] = None
+    question: str
+    question_type: str  # 'select', 'multiselect', 'text', 'email'
+    options: Optional[List[Dict[str, str]]] = None  # [{"label": "Option 1", "value": "value1"}]
+    followup: Optional[Dict[str, Any]] = None  # {"value": {"question": "Followup question"}}
+    required: bool = True
+    enabled: bool = True
+    step_order: int
+
+class OnboardingRule(BaseModel):
+    id: Optional[int] = None
+    title: str
+    description: str
+    enabled: bool = True
+    rule_order: int
+
+
+@router.get("/dashboard/{guild_id}/onboarding/questions", response_model=List[OnboardingQuestion])
+async def get_guild_onboarding_questions(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get all onboarding questions for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, step_order, question, question_type, options, followup, required, enabled
+                FROM guild_onboarding_questions
+                WHERE guild_id = $1 AND enabled = TRUE
+                ORDER BY step_order
+                """,
+                guild_id
+            )
+
+            questions = []
+            for row in rows:
+                questions.append(OnboardingQuestion(
+                    id=row["id"],
+                    question=row["question"],
+                    question_type=row["question_type"],
+                    options=row["options"],
+                    followup=row["followup"],
+                    required=row["required"],
+                    enabled=row["enabled"],
+                    step_order=row["step_order"]
+                ))
+
+            return questions
+
+    except Exception as exc:
+        print("[ERROR] Failed to get guild onboarding questions:", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch questions")
+
+
+@router.post("/dashboard/{guild_id}/onboarding/questions")
+async def save_guild_onboarding_question(
+    guild_id: int,
+    question: OnboardingQuestion,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Save or update an onboarding question for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO guild_onboarding_questions
+                (guild_id, step_order, question, question_type, options, followup, required, enabled)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (guild_id, step_order)
+                DO UPDATE SET
+                    question = EXCLUDED.question,
+                    question_type = EXCLUDED.question_type,
+                    options = EXCLUDED.options,
+                    followup = EXCLUDED.followup,
+                    required = EXCLUDED.required,
+                    enabled = EXCLUDED.enabled,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                guild_id,
+                question.step_order,
+                question.question,
+                question.question_type,
+                question.options,
+                question.followup,
+                question.required,
+                question.enabled
+            )
+
+            return {"success": True, "message": "Question saved successfully"}
+
+    except Exception as exc:
+        print("[ERROR] Failed to save onboarding question:", exc)
+        raise HTTPException(status_code=500, detail="Failed to save question")
+
+
+@router.delete("/dashboard/{guild_id}/onboarding/questions/{question_id}")
+async def delete_guild_onboarding_question(
+    guild_id: int,
+    question_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Delete an onboarding question for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM guild_onboarding_questions WHERE guild_id = $1 AND id = $2",
+                guild_id, question_id
+            )
+
+            if result == "DELETE 0":
+                raise HTTPException(status_code=404, detail="Question not found")
+
+            return {"success": True, "message": "Question deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("[ERROR] Failed to delete onboarding question:", exc)
+        raise HTTPException(status_code=500, detail="Failed to delete question")
+
+
+@router.get("/dashboard/{guild_id}/onboarding/rules", response_model=List[OnboardingRule])
+async def get_guild_onboarding_rules(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get all onboarding rules for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, rule_order, title, description, enabled
+                FROM guild_rules
+                WHERE guild_id = $1 AND enabled = TRUE
+                ORDER BY rule_order
+                """,
+                guild_id
+            )
+
+            rules = []
+            for row in rows:
+                rules.append(OnboardingRule(
+                    id=row["id"],
+                    title=row["title"],
+                    description=row["description"],
+                    enabled=row["enabled"],
+                    rule_order=row["rule_order"]
+                ))
+
+            return rules
+
+    except Exception as exc:
+        print("[ERROR] Failed to get guild onboarding rules:", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch rules")
+
+
+@router.post("/dashboard/{guild_id}/onboarding/rules")
+async def save_guild_onboarding_rule(
+    guild_id: int,
+    rule: OnboardingRule,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Save or update an onboarding rule for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO guild_rules
+                (guild_id, rule_order, title, description, enabled)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (guild_id, rule_order)
+                DO UPDATE SET
+                    title = EXCLUDED.title,
+                    description = EXCLUDED.description,
+                    enabled = EXCLUDED.enabled,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                guild_id,
+                rule.rule_order,
+                rule.title,
+                rule.description,
+                rule.enabled
+            )
+
+            return {"success": True, "message": "Rule saved successfully"}
+
+    except Exception as exc:
+        print("[ERROR] Failed to save onboarding rule:", exc)
+        raise HTTPException(status_code=500, detail="Failed to save rule")
+
+
+@router.delete("/dashboard/{guild_id}/onboarding/rules/{rule_id}")
+async def delete_guild_onboarding_rule(
+    guild_id: int,
+    rule_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Delete an onboarding rule for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM guild_rules WHERE guild_id = $1 AND id = $2",
+                guild_id, rule_id
+            )
+
+            if result == "DELETE 0":
+                raise HTTPException(status_code=404, detail="Rule not found")
+
+            return {"success": True, "message": "Rule deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("[ERROR] Failed to delete onboarding rule:", exc)
+        raise HTTPException(status_code=500, detail="Failed to delete rule")
+
+
+@router.post("/dashboard/{guild_id}/onboarding/reorder")
+async def reorder_onboarding_items(
+    guild_id: int,
+    request: Dict[str, List[int]],  # {"questions": [1,2,3], "rules": [1,2,3]}
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Reorder onboarding questions and rules."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            async with conn.transaction():
+                # Update question order
+                if "questions" in request:
+                    for i, question_id in enumerate(request["questions"]):
+                        await conn.execute(
+                            "UPDATE guild_onboarding_questions SET step_order = $1 WHERE guild_id = $2 AND id = $3",
+                            i + 1, guild_id, question_id
+                        )
+
+                # Update rule order
+                if "rules" in request:
+                    for i, rule_id in enumerate(request["rules"]):
+                        await conn.execute(
+                            "UPDATE guild_rules SET rule_order = $1 WHERE guild_id = $2 AND id = $3",
+                            i + 1, guild_id, rule_id
+                        )
+
+            return {"success": True, "message": "Order updated successfully"}
+
+    except Exception as exc:
+        print("[ERROR] Failed to reorder onboarding items:", exc)
+        raise HTTPException(status_code=500, detail="Failed to reorder items")
+
+
 app.include_router(router)
 
 
