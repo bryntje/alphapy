@@ -92,7 +92,7 @@ class SettingsService:
             # Test connection
             await conn.execute("SELECT 1")
 
-            # Create table if it doesn't exist
+            # Create tables if they don't exist
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS bot_settings (
@@ -104,6 +104,26 @@ class SettingsService:
                     updated_by BIGINT,
                     updated_at TIMESTAMPTZ DEFAULT NOW(),
                     PRIMARY KEY(guild_id, scope, key)
+                );
+                """
+            )
+
+            # Settings history table for audit trail
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS settings_history (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    scope TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    old_value JSONB,
+                    new_value JSONB NOT NULL,
+                    value_type TEXT,
+                    changed_by BIGINT,
+                    changed_at TIMESTAMPTZ DEFAULT NOW(),
+                    change_type TEXT NOT NULL, -- 'created', 'updated', 'deleted'
+                    INDEX idx_settings_history_guild_scope_key (guild_id, scope, key),
+                    INDEX idx_settings_history_changed_at (changed_at)
                 );
                 """
             )
@@ -172,6 +192,12 @@ class SettingsService:
         payload = json.dumps(coerced)
         try:
             async with self._pool.acquire() as conn:
+                # Get current value for history tracking
+                existing_row = await conn.fetchrow(
+                    "SELECT value FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
+                    guild_id, scope, key
+                )
+
                 await conn.execute(
                     """
                     INSERT INTO bot_settings (guild_id, scope, key, value, value_type, updated_by, updated_at)
@@ -186,6 +212,24 @@ class SettingsService:
                     payload,
                     definition.value_type,
                     updated_by,
+                )
+
+                # Record history
+                change_type = "created" if existing_row is None else "updated"
+                await conn.execute(
+                    """
+                    INSERT INTO settings_history
+                    (guild_id, scope, key, old_value, new_value, value_type, changed_by, change_type)
+                    VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)
+                    """,
+                    guild_id,
+                    scope,
+                    key,
+                    existing_row["value"] if existing_row else None,
+                    payload,
+                    definition.value_type,
+                    updated_by,
+                    change_type,
                 )
         except (pg_exceptions.PostgresError, ConnectionError, OSError) as e:
             log_database_event("CONNECTION_LOST", guild_id=guild_id, details=f"During set operation: {e}")
@@ -224,12 +268,34 @@ class SettingsService:
         if self._dsn and self._pool:
             try:
                 async with self._pool.acquire() as conn:
+                    # Get current value for history tracking before deletion
+                    existing_row = await conn.fetchrow(
+                        "SELECT value FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
+                        guild_id, scope, key
+                    )
+
                     await conn.execute(
                         "DELETE FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
                         guild_id,
                         scope,
                         key,
                     )
+
+                    # Record deletion in history
+                    if existing_row:
+                        await conn.execute(
+                            """
+                            INSERT INTO settings_history
+                            (guild_id, scope, key, old_value, new_value, value_type, changed_by, change_type)
+                            VALUES ($1, $2, $3, $4::jsonb, NULL, $5, $6, 'deleted')
+                            """,
+                            guild_id,
+                            scope,
+                            key,
+                            existing_row["value"],
+                            self._definitions.get((scope, key)).value_type if self._definitions.get((scope, key)) else None,
+                            updated_by,
+                        )
             except (pg_exceptions.PostgresError, ConnectionError, OSError) as e:
                 log_database_event("CONNECTION_LOST", guild_id=guild_id, details=f"During clear operation: {e}")
                 # Try to reconnect and retry once
