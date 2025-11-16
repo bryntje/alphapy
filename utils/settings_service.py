@@ -50,6 +50,7 @@ class SettingsService:
         self._ready = True
 
     async def _init_pool_with_retry(self, attempts: int = 5, base_delay: float = 1.5) -> None:
+        """Initialize database pool with retry logic."""
         last_error: Optional[Exception] = None
         for attempt in range(1, attempts + 1):
             try:
@@ -70,6 +71,7 @@ class SettingsService:
         raise RuntimeError(f"SettingsService: kon databasepool niet initialiseren: {last_error}")
 
     async def _create_pool(self) -> None:
+        """Create database connection pool."""
         if not self._dsn:
             return
 
@@ -208,6 +210,7 @@ class SettingsService:
                     "SELECT value FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
                     guild_id, scope, key
                 )
+                existing_value: Optional[Any] = existing_row["value"] if existing_row else None
 
                 await conn.execute(
                     """
@@ -236,7 +239,7 @@ class SettingsService:
                     guild_id,
                     scope,
                     key,
-                    existing_row["value"] if existing_row else None,
+                    existing_value,
                     payload,
                     definition.value_type,
                     updated_by,
@@ -284,6 +287,7 @@ class SettingsService:
                         "SELECT value FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
                         guild_id, scope, key
                     )
+                    existing_value: Optional[Any] = existing_row["value"] if existing_row else None
 
                     await conn.execute(
                         "DELETE FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
@@ -294,6 +298,7 @@ class SettingsService:
 
                     # Record deletion in history
                     if existing_row:
+                        definition = self._definitions.get((scope, key))
                         await conn.execute(
                             """
                             INSERT INTO settings_history
@@ -303,8 +308,8 @@ class SettingsService:
                             guild_id,
                             scope,
                             key,
-                            existing_row["value"],
-                            self._definitions.get((scope, key)).value_type if self._definitions.get((scope, key)) else None,
+                            existing_value,
+                            definition.value_type if definition else None,
                             updated_by,
                         )
             except (pg_exceptions.PostgresError, ConnectionError, OSError) as e:

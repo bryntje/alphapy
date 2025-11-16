@@ -3,7 +3,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Optional, Union, Literal, AsyncGenerator
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
@@ -65,6 +65,7 @@ async def get_authenticated_user_id(
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None),
 ) -> str:
+    """Extract authenticated user ID from JWT or headers."""
     claims = getattr(request.state, "supabase_claims", None)
 
     if not claims and authorization:
@@ -91,7 +92,7 @@ router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global db_pool
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
     print("✅ DB pool created")
@@ -319,6 +320,7 @@ def _collect_gpt_metrics() -> GPTMetrics:
 
 
 async def _fetch_reminder_stats(guild_id: Optional[int] = None) -> ReminderStats:
+    """Fetch reminder statistics for dashboard."""
     default = ReminderStats(
         total=0,
         recurring=0,
@@ -435,6 +437,7 @@ def _format_duration_seconds(seconds: int) -> str:
 
 
 async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
+    """Fetch ticket statistics for dashboard."""
     default = TicketStats(
         total=0,
         per_status={},
@@ -525,6 +528,7 @@ async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
 
 
 async def _fetch_settings_overrides(guild_id: Optional[int] = None) -> List[SettingOverride]:
+    """Fetch settings overrides for dashboard."""
     global db_pool
     if db_pool is None:
         return []
@@ -561,6 +565,7 @@ async def _fetch_settings_overrides(guild_id: Optional[int] = None) -> List[Sett
 
 
 async def _collect_infrastructure_metrics() -> InfrastructureMetrics:
+    """Collect infrastructure metrics for dashboard."""
     checked_at = _datetime_to_iso(datetime.now(timezone.utc)) or ""
     global db_pool
     if db_pool is None:
@@ -1350,7 +1355,7 @@ async def rollback_setting_change(
             # Get the history entry
             history_row = await conn.fetchrow(
                 """
-                SELECT scope, key, old_value, change_type
+                SELECT scope, key, old_value, change_type, value_type
                 FROM settings_history
                 WHERE id = $1 AND guild_id = $2
                 """,
@@ -1360,10 +1365,10 @@ async def rollback_setting_change(
             if not history_row:
                 raise HTTPException(status_code=404, detail="History entry not found")
 
-            scope = history_row["scope"]
-            key = history_row["key"]
-            old_value = history_row["old_value"]
-            change_type = history_row["change_type"]
+            scope: str = history_row["scope"]
+            key: str = history_row["key"]
+            old_value: Any = history_row["old_value"]
+            change_type: str = history_row["change_type"]
 
             # Only allow rollback for updated entries with old values
             if change_type != "updated" or old_value is None:
