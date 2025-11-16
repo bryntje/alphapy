@@ -2,16 +2,30 @@
 import unittest  # type: ignore
 from datetime import datetime
 from typing import Optional, Tuple, Any
+from discord.ext import commands
 from cogs.embed_watcher import EmbedReminderWatcher
 import discord  # type: ignore
 
-class DummyBot:
+class DummySettingsService:
+    """Minimal mock of SettingsService for testing."""
+    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Optional[Any] = None) -> Any:
+        return fallback
+
+class DummyBot(commands.Bot):
+    def __init__(self):
+        # Initialize with minimal required parameters for testing
+        super().__init__(command_prefix="!", intents=discord.Intents.default())
+        self.settings = DummySettingsService()
+
     def get_channel(self, *_) -> Optional[Any]:
         return None
 
 class TestEmbedParser(unittest.TestCase):
     def setUp(self) -> None:
-        self.w = EmbedReminderWatcher(DummyBot())
+        # Create a minimal instance for testing parse methods
+        bot = DummyBot()
+        self.w = EmbedReminderWatcher.__new__(EmbedReminderWatcher)  # Create without calling __init__
+        self.w.bot = bot
 
     def test_parse_datetime_with_full_date(self) -> None:
         dt, tz = self.w.parse_datetime("12 March 2025", "Time: 14:30")
