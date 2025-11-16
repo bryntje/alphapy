@@ -21,8 +21,8 @@ COPY --from=deps /app/node_modules ./node_modules
 # Kopieer ALLE code uit shared/ naar /app (project root)
 COPY shared/ ./
 
-# DEBUG: Check if files exist before build
-RUN ls -la && echo "=== APP DIR ===" && ls -la app/ && echo "=== PACKAGE ===" && cat package.json
+# DEBUG: Check what got copied
+RUN echo "=== ROOT DIR ===" && ls -la && echo "=== SHARED DIR EXISTS? ===" && ls -d shared 2>/dev/null || echo "shared dir not found" && echo "=== APP DIR ===" && ls -la app/ 2>/dev/null || echo "app/ not found"
 
 # Nu ziet Next.js app/ of pages/ in /app
 RUN pnpm run build
