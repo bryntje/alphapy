@@ -835,6 +835,138 @@ async def remove_reminder(reminder_id: str, created_by: str, auth_user_id: str =
     return {"success": True}
 
 
+# ---------------------------------------------------------------------------
+# Settings Management Endpoints (Web Configuration Interface)
+# ---------------------------------------------------------------------------
+
+class GuildSettingsResponse(BaseModel):
+    system: Dict[str, Any] = {}
+    reminders: Dict[str, Any] = {}
+    embedwatcher: Dict[str, Any] = {}
+    gpt: Dict[str, Any] = {}
+    invites: Dict[str, Any] = {}
+    gdpr: Dict[str, Any] = {}
+
+
+class UpdateSettingsRequest(BaseModel):
+    category: str
+    settings: Dict[str, Any]
+
+
+async def verify_guild_admin_access(
+    guild_id: int,
+    request: Request,
+) -> None:
+    """Verify that the authenticated user has admin access to the specified guild."""
+    # This would need to be implemented with Discord API calls to verify permissions
+    # For now, we'll rely on frontend validation and API key auth
+    pass
+
+
+@router.get("/dashboard/settings/{guild_id}", response_model=GuildSettingsResponse)
+async def get_guild_settings(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get all settings for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Fetch all settings for this guild
+            rows = await conn.fetch(
+                """
+                SELECT scope, key, value
+                FROM bot_settings
+                WHERE guild_id = $1
+                ORDER BY scope, key;
+                """,
+                guild_id
+            )
+
+            # Organize settings by category
+            settings = {
+                'system': {},
+                'reminders': {},
+                'embedwatcher': {},
+                'gpt': {},
+                'invites': {},
+                'gdpr': {}
+            }
+
+            for row in rows:
+                scope = row['scope']
+                key = row['key']
+                value = row['value']
+
+                # Convert string values back to appropriate types
+                if scope in settings:
+                    if key in ['allow_everyone_mentions']:
+                        settings[scope][key] = value.lower() == 'true'
+                    elif key in ['embed_watcher_offset_hours', 'max_tokens']:
+                        try:
+                            settings[scope][key] = int(value)
+                        except ValueError:
+                            settings[scope][key] = value
+                    else:
+                        settings[scope][key] = value
+
+            return GuildSettingsResponse(**settings)
+
+    except Exception as exc:
+        print("[ERROR] Failed to get guild settings:", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch settings")
+
+
+@router.post("/dashboard/settings/{guild_id}")
+async def update_guild_settings(
+    guild_id: int,
+    request: UpdateSettingsRequest,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Update settings for a specific guild category."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    # Validate category
+    valid_categories = ['system', 'reminders', 'embedwatcher', 'gpt', 'invites', 'gdpr']
+    if request.category not in valid_categories:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {request.category}")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Start transaction
+            async with conn.transaction():
+                # First, delete existing settings for this category
+                await conn.execute(
+                    """
+                    DELETE FROM bot_settings
+                    WHERE guild_id = $1 AND scope = $2;
+                    """,
+                    guild_id, request.category
+                )
+
+                # Insert new settings
+                for key, value in request.settings.items():
+                    if value is not None and value != "":
+                        await conn.execute(
+                            """
+                            INSERT INTO bot_settings (guild_id, scope, key, value)
+                            VALUES ($1, $2, $3, $4);
+                            """,
+                            guild_id, request.category, key, str(value)
+                        )
+
+            return {"success": True, "message": f"Updated {request.category} settings"}
+
+    except Exception as exc:
+        print("[ERROR] Failed to update guild settings:", exc)
+        raise HTTPException(status_code=500, detail="Failed to update settings")
+
+
 app.include_router(router)
 
 
