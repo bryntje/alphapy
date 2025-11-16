@@ -327,6 +327,21 @@ class Onboarding(commands.Cog):
                     ephemeral=True
                 )
 
+            # Assign completion role if set
+            completion_role_id = self.bot.settings.get("onboarding", "completion_role_id", interaction.guild.id)
+            if completion_role_id and completion_role_id != 0:
+                try:
+                    role = interaction.guild.get_role(completion_role_id)
+                    if role and not any(r.id == completion_role_id for r in interaction.user.roles):
+                        await interaction.user.add_roles(role)
+                        logger.info(f"✅ Completion role {role.name} assigned to {interaction.user.display_name}")
+                        await interaction.followup.send(
+                            f"🎉 **Welcome to the server!** You have been assigned the {role.mention} role.",
+                            ephemeral=True
+                        )
+                except Exception as e:
+                    logger.error(f"⚠️ Could not assign completion role: {e}")
+
             # Build and send a log embed to the log channel
             log_embed = discord.Embed(
                 title="📝 Onboarding Log",

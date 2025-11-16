@@ -48,9 +48,37 @@ settings_service.register(
     SettingDefinition(
         scope="system",
         key="onboarding_channel_id",
-        description="Kanaal waar onboarding plaatsvindt.",
+        description="Channel where onboarding takes place.",
         value_type="channel",
-        default=0,  # Moet per guild geconfigureerd worden
+        default=0,  # Must be configured per guild
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="onboarding",
+        key="enabled",
+        description="Whether onboarding is enabled for this guild.",
+        value_type="boolean",
+        default=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="onboarding",
+        key="mode",
+        description="Onboarding mode: 'disabled', 'rules_only', 'rules_with_questions', 'questions_only'",
+        value_type="string",
+        default="rules_with_questions",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="onboarding",
+        key="completion_role_id",
+        description="Role to assign after onboarding completion.",
+        value_type="role",
+        default=None,  # Optional - no role assigned if not set
+        allow_null=True,
     )
 )
 settings_service.register(

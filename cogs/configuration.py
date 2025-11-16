@@ -70,7 +70,7 @@ class Configuration(commands.Cog):
 
     onboarding_group = app_commands.Group(
         name="onboarding",
-        description="Onboarding instellingen",
+        description="Onboarding configuration",
         parent=config,
     )
 
@@ -790,26 +790,122 @@ class Configuration(commands.Cog):
             f"`gdpr.channel_id` teruggezet naar standaard door {interaction.user.mention}.",
         )
 
-    @onboarding_group.command(name="show", description="Show onboarding questions")
+    @onboarding_group.command(name="show", description="Show onboarding configuration")
     @requires_admin()
     async def onboarding_show(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
-        if not onboarding_cog:
-            await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
-            return
 
-        questions = await onboarding_cog.get_guild_questions(interaction.guild.id)
-        if not questions:
-            await interaction.followup.send("⚠️ No onboarding questions configured.", ephemeral=True)
-            return
+        # Get onboarding settings
+        enabled = self.settings.get("onboarding", "enabled", interaction.guild.id)
+        mode = self.settings.get("onboarding", "mode", interaction.guild.id)
+        completion_role_id = self.settings.get("onboarding", "completion_role_id", interaction.guild.id)
 
-        lines = ["📝 **Onboarding Questions**"]
-        for i, q in enumerate(questions, 1):
-            q_type = "Multiple Choice" if q.get("multiple") else ("Text Input" if q.get("type") == "email" else "Single Choice")
-            lines.append(f"{i}. **{q['question']}** ({q_type})")
+        lines = ["📝 **Onboarding Configuration**"]
+        lines.append(f"**Enabled:** {'✅ Yes' if enabled else '❌ No'}")
+        lines.append(f"**Mode:** {mode}")
+
+        if completion_role_id and completion_role_id != 0:
+            role = interaction.guild.get_role(completion_role_id)
+            lines.append(f"**Completion Role:** {role.mention if role else f'<@&{completion_role_id}>'}")
+        else:
+            lines.append("**Completion Role:** Not set")
+
+        # Show questions only if mode includes questions
+        if mode in ["rules_with_questions", "questions_only"]:
+            onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+            if onboarding_cog:
+                questions = await onboarding_cog.get_guild_questions(interaction.guild.id)
+                if questions:
+                    lines.append("\n**Questions:**")
+                    for i, q in enumerate(questions, 1):
+                        q_type = "Multiple Choice" if q.get("multiple") else ("Text Input" if q.get("type") == "email" else "Single Choice")
+                        lines.append(f"{i}. **{q['question']}** ({q_type})")
+                else:
+                    lines.append("\n⚠️ No questions configured")
+            else:
+                lines.append("\n❌ Onboarding module not available")
 
         await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    @onboarding_group.command(name="enable", description="Enable onboarding for this server")
+    @requires_admin()
+    async def onboarding_enable(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.set("onboarding", "enabled", True, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("✅ Onboarding enabled.", ephemeral=True)
+        await self._send_audit_log(
+            "📝 Onboarding",
+            f"Onboarding enabled by {interaction.user.mention}.",
+            interaction.guild.id
+        )
+
+    @onboarding_group.command(name="disable", description="Disable onboarding for this server")
+    @requires_admin()
+    async def onboarding_disable(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.set("onboarding", "enabled", False, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("🛑 Onboarding disabled.", ephemeral=True)
+        await self._send_audit_log(
+            "📝 Onboarding",
+            f"Onboarding disabled by {interaction.user.mention}.",
+            interaction.guild.id
+        )
+
+    @onboarding_group.command(name="set_mode", description="Set onboarding mode")
+    @app_commands.describe(mode="Choose the onboarding flow type")
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Disabled - No onboarding", value="disabled"),
+        app_commands.Choice(name="Rules Only - Show rules and assign role", value="rules_only"),
+        app_commands.Choice(name="Rules + Questions - Show rules, ask questions, assign role", value="rules_with_questions"),
+        app_commands.Choice(name="Questions Only - Ask questions and assign role", value="questions_only"),
+    ])
+    @requires_admin()
+    async def onboarding_set_mode(self, interaction: discord.Interaction, mode: str):
+        await interaction.response.defer(ephemeral=True)
+
+        valid_modes = ["disabled", "rules_only", "rules_with_questions", "questions_only"]
+        if mode not in valid_modes:
+            await interaction.followup.send(f"❌ Invalid mode. Choose from: {', '.join(valid_modes)}", ephemeral=True)
+            return
+
+        await self.settings.set("onboarding", "mode", mode, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(f"✅ Onboarding mode set to: **{mode}**", ephemeral=True)
+        await self._send_audit_log(
+            "📝 Onboarding",
+            f"Mode set to '{mode}' by {interaction.user.mention}.",
+            interaction.guild.id
+        )
+
+    @onboarding_group.command(name="set_role", description="Set role to assign after onboarding completion")
+    @requires_admin()
+    async def onboarding_set_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.set("onboarding", "completion_role_id", role.id, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Completion role set to {role.mention}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "📝 Onboarding",
+            f"Completion role set to {role.mention} by {interaction.user.mention}.",
+            interaction.guild.id
+        )
+
+    @onboarding_group.command(name="reset_role", description="Remove completion role assignment")
+    @requires_admin()
+    async def onboarding_reset_role(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.clear("onboarding", "completion_role_id", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("↩️ Completion role removed.", ephemeral=True)
+        await self._send_audit_log(
+            "📝 Onboarding",
+            f"Completion role reset by {interaction.user.mention}.",
+            interaction.guild.id
+        )
 
     @onboarding_group.command(name="add_question", description="Add a new onboarding question")
     @requires_admin()
