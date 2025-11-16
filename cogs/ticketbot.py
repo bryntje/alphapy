@@ -255,7 +255,7 @@ class TicketBot(commands.Cog):
                 "SELECT COALESCE(MAX(guild_ticket_id), 0) FROM support_tickets WHERE guild_id = $1",
                 interaction.guild.id
             )
-            next_guild_ticket_id = max_guild_ticket + 1
+            next_guild_ticket_id = cast(int, max_guild_ticket) + 1
 
             row = await conn_safe.fetchrow(
                 """
@@ -429,6 +429,9 @@ class TicketBot(commands.Cog):
         await interaction.response.send_message("✅ Ticket panel posted.", ephemeral=True)
 
     async def create_ticket_for_user(self, interaction: discord.Interaction, description: str) -> None:
+        if not interaction.guild:
+            await interaction.followup.send("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
         # Ensure DB
         if self.conn is None:
             try:
@@ -447,7 +450,7 @@ class TicketBot(commands.Cog):
                 "SELECT COALESCE(MAX(guild_ticket_id), 0) FROM support_tickets WHERE guild_id = $1",
                 interaction.guild.id
             )
-            next_guild_ticket_id = max_guild_ticket + 1
+            next_guild_ticket_id = cast(int, max_guild_ticket) + 1
 
             row = await conn_safe.fetchrow(
                 """
@@ -664,6 +667,7 @@ class TicketBot(commands.Cog):
         value = self._settings_get(
             "ticketbot",
             "escalation_role_id",
+            guild_id,
             getattr(config, "TICKET_ESCALATION_ROLE_ID", None),
         )
         return self._normalize_id(value)
@@ -767,6 +771,9 @@ class TicketBot(commands.Cog):
         async def _update(self, interaction: discord.Interaction, scope: Optional[str] = None):
             if scope:
                 self.scope = scope
+            if not interaction.guild:
+                await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+                return
             if not await is_owner_or_admin_interaction(interaction):
                 await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                 return
@@ -863,6 +870,9 @@ class TicketBot(commands.Cog):
         status: app_commands.Choice[str],
         escalate_to: Optional[discord.Role] = None,
     ):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
         if not await is_owner_or_admin_interaction(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
@@ -942,7 +952,7 @@ class TicketActionView(discord.ui.View):
     async def _log(self, interaction: discord.Interaction, title: str, desc: str, level: str = "info") -> None:
         # Use channel send via embed helper from a new simple instance-less call
         try:
-            if self.cog:
+            if self.cog and interaction.guild:
                 await self.cog.send_log_embed(title=title, description=desc, level=level, guild_id=interaction.guild.id)
                 return
             color_map = {"info": 0x3498db, "debug": 0x95a5a6, "error": 0xe74c3c, "success": 0x2ecc71, "warning": 0xf1c40f}
@@ -956,7 +966,7 @@ class TicketActionView(discord.ui.View):
         except Exception:
             pass
 
-    async def _post_summary(self, channel: discord.TextChannel) -> Optional[Dict[str, str]]:
+    async def _post_summary(self, channel: discord.TextChannel, guild: discord.Guild) -> Optional[Dict[str, str]]:
         """Generate, post and persist a GPT-based summary for this ticket.
 
         Returns a dict with `summary` and `key` when successful so callers can
@@ -964,6 +974,8 @@ class TicketActionView(discord.ui.View):
         generated.
         """
         messages: List[str] = []
+        # Store guild reference for the entire function
+        current_guild = guild
         try:
             async for msg in channel.history(limit=100, oldest_first=True):
                 if not msg.author.bot:
@@ -1056,6 +1068,9 @@ class TicketActionView(discord.ui.View):
                     view = discord.ui.View()
 
                     async def add_faq_callback(interaction: discord.Interaction):
+                        if not interaction.guild:
+                            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+                            return
                         if not await is_owner_or_admin_interaction(interaction):
                             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                             return
@@ -1080,20 +1095,21 @@ class TicketActionView(discord.ui.View):
                             await interaction.response.send_message(f"❌ Failed to add FAQ: {e}", ephemeral=True)
 
                     btn = discord.ui.Button(label="Add to FAQ", style=discord.ButtonStyle.success)
-                    btn.callback = add_faq_callback  # type: ignore
+                    btn.callback = add_faq_callback
                     view.add_item(btn)
-
-                    channel_id = None
-                    if self.cog and interaction.guild:
-                        channel_id = self.cog._get_log_channel_id(interaction.guild.id)
-                    if channel_id is None:
-                        channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
-                    channel = self.bot.get_channel(channel_id)
-                    if channel and hasattr(channel, "send"):
-                        text_channel = cast(discord.TextChannel, channel)
-                        await text_channel.send(embed=embed, view=view)
                 except Exception:
                     pass
+
+                # Send to log channel
+                channel_id = None
+                if self.cog:
+                    channel_id = self.cog._get_log_channel_id(current_guild.id)  # type: ignore
+                if channel_id is None:
+                    channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
+                channel = self.bot.get_channel(channel_id)
+                if channel and hasattr(channel, "send"):
+                    text_channel = cast(discord.TextChannel, channel)
+                    await text_channel.send(embed=embed, view=view)
             return key
         except Exception:
             # Do not block on summary registration failures
@@ -1208,8 +1224,8 @@ class TicketActionView(discord.ui.View):
         )
         # Post GPT summary last to satisfy required execution order
         summary_meta: Optional[Dict[str, str]] = None
-        if isinstance(interaction.channel, discord.TextChannel):
-            summary_meta = await self._post_summary(interaction.channel)
+        if isinstance(interaction.channel, discord.TextChannel) and interaction.guild:
+            summary_meta = await self._post_summary(interaction.channel, interaction.guild)
 
         # Automatically capture a metrics snapshot (counts, cycle time, topics)
         if self.cog and hasattr(self.cog, "capture_metrics_snapshot"):
@@ -1243,12 +1259,15 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="🚩 Escalate", style=discord.ButtonStyle.secondary, custom_id="ticket_escalate_btn")
     async def escalate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            return
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
         escalated_to = None
         if self.cog:
-            escalated_to = self.cog._get_escalation_role_id(guild.id)
+            escalated_to = self.cog._get_escalation_role_id(interaction.guild.id)
         if escalated_to is None:
             target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
             escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None
