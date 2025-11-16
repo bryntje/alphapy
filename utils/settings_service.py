@@ -311,7 +311,7 @@ class SettingsService:
                             existing_value,
                             definition.value_type if definition else None,
                             updated_by,
-                        )
+                    )
             except (pg_exceptions.PostgresError, ConnectionError, OSError) as e:
                 log_database_event("CONNECTION_LOST", guild_id=guild_id, details=f"During clear operation: {e}")
                 # Try to reconnect and retry once
