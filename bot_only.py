@@ -9,8 +9,6 @@ from utils.settings_service import SettingsService, SettingDefinition
 import config
 from typing import Optional
 
-# API server wordt apart gedraaid in de dashboard service
-
 
 # Intentions instellen
 intents = discord.Intents.default()
