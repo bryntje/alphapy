@@ -3,7 +3,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, Literal, AsyncGenerator
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
@@ -65,6 +65,7 @@ async def get_authenticated_user_id(
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None),
 ) -> str:
+    """Extract authenticated user ID from JWT or headers."""
     claims = getattr(request.state, "supabase_claims", None)
 
     if not claims and authorization:
@@ -91,7 +92,7 @@ router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global db_pool
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
     print("✅ DB pool created")
@@ -319,6 +320,7 @@ def _collect_gpt_metrics() -> GPTMetrics:
 
 
 async def _fetch_reminder_stats(guild_id: Optional[int] = None) -> ReminderStats:
+    """Fetch reminder statistics for dashboard."""
     default = ReminderStats(
         total=0,
         recurring=0,
@@ -435,6 +437,7 @@ def _format_duration_seconds(seconds: int) -> str:
 
 
 async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
+    """Fetch ticket statistics for dashboard."""
     default = TicketStats(
         total=0,
         per_status={},
@@ -525,6 +528,7 @@ async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
 
 
 async def _fetch_settings_overrides(guild_id: Optional[int] = None) -> List[SettingOverride]:
+    """Fetch settings overrides for dashboard."""
     global db_pool
     if db_pool is None:
         return []
@@ -561,6 +565,7 @@ async def _fetch_settings_overrides(guild_id: Optional[int] = None) -> List[Sett
 
 
 async def _collect_infrastructure_metrics() -> InfrastructureMetrics:
+    """Collect infrastructure metrics for dashboard."""
     checked_at = _datetime_to_iso(datetime.now(timezone.utc)) or ""
     global db_pool
     if db_pool is None:
@@ -833,6 +838,570 @@ async def remove_reminder(reminder_id: str, created_by: str, auth_user_id: str =
     async with db_pool.acquire() as conn:
         await delete_reminder(conn, int(reminder_id), created_by)
     return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Settings Management Endpoints (Web Configuration Interface)
+# ---------------------------------------------------------------------------
+
+class GuildSettingsResponse(BaseModel):
+    system: Dict[str, Any] = {}
+    reminders: Dict[str, Any] = {}
+    embedwatcher: Dict[str, Any] = {}
+    gpt: Dict[str, Any] = {}
+    invites: Dict[str, Any] = {}
+    gdpr: Dict[str, Any] = {}
+
+
+class UpdateSettingsRequest(BaseModel):
+    category: str
+    settings: Dict[str, Any]
+
+
+async def verify_guild_admin_access(
+    guild_id: int,
+    request: Request,
+) -> None:
+    """Verify that the authenticated user has admin access to the specified guild."""
+    # This would need to be implemented with Discord API calls to verify permissions
+    # For now, we'll rely on frontend validation and API key auth
+    pass
+
+
+@router.get("/dashboard/settings/{guild_id}", response_model=GuildSettingsResponse)
+async def get_guild_settings(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get all settings for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Fetch all settings for this guild
+            rows = await conn.fetch(
+                """
+                SELECT scope, key, value
+                FROM bot_settings
+                WHERE guild_id = $1
+                ORDER BY scope, key;
+                """,
+                guild_id
+            )
+
+            # Organize settings by category
+            settings = {
+                'system': {},
+                'reminders': {},
+                'embedwatcher': {},
+                'gpt': {},
+                'invites': {},
+                'gdpr': {}
+            }
+
+            for row in rows:
+                scope = row['scope']
+                key = row['key']
+                value = row['value']
+
+                # Convert string values back to appropriate types
+                if scope in settings:
+                    if key in ['allow_everyone_mentions']:
+                        settings[scope][key] = value.lower() == 'true'
+                    elif key in ['embed_watcher_offset_hours', 'max_tokens']:
+                        try:
+                            settings[scope][key] = int(value)
+                        except ValueError:
+                            settings[scope][key] = value
+                    else:
+                        settings[scope][key] = value
+
+            return GuildSettingsResponse(**settings)
+
+    except Exception as exc:
+        print("[ERROR] Failed to get guild settings:", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch settings")
+
+
+@router.post("/dashboard/settings/{guild_id}")
+async def update_guild_settings(
+    guild_id: int,
+    request: UpdateSettingsRequest,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Update settings for a specific guild category."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    # Validate category
+    valid_categories = ['system', 'reminders', 'embedwatcher', 'gpt', 'invites', 'gdpr']
+    if request.category not in valid_categories:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {request.category}")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Start transaction
+            async with conn.transaction():
+                # First, delete existing settings for this category
+                await conn.execute(
+                    """
+                    DELETE FROM bot_settings
+                    WHERE guild_id = $1 AND scope = $2;
+                    """,
+                    guild_id, request.category
+                )
+
+                # Insert new settings
+                for key, value in request.settings.items():
+                    if value is not None and value != "":
+                        await conn.execute(
+                            """
+                            INSERT INTO bot_settings (guild_id, scope, key, value)
+                            VALUES ($1, $2, $3, $4);
+                            """,
+                            guild_id, request.category, key, str(value)
+                        )
+
+            return {"success": True, "message": f"Updated {request.category} settings"}
+
+    except Exception as exc:
+        print("[ERROR] Failed to update guild settings:", exc)
+        raise HTTPException(status_code=500, detail="Failed to update settings")
+
+
+# ---------------------------------------------------------------------------
+# Onboarding Questions & Rules Management Endpoints (Web Configuration Interface)
+# ---------------------------------------------------------------------------
+
+class OnboardingQuestion(BaseModel):
+    id: Optional[int] = None
+    question: str
+    question_type: Literal['select', 'multiselect', 'text', 'email']
+    options: Optional[List[Dict[str, str]]] = None  # [{"label": "Option 1", "value": "value1"}]
+    followup: Optional[Dict[str, Any]] = None  # {"value": {"question": "Followup question"}}
+    required: bool = True
+    enabled: bool = True
+    step_order: int
+
+class OnboardingRule(BaseModel):
+    id: Optional[int] = None
+    title: str
+    description: str
+    enabled: bool = True
+    rule_order: int
+
+
+@router.get("/dashboard/{guild_id}/onboarding/questions", response_model=List[OnboardingQuestion])
+async def get_guild_onboarding_questions(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get all onboarding questions for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, step_order, question, question_type, options, followup, required, enabled
+                FROM guild_onboarding_questions
+                WHERE guild_id = $1 AND enabled = TRUE
+                ORDER BY step_order
+                """,
+                guild_id
+            )
+
+            questions = []
+            for row in rows:
+                questions.append(OnboardingQuestion(
+                    id=row["id"],
+                    question=row["question"],
+                    question_type=row["question_type"],
+                    options=row["options"],
+                    followup=row["followup"],
+                    required=row["required"],
+                    enabled=row["enabled"],
+                    step_order=row["step_order"]
+                ))
+
+            return questions
+
+    except Exception as exc:
+        print("[ERROR] Failed to get guild onboarding questions:", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch questions")
+
+
+@router.post("/dashboard/{guild_id}/onboarding/questions")
+async def save_guild_onboarding_question(
+    guild_id: int,
+    question: OnboardingQuestion,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Save or update an onboarding question for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO guild_onboarding_questions
+                (guild_id, step_order, question, question_type, options, followup, required, enabled)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (guild_id, step_order)
+                DO UPDATE SET
+                    question = EXCLUDED.question,
+                    question_type = EXCLUDED.question_type,
+                    options = EXCLUDED.options,
+                    followup = EXCLUDED.followup,
+                    required = EXCLUDED.required,
+                    enabled = EXCLUDED.enabled,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                guild_id,
+                question.step_order,
+                question.question,
+                question.question_type,
+                question.options,
+                question.followup,
+                question.required,
+                question.enabled
+            )
+
+            return {"success": True, "message": "Question saved successfully"}
+
+    except Exception as exc:
+        print("[ERROR] Failed to save onboarding question:", exc)
+        raise HTTPException(status_code=500, detail="Failed to save question")
+
+
+@router.delete("/dashboard/{guild_id}/onboarding/questions/{question_id}")
+async def delete_guild_onboarding_question(
+    guild_id: int,
+    question_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Delete an onboarding question for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM guild_onboarding_questions WHERE guild_id = $1 AND id = $2",
+                guild_id, question_id
+            )
+
+            if result == "DELETE 0":
+                raise HTTPException(status_code=404, detail="Question not found")
+
+            return {"success": True, "message": "Question deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("[ERROR] Failed to delete onboarding question:", exc)
+        raise HTTPException(status_code=500, detail="Failed to delete question")
+
+
+@router.get("/dashboard/{guild_id}/onboarding/rules", response_model=List[OnboardingRule])
+async def get_guild_onboarding_rules(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get all onboarding rules for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, rule_order, title, description, enabled
+                FROM guild_rules
+                WHERE guild_id = $1 AND enabled = TRUE
+                ORDER BY rule_order
+                """,
+                guild_id
+            )
+
+            rules = []
+            for row in rows:
+                rules.append(OnboardingRule(
+                    id=row["id"],
+                    title=row["title"],
+                    description=row["description"],
+                    enabled=row["enabled"],
+                    rule_order=row["rule_order"]
+                ))
+
+            return rules
+
+    except Exception as exc:
+        print("[ERROR] Failed to get guild onboarding rules:", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch rules")
+
+
+@router.post("/dashboard/{guild_id}/onboarding/rules")
+async def save_guild_onboarding_rule(
+    guild_id: int,
+    rule: OnboardingRule,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Save or update an onboarding rule for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO guild_rules
+                (guild_id, rule_order, title, description, enabled)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (guild_id, rule_order)
+                DO UPDATE SET
+                    title = EXCLUDED.title,
+                    description = EXCLUDED.description,
+                    enabled = EXCLUDED.enabled,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                guild_id,
+                rule.rule_order,
+                rule.title,
+                rule.description,
+                rule.enabled
+            )
+
+            return {"success": True, "message": "Rule saved successfully"}
+
+    except Exception as exc:
+        print("[ERROR] Failed to save onboarding rule:", exc)
+        raise HTTPException(status_code=500, detail="Failed to save rule")
+
+
+@router.delete("/dashboard/{guild_id}/onboarding/rules/{rule_id}")
+async def delete_guild_onboarding_rule(
+    guild_id: int,
+    rule_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Delete an onboarding rule for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM guild_rules WHERE guild_id = $1 AND id = $2",
+                guild_id, rule_id
+            )
+
+            if result == "DELETE 0":
+                raise HTTPException(status_code=404, detail="Rule not found")
+
+            return {"success": True, "message": "Rule deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("[ERROR] Failed to delete onboarding rule:", exc)
+        raise HTTPException(status_code=500, detail="Failed to delete rule")
+
+
+class ReorderRequest(BaseModel):
+    questions: Optional[List[int]] = None
+    rules: Optional[List[int]] = None
+
+@router.post("/dashboard/{guild_id}/onboarding/reorder")
+async def reorder_onboarding_items(
+    guild_id: int,
+    request: ReorderRequest,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Reorder onboarding questions and rules."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            async with conn.transaction():
+                # Update question order
+                if request.questions:
+                    for i, question_id in enumerate(request.questions):
+                        await conn.execute(
+                            "UPDATE guild_onboarding_questions SET step_order = $1 WHERE guild_id = $2 AND id = $3",
+                            i + 1, guild_id, question_id
+                        )
+
+                # Update rule order
+                if request.rules:
+                    for i, rule_id in enumerate(request.rules):
+                        await conn.execute(
+                            "UPDATE guild_rules SET rule_order = $1 WHERE guild_id = $2 AND id = $3",
+                            i + 1, guild_id, rule_id
+                        )
+
+            return {"success": True, "message": "Order updated successfully"}
+
+    except Exception as exc:
+        print("[ERROR] Failed to reorder onboarding items:", exc)
+        raise HTTPException(status_code=500, detail="Failed to reorder items")
+
+
+# ---------------------------------------------------------------------------
+# Settings History Endpoints (Web Configuration Interface)
+# ---------------------------------------------------------------------------
+
+class SettingsHistoryEntry(BaseModel):
+    id: int
+    scope: str
+    key: str
+    old_value: Optional[Any] = None
+    new_value: Any
+    value_type: Optional[str] = None
+    changed_by: Optional[int] = None
+    changed_at: str
+    change_type: Literal['created', 'updated', 'deleted', 'rollback']
+
+
+@router.get("/dashboard/{guild_id}/settings/history", response_model=List[SettingsHistoryEntry])
+async def get_settings_history(
+    guild_id: int,
+    scope: Optional[str] = None,
+    key: Optional[str] = None,
+    limit: int = 50,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get settings change history for a specific guild."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            if scope and key:
+                query = """
+                    SELECT id, scope, key, old_value, new_value, value_type, changed_by, changed_at, change_type
+                    FROM settings_history
+                    WHERE guild_id = $1 AND scope = $2 AND key = $3
+                    ORDER BY changed_at DESC LIMIT $4
+                """
+                params = [guild_id, scope, key, limit]
+            elif scope:
+                query = """
+                    SELECT id, scope, key, old_value, new_value, value_type, changed_by, changed_at, change_type
+                    FROM settings_history
+                    WHERE guild_id = $1 AND scope = $2
+                    ORDER BY changed_at DESC LIMIT $3
+                """
+                params = [guild_id, scope, limit]
+            else:
+                query = """
+                    SELECT id, scope, key, old_value, new_value, value_type, changed_by, changed_at, change_type
+                    FROM settings_history
+                    WHERE guild_id = $1
+                    ORDER BY changed_at DESC LIMIT $2
+                """
+                params = [guild_id, limit]
+
+            rows = await conn.fetch(query, *params)
+
+            history = []
+            for row in rows:
+                history.append(SettingsHistoryEntry(
+                    id=row["id"],
+                    scope=row["scope"],
+                    key=row["key"],
+                    old_value=row["old_value"],
+                    new_value=row["new_value"],
+                    value_type=row["value_type"],
+                    changed_by=row["changed_by"],
+                    changed_at=row["changed_at"].isoformat(),
+                    change_type=row["change_type"]
+                ))
+
+            return history
+
+    except Exception as exc:
+        print("[ERROR] Failed to get settings history:", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch settings history")
+
+
+@router.post("/dashboard/{guild_id}/settings/rollback/{history_id}")
+async def rollback_setting_change(
+    guild_id: int,
+    history_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Rollback a setting to a previous value from history."""
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Get the history entry
+            history_row = await conn.fetchrow(
+                """
+                SELECT scope, key, old_value, change_type, value_type
+                FROM settings_history
+                WHERE id = $1 AND guild_id = $2
+                """,
+                history_id, guild_id
+            )
+
+            if not history_row:
+                raise HTTPException(status_code=404, detail="History entry not found")
+
+            scope: str = history_row["scope"]
+            key: str = history_row["key"]
+            old_value: Any = history_row["old_value"]
+            change_type: str = history_row["change_type"]
+
+            # Only allow rollback for updated entries with old values
+            if change_type != "updated" or old_value is None:
+                raise HTTPException(status_code=400, detail="Cannot rollback this type of change")
+
+            # Update the setting back to the old value
+            await conn.execute(
+                """
+                UPDATE bot_settings
+                SET value = $1, updated_by = $2, updated_at = NOW()
+                WHERE guild_id = $3 AND scope = $4 AND key = $5
+                """,
+                old_value, int(auth_user_id), guild_id, scope, key
+            )
+
+            # Record the rollback in history
+            await conn.execute(
+                """
+                INSERT INTO settings_history
+                (guild_id, scope, key, old_value, new_value, value_type, changed_by, change_type)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, 'rollback')
+                """,
+                guild_id, scope, key, history_row["old_value"], old_value,
+                history_row["value_type"], int(auth_user_id)
+            )
+
+            return {"success": True, "message": f"Rolled back {scope}.{key} to previous value"}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("[ERROR] Failed to rollback setting:", exc)
+        raise HTTPException(status_code=500, detail="Failed to rollback setting")
 
 
 app.include_router(router)
