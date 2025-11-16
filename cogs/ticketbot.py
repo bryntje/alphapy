@@ -481,7 +481,7 @@ class TicketBot(commands.Cog):
             if row and "id" in row:
                 await conn_safe2.execute(
                         "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
-                        int(channel.id), int(row["id"]), interaction.guild.id
+                        int(channel.id), int(row["id"]), interaction.guild.id if interaction.guild else 0
                     )
         except Exception as e:
             # Log the error but don't fail the ticket creation
@@ -636,6 +636,7 @@ class TicketBot(commands.Cog):
         value = self._settings_get(
             "ticketbot",
             "escalation_role_id",
+            guild_id,
             getattr(config, "TICKET_ESCALATION_ROLE_ID", None),
         )
         return self._normalize_id(value)
@@ -741,7 +742,7 @@ class TicketBot(commands.Cog):
             if not await is_owner_or_admin_interaction(interaction):
                 await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                 return
-            counts, avg_seconds = await self.cog._compute_stats(self.scope, interaction.guild.id)
+            counts, avg_seconds = await self.cog._compute_stats(self.scope, interaction.guild.id if interaction.guild else None)
             embed = self.cog._stats_embed(counts, avg_seconds)
             await interaction.response.edit_message(embed=embed, view=self)
             try:
@@ -839,6 +840,10 @@ class TicketBot(commands.Cog):
 
         if not self.conn:
             await interaction.followup.send("❌ Database not connected.", ephemeral=True)
+            return
+
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command only works in a server.", ephemeral=True)
             return
 
         new_status = status.value
@@ -1006,63 +1011,62 @@ class TicketActionView(discord.ui.View):
             )
             if len(rows) >= 3:
                 # Propose FAQ to admins via log channel with a button
+                embed = discord.Embed(
+                    title="💡 Repeated Ticket Pattern Detected",
+                    description=(
+                        "We detected multiple tickets with a similar topic in the last 7 days.\n\n"
+                        f"Similarity key: `{key}`\n"
+                        f"Occurrences: **{len(rows)}**\n\n"
+                        "Consider adding an FAQ entry for this topic."
+                    ),
+                    color=discord.Color.gold(),
+                )
+                # Show a sample of the latest summary in the footer to aid admins
+                sample_preview = (summary[:180] + "…") if len(summary) > 180 else summary
+                embed.set_footer(text=f"Sample: {sample_preview}")
+                # Lightweight view with a placeholder button
+                view = discord.ui.View()
+
+                async def add_faq_callback(interaction: discord.Interaction) -> None:
+                    if not await is_owner_or_admin_interaction(interaction):
+                        await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+                        return
+                    try:
+                        # Insert FAQ entry
+                        await self.conn.execute(
+                            "INSERT INTO faq_entries (similarity_key, summary, created_by) VALUES ($1, $2, $3)",
+                            key, summary, int(interaction.user.id)
+                        )
+                        await interaction.response.send_message("✅ FAQ entry added.", ephemeral=True)
+                        await self._log(
+                            interaction,
+                            title="✅ FAQ entry created",
+                            desc=(
+                                f"Key: `{key}`\n"
+                                f"By: {interaction.user} ({interaction.user.id})\n"
+                                f"Snippet: {sample_preview}"
+                            ),
+                            level="success",
+                        )
+                    except Exception as e:
+                        await interaction.response.send_message(f"❌ Failed to add FAQ: {e}", ephemeral=True)
+
+                btn = discord.ui.Button(label="Add to FAQ", style=discord.ButtonStyle.success)
+                btn.callback = add_faq_callback  # type: ignore
+                view.add_item(btn)
+
+                # Send to log channel
                 try:
-                    embed = discord.Embed(
-                        title="💡 Repeated Ticket Pattern Detected",
-                        description=(
-                            "We detected multiple tickets with a similar topic in the last 7 days.\n\n"
-                            f"Similarity key: `{key}`\n"
-                            f"Occurrences: **{len(rows)}**\n\n"
-                            "Consider adding an FAQ entry for this topic."
-                        ),
-                        color=discord.Color.gold(),
-                    )
-                    # Show a sample of the latest summary in the footer to aid admins
-                    sample_preview = (summary[:180] + "…") if len(summary) > 180 else summary
-                    embed.set_footer(text=f"Sample: {sample_preview}")
-                    # Lightweight view with a placeholder button
-                    view = discord.ui.View()
-
-                    async def add_faq_callback(interaction: discord.Interaction) -> None:
-                        if not await is_owner_or_admin_interaction(interaction):
-                            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
-                            return
-                        try:
-                            # Insert FAQ entry
-                            await self.conn.execute(
-                                "INSERT INTO faq_entries (similarity_key, summary, created_by) VALUES ($1, $2, $3)",
-                                key, summary, int(interaction.user.id)
-                            )
-                            await interaction.response.send_message("✅ FAQ entry added.", ephemeral=True)
-                            await self._log(
-                                interaction,
-                                title="✅ FAQ entry created",
-                                desc=(
-                                    f"Key: `{key}`\n"
-                                    f"By: {interaction.user} ({interaction.user.id})\n"
-                                    f"Snippet: {sample_preview}"
-                                ),
-                                level="success",
-                            )
-                        except Exception as e:
-                            await interaction.response.send_message(f"❌ Failed to add FAQ: {e}", ephemeral=True)
-
-                    btn = discord.ui.Button(label="Add to FAQ", style=discord.ButtonStyle.success)
-                    btn.callback = add_faq_callback  # type: ignore
-                    view.add_item(btn)
-
-                channel_id = None
-                    if self.cog and interaction.guild:
-                        channel_id = self.cog._get_log_channel_id(interaction.guild.id)
-                if channel_id is None:
-                    channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
-                channel = self.bot.get_channel(channel_id)
-                if channel and hasattr(channel, "send"):
-                    text_channel = cast(discord.TextChannel, channel)
-                    await text_channel.send(embed=embed, view=view)
+                    channel_id = 0  # Default fallback - should be configured via /config system set_log_channel
+                    channel = self.bot.get_channel(channel_id)
+                    if channel and hasattr(channel, "send"):
+                        text_channel = cast(discord.TextChannel, channel)
+                        await text_channel.send(embed=embed, view=view)
                 except Exception:
                     pass
-            return key
+                return key  # Return key only when FAQ is proposed
+
+            return None  # Normal case: no FAQ proposed
         except Exception:
             # Do not block on summary registration failures
             return None
@@ -1215,8 +1219,8 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
         escalated_to = None
-        if self.cog:
-            escalated_to = self.cog._get_escalation_role_id(guild.id)
+        if self.cog and interaction.guild:
+            escalated_to = self.cog._get_escalation_role_id(interaction.guild.id)
         if escalated_to is None:
             target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
             escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None
