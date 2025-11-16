@@ -420,7 +420,7 @@ class TicketBot(commands.Cog):
                 VALUES ($1, $2, $3, $4)
                 RETURNING id, created_at
                 """,
-                interaction.guild.id,
+                interaction.guild.id if interaction.guild else 0,
                 int(user.id),
                 str(user),
                 (description or "").strip() or "—",
@@ -431,7 +431,7 @@ class TicketBot(commands.Cog):
                 title="🚨 Ticket creation failed",
                 description=f"User: {user_display}\nError: {e}",
                 level="error",
-                guild_id=interaction.guild.id,
+                guild_id=interaction.guild.id if interaction.guild else 0,
             )
             await interaction.followup.send("❌ Something went wrong creating your ticket.")
             return
@@ -476,14 +476,23 @@ class TicketBot(commands.Cog):
             reason=f"Ticket {ticket_id} created by {user}"
         )
         # Store channel id
+        conn_safe2 = cast(asyncpg.Connection, self.conn)
         try:
-            conn_safe2 = cast(asyncpg.Connection, self.conn)
-            await conn_safe2.execute(
-                "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
-                int(channel.id), ticket_id, interaction.guild.id
+            if row and "id" in row:
+                await conn_safe2.execute(
+                        "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
+                        int(channel.id), int(row["id"]), interaction.guild.id
+                    )
+        except Exception as e:
+            # Log the error but don't fail the ticket creation
+            await self.send_log_embed(
+                title="⚠️ Ticket channel update failed",
+                description=f"Ticket ID: {ticket_id}\nChannel: {channel.mention}\nError: {e}",
+                level="warning",
+                guild_id=interaction.guild.id if interaction.guild else 0,
             )
-        except Exception:
-            pass
+
+        # Create success embed (always shown, even if channel_id update failed)
         ch_embed = discord.Embed(
             title="🎟️ Ticket created",
             color=discord.Color.green(),
@@ -1042,15 +1051,15 @@ class TicketActionView(discord.ui.View):
                     btn.callback = add_faq_callback  # type: ignore
                     view.add_item(btn)
 
-                    channel_id = None
+                channel_id = None
                     if self.cog and interaction.guild:
                         channel_id = self.cog._get_log_channel_id(interaction.guild.id)
-                    if channel_id is None:
-                        channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
-                    channel = self.bot.get_channel(channel_id)
-                    if channel and hasattr(channel, "send"):
-                        text_channel = cast(discord.TextChannel, channel)
-                        await text_channel.send(embed=embed, view=view)
+                if channel_id is None:
+                    channel_id = 0  # Moet geconfigureerd worden via /config system set_log_channel
+                channel = self.bot.get_channel(channel_id)
+                if channel and hasattr(channel, "send"):
+                    text_channel = cast(discord.TextChannel, channel)
+                    await text_channel.send(embed=embed, view=view)
                 except Exception:
                     pass
             return key
