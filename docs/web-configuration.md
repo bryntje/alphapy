@@ -222,17 +222,41 @@ pnpm dev
 # Access at http://localhost:3000/dashboard
 ```
 
-### Environment Variables
+### Discord OAuth2 Setup
+
+#### 1. Create Discord Application
+1. Ga naar [Discord Developer Portal](https://discord.com/developers/applications)
+2. Klik op "New Application"
+3. Geef je app een naam (bijv. "Alphapy Web Dashboard")
+4. Noteer de **Application ID** (dit is je CLIENT_ID)
+
+#### 2. Configure OAuth2
+1. Ga naar "OAuth2" tab in je Discord app
+2. Klik op "Add Redirect" onder "Redirects"
+3. Voeg toe: `https://alphapy.innersync.tech/api/auth/discord/callback`
+4. Klik op "Save Changes"
+
+#### 3. Create Client Secret
+1. Klik op "Reset Secret" om een nieuwe CLIENT_SECRET te genereren
+2. **BELANGRIJK**: Bewaar deze secret veilig - deze wordt nooit meer getoond!
+
+#### 4. Environment Variables
 ```bash
-# Discord OAuth2
-DISCORD_CLIENT_ID=your_client_id
-DISCORD_CLIENT_SECRET=your_client_secret
+# Discord OAuth2 (Vereist voor web dashboard)
+DISCORD_CLIENT_ID=123456789012345678  # Jouw Application ID
+DISCORD_CLIENT_SECRET=abcdefghijklmnop  # Jouw Client Secret
 DISCORD_OAUTH_REDIRECT_URI=https://alphapy.innersync.tech/api/auth/discord/callback
 
 # URLs
 ALPHAPY_BASE_URL=https://alphapy.innersync.tech
 NEXT_PUBLIC_BASE_URL=https://alphapy.innersync.tech
 ```
+
+#### 5. OAuth2 Scopes
+De app gebruikt automatisch deze scopes:
+- `identify` - Basis user info
+- `guilds` - Lijst van servers
+- `guilds.members.read` - Server member info (voor admin checks)
 
 ### Deployment
 The interface is deployed alongside the main Alphapy application and shares the same infrastructure:
