@@ -57,6 +57,7 @@ class TicketBot(commands.Cog):
                 CREATE TABLE IF NOT EXISTS support_tickets (
                     id SERIAL PRIMARY KEY,
                     guild_id BIGINT NOT NULL,
+                    guild_ticket_id INT NOT NULL,
                     user_id BIGINT NOT NULL,
                     username TEXT,
                     description TEXT NOT NULL,
@@ -72,6 +73,22 @@ class TicketBot(commands.Cog):
                 )
             except Exception as e:
                 logger.warning(f"⚠️ TicketBot: kon kolom channel_id niet toevoegen: {e}")
+
+            # Guild-local ticket ID voor per-guild nummering
+            try:
+                await conn.execute(
+                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS guild_ticket_id INT;"
+                )
+                # Vul bestaande records met hun globale ID als fallback
+                await conn.execute(
+                    "UPDATE support_tickets SET guild_ticket_id = id WHERE guild_ticket_id IS NULL;"
+                )
+                # Maak index voor performance
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_support_tickets_guild_ticket_id ON support_tickets(guild_id, guild_ticket_id);"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ TicketBot: kon kolom guild_ticket_id niet toevoegen: {e}")
             # Backwards compatible schema upgrades
             try:
                 await conn.execute(
@@ -233,13 +250,21 @@ class TicketBot(commands.Cog):
 
         try:
             conn_safe = cast(asyncpg.Connection, self.conn)
+            # Bereken de volgende guild_ticket_id voor deze guild
+            max_guild_ticket = await conn_safe.fetchval(
+                "SELECT COALESCE(MAX(guild_ticket_id), 0) FROM support_tickets WHERE guild_id = $1",
+                interaction.guild.id
+            )
+            next_guild_ticket_id = max_guild_ticket + 1
+
             row = await conn_safe.fetchrow(
                 """
-                INSERT INTO support_tickets (guild_id, user_id, username, description)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, created_at
+                INSERT INTO support_tickets (guild_id, guild_ticket_id, user_id, username, description)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id, guild_ticket_id, created_at
                 """,
                 interaction.guild.id,
+                next_guild_ticket_id,
                 int(user.id),
                 str(user),
                 description.strip(),
@@ -255,14 +280,17 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Something went wrong creating your ticket.")
             return
 
-        ticket_id: int
+        ticket_id: int  # globale ID voor database operaties
+        guild_ticket_id: int  # lokale ID voor display
         created_at: datetime
         if row:
             ticket_id = int(row["id"])  # not None after successful insert
+            guild_ticket_id = int(row["guild_ticket_id"])
             created_at = row["created_at"]
         else:
             # Fallback: should not happen, but keep types safe
             ticket_id = 0
+            guild_ticket_id = 0
             created_at = datetime.utcnow()
 
         # Confirmation embed to the user (ephemeral followup)
@@ -272,7 +300,7 @@ class TicketBot(commands.Cog):
             color=discord.Color.green(),
             timestamp=created_at,
         )
-        confirm.add_field(name="Ticket ID", value=str(ticket_id), inline=True)
+        confirm.add_field(name="Ticket ID", value=str(guild_ticket_id), inline=True)
         confirm.add_field(name="User", value=f"{user.mention}", inline=True)
         confirm.add_field(name="Status", value="open", inline=True)
         confirm.add_field(name="Description", value=description[:1024] or "—", inline=False)
@@ -313,10 +341,10 @@ class TicketBot(commands.Cog):
                 )
 
             channel = await guild.create_text_channel(
-                name=f"ticket-{ticket_id}",
+                name=f"ticket-{guild_ticket_id}",
                 category=category,
                 overwrites=overwrites,
-                reason=f"Ticket {ticket_id} aangemaakt door {user}"
+                reason=f"Ticket {guild_ticket_id} aangemaakt door {user}"
             )
 
             # Update DB met channel_id
@@ -337,7 +365,7 @@ class TicketBot(commands.Cog):
                 color=discord.Color.green(),
                 timestamp=created_at,
                 description=(
-                    f"Ticket ID: `{ticket_id}`\n"
+                    f"Ticket ID: `{guild_ticket_id}`\n"
                     f"User: {user.mention}\n"
                     f"Status: **open**\n\n"
                     f"Description:\n{description}"
@@ -346,7 +374,7 @@ class TicketBot(commands.Cog):
             view = TicketActionView(
                 bot=self.bot,
                 conn=conn_safe2,
-                ticket_id=ticket_id,
+                ticket_id=ticket_id,  # globale ID voor database
                 support_role_id=support_role.id if support_role else None,
                 cog=self,
                 timeout=None,
@@ -414,13 +442,21 @@ class TicketBot(commands.Cog):
         user_display = f"{user} ({user.id})"
         try:
             conn_safe = cast(asyncpg.Connection, self.conn)
+            # Bereken de volgende guild_ticket_id voor deze guild
+            max_guild_ticket = await conn_safe.fetchval(
+                "SELECT COALESCE(MAX(guild_ticket_id), 0) FROM support_tickets WHERE guild_id = $1",
+                interaction.guild.id
+            )
+            next_guild_ticket_id = max_guild_ticket + 1
+
             row = await conn_safe.fetchrow(
                 """
-                INSERT INTO support_tickets (guild_id, user_id, username, description)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, created_at
+                INSERT INTO support_tickets (guild_id, guild_ticket_id, user_id, username, description)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id, guild_ticket_id, created_at
                 """,
                 interaction.guild.id,
+                next_guild_ticket_id,
                 int(user.id),
                 str(user),
                 (description or "").strip() or "—",
@@ -435,7 +471,8 @@ class TicketBot(commands.Cog):
             )
             await interaction.followup.send("❌ Something went wrong creating your ticket.")
             return
-        ticket_id = int(row["id"]) if row else 0
+        ticket_id = int(row["id"]) if row else 0  # globale ID
+        guild_ticket_id = int(row["guild_ticket_id"]) if row else 0  # lokale ID voor display
         created_at: datetime = row["created_at"] if row else datetime.utcnow()
         # Build channel and send initial message — duplicate logic kept for clarity
         guild = interaction.guild
@@ -470,10 +507,10 @@ class TicketBot(commands.Cog):
                 manage_messages=True,
             )
         channel = await guild.create_text_channel(
-            name=f"ticket-{ticket_id}",
+            name=f"ticket-{guild_ticket_id}",
             category=category,
             overwrites=overwrites,
-            reason=f"Ticket {ticket_id} created by {user}"
+            reason=f"Ticket {guild_ticket_id} created by {user}"
         )
         # Store channel id
         try:
@@ -489,7 +526,7 @@ class TicketBot(commands.Cog):
             color=discord.Color.green(),
             timestamp=created_at,
             description=(
-                f"Ticket ID: `{ticket_id}`\n"
+                f"Ticket ID: `{guild_ticket_id}`\n"
                 f"User: {user.mention}\n"
                 f"Status: **open**\n\n"
                 f"Description:\n{description or '—'}"
