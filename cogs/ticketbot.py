@@ -79,10 +79,18 @@ class TicketBot(commands.Cog):
                 await conn.execute(
                     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS guild_ticket_id INT;"
                 )
-                # Vul bestaande records met hun globale ID als fallback
-                await conn.execute(
-                    "UPDATE support_tickets SET guild_ticket_id = id WHERE guild_ticket_id IS NULL;"
-                )
+                # Vul bestaande records met juiste lokale IDs per guild
+                # Gebruik een window function om per guild een lokale teller te maken
+                await conn.execute("""
+                    UPDATE support_tickets
+                    SET guild_ticket_id = sub.row_num
+                    FROM (
+                        SELECT id, ROW_NUMBER() OVER (PARTITION BY guild_id ORDER BY created_at) as row_num
+                        FROM support_tickets
+                        WHERE guild_ticket_id IS NULL
+                    ) sub
+                    WHERE support_tickets.id = sub.id;
+                """)
                 # Maak index voor performance
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_support_tickets_guild_ticket_id ON support_tickets(guild_id, guild_ticket_id);"
