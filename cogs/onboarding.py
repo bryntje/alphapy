@@ -101,7 +101,7 @@ class Onboarding(commands.Cog):
         try:
             if self.db is None:
                 logger.error("Database pool is None")
-                return False
+                return self.default_questions
             async with self.db.acquire() as conn:
                 rows = await conn.fetch("""
                     SELECT question, question_type, options, followup, required
@@ -411,7 +411,10 @@ class Onboarding(commands.Cog):
 
     async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: Optional[dict] = None):
         user_id = interaction.user.id
-        guild_id = interaction.guild.id if interaction.guild else 0
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+        guild_id = interaction.guild.id
 
         # Ensure there's an active session for this user
         if user_id not in self.active_sessions:
@@ -460,8 +463,9 @@ class Onboarding(commands.Cog):
             if completion_role_id and completion_role_id != 0:
                 try:
                     role = interaction.guild.get_role(completion_role_id)
-                    if role and not any(r.id == completion_role_id for r in interaction.user.roles):
-                        await interaction.user.add_roles(role)
+                    member = interaction.guild.get_member(interaction.user.id)
+                    if role and member and not any(r.id == completion_role_id for r in member.roles):
+                        await member.add_roles(role)
                         logger.info(f"✅ Completion role {role.name} assigned to {interaction.user.display_name}")
                         await interaction.followup.send(
                             f"🎉 **Welcome to the server!** You have been assigned the {role.mention} role.",
@@ -604,7 +608,9 @@ class OnboardingButton(discord.ui.Button):
         # Voor de logica zelf gebruiken we nu de gegevens uit de view, die een uniek view_id bevat.
         logger.info(f"🔘 Button clicked: {self.label} (value: {self.value})")
         user_id = interaction.user.id
-        question_data = self.onboarding.questions[self.step]
+        guild_id = interaction.guild.id if interaction.guild else 0
+        questions = await self.onboarding.get_guild_questions(guild_id)
+        question_data = questions[self.step]
         
         # Single-select: zet het antwoord
         # Als er een follow-up is voor deze keuze, bewaar zowel keuze als latere follow-up in een dict
