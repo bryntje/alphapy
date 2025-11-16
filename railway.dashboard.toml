@@ -1,6 +1,6 @@
 [build]
 builder = "Dockerfile"
-dockerfilePath = "shared/innersync-core/Dockerfile"
+dockerfilePath = "Dockerfile.dashboard"
 
 [deploy]
 healthcheckPath = "/api/health"
