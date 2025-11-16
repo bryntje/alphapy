@@ -230,7 +230,7 @@ class TicketBot(commands.Cog):
             log_with_guild(f"Kon ticketbot log embed niet versturen: {e}", guild_id, "error")
 
     @app_commands.command(name="ticket_migrate", description="[ADMIN] Manually run ticket migration")
-    @app_checks.is_owner()
+    @commands.is_owner()
     async def ticket_migrate(self, interaction: discord.Interaction):
         """Manually trigger ticket ID migration for existing data."""
         if not interaction.guild:
