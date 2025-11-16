@@ -121,10 +121,21 @@ class SettingsService:
                     value_type TEXT,
                     changed_by BIGINT,
                     changed_at TIMESTAMPTZ DEFAULT NOW(),
-                    change_type TEXT NOT NULL, -- 'created', 'updated', 'deleted'
-                    INDEX idx_settings_history_guild_scope_key (guild_id, scope, key),
-                    INDEX idx_settings_history_changed_at (changed_at)
+                    change_type TEXT NOT NULL
                 );
+                """
+            )
+            # Create indexes separately for better compatibility
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_settings_history_guild_scope_key
+                ON settings_history (guild_id, scope, key);
+                """
+            )
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_settings_history_changed_at
+                ON settings_history (changed_at);
                 """
             )
 
