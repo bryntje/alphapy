@@ -42,6 +42,15 @@ healthcheckPath = "/api/health"
 restartPolicyType = "on_failure"
 ```
 
+## 🔧 Dockerfile Build Context Fix
+Dockerfile is aangepast voor Railway build context:
+```dockerfile
+# Kopieert specifiek shared/ directory naar /app
+COPY shared/package.json shared/pnpm-lock.yaml ./
+COPY shared/ .
+```
+Dit lost de "Couldn't find any pages or app directory" error op.
+
 ## 🎯 Deployment Flow
 1. Railway clones `alphapy` repo
 2. Finds config at `/shared/railway.toml`
