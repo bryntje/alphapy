@@ -1,5 +1,6 @@
 [build]
 builder = "Dockerfile"
+dockerfilePath = "shared/innersync-core/Dockerfile"
 
 [deploy]
 sourceDirectory = "shared/innersync-core"
