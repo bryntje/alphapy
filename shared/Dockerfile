@@ -18,14 +18,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Kopieer node_modules
 COPY --from=deps /app/node_modules ./node_modules
 
-# Kopieer ALLE code uit shared/ naar /app (project root)
-COPY shared/ ./
-
-# EXPLICIET: Kopieer app directory apart (omdat COPY shared/ ./ het overslaat)
+# Kopieer Next.js essentials EXPLICIET (Railway heeft problemen met wildcard copies)
+COPY shared/package.json ./
+COPY shared/tsconfig.json ./
+COPY shared/next.config.ts ./
 COPY shared/app ./app
-
-# DEBUG: Check what got copied
-RUN echo "=== ROOT DIR ===" && ls -la && echo "=== SHARED DIR EXISTS? ===" && ls -d shared 2>/dev/null || echo "shared dir not found" && echo "=== APP DIR ===" && ls -la app/ 2>/dev/null || echo "app/ not found"
+COPY shared/public ./public
 
 # Nu ziet Next.js app/ of pages/ in /app
 RUN pnpm run build
