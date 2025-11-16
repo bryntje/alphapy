@@ -68,6 +68,12 @@ class Configuration(commands.Cog):
         parent=config,
     )
 
+    onboarding_group = app_commands.Group(
+        name="onboarding",
+        description="Onboarding instellingen",
+        parent=config,
+    )
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         settings = getattr(bot, "settings", None)
@@ -783,6 +789,126 @@ class Configuration(commands.Cog):
             "🔒 GDPR",
             f"`gdpr.channel_id` teruggezet naar standaard door {interaction.user.mention}.",
         )
+
+    @onboarding_group.command(name="show", description="Show onboarding questions")
+    @requires_admin()
+    async def onboarding_show(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+        if not onboarding_cog:
+            await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
+            return
+
+        questions = await onboarding_cog.get_guild_questions(interaction.guild.id)
+        if not questions:
+            await interaction.followup.send("⚠️ No onboarding questions configured.", ephemeral=True)
+            return
+
+        lines = ["📝 **Onboarding Questions**"]
+        for i, q in enumerate(questions, 1):
+            q_type = "Multiple Choice" if q.get("multiple") else ("Text Input" if q.get("type") == "email" else "Single Choice")
+            lines.append(f"{i}. **{q['question']}** ({q_type})")
+
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    @onboarding_group.command(name="add_question", description="Add a new onboarding question")
+    @requires_admin()
+    async def onboarding_add_question(
+        self,
+        interaction: discord.Interaction,
+        step: app_commands.Range[int, 1, 20],
+        question: str,
+        question_type: str = "select",
+        required: bool = True
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        # Validate question type
+        valid_types = ["select", "multiselect", "text", "email"]
+        if question_type not in valid_types:
+            await interaction.followup.send(
+                f"❌ Invalid question type. Use: {', '.join(valid_types)}",
+                ephemeral=True
+            )
+            return
+
+        onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+        if not onboarding_cog:
+            await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
+            return
+
+        question_data = {
+            "question": question,
+            "type": question_type if question_type in ["text", "email"] else None,
+            "optional": not required
+        }
+
+        if question_type in ["select", "multiselect"]:
+            question_data["multiple"] = (question_type == "multiselect")
+
+        success = await onboarding_cog.save_guild_question(interaction.guild.id, step, question_data)
+        if success:
+            await interaction.followup.send(f"✅ Question added at position {step}.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Question '{question}' added at position {step} by {interaction.user.mention}.",
+                interaction.guild.id
+            )
+        else:
+            await interaction.followup.send("❌ Could not save question.", ephemeral=True)
+
+    @onboarding_group.command(name="delete_question", description="Delete an onboarding question")
+    @requires_admin()
+    async def onboarding_delete_question(
+        self,
+        interaction: discord.Interaction,
+        step: app_commands.Range[int, 1, 20]
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+        if not onboarding_cog:
+            await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
+            return
+
+        success = await onboarding_cog.delete_guild_question(interaction.guild.id, step)
+        if success:
+            await interaction.followup.send(f"✅ Question at position {step} deleted.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Question at position {step} deleted by {interaction.user.mention}.",
+                interaction.guild.id
+            )
+        else:
+            await interaction.followup.send("❌ Could not delete question.", ephemeral=True)
+
+    @onboarding_group.command(name="reset_questions", description="Reset to default onboarding questions")
+    @requires_admin()
+    async def onboarding_reset_questions(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+        if not onboarding_cog:
+            await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
+            return
+
+        # Delete all custom questions for this guild
+        if onboarding_cog.db:
+            async with onboarding_cog.db.acquire() as conn:
+                await conn.execute("DELETE FROM guild_onboarding_questions WHERE guild_id = $1", interaction.guild.id)
+
+            # Clear cache
+            if interaction.guild.id in onboarding_cog.guild_questions_cache:
+                del onboarding_cog.guild_questions_cache[interaction.guild.id]
+
+            await interaction.followup.send("✅ Onboarding questions reset to default.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Questions reset to default by {interaction.user.mention}.",
+                interaction.guild.id
+            )
+        else:
+            await interaction.followup.send("❌ Database not available.", ephemeral=True)
 
 
     def _format_value(self, definition: SettingDefinition, value: Any) -> str:

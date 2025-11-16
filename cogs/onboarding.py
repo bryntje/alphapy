@@ -19,62 +19,188 @@ handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(me
 logger.addHandler(handler)
 
 class Onboarding(commands.Cog):
-    """Cog die het onboarding-proces voor nieuwe gebruikers beheert."""
+    """Cog that manages the onboarding process for new users."""
     
     def __init__(self, bot):
         self.bot = bot
-        # Houd per gebruiker de huidige stap en antwoorden bij.
+        # Track current step and answers per user.
         self.active_sessions = {}  # { user_id: {"step": int, "answers": {}} }
-        # Regex voor emailvalidatie
+        # Regex for email validation
         self.EMAIL_REGEX = re.compile(r"^[\w\.-]+@[\w\.-]+\.\w{2,}$")
 
-        # Nieuwe, compacte onboarding flow (4 vragen)
-        self.questions = [
+        # Default questions (used when no custom questions are configured for a guild)
+        self.default_questions = [
             {
-                "question": "📣 How did you hear about Innersync • Alphapips?",
+                "question": "📣 How did you find our community?",
                 "options": [
-                    ("Invited by a friend", "friend"),
+                    ("Invited by a member", "friend"),
                     ("Social Media", "social"),
-                    ("Event / Presentation", "event")
+                    ("Online Search", "search"),
+                    ("Other", "other")
                 ],
                 "followup": {
                     "friend": {"question": "Who invited you?"},
                     "social": {"question": "Which platform?"},
-                    "event": {"question": "Name of the event?"}
+                    "search": {"question": "What did you search for?"},
+                    "other": {"question": "How did you find us?"}
                 }
             },
             {
-                "question": "💼 Which opportunities are you most interested in?",
+                "question": "🎯 What brings you to our community?",
                 "options": [
-                    ("🔺 Forex", "forex"),
-                    ("💰 Crypto", "crypto"),
-                    ("📈 Stocks", "stocks"),
-                    ("📸 UGC", "ugc"),
-                    ("🛒 E-commerce", "ecommerce"),
-                    ("🤝 Network Marketing", "network_marketing")
+                    ("Learn new skills", "learning"),
+                    ("Network with like-minded people", "networking"),
+                    ("Share knowledge & experience", "sharing"),
+                    ("Find opportunities", "opportunities"),
+                    ("Other", "other")
                 ],
                 "multiple": True
             },
             {
-                "question": "🧠 Do you have a ZiNRAi membership?",
+                "question": "💬 How would you like to connect with the community?",
                 "options": [
-                    ("✅ Yes", "yes"),
-                    ("❌ No", "no")
-                ]
+                    ("Join discussions in channels", "discussions"),
+                    ("Attend community events", "events"),
+                    ("One-on-one conversations", "personal"),
+                    ("Just observe for now", "observe")
+                ],
+                "multiple": True
             },
             {
-                "question": "📞 Would you like to have an introduction call?",
-                "options": [
-                    ("✅ Yes", "yes"),
-                    ("❌ No", "no")
-                ],
-                "followup": {
-                    "yes": {"question": "Please enter your email address", "type": "email"}
-                }
+                "question": "📧 What's your email address? (Optional)",
+                "type": "email",
+                "optional": True
             }
         ]
 
+        # Cache for guild questions (guild_id -> questions list)
+        self.guild_questions_cache = {}
+
         self.db: Optional[asyncpg.Pool] = None
+
+    async def get_guild_questions(self, guild_id: int) -> list:
+        """Load questions for a specific guild from database, or use defaults if none configured."""
+        # Check cache first
+        if guild_id in self.guild_questions_cache:
+            return self.guild_questions_cache[guild_id]
+
+        if not await self._ensure_pool():
+            logger.warning(f"Database not available, using default questions for guild {guild_id}")
+            return self.default_questions
+
+        try:
+            async with self.db.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT question, question_type, options, followup, required
+                    FROM guild_onboarding_questions
+                    WHERE guild_id = $1 AND enabled = TRUE
+                    ORDER BY step_order
+                """, guild_id)
+
+                if rows:
+                    questions = []
+                    for row in rows:
+                        question_data = {
+                            "question": row["question"],
+                            "type": row["question_type"] if row["question_type"] in ["email", "text"] else None,
+                            "optional": not row["required"]
+                        }
+
+                        if row["question_type"] in ["select", "multiselect"]:
+                            if row["options"]:
+                                # Convert JSONB options to tuple format expected by the code
+                                question_data["options"] = [
+                                    (opt["label"], opt["value"]) for opt in row["options"]
+                                ]
+                            if row["question_type"] == "multiselect":
+                                question_data["multiple"] = True
+                            if row["followup"]:
+                                question_data["followup"] = row["followup"]
+
+                        questions.append(question_data)
+
+                    self.guild_questions_cache[guild_id] = questions
+                    return questions
+                else:
+                    # No custom questions configured, use defaults
+                    self.guild_questions_cache[guild_id] = self.default_questions
+                    return self.default_questions
+
+        except Exception as e:
+            logger.error(f"Failed to load questions for guild {guild_id}: {e}")
+            return self.default_questions
+
+    async def save_guild_question(self, guild_id: int, step_order: int, question_data: dict) -> bool:
+        """Save a question for a specific guild."""
+        if not await self._ensure_pool():
+            return False
+
+        try:
+            async with self.db.acquire() as conn:
+                # Convert options from tuple format to JSONB
+                options_json = None
+                if "options" in question_data and question_data["options"]:
+                    options_json = [
+                        {"label": label, "value": value}
+                        for label, value in question_data["options"]
+                    ]
+
+                followup_json = question_data.get("followup")
+
+                await conn.execute("""
+                    INSERT INTO guild_onboarding_questions
+                    (guild_id, step_order, question, question_type, options, followup, required, enabled)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
+                    ON CONFLICT (guild_id, step_order)
+                    DO UPDATE SET
+                        question = EXCLUDED.question,
+                        question_type = EXCLUDED.question_type,
+                        options = EXCLUDED.options,
+                        followup = EXCLUDED.followup,
+                        required = EXCLUDED.required,
+                        updated_at = CURRENT_TIMESTAMP
+                """,
+                guild_id,
+                step_order,
+                question_data["question"],
+                question_data.get("type", "select") if question_data.get("type") else
+                ("multiselect" if question_data.get("multiple") else "select"),
+                options_json,
+                followup_json,
+                not question_data.get("optional", False)
+                )
+
+                # Clear cache for this guild
+                if guild_id in self.guild_questions_cache:
+                    del self.guild_questions_cache[guild_id]
+
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to save question for guild {guild_id}: {e}")
+            return False
+
+    async def delete_guild_question(self, guild_id: int, step_order: int) -> bool:
+        """Delete a question for a specific guild."""
+        if not await self._ensure_pool():
+            return False
+
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute("""
+                    DELETE FROM guild_onboarding_questions
+                    WHERE guild_id = $1 AND step_order = $2
+                """, guild_id, step_order)
+
+                # Clear cache for this guild
+                if guild_id in self.guild_questions_cache:
+                    del self.guild_questions_cache[guild_id]
+
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete question for guild {guild_id}: {e}")
+            return False
         
     def _value_to_label(self, q_data: dict, value: object) -> str:
         options = q_data.get("options")
@@ -113,6 +239,22 @@ class Onboarding(commands.Cog):
                     PRIMARY KEY(guild_id, user_id)
                 );
             ''')
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS guild_onboarding_questions (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    step_order INTEGER NOT NULL,
+                    question TEXT NOT NULL,
+                    question_type TEXT NOT NULL DEFAULT 'select', -- 'select', 'multiselect', 'text', 'email'
+                    options JSONB, -- For select/multiselect: [{"label": "Option 1", "value": "value1"}, ...]
+                    followup JSONB, -- For conditional followups: {"value": {"question": "Followup question"}}
+                    required BOOLEAN DEFAULT TRUE,
+                    enabled BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(guild_id, step_order)
+                );
+            ''')
         self.db = pool
         logger.info("✅ Onboarding: DB pool ready")
 
@@ -141,20 +283,24 @@ class Onboarding(commands.Cog):
 
     async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: Optional[dict] = None):
         user_id = interaction.user.id
+        guild_id = interaction.guild.id if interaction.guild else 0
 
-        # Zorg dat er een actieve sessie is voor deze gebruiker
+        # Ensure there's an active session for this user
         if user_id not in self.active_sessions:
             self.active_sessions[user_id] = {"step": 0, "answers": {}}
         session = self.active_sessions[user_id]
 
-        # Gebruik bestaande antwoorden of update de sessie
+        # Use existing answers or update the session
         if answers is None:
             answers = session["answers"]
         else:
             session["answers"] = answers
 
-        # Als alle vragen beantwoord zijn, verwerk dan de afronding
-        if step >= len(self.questions):
+        # Get questions for this guild
+        questions = await self.get_guild_questions(guild_id)
+
+        # If all questions are answered, process completion
+        if step >= len(questions):
             logger.info(f"🎉 Onboarding completed for {interaction.user.display_name}!")
 
             summary_embed = discord.Embed(
@@ -162,7 +308,7 @@ class Onboarding(commands.Cog):
                 description=f"Here is a summary of your onboarding responses, {interaction.user.display_name}:",
                 color=discord.Color.blue()
             )
-            for idx, question in enumerate(self.questions):
+            for idx, question in enumerate(questions):
                 raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
                 summary_embed.add_field(name=f"**{question['question']}**", value=f"➜ {answer_text}", inline=False)
@@ -173,21 +319,21 @@ class Onboarding(commands.Cog):
             else:
                 await interaction.followup.send(embed=summary_embed, ephemeral=True)
 
-            # Sla de onboarding data op in de database
+            # Save the onboarding data to the database
             stored = await self.store_onboarding_data(interaction.guild.id, user_id, answers)
             if not stored:
                 await interaction.followup.send(
-                    "⚠️ Onboarding data kon niet opgeslagen worden. Probeer later opnieuw of contacteer een admin.",
+                    "⚠️ Onboarding data could not be saved. Please try again later or contact an admin.",
                     ephemeral=True
                 )
 
-            # Bouw en verstuur een log-embed naar het logkanaal
+            # Build and send a log embed to the log channel
             log_embed = discord.Embed(
                 title="📝 Onboarding Log",
                 description=f"**User:** {interaction.user} ({interaction.user.id})",
                 color=discord.Color.green()
             )
-            for idx, question in enumerate(self.questions):
+            for idx, question in enumerate(questions):
                 raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
                 log_embed.add_field(name=question['question'], value=f"➜ {answer_text}", inline=False)
@@ -211,10 +357,10 @@ class Onboarding(commands.Cog):
 
             return
 
-        # Haal de huidige vraag op
-        q_data = self.questions[step]
+        # Get the current question
+        q_data = questions[step]
 
-        # Als deze vraag een vrije tekstinvoer vereist, stuur dan een modal
+        # If this question requires free text input, send a modal
         if q_data.get("input"):
             modal = TextInputModal(title=q_data["question"], step=step, answers=answers or {}, onboarding=self)
             await interaction.response.send_modal(modal)
@@ -247,9 +393,9 @@ class Onboarding(commands.Cog):
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def store_onboarding_data(self, guild_id: int, user_id, responses) -> bool:
-        """Slaat onboarding data op in de database."""
+        """Saves onboarding data to the database."""
         if not await self._ensure_pool():
-            logger.error("❌ Onboarding: database niet beschikbaar, data niet opgeslagen")
+            logger.error("❌ Onboarding: database not available, data not saved")
             return False
 
         assert self.db is not None
@@ -271,13 +417,13 @@ class Onboarding(commands.Cog):
 
 class TextInputModal(discord.ui.Modal):
     def __init__(self, title: str, step: int, answers: dict, onboarding: 'Onboarding'):
-        # Stel de titel van de modal in op de vraag
+        # Set the modal title to the question
         super().__init__(title=title)
         self.step = step
         self.answers = answers
         self.onboarding = onboarding
 
-        # Voeg een tekstinvoerveld toe. Je kunt hier eventueel extra validatie toevoegen.
+        # Add a text input field. You can add extra validation here if needed.
         self.input_field = discord.ui.TextInput(
             label=title, 
             placeholder="Type your answer here...",
@@ -292,28 +438,28 @@ class TextInputModal(discord.ui.Modal):
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.input_field.value
 
-        # Geef een korte bevestiging en ga verder met de volgende vraag
+        # Give a short confirmation and proceed to the next question
         await interaction.response.send_message("Your response has been recorded.", ephemeral=True)
-        # Roep de volgende vraag op
+        # Call the next question
         await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
 
 class OnboardingView(discord.ui.View):
-    """View voor de onboarding-flow."""
+    """View for the onboarding flow."""
     def __init__(self, step: Optional[int] = None, answers: Optional[dict] = None, onboarding: Optional['Onboarding'] = None):
         super().__init__(timeout=None)
         self.step = step
         self.answers = answers if answers is not None else {}
         self.onboarding = onboarding
-        self.view_id = uuid.uuid4().hex  # Uniek ID voor deze view
+        self.view_id = uuid.uuid4().hex  # Unique ID for this view
 
 class OnboardingButton(discord.ui.Button):
-    """Knop voor single-select antwoorden."""
+    """Button for single-select answers."""
     def __init__(self, label: str, value: str, step: int, onboarding: Onboarding):
-        # Gebruik nu het unieke view_id in de custom_id
-        # Merk op: 'self' is hier nog niet beschikbaar, dus we moeten dit later via de view ophalen.
-        # Daarom maken we de custom_id dynamisch in de callback of we bepalen dit in de OnboardingView.
-        # Eén manier is om in de __init__ alvast een placeholder te zetten en daarna te overschrijven.
+        # Use the unique view_id in the custom_id
+        # Note: 'self' is not available yet here, so we need to get this later via the view.
+        # Therefore we make the custom_id dynamic in the callback or determine it in the OnboardingView.
+        # One way is to set a placeholder in __init__ and override it afterwards.
         super().__init__(label=label, style=discord.ButtonStyle.primary)
         self.value = value
         self.step = step
@@ -397,16 +543,16 @@ class OnboardingSelect(discord.ui.Select):
         onboarding_view.answers[self.step] = self.values
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.values
-        # Ga direct naar de volgende vraag bij multi-select (geen confirm nodig)
+        # Go directly to the next question for multi-select (no confirm needed)
         await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=onboarding_view.answers)
 
 
 class ConfirmButton(discord.ui.Button):
-    """Knop om de huidige stap te bevestigen en door te gaan."""
+    """Button to confirm the current step and proceed."""
     def __init__(self, step: int, answers: dict, onboarding: Onboarding):
-        # Maak een unieke custom_id met behulp van het view_id; we passen dit aan in de view.
-        # Omdat we 'self.view' nog niet kennen in __init__, kun je ervoor kiezen om
-        # de custom_id later in de view te overschrijven of te genereren.
+        # Create a unique custom_id using the view_id; we adjust this in the view.
+        # Since we don't know 'self.view' yet in __init__, you can choose to
+        # override or generate the custom_id later in the view.
         super().__init__(label="✅ Confirm", style=discord.ButtonStyle.success)
         self.step = step
         self.answers = answers
