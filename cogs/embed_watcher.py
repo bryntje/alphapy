@@ -382,7 +382,7 @@ class EmbedReminderWatcher(commands.Cog):
             logger.exception(f"[ERROR] Reminder insert failed: {e}")
 
     @app_commands.command(name="debug_parse_embed", description="Parse de laatste embed in het kanaal voor test.")
-    async def debug_parse_embed(self, interaction: discord.Interaction):
+    async def debug_parse_embed(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild:
             await interaction.followup.send("⚠️ Dit commando werkt enkel in servers.")

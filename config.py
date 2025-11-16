@@ -42,6 +42,12 @@ SUPABASE_ISSUER = os.getenv(
     f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else None,
 )
 SUPABASE_WEBHOOK_SECRET = os.getenv("SUPABASE_WEBHOOK_SECRET")
+
+# Discord OAuth2 for Web Configuration Interface
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+DISCORD_OAUTH_REDIRECT_URI = os.getenv("DISCORD_OAUTH_REDIRECT_URI", f"{ALPHAPY_BASE_URL}/api/auth/discord/callback")
+
 # ENABLE_EVERYONE_MENTIONS = os.getenv("ENABLE_EVERYONE_MENTIONS", "false").strip().lower() == "true"  # Deprecated - gebruik /config reminders allow_everyone_mentions per guild
 # WATCHER_LOG_CHANNEL = int(os.getenv("WATCHER_LOG_CHANNEL", "1336042713459593337"))  # Deprecated - gebruik /config system set_log_channel per guild
 # ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv("ANNOUNCEMENTS_CHANNEL_ID", "1336038676727206030"))  # Deprecated - gebruik /config embedwatcher announcements_channel_id per guild
