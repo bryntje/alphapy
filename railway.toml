@@ -1,14 +1,12 @@
 [build]
 builder = "Dockerfile"
 dockerfilePath = "Dockerfile.dashboard"
-buildCommand = "git submodule update --init --recursive && cat shared/innersync-core/package.json"
 
 [deploy]
 sourceDirectory = "shared/innersync-core"
 healthcheckPath = "/api/health"
 restartPolicyType = "on_failure"
 
-# Railway configuration for Alphapy bot web interface
-# Deploys the Next.js dashboard from shared/innersync-core submodule
-# Uses Dockerfile.dashboard to avoid submodule path issues
-# Domain: alphapy.innersync.tech
+# Next.js dashboard service for Alphapy Discord bot
+# Serves the web configuration interface at alphapy.innersync.tech
+# Uses local file copies for Railway build compatibility
