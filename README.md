@@ -237,7 +237,7 @@ API_KEY=optional_internal_key
 
 We welcome devs, thinkers, and conscious builders.
 
-- Fork deze repo (of [alphapy-dashboard](https://github.com/bryntje/alphapy-dashboard))
+- Fork this repo (of [alphapy-dashboard](https://github.com/bryntje/alphapy-dashboard))
 - Create branch: `git checkout -b feature/your-feature`
 - Commit changes: `git commit -am 'Add feature'`
 - Push: `git push origin feature/your-feature`
@@ -261,7 +261,7 @@ This project is licensed under the MIT License.
 ## 📬 Contact
 
 Questions, dreams or collaborations?  
-Reach out via `bryan.dhaen@gmail.com` or open an issue on GitHub.
+Reach out via `support@innersync.tech` or open an issue on GitHub.
 
 ---
 
