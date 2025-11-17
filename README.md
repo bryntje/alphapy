@@ -1,65 +1,100 @@
-# 🧬 Innersync • Alphapy API
+# 🤖 Alphapy Discord Bot
 
-Een krachtige, modulaire Discord-bot en API, onderdeel van het **Innersync** ecosysteem en gebouwd voor bewuste communities — praktische servertools gecombineerd met AI-functies.
+Een krachtige, modulaire Discord-bot voor bewuste communities — praktische servertools gecombineerd met AI-functies voor growth coaching en kennisdeling.
+
+**🔗 Verwante repositories:**
+- 🌐 **[alphapy-dashboard](https://github.com/bryntje/alphapy-dashboard)** - Next.js web interface voor configuratie
 
 ---
 
 ## 🌱 Overview
 
-**Innersync • Alphapy** ondersteunt de Innersync • Alphapips community met waarde-gedreven trading workflows.
-It combines essential Discord utilities (onboarding, leaderboards, quizzes, role logic) with an optional AI layer that adds depth and reflection.
+**Alphapy** is een Discord bot gebouwd voor de Innersync • Alphapips community, met focus op waarde-gedreven trading workflows en persoonlijke groei.
 
-This includes:
+De bot combineert essentiële Discord utilities met een optionele AI laag:
 
-- 🧘‍♂️ Gentle growth coaching via `/growthcheckin`
-- 🧠 Hybrid knowledge search via `/learn_topic`
-- ✍️ Caption generation with tone via `/create_caption`
+- 🧘‍♂️ **Growth coaching** via `/growthcheckin`
+- 🧠 **Hybride kennis search** via `/learn_topic`
+- ✍️ **Caption generatie** via `/create_caption`
+- 🎫 **Ticket systeem** voor support
+- 📊 **Metrics & dashboards** API
 
-The bot is modular, scalable, and easy to expand — with clean architecture and clear intent.
+Modulair, schaalbaar en eenvoudig uit te breiden — met schone architectuur en duidelijke intenties.
 
 ---
 
 ## 📁 Project Structure
 
 ```plaintext
-.
-├── cogs/                 # AI command modules (growth, learn, leadership, quiz, etc.)
-├── gpt/                  # GPT logic, prompt helpers, dataset loaders
-│   ├── helpers.py        # Central GPT call + logging helpers
-│   └── dataset_loader.py # Loads .md content for learn_topic
-├── utils/                # Google Drive sync + general utilities
-│   └── drive_sync.py     # Fetches and parses Drive-based PDFs
-├── data/prompts/         # Local topic files (e.g. rsi.md, scalping.md)
-├── requirements.txt      # All dependencies (GPT, Drive, PDF parser)
-├── bot.py                # Main bot runner
-├── .env / config.py      # Your API tokens, Discord settings, etc.
-├── README.md             # This file
-└── CHANGELOG.md          # Development log by branch & feature
+alphapy/
+├── bot.py                # Main Discord bot runner
+├── api.py                # FastAPI server voor metrics/dashboard API
+├── cogs/                 # Bot command modules (28 commands)
+│   ├── growth.py         # AI growth coaching (/growthcheckin)
+│   ├── learn.py          # Hybrid knowledge search (/learn_topic)
+│   ├── ticketbot.py      # Support ticket system
+│   ├── reminders.py      # Scheduled reminders
+│   └── ...               # 24 andere commands
+├── utils/                # Core utilities (12 modules)
+│   ├── supabase_client.py # Database connectivity
+│   ├── runtime_metrics.py # Live bot metrics
+│   └── ...               # Logging, timezone, quiz state, etc.
+├── gpt/                  # AI functionality
+│   ├── helpers.py        # GPT API calls + logging
+│   └── dataset_loader.py # Content loading voor learn_topic
+├── data/prompts/         # Local knowledge base (.md files)
+├── webhooks/             # Supabase webhooks
+├── docs/                 # Documentation
+├── requirements.txt      # Python dependencies
+├── config.py             # Bot configuration
+└── .github/workflows/    # CI/CD pipelines
 ```
+
+**🎯 Schone scheiding:** Bot logica ↔ Web interface
 
 ---
 
 ## 🚀 Installation
 
-1. **Clone the repository:**
+### Prerequisites
+- Python 3.8+
+- Discord Bot Token
+- Supabase project (voor database)
+
+### Setup Steps
+
+1. **Clone deze repository:**
 ```bash
 git clone https://github.com/bryntje/alphapy.git
 cd alphapy
 ```
 
-2. **Install dependencies:**
+2. **Installeer dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **Configure the bot:**
-- Add your Discord bot token to `.env`
-- Add Google Drive OAuth `credentials.json` to `/credentials/`
+3. **Configureer de bot:**
+```bash
+# Kopieer environment template
+cp .env.example .env
 
-4. **Run the bot:**
+# Bewerk .env met je credentials:
+# - DISCORD_TOKEN=your_bot_token
+# - SUPABASE_URL=your_supabase_url
+# - SUPABASE_ANON_KEY=your_anon_key
+# - SUPABASE_SERVICE_ROLE_KEY=your_service_key
+```
+
+4. **Run de bot:**
 ```bash
 python bot.py
 ```
+
+### 🚀 Deployment
+- **Lokale development:** `python bot.py`
+- **Railway:** Configureer een Python service die `python bot.py` draait
+- **Environment variables:** Alle vars uit `.env`
 
 ---
 
@@ -151,48 +186,64 @@ python bot.py
 
 ---
 
-## 📊 Metrics & Dashboard API
+## 🌐 API Endpoints
 
-- `/api/dashboard/metrics` – FastAPI endpoint returning live bot status, GPT usage, reminder counts, and ticket stats (protected via API key + headers)
-- `utils/runtime_metrics.py` – safe bridge that snapshots Discord bot latency, uptime, guilds, and loaded commands for the dashboard
-- `/ticket_stats` – interactive Discord command (7d/30d/all, refresh) with versioned embeds
-- `ticket_metrics` table stores snapshots (scope, counts, avg cycle seconds, triggered_by)
-- `/export_tickets [scope]` – CSV export of tickets
-- `/health` – JSON health probe (`service`, `version`, `uptime_seconds`, `db_status`, `timestamp`) for infrastructure checks
+De bot bevat een ingebouwde FastAPI server voor metrics en health checks:
 
-### Environment variables (API service)
+- `GET /health` – JSON health probe met uptime, database status
+- `GET /api/dashboard/metrics` – Live bot metrics (latency, guilds, commands)
+- `GET /export_tickets` – CSV export van tickets
+- `GET /export_faq` – CSV export van FAQ entries
 
-Configure the API deployment with the shared Innersync domains so web clients and other services can connect without CORS issues.
+**⚠️ Belangrijk:** Voor de **volledige web dashboard** (grafieken, configuratie UI), zie:
+**👉 [alphapy-dashboard repository](https://github.com/bryntje/alphapy-dashboard)**
+
+### Environment Variables
+
+```bash
+# Discord Bot
+DISCORD_TOKEN=your_bot_token_here
+
+# Supabase Database
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_key
+
+# Optional API Security
+API_KEY=optional_internal_key
+```
+
+
+## 🏗️ Architecture
 
 ```
-SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_ANON_KEY=<public-anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   # server-side only
-SUPABASE_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/certs
-SUPABASE_JWT_AUDIENCE=authenticated
-SUPABASE_WEBHOOK_SECRET=<optional-hmac-secret>
-APP_BASE_URL=https://app.innersync.tech
-MIND_BASE_URL=https://mind.innersync.tech
-ALPHAPY_BASE_URL=https://alphapy.innersync.tech
-ALLOWED_ORIGINS=https://app.innersync.tech,https://mind.innersync.tech,https://alphapy.innersync.tech
-SERVICE_NAME=alphapy-service
+┌─────────────────┐    ┌──────────────────┐
+│   alphapy       │    │ alphapy-dashboard │
+│   (Discord Bot) │    │  (Next.js Web)   │
+├─────────────────┤    ├──────────────────┤
+│ • 28 Commands   │    │ • Config UI      │
+│ • AI Features   │◄──►│ • Live Metrics   │
+│ • Ticket System │    │ • Admin Panel    │
+│ • Database      │    │ • Charts         │
+│ • Webhooks      │    │ • API Proxy      │
+└─────────────────┘    └──────────────────┘
+        │                       │
+        └────── Supabase ───────┘
 ```
 
-Set `API_KEY` if you want to require an internal key from callers such as the Alphamind dashboard proxy. Supabase access tokens (Bearer) worden nu ook geaccepteerd voor authenticatie; zorg dat clients het Supabase access token meesturen in de `Authorization` header. Gebruik `SUPABASE_WEBHOOK_SECRET` indien je Supabase Auth webhooks configureert; Alphapy verwacht een HMAC `supabase-signature` header op `/webhooks/supabase/auth`.
-- `/export_faq` – CSV export of FAQ entries
-
+**Schone scheiding:** Bot logica ↔ Web interface ↔ Database
 
 ## 🤝 Contributing
 
 We welcome devs, thinkers, and conscious builders.
 
-- Fork the repo
-- Create a new branch: `git checkout -b feature/your-feature`
-- Commit your changes: `git commit -am 'Add new feature'`
+- Fork deze repo (of [alphapy-dashboard](https://github.com/bryntje/alphapy-dashboard))
+- Create branch: `git checkout -b feature/your-feature`
+- Commit changes: `git commit -am 'Add feature'`
 - Push: `git push origin feature/your-feature`
-- Open a Pull Request
+- Open Pull Request
 
-Please follow the modular structure and keep the soul of the project intact 😌
+Houd de modulaire structuur en ziel van het project intact 😌
 
 ---
 
