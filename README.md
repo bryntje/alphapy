@@ -249,7 +249,7 @@ Houd de modulaire structuur en ziel van het project intact 😌
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the Apache-2.0 License.
 
 ## 📜 Legal
 
@@ -354,3 +354,4 @@ Use this quick checklist after adding the bot to a new server to configure it pr
 - Optional indexes for performance:
   - `CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders (time);`
   - `CREATE INDEX IF NOT EXISTS idx_reminders_reminder_date ON reminders ((event_time - interval '60 minutes')::date);`
+
