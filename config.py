@@ -43,6 +43,9 @@ SUPABASE_ISSUER = os.getenv(
 )
 SUPABASE_WEBHOOK_SECRET = os.getenv("SUPABASE_WEBHOOK_SECRET")
 
+# Telemetry ingest configuration
+TELEMETRY_INGEST_INTERVAL = int(os.getenv("TELEMETRY_INGEST_INTERVAL", "45"))  # seconds
+
 # Discord OAuth2 for Web Configuration Interface
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")

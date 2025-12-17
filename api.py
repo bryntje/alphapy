@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import math
 import os
 import time
 from contextlib import asynccontextmanager
@@ -24,6 +26,8 @@ from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
 from webhooks.supabase import router as supabase_webhook_router
 from version import CODENAME, __version__
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Security helpers
@@ -96,9 +100,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global db_pool
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
     print("✅ DB pool created")
+    
+    # Start background telemetry ingest task
+    ingest_interval = getattr(config, "TELEMETRY_INGEST_INTERVAL", 45)
+    ingest_task = asyncio.create_task(_telemetry_ingest_loop(ingest_interval))
+    
     try:
         yield
     finally:
+        # Cancel and wait for the background task to finish
+        ingest_task.cancel()
+        try:
+            await ingest_task
+        except asyncio.CancelledError:
+            pass
+        
         if db_pool:
             await db_pool.close()
         print("🔌 DB pool closed")
@@ -617,6 +633,54 @@ def _count_recent_events(events: List[GPTLogEvent], hours: int = 24) -> int:
     return count
 
 
+async def _telemetry_ingest_loop(interval: int = 45) -> None:
+    """
+    Background task that periodically ingests telemetry data to Supabase.
+    
+    This function runs continuously, collecting metrics and writing them to
+    telemetry.subsystem_snapshots every `interval` seconds.
+    """
+    logger.info(f"🚀 Telemetry ingest loop started (interval: {interval}s)")
+    
+    # Wait a bit before first run to allow app to fully start
+    await asyncio.sleep(5)
+    
+    while True:
+        try:
+            # Collect metrics
+            snapshot = await get_bot_snapshot()
+            bot_payload = serialize_snapshot(snapshot)
+            bot_metrics = BotMetrics(
+                version=__version__,
+                codename=CODENAME,
+                **bot_payload,
+            )
+            gpt_metrics = _collect_gpt_metrics()
+            ticket_stats = await _fetch_ticket_stats()
+            
+            # Persist to Supabase
+            await _persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats)
+            
+            logger.debug(
+                f"✅ Telemetry snapshot ingested: status={bot_metrics.online}, "
+                f"uptime={bot_metrics.uptime_seconds}s, "
+                f"guilds={len(bot_metrics.guilds)}"
+            )
+            
+        except asyncio.CancelledError:
+            logger.info("🛑 Telemetry ingest loop cancelled")
+            raise
+        except Exception as exc:
+            logger.warning(
+                f"⚠️ Telemetry ingest failed (will retry): {exc.__class__.__name__}: {exc}",
+                exc_info=True
+            )
+            # Continue loop even on error
+        
+        # Sleep for the configured interval before next iteration
+        await asyncio.sleep(interval)
+
+
 async def _persist_telemetry_snapshot(
     bot_metrics: BotMetrics,
     gpt_metrics: GPTMetrics,
@@ -639,8 +703,11 @@ async def _persist_telemetry_snapshot(
                 )
                 if command_events_24h is None:
                     command_events_24h = 0
+            except pg_exceptions.UndefinedTableError:
+                # audit_logs table doesn't exist - this is optional, so we just skip it
+                command_events_24h = 0
             except Exception as exc:
-                print("[WARN] telemetry audit count failed:", exc)
+                logger.debug(f"Telemetry audit count failed (non-critical): {exc}")
                 command_events_24h = 0
 
             gpt_successes_24h = _count_recent_events(gpt_metrics.recent_successes)
@@ -654,9 +721,15 @@ async def _persist_telemetry_snapshot(
                     gpt_errors_24h / float(gpt_successes_24h + gpt_errors_24h), 2
                 )
 
-            latency_ms = bot_metrics.latency_ms or 0.0
-            latency_p50 = int(latency_ms or 0)
-            latency_p95 = int(round((latency_ms or 0) * 1.5))
+            # Safely handle latency_ms - check for NaN and None
+            latency_ms_raw = bot_metrics.latency_ms
+            if latency_ms_raw is None or (isinstance(latency_ms_raw, float) and math.isnan(latency_ms_raw)):
+                latency_ms = 0.0
+            else:
+                latency_ms = float(latency_ms_raw)
+            
+            latency_p50 = int(latency_ms) if not math.isnan(latency_ms) else 0
+            latency_p95 = int(round(latency_ms * 1.5)) if not math.isnan(latency_ms) else 0
 
             throughput_per_minute = 0.0
             if total_activity_24h:
