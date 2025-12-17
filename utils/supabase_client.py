@@ -26,7 +26,7 @@ def _require_config() -> None:
         )
 
 
-def _headers(prefer: Optional[Iterable[str]] = None) -> Dict[str, str]:
+def _headers(prefer: Optional[Iterable[str]] = None, schema: Optional[str] = None) -> Dict[str, str]:
     header = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -35,6 +35,9 @@ def _headers(prefer: Optional[Iterable[str]] = None) -> Dict[str, str]:
     }
     if prefer:
         header["Prefer"] = ", ".join(prefer)
+    # For custom schemas, use Accept-Profile header to specify the schema
+    if schema:
+        header["Accept-Profile"] = schema
     return header
 
 
@@ -71,8 +74,18 @@ async def _supabase_post(
     payload: Dict[str, Any] | List[Dict[str, Any]],
     *,
     upsert: bool = False,
+    schema: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Insert or upsert records using the Supabase REST endpoint."""
+    """
+    Insert or upsert records using the Supabase REST endpoint.
+    
+    Args:
+        table: Table name (without schema prefix if using schema parameter)
+        payload: Data to insert/upsert
+        upsert: Whether to upsert on conflict
+        schema: Optional schema name (e.g., 'telemetry'). If provided, uses Accept-Profile header
+               and table name should NOT include schema prefix.
+    """
     _require_config()
     rows: List[Dict[str, Any]] = (
         payload if isinstance(payload, list) else [payload]
@@ -85,12 +98,24 @@ async def _supabase_post(
     if upsert:
         prefer.append("resolution=merge-duplicates")
 
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    # If schema is provided, use it in header and strip schema prefix from table name if present
+    table_name = table
+    if schema and "." in table:
+        # Remove schema prefix if present (e.g., "telemetry.subsystem_snapshots" -> "subsystem_snapshots")
+        table_name = table.split(".", 1)[1]
+    elif not schema and "." in table:
+        # If no schema specified but table has dot, assume it's schema.table format
+        # Extract schema and table name
+        parts = table.split(".", 1)
+        schema = parts[0]
+        table_name = parts[1]
+
+    url = f"{SUPABASE_URL}/rest/v1/{table_name}"
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             url,
             json=rows,
-            headers=_headers(prefer),
+            headers=_headers(prefer, schema=schema),
         )
 
     try:

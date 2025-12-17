@@ -780,9 +780,9 @@ async def _persist_telemetry_snapshot(
     }
     
     try:
-        # Use schema.table format for Supabase REST API
-        # URL will be: {SUPABASE_URL}/rest/v1/telemetry.subsystem_snapshots
-        await _supabase_post("telemetry.subsystem_snapshots", payload, upsert=True)
+        # Use schema parameter for Supabase REST API with custom schema
+        # This will use Accept-Profile header to specify the telemetry schema
+        await _supabase_post("subsystem_snapshots", payload, upsert=True, schema="telemetry")
         logger.debug("✅ Telemetry snapshot written to Supabase via REST API")
     except SupabaseConfigurationError as exc:
         logger.warning(
