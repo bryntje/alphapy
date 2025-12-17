@@ -26,7 +26,7 @@ def _require_config() -> None:
         )
 
 
-def _headers(prefer: Optional[Iterable[str]] = None) -> Dict[str, str]:
+def _headers(prefer: Optional[Iterable[str]] = None, schema: Optional[str] = None, method: str = "GET") -> Dict[str, str]:
     header = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -35,6 +35,17 @@ def _headers(prefer: Optional[Iterable[str]] = None) -> Dict[str, str]:
     }
     if prefer:
         header["Prefer"] = ", ".join(prefer)
+    # For custom schemas with PostgREST:
+    # - GET requests use Accept-Profile header
+    # - POST/PUT/PATCH requests use Content-Profile header
+    # - Some implementations require both headers for POST requests
+    if schema:
+        if method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
+            header["Content-Profile"] = schema
+            # Also set Accept-Profile for POST to ensure schema is recognized
+            header["Accept-Profile"] = schema
+        else:
+            header["Accept-Profile"] = schema
     return header
 
 
@@ -71,8 +82,18 @@ async def _supabase_post(
     payload: Dict[str, Any] | List[Dict[str, Any]],
     *,
     upsert: bool = False,
+    schema: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Insert or upsert records using the Supabase REST endpoint."""
+    """
+    Insert or upsert records using the Supabase REST endpoint.
+    
+    Args:
+        table: Table name (without schema prefix if using schema parameter)
+        payload: Data to insert/upsert
+        upsert: Whether to upsert on conflict
+        schema: Optional schema name (e.g., 'telemetry'). If provided, uses Accept-Profile header
+               and table name should NOT include schema prefix.
+    """
     _require_config()
     rows: List[Dict[str, Any]] = (
         payload if isinstance(payload, list) else [payload]
@@ -85,12 +106,28 @@ async def _supabase_post(
     if upsert:
         prefer.append("resolution=merge-duplicates")
 
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    # For PostgREST with custom schemas, use ONLY the header approach
+    # Do NOT include schema in URL when using Content-Profile/Accept-Profile headers
+    # Format: /rest/v1/table_name (no schema prefix)
+    # Headers: Content-Profile: schema (for POST/PUT/PATCH)
+    table_name = table
+    if schema and "." in table:
+        # Remove schema prefix if present (e.g., "telemetry.subsystem_snapshots" -> "subsystem_snapshots")
+        table_name = table.split(".", 1)[1]
+    elif not schema and "." in table:
+        # If no schema specified but table has dot, assume it's schema.table format
+        # Extract schema and table name
+        parts = table.split(".", 1)
+        schema = parts[0]
+        table_name = parts[1]
+    
+    # Use ONLY table name in URL (no schema prefix) when using Content-Profile header
+    url = f"{SUPABASE_URL}/rest/v1/{table_name}"
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             url,
             json=rows,
-            headers=_headers(prefer),
+            headers=_headers(prefer, schema=schema, method="POST"),
         )
 
     try:
