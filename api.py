@@ -738,9 +738,10 @@ async def _persist_telemetry_snapshot(
     latency_p50 = int(latency_ms) if not math.isnan(latency_ms) else 0
     latency_p95 = int(round(latency_ms * 1.5)) if not math.isnan(latency_ms) else 0
 
-    throughput_per_minute = 0.0
+    # throughput_per_minute should be integer according to schema
+    throughput_per_minute = 0
     if total_activity_24h:
-        throughput_per_minute = round(total_activity_24h / (24 * 60), 2)
+        throughput_per_minute = int(round(total_activity_24h / (24 * 60)))
 
     queue_depth = ticket_stats.open_count
     active_bots = len(bot_metrics.guilds) or None
@@ -761,23 +762,32 @@ async def _persist_telemetry_snapshot(
     )
 
     # Use Supabase REST API - this is the ONLY way to write telemetry
-    # Note: Supabase REST API uses schema.table format in the URL
-    # Make sure 'telemetry' schema is exposed in Supabase Studio → Settings → API → Exposed Schemas
-    payload = {
+    # Note: Make sure 'telemetry' schema is exposed in Supabase Studio → Settings → API → Exposed Schemas
+    # Send only the essential fields that we have data for, matching the database schema types:
+    # - int4: uptime_seconds, throughput_per_minute, latency_p50, latency_p95, queue_depth, active_bots
+    # - numeric: error_rate
+    # - text: subsystem, label, status, notes
+    # - timestamptz: last_updated, computed_at
+    payload: Dict[str, Any] = {
         "subsystem": "alphapy",
         "label": "Alphapy Agents",
         "status": status,
-        "uptime_seconds": bot_metrics.uptime_seconds or 0,
-        "throughput_per_minute": throughput_per_minute,
-        "error_rate": error_rate,
-        "latency_p50": latency_p50,
-        "latency_p95": latency_p95,
-        "queue_depth": queue_depth,
-        "active_bots": active_bots,
-        "notes": notes,
+        "uptime_seconds": int(bot_metrics.uptime_seconds or 0),
+        "throughput_per_minute": int(throughput_per_minute),
+        "error_rate": float(error_rate),
+        "latency_p50": int(latency_p50),
+        "latency_p95": int(latency_p95),
         "last_updated": datetime.now(timezone.utc).isoformat(),
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }
+    
+    # Add optional fields only if we have values
+    if queue_depth is not None:
+        payload["queue_depth"] = int(queue_depth)
+    if active_bots is not None:
+        payload["active_bots"] = int(active_bots)
+    if notes:
+        payload["notes"] = notes
     
     try:
         # Use schema parameter for Supabase REST API with custom schema
