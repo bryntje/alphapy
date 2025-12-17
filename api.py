@@ -24,6 +24,7 @@ from utils.logger import get_gpt_status_logs
 from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
 from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
+from utils.supabase_client import _supabase_post, SupabaseConfigurationError
 from webhooks.supabase import router as supabase_webhook_router
 from version import CODENAME, __version__
 
@@ -686,117 +687,123 @@ async def _persist_telemetry_snapshot(
     gpt_metrics: GPTMetrics,
     ticket_stats: TicketStats,
 ) -> None:
+    """
+    Persist telemetry snapshot to Supabase using REST API.
+    
+    Note: Telemetry data MUST go to Supabase, not to the local PostgreSQL database.
+    The local PostgreSQL on Railway is only for reminders, tickets, etc.
+    """
+    # Collect metrics
+    command_events_24h = 0
     global db_pool
-    if db_pool is None:
-        return
-
-    try:
-        async with db_pool.acquire() as conn:
-            command_events_24h = 0
-            try:
-                command_events_24h = await conn.fetchval(
-                    """
-                    SELECT COUNT(*)
-                    FROM audit_logs
-                    WHERE created_at >= timezone('utc', now()) - interval '24 hours'
-                    """
-                )
-                if command_events_24h is None:
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                try:
+                    command_events_24h = await conn.fetchval(
+                        """
+                        SELECT COUNT(*)
+                        FROM audit_logs
+                        WHERE created_at >= timezone('utc', now()) - interval '24 hours'
+                        """
+                    )
+                    if command_events_24h is None:
+                        command_events_24h = 0
+                except pg_exceptions.UndefinedTableError:
                     command_events_24h = 0
-            except pg_exceptions.UndefinedTableError:
-                # audit_logs table doesn't exist - this is optional, so we just skip it
-                command_events_24h = 0
-            except Exception as exc:
-                logger.debug(f"Telemetry audit count failed (non-critical): {exc}")
-                command_events_24h = 0
+                except Exception as exc:
+                    logger.debug(f"Telemetry audit count failed (non-critical): {exc}")
+                    command_events_24h = 0
+        except Exception:
+            command_events_24h = 0
 
-            gpt_successes_24h = _count_recent_events(gpt_metrics.recent_successes)
-            gpt_errors_24h = _count_recent_events(gpt_metrics.recent_errors)
+    gpt_successes_24h = _count_recent_events(gpt_metrics.recent_successes)
+    gpt_errors_24h = _count_recent_events(gpt_metrics.recent_errors)
 
-            total_activity_24h = int(command_events_24h + gpt_successes_24h + gpt_errors_24h)
+    total_activity_24h = int(command_events_24h + gpt_successes_24h + gpt_errors_24h)
 
-            error_rate = 0.0
-            if gpt_successes_24h + gpt_errors_24h > 0:
-                error_rate = round(
-                    gpt_errors_24h / float(gpt_successes_24h + gpt_errors_24h), 2
-                )
+    error_rate = 0.0
+    if gpt_successes_24h + gpt_errors_24h > 0:
+        error_rate = round(
+            gpt_errors_24h / float(gpt_successes_24h + gpt_errors_24h), 2
+        )
 
-            # Safely handle latency_ms - check for NaN and None
-            latency_ms_raw = bot_metrics.latency_ms
-            if latency_ms_raw is None or (isinstance(latency_ms_raw, float) and math.isnan(latency_ms_raw)):
-                latency_ms = 0.0
-            else:
-                latency_ms = float(latency_ms_raw)
-            
-            latency_p50 = int(latency_ms) if not math.isnan(latency_ms) else 0
-            latency_p95 = int(round(latency_ms * 1.5)) if not math.isnan(latency_ms) else 0
+    # Safely handle latency_ms - check for NaN and None
+    latency_ms_raw = bot_metrics.latency_ms
+    if latency_ms_raw is None or (isinstance(latency_ms_raw, float) and math.isnan(latency_ms_raw)):
+        latency_ms = 0.0
+    else:
+        latency_ms = float(latency_ms_raw)
+    
+    latency_p50 = int(latency_ms) if not math.isnan(latency_ms) else 0
+    latency_p95 = int(round(latency_ms * 1.5)) if not math.isnan(latency_ms) else 0
 
-            throughput_per_minute = 0.0
-            if total_activity_24h:
-                throughput_per_minute = round(total_activity_24h / (24 * 60), 2)
+    # throughput_per_minute should be integer according to schema
+    throughput_per_minute = 0
+    if total_activity_24h:
+        throughput_per_minute = int(round(total_activity_24h / (24 * 60)))
 
-            queue_depth = ticket_stats.open_count
-            active_bots = len(bot_metrics.guilds) or None
+    queue_depth = ticket_stats.open_count
+    active_bots = len(bot_metrics.guilds) or None
 
-            incidents_open = ticket_stats.open_count + gpt_errors_24h
-            if not bot_metrics.online:
-                status = "outage"
-            elif incidents_open > 5:
-                status = "outage"
-            elif incidents_open > 0:
-                status = "degraded"
-            else:
-                status = "operational"
+    incidents_open = ticket_stats.open_count + gpt_errors_24h
+    if not bot_metrics.online:
+        status = "outage"
+    elif incidents_open > 5:
+        status = "outage"
+    elif incidents_open > 0:
+        status = "degraded"
+    else:
+        status = "operational"
 
-            notes = (
-                f"{total_activity_24h} events/24h · {ticket_stats.open_count} open tickets · "
-                f"GPT errors 24h: {gpt_errors_24h}"
-            )
+    notes = (
+        f"{total_activity_24h} events/24h · {ticket_stats.open_count} open tickets · "
+        f"GPT errors 24h: {gpt_errors_24h}"
+    )
 
-            await conn.execute(
-                """
-                insert into telemetry.subsystem_snapshots (
-                    subsystem,
-                    label,
-                    status,
-                    uptime_seconds,
-                    throughput_per_minute,
-                    error_rate,
-                    latency_p50,
-                    latency_p95,
-                    queue_depth,
-                    active_bots,
-                    notes,
-                    last_updated
-                )
-                values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, timezone('utc', now()))
-                on conflict (subsystem) do update set
-                    label = excluded.label,
-                    status = excluded.status,
-                    uptime_seconds = excluded.uptime_seconds,
-                    throughput_per_minute = excluded.throughput_per_minute,
-                    error_rate = excluded.error_rate,
-                    latency_p50 = excluded.latency_p50,
-                    latency_p95 = excluded.latency_p95,
-                    queue_depth = excluded.queue_depth,
-                    active_bots = excluded.active_bots,
-                    notes = excluded.notes,
-                    last_updated = excluded.last_updated
-                """,
-                "alphapy",
-                "Alphapy Agents",
-                status,
-                bot_metrics.uptime_seconds or 0,
-                throughput_per_minute,
-                error_rate,
-                latency_p50,
-                latency_p95,
-                queue_depth,
-                active_bots,
-                notes,
-            )
+    # Use Supabase REST API - this is the ONLY way to write telemetry
+    # Note: Make sure 'telemetry' schema is exposed in Supabase Studio → Settings → API → Exposed Schemas
+    # Send only the essential fields that we have data for, matching the database schema types:
+    # - int4: uptime_seconds, throughput_per_minute, latency_p50, latency_p95, queue_depth, active_bots
+    # - numeric: error_rate
+    # - text: subsystem, label, status, notes
+    # - timestamptz: last_updated, computed_at
+    payload: Dict[str, Any] = {
+        "subsystem": "alphapy",
+        "label": "Alphapy Agents",
+        "status": status,
+        "uptime_seconds": int(bot_metrics.uptime_seconds or 0),
+        "throughput_per_minute": int(throughput_per_minute),
+        "error_rate": float(error_rate),
+        "latency_p50": int(latency_p50),
+        "latency_p95": int(latency_p95),
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    # Add optional fields only if we have values
+    if queue_depth is not None:
+        payload["queue_depth"] = int(queue_depth)
+    if active_bots is not None:
+        payload["active_bots"] = int(active_bots)
+    if notes:
+        payload["notes"] = notes
+    
+    try:
+        # Use schema parameter for Supabase REST API with custom schema
+        # This will use Accept-Profile header to specify the telemetry schema
+        await _supabase_post("subsystem_snapshots", payload, upsert=True, schema="telemetry")
+        logger.debug("✅ Telemetry snapshot written to Supabase via REST API")
+    except SupabaseConfigurationError as exc:
+        logger.warning(
+            f"⚠️ Cannot write telemetry to Supabase: {exc}. "
+            "Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are configured."
+        )
     except Exception as exc:
-        print("[WARN] telemetry snapshot failed:", exc)
+        logger.warning(
+            f"⚠️ Failed to write telemetry to Supabase: {exc.__class__.__name__}: {exc}. "
+            "Check that 'telemetry' schema is exposed in Supabase Studio → Settings → API → Exposed Schemas"
+        )
 
 
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)
