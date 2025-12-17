@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2025-12-17
+
+### Added
+- **Telemetry Ingest Background Job:** Automatic periodic telemetry data ingestion to Supabase
+  - Background task runs every 30-60 seconds (configurable via `TELEMETRY_INGEST_INTERVAL`)
+  - Continuously writes subsystem snapshots to `telemetry.subsystem_snapshots` table
+  - Ensures Mind dashboard always has fresh data without requiring endpoint calls
+  - Graceful error handling with automatic retry on failures
+  - Comprehensive logging for monitoring and debugging
+- **Configuration:** New `TELEMETRY_INGEST_INTERVAL` environment variable (default: 45 seconds)
+
+### Changed
+- **API Lifespan:** FastAPI lifespan context manager now starts background telemetry ingest task on startup
+- **Telemetry Persistence:** `_persist_telemetry_snapshot()` now called automatically by background job instead of only on endpoint requests
+
+### Fixed
+- **Stale Dashboard Data:** Resolved issue where Mind dashboard showed "40+ days ago" due to missing telemetry updates
+- **Data Freshness:** Telemetry data now updates continuously, ensuring dashboard always reflects current system state
+
+---
+
 ## [1.7.0] - 2025-11-16
 
 ### Added
