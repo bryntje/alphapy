@@ -26,7 +26,7 @@ def _require_config() -> None:
         )
 
 
-def _headers(prefer: Optional[Iterable[str]] = None, schema: Optional[str] = None) -> Dict[str, str]:
+def _headers(prefer: Optional[Iterable[str]] = None, schema: Optional[str] = None, method: str = "GET") -> Dict[str, str]:
     header = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -35,9 +35,17 @@ def _headers(prefer: Optional[Iterable[str]] = None, schema: Optional[str] = Non
     }
     if prefer:
         header["Prefer"] = ", ".join(prefer)
-    # For custom schemas, use Accept-Profile header to specify the schema
+    # For custom schemas with PostgREST:
+    # - GET requests use Accept-Profile header
+    # - POST/PUT/PATCH requests use Content-Profile header
+    # - Some implementations require both headers for POST requests
     if schema:
-        header["Accept-Profile"] = schema
+        if method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
+            header["Content-Profile"] = schema
+            # Also set Accept-Profile for POST to ensure schema is recognized
+            header["Accept-Profile"] = schema
+        else:
+            header["Accept-Profile"] = schema
     return header
 
 
@@ -98,7 +106,10 @@ async def _supabase_post(
     if upsert:
         prefer.append("resolution=merge-duplicates")
 
-    # If schema is provided, use it in header and strip schema prefix from table name if present
+    # For PostgREST with custom schemas, use ONLY the header approach
+    # Do NOT include schema in URL when using Content-Profile/Accept-Profile headers
+    # Format: /rest/v1/table_name (no schema prefix)
+    # Headers: Content-Profile: schema (for POST/PUT/PATCH)
     table_name = table
     if schema and "." in table:
         # Remove schema prefix if present (e.g., "telemetry.subsystem_snapshots" -> "subsystem_snapshots")
@@ -109,13 +120,14 @@ async def _supabase_post(
         parts = table.split(".", 1)
         schema = parts[0]
         table_name = parts[1]
-
+    
+    # Use ONLY table name in URL (no schema prefix) when using Content-Profile header
     url = f"{SUPABASE_URL}/rest/v1/{table_name}"
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             url,
             json=rows,
-            headers=_headers(prefer, schema=schema),
+            headers=_headers(prefer, schema=schema, method="POST"),
         )
 
     try:
