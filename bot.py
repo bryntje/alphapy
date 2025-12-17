@@ -1,5 +1,6 @@
 import discord
 import asyncio
+import time
 from discord.ext import commands
 from discord import app_commands
 from cogs.gdpr import GDPRView
@@ -24,6 +25,9 @@ intents.guilds = True
 intents.members = True  # ✅ Nodig om leden te herkennen
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Set start_time for uptime tracking
+bot.start_time = time.time()
 
 settings_service = SettingsService(getattr(config, "DATABASE_URL", None))
 settings_service.register(
@@ -237,6 +241,11 @@ settings_service.register(
 @bot.event
 async def on_ready():
     await bot.wait_until_ready()
+    
+    # Set start_time for uptime tracking if not already set
+    if not hasattr(bot, "start_time"):
+        import time
+        bot.start_time = time.time()
     
     logger.info(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
 
