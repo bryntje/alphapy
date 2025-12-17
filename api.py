@@ -646,6 +646,9 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
     # Wait a bit before first run to allow app to fully start
     await asyncio.sleep(5)
     
+    # Track if we've seen the bot online at least once
+    bot_has_been_online = False
+    
     while True:
         try:
             # Collect metrics
@@ -656,16 +659,24 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
                 codename=CODENAME,
                 **bot_payload,
             )
+            
+            # Track if bot has been online at least once
+            if bot_metrics.online:
+                bot_has_been_online = True
             gpt_metrics = _collect_gpt_metrics()
             ticket_stats = await _fetch_ticket_stats()
             
             # Persist to Supabase
             await _persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats)
             
+            # Log the calculated status for debugging
+            incidents_open = ticket_stats.open_count + _count_recent_events(gpt_metrics.recent_errors)
+            calculated_status = "outage" if (not bot_metrics.online or incidents_open > 5) else ("degraded" if incidents_open > 0 else "operational")
+            
             logger.debug(
-                f"✅ Telemetry snapshot ingested: status={bot_metrics.online}, "
-                f"uptime={bot_metrics.uptime_seconds}s, "
-                f"guilds={len(bot_metrics.guilds)}"
+                f"✅ Telemetry snapshot ingested: bot_online={bot_metrics.online}, "
+                f"status={calculated_status}, uptime={bot_metrics.uptime_seconds}s, "
+                f"guilds={len(bot_metrics.guilds)}, incidents={incidents_open}"
             )
             
         except asyncio.CancelledError:
@@ -747,8 +758,16 @@ async def _persist_telemetry_snapshot(
     active_bots = len(bot_metrics.guilds) or None
 
     incidents_open = ticket_stats.open_count + gpt_errors_24h
+    
+    # Determine status with better handling for startup phase
+    # If bot is not online, check if it's still starting up or truly down
     if not bot_metrics.online:
-        status = "outage"
+        # If we have uptime data and it's less than 2 minutes, bot is likely still starting
+        # Also if we have guilds, the bot was connected at some point
+        if (bot_metrics.uptime_seconds and bot_metrics.uptime_seconds < 120) or len(bot_metrics.guilds) > 0:
+            status = "degraded"  # Starting up, not a full outage
+        else:
+            status = "outage"  # Truly offline
     elif incidents_open > 5:
         status = "outage"
     elif incidents_open > 0:
