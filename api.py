@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import os
 import time
 from contextlib import asynccontextmanager
@@ -702,8 +703,11 @@ async def _persist_telemetry_snapshot(
                 )
                 if command_events_24h is None:
                     command_events_24h = 0
+            except pg_exceptions.UndefinedTableError:
+                # audit_logs table doesn't exist - this is optional, so we just skip it
+                command_events_24h = 0
             except Exception as exc:
-                print("[WARN] telemetry audit count failed:", exc)
+                logger.debug(f"Telemetry audit count failed (non-critical): {exc}")
                 command_events_24h = 0
 
             gpt_successes_24h = _count_recent_events(gpt_metrics.recent_successes)
@@ -717,9 +721,15 @@ async def _persist_telemetry_snapshot(
                     gpt_errors_24h / float(gpt_successes_24h + gpt_errors_24h), 2
                 )
 
-            latency_ms = bot_metrics.latency_ms or 0.0
-            latency_p50 = int(latency_ms or 0)
-            latency_p95 = int(round((latency_ms or 0) * 1.5))
+            # Safely handle latency_ms - check for NaN and None
+            latency_ms_raw = bot_metrics.latency_ms
+            if latency_ms_raw is None or (isinstance(latency_ms_raw, float) and math.isnan(latency_ms_raw)):
+                latency_ms = 0.0
+            else:
+                latency_ms = float(latency_ms_raw)
+            
+            latency_p50 = int(latency_ms) if not math.isnan(latency_ms) else 0
+            latency_p95 = int(round(latency_ms * 1.5)) if not math.isnan(latency_ms) else 0
 
             throughput_per_minute = 0.0
             if total_activity_24h:
