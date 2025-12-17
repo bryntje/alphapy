@@ -88,3 +88,20 @@ Dit document beschrijft de actieve AI-agents en modulaire functies van de Inners
   - `/api/reminders/*` – CRUD voor gebruikersreminders (API key + `X-User-Id`)
   - `/api/dashboard/metrics` – live bot status, GPT-logstatistieken, reminder- en ticketcounts
 - **Helpers**: `utils/runtime_metrics.get_bot_snapshot()` zorgt voor veilige cross-thread snapshots vanuit Discord
+
+---
+
+## 📊 Agent: Telemetry Ingest Background Job
+
+- **Pad**: `api.py` (`_telemetry_ingest_loop()`)
+- **Doel**: Automatische periodieke telemetry data ingest naar Supabase voor Mind dashboard
+- **Functionaliteit**:
+  - Draait continu als background task in FastAPI lifespan
+  - Verzamelt metrics elke 30-60 seconden (configureerbaar via `TELEMETRY_INGEST_INTERVAL`)
+  - Schrijft naar `telemetry.subsystem_snapshots` met subsystem='alphapy'
+  - Verzamelt: bot status, uptime, latency, throughput, error rate, queue depth, active bots
+  - Graceful error handling: fouten worden gelogd maar stoppen de task niet
+- **Configuratie**:
+  - `TELEMETRY_INGEST_INTERVAL` (default: 45 seconden) in `config.py`
+- **Logging**: Info bij start, debug bij succesvolle ingest, warning bij fouten
+- **Known Issues**: Geen - task start automatisch bij API server startup en stopt correct bij shutdown

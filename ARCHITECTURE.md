@@ -52,6 +52,7 @@
   - `/api/dashboard/metrics` aggregates live bot telemetry (uptime, latency, guilds, command count) via `utils/runtime_metrics.get_bot_snapshot`
   - `/health` returns service metadata (name, version, uptime, timestamp) and performs a lightweight DB ping for readiness probes
   - Reminder CRUD endpoints secured with API key + `X-User-Id`
+  - **Telemetry Ingest Background Job**: `_telemetry_ingest_loop()` runs continuously, collecting metrics and writing to `telemetry.subsystem_snapshots` in Supabase every 30-60 seconds (configurable). Ensures Mind dashboard always has fresh data without requiring endpoint calls.
 
 ## Data model (simplified)
 - `onboarding`
@@ -158,6 +159,7 @@ Each Discord server configures its own settings via `/config` commands:
 - Discord log embeds to `WATCHER_LOG_CHANNEL` for created/sent/deleted/errors
 - `/health` endpoint available for external uptime monitoring and DB sanity checks
 - `utils/runtime_metrics.py` snapshots Discord bot state for the dashboard API without blocking the event loop
+- **Telemetry Ingest**: Background job continuously writes subsystem snapshots to Supabase `telemetry.subsystem_snapshots` table, ensuring Mind dashboard always has fresh data (runs every 30-60 seconds, configurable via `TELEMETRY_INGEST_INTERVAL`)
 
 ## Security
 - Tokens and DB credentials via env only (no hardcoded secrets)

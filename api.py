@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -24,6 +25,8 @@ from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
 from webhooks.supabase import router as supabase_webhook_router
 from version import CODENAME, __version__
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Security helpers
@@ -96,9 +99,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global db_pool
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
     print("✅ DB pool created")
+    
+    # Start background telemetry ingest task
+    ingest_interval = getattr(config, "TELEMETRY_INGEST_INTERVAL", 45)
+    ingest_task = asyncio.create_task(_telemetry_ingest_loop(ingest_interval))
+    
     try:
         yield
     finally:
+        # Cancel and wait for the background task to finish
+        ingest_task.cancel()
+        try:
+            await ingest_task
+        except asyncio.CancelledError:
+            pass
+        
         if db_pool:
             await db_pool.close()
         print("🔌 DB pool closed")
@@ -615,6 +630,54 @@ def _count_recent_events(events: List[GPTLogEvent], hours: int = 24) -> int:
         if dt >= cutoff:
             count += 1
     return count
+
+
+async def _telemetry_ingest_loop(interval: int = 45) -> None:
+    """
+    Background task that periodically ingests telemetry data to Supabase.
+    
+    This function runs continuously, collecting metrics and writing them to
+    telemetry.subsystem_snapshots every `interval` seconds.
+    """
+    logger.info(f"🚀 Telemetry ingest loop started (interval: {interval}s)")
+    
+    # Wait a bit before first run to allow app to fully start
+    await asyncio.sleep(5)
+    
+    while True:
+        try:
+            # Collect metrics
+            snapshot = await get_bot_snapshot()
+            bot_payload = serialize_snapshot(snapshot)
+            bot_metrics = BotMetrics(
+                version=__version__,
+                codename=CODENAME,
+                **bot_payload,
+            )
+            gpt_metrics = _collect_gpt_metrics()
+            ticket_stats = await _fetch_ticket_stats()
+            
+            # Persist to Supabase
+            await _persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats)
+            
+            logger.debug(
+                f"✅ Telemetry snapshot ingested: status={bot_metrics.online}, "
+                f"uptime={bot_metrics.uptime_seconds}s, "
+                f"guilds={len(bot_metrics.guilds)}"
+            )
+            
+        except asyncio.CancelledError:
+            logger.info("🛑 Telemetry ingest loop cancelled")
+            raise
+        except Exception as exc:
+            logger.warning(
+                f"⚠️ Telemetry ingest failed (will retry): {exc.__class__.__name__}: {exc}",
+                exc_info=True
+            )
+            # Continue loop even on error
+        
+        # Sleep for the configured interval before next iteration
+        await asyncio.sleep(interval)
 
 
 async def _persist_telemetry_snapshot(
