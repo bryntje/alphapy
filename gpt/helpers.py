@@ -39,7 +39,7 @@ def set_bot_instance(bot: commands.Bot) -> None:
     bot_instance = bot
     logger.info("🤖 Bot instance is now set in helpers.py")
 
-def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optional[int] = None):
+def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optional[int] = None, model: Optional[str] = None):
     from utils.logger import get_gpt_status_logs
     logs = get_gpt_status_logs()
     logs.last_success_time = datetime.utcnow()
@@ -47,6 +47,9 @@ def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optiona
     logs.success_count += 1
     logs.total_tokens_today += tokens_used
     logs.average_latency_ms = latency_ms
+    # Update current_model if provided (reflects actual model used)
+    if model:
+        logs.current_model = model
 
     log_message = f"✅ GPT success by {user_id} – {tokens_used} tokens, {latency_ms}ms latency"
     logger.info(log_message)
@@ -213,7 +216,8 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
         latency = (time.perf_counter() - start) * 1000 if response else 0  # in ms
         tokens = response.usage.total_tokens if response.usage else 0
 
-        log_gpt_success(user_id=user_id, tokens_used=tokens, latency_ms=int(latency), guild_id=guild_id)
+        # Log success with the actual model used (updates current_model in status logs)
+        log_gpt_success(user_id=user_id, tokens_used=tokens, latency_ms=int(latency), guild_id=guild_id, model=resolved_model)
         return response.choices[0].message.content
 
     except Exception as e:
