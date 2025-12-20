@@ -49,8 +49,9 @@ Avoid clichés.
         ]
 
         try:
-            reply = await ask_gpt(messages, user_id=interaction.user.id)
-            log_gpt_success(user_id=interaction.user.id)
+            guild_id = interaction.guild.id if interaction.guild else None
+            reply = await ask_gpt(messages, user_id=interaction.user.id, guild_id=guild_id)
+            log_gpt_success(user_id=interaction.user.id, guild_id=guild_id)
             await interaction.followup.send(reply.strip(), ephemeral=True)
 
             async def _store_caption_insight() -> None:
@@ -79,7 +80,8 @@ Avoid clichés.
 
             asyncio.create_task(_store_caption_insight())
         except Exception as e:
-            log_gpt_error("create_caption", user_id=interaction.user.id)
+            guild_id = interaction.guild.id if interaction.guild else None
+            log_gpt_error("create_caption", user_id=interaction.user.id, guild_id=guild_id)
             await interaction.followup.send("❌ Couldn't generate the caption. Try again later.", ephemeral=True)
 
 async def setup(bot):

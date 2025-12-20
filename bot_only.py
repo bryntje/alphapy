@@ -128,9 +128,9 @@ settings_service.register(
     SettingDefinition(
         scope="gpt",
         key="model",
-        description="Standaard OpenAI-model voor GPT commando's.",
+        description="Standaard AI-model voor GPT commando's (grok-beta voor Grok, gpt-3.5-turbo/gpt-4 voor OpenAI).",
         value_type="str",
-        default="gpt-3.5-turbo",
+        default="grok-beta",
     )
 )
 settings_service.register(
