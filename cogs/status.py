@@ -172,11 +172,3 @@ def _format_uptime(start_dt: datetime) -> str:
         parts.append(f"{hours}h")
     parts.append(f"{minutes}m")
     return " ".join(parts)
-
-# ------------------ LOGGING MOCKS ------------------ #
-
-def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id=None, model=None):
-    print(f"✅ GPT success by {user_id} – {tokens_used} tokens, {latency_ms}ms latency")
-
-def log_gpt_error(error_type="unknown", user_id=None, guild_id=None):
-    print(f"❌ GPT error: {error_type} by {user_id}")
