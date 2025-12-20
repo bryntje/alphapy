@@ -56,10 +56,32 @@ Offer a bit of perspective or guidance.
 Ask 1 or 2 deeper questions to support clarity.
 Be encouraging, not forceful.
 """
+        guild_id = interaction.guild.id if interaction.guild else None
+        
         try:
             await interaction.response.defer(thinking=True, ephemeral=True)
-            reply = await ask_gpt(prompt)
-            log_gpt_success(user_id=interaction.user.id)
+        except Exception as e:
+            # Error during defer - log it (happens before ask_gpt)
+            # Use response.send_message() since defer failed and followup is not available
+            error_type = f"{type(e).__name__}: {str(e)}"
+            log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
+            try:
+                await interaction.response.send_message(
+                    "❌ Something went wrong while processing your check-in. Please try again later.",
+                    ephemeral=True,
+                )
+            except Exception:
+                # If response is already used, try followup as fallback
+                await interaction.followup.send(
+                    "❌ Something went wrong while processing your check-in. Please try again later.",
+                    ephemeral=True,
+                )
+            return
+        
+        # Call ask_gpt (ask_gpt logs its own errors)
+        try:
+            reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs success internally
             await interaction.followup.send(reply, ephemeral=True)
 
             async def _store_reflection() -> None:
@@ -92,8 +114,8 @@ Be encouraging, not forceful.
                     )
 
             asyncio.create_task(_store_reflection())
-        except Exception:
-            log_gpt_error("growthcheckin", user_id=interaction.user.id)
+        except Exception as e:
+            # ask_gpt() already logs all its errors internally, so we don't log again
             await interaction.followup.send(
                 "❌ Something went wrong while processing your check-in. Please try again later.",
                 ephemeral=True,
