@@ -104,11 +104,28 @@ class AskQuestionButton(discord.ui.Button):
         def check(m):
             return m.author.id == interaction.user.id and m.channel == interaction.channel
 
+        guild_id = interaction.guild.id if interaction.guild else None
+        
+        # Step 1: Wait for user message (may fail before ask_gpt is called)
         try:
             msg = await self.bot.wait_for("message", timeout=120.0, check=check)
             user_question = msg.content.strip()
             logger.info(f"{interaction.user} asked: {user_question[:100]}")
+        except asyncio.TimeoutError:
+            # Timeout occurred before ask_gpt() - log it
+            log_gpt_error(error_type="TimeoutError: User did not respond in time", user_id=interaction.user.id, guild_id=guild_id)
+            await interaction.followup.send("❌ You didn't respond in time. Try again later.", ephemeral=True)
+            return
+        except Exception as e:
+            # Other error occurred before ask_gpt() - log it
+            logger.exception(f"Error waiting for user message (AskQuestionButton) by {interaction.user}: {e}")
+            error_type = f"{type(e).__name__}: {str(e)}"
+            log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
+            await interaction.followup.send("❌ Error occurred. Try again later.", ephemeral=True)
+            return
         
+        # Step 2: Call ask_gpt (ask_gpt logs its own errors)
+        try:
             prompt = f"""
         You're a supportive leadership coach. A Discord leader asked:
         {user_question}
@@ -118,7 +135,6 @@ class AskQuestionButton(discord.ui.Button):
             await interaction.followup.send("🧠 Thinking...", ephemeral=True)
         
             # ✅ En hier: gewoon rechtstreeks de prompt meesturen
-            guild_id = interaction.guild.id if interaction.guild else None
             reply = await ask_gpt(
                 [{"role": "user", "content": prompt}],
                 user_id=interaction.user.id,
@@ -154,19 +170,8 @@ class AskQuestionButton(discord.ui.Button):
             asyncio.create_task(_store_question_insight())
 
         except Exception as e:
+            # ask_gpt() already logs all its errors internally, so we don't log again
             logger.exception(f"Unhandled GPT error (AskQuestionButton) by {interaction.user}: {e}")
-            guild_id = interaction.guild.id if interaction.guild else None
-            error_type = f"{type(e).__name__}: {str(e)}"
-            # Check if error occurred before ask_gpt() was called (e.g., wait_for timeout)
-            # ask_gpt() logs its own errors internally, so we only log pre-call errors
-            # RuntimeError with API key message indicates ask_gpt() was called and failed
-            is_ask_gpt_error = (
-                isinstance(e, RuntimeError) and 
-                ("GROK_API_KEY" in str(e) or "OPENAI_API_KEY" in str(e) or "ontbreekt" in str(e))
-            )
-            if not is_ask_gpt_error:
-                # Error occurred before ask_gpt() call (e.g., wait_for timeout, network issues)
-                log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
             await interaction.followup.send("❌ Error occurred. Try again later.", ephemeral=True)
 
 

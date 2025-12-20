@@ -34,9 +34,20 @@ class LearnTopic(commands.Cog):
             return
 
 
+        guild_id = interaction.guild.id if interaction.guild else None
+        
+        # Step 1: Load topic context (may fail before ask_gpt is called)
         try:
             context = await load_topic_context(topic)
+        except Exception as e:
+            # Error occurred before ask_gpt() - log it
+            error_type = f"{type(e).__name__}: {str(e)}"
+            log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
+            await interaction.followup.send("❌ Couldn't generate a response. Try again later.", ephemeral=True)
+            return
 
+        # Step 2: Prepare prompt and call ask_gpt (ask_gpt logs its own errors)
+        try:
             # Als het geen bekend topic is, beschouw het als vraag
             prompt_messages = (
                 [{"role": "user", "content": topic}]
@@ -44,7 +55,6 @@ class LearnTopic(commands.Cog):
                 else [{"role": "user", "content": context}]
             )
 
-            guild_id = interaction.guild.id if interaction.guild else None
             reply = await ask_gpt(
                 prompt_messages,
                 user_id=interaction.user.id,
@@ -80,18 +90,7 @@ class LearnTopic(commands.Cog):
             asyncio.create_task(_store_learn_insight())
 
         except Exception as e:
-            guild_id = interaction.guild.id if interaction.guild else None
-            error_type = f"{type(e).__name__}: {str(e)}"
-            # Check if error occurred before ask_gpt() was called (e.g., load_topic_context failure)
-            # ask_gpt() logs its own errors internally, so we only log pre-call errors
-            # RuntimeError with API key message indicates ask_gpt() was called and failed
-            is_ask_gpt_error = (
-                isinstance(e, RuntimeError) and 
-                ("GROK_API_KEY" in str(e) or "OPENAI_API_KEY" in str(e) or "ontbreekt" in str(e))
-            )
-            if not is_ask_gpt_error:
-                # Error occurred before ask_gpt() call (e.g., load_topic_context, network issues)
-                log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs all its errors internally, so we don't log again
             await interaction.followup.send("❌ Couldn't generate a response. Try again later.", ephemeral=True)
 
 

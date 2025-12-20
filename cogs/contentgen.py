@@ -48,8 +48,10 @@ Avoid clichés.
 """}
         ]
 
+        guild_id = interaction.guild.id if interaction.guild else None
+        
+        # Call ask_gpt (ask_gpt logs its own errors)
         try:
-            guild_id = interaction.guild.id if interaction.guild else None
             reply = await ask_gpt(messages, user_id=interaction.user.id, guild_id=guild_id)
             # ask_gpt() already logs success internally
             await interaction.followup.send(reply.strip(), ephemeral=True)
@@ -80,18 +82,7 @@ Avoid clichés.
 
             asyncio.create_task(_store_caption_insight())
         except Exception as e:
-            guild_id = interaction.guild.id if interaction.guild else None
-            error_type = f"{type(e).__name__}: {str(e)}"
-            # Check if error occurred before ask_gpt() was called
-            # ask_gpt() logs its own errors internally, so we only log pre-call errors
-            # RuntimeError with API key message indicates ask_gpt() was called and failed
-            is_ask_gpt_error = (
-                isinstance(e, RuntimeError) and 
-                ("GROK_API_KEY" in str(e) or "OPENAI_API_KEY" in str(e) or "ontbreekt" in str(e))
-            )
-            if not is_ask_gpt_error:
-                # Error occurred before ask_gpt() call (e.g., network issues, validation errors)
-                log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs all its errors internally, so we don't log again
             await interaction.followup.send("❌ Couldn't generate the caption. Try again later.", ephemeral=True)
 
 async def setup(bot):
