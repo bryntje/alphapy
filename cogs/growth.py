@@ -59,8 +59,8 @@ Be encouraging, not forceful.
         try:
             await interaction.response.defer(thinking=True, ephemeral=True)
             guild_id = interaction.guild.id if interaction.guild else None
-            reply = await ask_gpt(prompt, guild_id=guild_id)
-            log_gpt_success(user_id=interaction.user.id, guild_id=guild_id)
+            reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs success internally
             await interaction.followup.send(reply, ephemeral=True)
 
             async def _store_reflection() -> None:
@@ -94,8 +94,7 @@ Be encouraging, not forceful.
 
             asyncio.create_task(_store_reflection())
         except Exception:
-            guild_id = interaction.guild.id if interaction.guild else None
-            log_gpt_error("growthcheckin", user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs errors internally
             await interaction.followup.send(
                 "❌ Something went wrong while processing your check-in. Please try again later.",
                 ephemeral=True,

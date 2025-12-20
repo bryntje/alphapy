@@ -50,7 +50,7 @@ class LearnTopic(commands.Cog):
                 user_id=interaction.user.id,
                 guild_id=guild_id
             )
-            log_gpt_success(user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs success internally
             await interaction.followup.send(reply, ephemeral=True)
 
             async def _store_learn_insight() -> None:
@@ -80,8 +80,7 @@ class LearnTopic(commands.Cog):
             asyncio.create_task(_store_learn_insight())
 
         except Exception:
-            guild_id = interaction.guild.id if interaction.guild else None
-            log_gpt_error("learn_topic", user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs errors internally
             await interaction.followup.send("❌ Couldn't generate a response. Try again later.", ephemeral=True)
 
 
