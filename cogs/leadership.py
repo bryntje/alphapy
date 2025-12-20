@@ -59,8 +59,8 @@ class ChallengeSelect(discord.ui.Select):
             logger.info(f"GPT request by {interaction.user} — challenge: {struggle}")
             await interaction.response.defer(ephemeral=True)
             guild_id = interaction.guild.id if interaction.guild else None
-            reply = await ask_gpt([{"role": "user", "content": prompt}], guild_id=guild_id)
-            log_gpt_success(user_id=interaction.user.id, guild_id=guild_id)
+            reply = await ask_gpt([{"role": "user", "content": prompt}], user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs success internally
             await interaction.followup.send(reply, ephemeral=True)
 
             async def _store_insight() -> None:
@@ -90,8 +90,7 @@ class ChallengeSelect(discord.ui.Select):
             asyncio.create_task(_store_insight())
         except Exception as e:
             logger.exception(f"Unhandled GPT error (ChallengeSelect) by {interaction.user}: {e}")
-            guild_id = interaction.guild.id if interaction.guild else None
-            log_gpt_error("challenge_select", user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs errors internally
             await interaction.followup.send("❌ Something went wrong. Please try again later.", ephemeral=True)
 
 class AskQuestionButton(discord.ui.Button):
@@ -125,8 +124,7 @@ class AskQuestionButton(discord.ui.Button):
                 user_id=interaction.user.id,
                 guild_id=guild_id
             )
-        
-            log_gpt_success(user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs success internally
             await interaction.followup.send(reply, ephemeral=True)
 
             async def _store_question_insight() -> None:
@@ -157,8 +155,7 @@ class AskQuestionButton(discord.ui.Button):
 
         except Exception as e:
             logger.exception(f"Unhandled GPT error (AskQuestionButton) by {interaction.user}: {e}")
-            guild_id = interaction.guild.id if interaction.guild else None
-            log_gpt_error("ask_question", user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs errors internally
             await interaction.followup.send("❌ Error occurred. Try again later.", ephemeral=True)
 
 
