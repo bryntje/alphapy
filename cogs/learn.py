@@ -26,10 +26,11 @@ class LearnTopic(commands.Cog):
 
         if not is_allowed_prompt(topic):
             await interaction.followup.send(
-                "❌ That question doesn’t align with Innersync • Alphapy’s intent. Try a more purposeful topic.",
+                "❌ That question doesn't align with Innersync • Alphapy's intent. Try a more purposeful topic.",
                 ephemeral=True
             )
-            log_gpt_error("filtered_prompt", user_id=interaction.user.id)
+            guild_id = interaction.guild.id if interaction.guild else None
+            log_gpt_error("filtered_prompt", user_id=interaction.user.id, guild_id=guild_id)
             return
 
 
@@ -43,11 +44,13 @@ class LearnTopic(commands.Cog):
                 else [{"role": "user", "content": context}]
             )
 
+            guild_id = interaction.guild.id if interaction.guild else None
             reply = await ask_gpt(
                 prompt_messages,
-                user_id=interaction.user.id
+                user_id=interaction.user.id,
+                guild_id=guild_id
             )
-            log_gpt_success(user_id=interaction.user.id)
+            log_gpt_success(user_id=interaction.user.id, guild_id=guild_id)
             await interaction.followup.send(reply, ephemeral=True)
 
             async def _store_learn_insight() -> None:
@@ -77,7 +80,8 @@ class LearnTopic(commands.Cog):
             asyncio.create_task(_store_learn_insight())
 
         except Exception:
-            log_gpt_error("learn_topic", user_id=interaction.user.id)
+            guild_id = interaction.guild.id if interaction.guild else None
+            log_gpt_error("learn_topic", user_id=interaction.user.id, guild_id=guild_id)
             await interaction.followup.send("❌ Couldn't generate a response. Try again later.", ephemeral=True)
 
 

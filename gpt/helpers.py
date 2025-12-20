@@ -33,14 +33,13 @@ Je antwoord is helder, menselijk, en raakt zacht waar het mag — scherp waar he
 
 # Bot instance wordt later gezet
 bot_instance: Optional[commands.Bot] = None
-LOG_CHANNEL_ID = 1336042713459593337
 
 def set_bot_instance(bot: commands.Bot) -> None:
     global bot_instance
     bot_instance = bot
     logger.info("🤖 Bot instance is now set in helpers.py")
 
-def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0):
+def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optional[int] = None):
     from utils.logger import get_gpt_status_logs
     logs = get_gpt_status_logs()
     logs.last_success_time = datetime.utcnow()
@@ -51,10 +50,10 @@ def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0):
 
     log_message = f"✅ GPT success by {user_id} – {tokens_used} tokens, {latency_ms}ms latency"
     logger.info(log_message)
-    if bot_instance:
-        asyncio.create_task(log_to_channel(log_message, level="info"))
+    if bot_instance and guild_id:
+        asyncio.create_task(log_to_channel(log_message, level="info", guild_id=guild_id))
 
-def log_gpt_error(error_type="unknown", user_id=None):
+def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = None):
     from utils.logger import get_gpt_status_logs
     logs = get_gpt_status_logs()
     logs.last_error_type = error_type
@@ -63,8 +62,8 @@ def log_gpt_error(error_type="unknown", user_id=None):
 
     log_message = f"❌ GPT error [{error_type}] by {user_id}"
     logger.error(log_message)
-    if bot_instance:
-        asyncio.create_task(log_to_channel(log_message, level="error"))
+    if bot_instance and guild_id:
+        asyncio.create_task(log_to_channel(log_message, level="error", guild_id=guild_id))
 
 def is_allowed_prompt(prompt: str) -> bool:
     # Voeg hier woorden of zinnen toe die je wil blokkeren
@@ -75,14 +74,37 @@ def is_allowed_prompt(prompt: str) -> bool:
     return not any(bad in prompt.lower() for bad in blocked_keywords)
 
 
-async def log_to_channel(message: str, level: str = "info"):
+async def log_to_channel(message: str, level: str = "info", guild_id: Optional[int] = None):
+    """
+    Log GPT events to the configured log channel for the guild.
+    Uses system.log_channel_id from settings (configured via /config system set_log_channel).
+    """
     if bot_instance is None:
         logger.warning("⚠️ Tried to log to Discord channel, but bot_instance is None")
         return
 
-    channel = bot_instance.get_channel(LOG_CHANNEL_ID)
+    if guild_id is None:
+        logger.debug("⚠️ GPT log called without guild_id - skipping Discord log")
+        return
+
+    # Get log channel from settings (system.log_channel_id)
+    settings = getattr(bot_instance, "settings", None)
+    if not settings:
+        logger.debug("⚠️ Settings service not available - skipping Discord log")
+        return
+
+    try:
+        channel_id = int(settings.get("system", "log_channel_id", guild_id))
+        if channel_id == 0:
+            logger.debug(f"⚠️ No log channel configured for guild {guild_id} - skipping Discord log")
+            return
+    except Exception as e:
+        logger.debug(f"⚠️ Could not get log channel ID for guild {guild_id}: {e}")
+        return
+
+    channel = bot_instance.get_channel(channel_id)
     if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-        logger.warning(f"⚠️ Could not find log channel with ID {LOG_CHANNEL_ID}")
+        logger.warning(f"⚠️ Could not find log channel with ID {channel_id} for guild {guild_id}")
         return
 
     embed = Embed(
@@ -90,23 +112,46 @@ async def log_to_channel(message: str, level: str = "info"):
         timestamp=datetime.utcnow(),
         color=0x00BFFF if level == "info" else 0xFF0000
     )
-    embed.set_author(name=f"{level.upper()} Log")
+    embed.set_author(name=f"GPT {level.upper()}")
+    embed.set_footer(text=f"gpt | Guild: {guild_id}")
 
     try:
         await channel.send(embed=embed)
     except Exception as e:
-        logger.error(f"🚨 Failed to send log embed: {e}")
+        logger.error(f"🚨 Failed to send GPT log embed: {e}")
 
-# --- GPT ask wrapper ---
-_api_key = getattr(config, "OPENAI_API_KEY", None)
+# --- LLM client setup (Grok or OpenAI) ---
+_llm_provider = getattr(config, "LLM_PROVIDER", "grok").strip().lower()
+_grok_api_key = getattr(config, "GROK_API_KEY", None)
+_openai_api_key = getattr(config, "OPENAI_API_KEY", None)
+
+# Determine which provider to use
+if _llm_provider == "grok":
+    _api_key = _grok_api_key
+    _api_key_name = "GROK_API_KEY"
+    _base_url = "https://api.x.ai/v1"
+    _default_model = "grok-beta"
+else:
+    _api_key = _openai_api_key
+    _api_key_name = "OPENAI_API_KEY"
+    _base_url = None  # OpenAI default
+    _default_model = "gpt-3.5-turbo"
+
 _api_key_missing = not _api_key
 if _api_key_missing:
     logger.warning(
-        "⚠️ OPENAI_API_KEY ontbreekt. Stel deze in je .env of config_local.py om GPT-commando's te gebruiken."
+        f"⚠️ {_api_key_name} ontbreekt. Stel deze in je .env of config_local.py om AI-commando's te gebruiken."
     )
-    openai_client = None
+    llm_client = None
 else:
-    openai_client = AsyncOpenAI(api_key=_api_key)
+    if _base_url:
+        # Grok uses OpenAI-compatible API at api.x.ai
+        llm_client = AsyncOpenAI(api_key=_api_key, base_url=_base_url)
+        logger.info(f"✅ Grok client initialized (model: {_default_model})")
+    else:
+        # OpenAI
+        llm_client = AsyncOpenAI(api_key=_api_key)
+        logger.info(f"✅ OpenAI client initialized (model: {_default_model})")
 
 def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
     if bot_instance is None:
@@ -139,13 +184,13 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
     return model_value, temperature_value
 
 
-async def ask_gpt(messages, user_id=None, model: Optional[str] = None):
+async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None):
     start = time.perf_counter()
 
     try:
-        if _api_key_missing or openai_client is None:
+        if _api_key_missing or llm_client is None:
             raise RuntimeError(
-                "OPENAI_API_KEY ontbreekt. Stel de sleutel in (.env of config_local.py) en herstart de bot."
+                f"{_api_key_name} ontbreekt. Stel de sleutel in (.env of config_local.py) en herstart de bot."
             )
 
         # 👉 Check of messages een string is (oude stijl prompt)
@@ -153,7 +198,7 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None):
             messages = [{"role": "user", "content": messages}]
         assert isinstance(messages, list) and all(isinstance(m, dict) for m in messages), "❌ Invalid messages format"
 
-        resolved_model, temperature = _get_settings_values(model or "gpt-3.5-turbo")
+        resolved_model, temperature = _get_settings_values(model or _default_model)
         chat_kwargs = {
             "model": resolved_model,
             "messages": [
@@ -164,14 +209,14 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None):
         if temperature is not None:
             chat_kwargs["temperature"] = temperature
 
-        response = await openai_client.chat.completions.create(**chat_kwargs)
+        response = await llm_client.chat.completions.create(**chat_kwargs)
         latency = (time.perf_counter() - start) * 1000 if response else 0  # in ms
         tokens = response.usage.total_tokens if response.usage else 0
 
-        log_gpt_success(user_id=user_id, tokens_used=tokens, latency_ms=int(latency))
+        log_gpt_success(user_id=user_id, tokens_used=tokens, latency_ms=int(latency), guild_id=guild_id)
         return response.choices[0].message.content
 
     except Exception as e:
         error_type = f"{type(e).__name__}: {str(e)}"
-        log_gpt_error(error_type=error_type, user_id=user_id)
+        log_gpt_error(error_type=error_type, user_id=user_id, guild_id=guild_id)
         raise

@@ -4,7 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()  # Load variables from .env file
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Legacy - kept for backwards compatibility
+GROK_API_KEY = os.getenv("GROK_API_KEY")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "grok").strip().lower()  # "grok" or "openai"
 
 # # GUILD_ID = int(os.getenv("GUILD_ID", "1160511689263947796"))  # Deprecated - bot automatically detects guilds
 ROLE_ID = int(os.getenv("ROLE_ID", "0"))  # Legacy - no longer used in multi-guild setup
