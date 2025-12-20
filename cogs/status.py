@@ -83,12 +83,12 @@ async def get_gptstatus_embed():
     latency = logs.average_latency_ms or 0
     token_usage = logs.total_tokens_today or 0
     rate_limit_reset = logs.rate_limit_reset or "~"
-    # Default model depends on provider (grok-beta for Grok, gpt-3.5-turbo for OpenAI)
+    # Default model depends on provider (grok-3 for Grok, gpt-3.5-turbo for OpenAI)
     try:
         import config
-        default_model = "grok-beta" if getattr(config, "LLM_PROVIDER", "grok").strip().lower() == "grok" else "gpt-3.5-turbo"
+        default_model = "grok-3" if getattr(config, "LLM_PROVIDER", "grok").strip().lower() == "grok" else "gpt-3.5-turbo"
     except:
-        default_model = "grok-beta"
+        default_model = "grok-3"
     model = logs.current_model or default_model
     user = logs.last_user or "-"
     success_count = logs.success_count or 0
