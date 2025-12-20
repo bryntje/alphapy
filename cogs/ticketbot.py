@@ -954,10 +954,12 @@ class TicketActionView(discord.ui.View):
             )
 
             try:
-                # Use default model from ask_gpt (defaults to gpt-3.5-turbo)
+                # Use default model from ask_gpt (defaults to grok-3 for Grok, gpt-3.5-turbo for OpenAI)
+                guild_id = channel.guild.id if channel.guild else None
                 summary_text = await ask_gpt(
                     messages=[{"role": "user", "content": prompt}],
                     user_id=None,
+                    guild_id=guild_id,
                 )
             except Exception as e:
                 await channel.send(f"❌ Failed to generate summary: {e}")
@@ -1295,8 +1297,11 @@ class TicketActionView(discord.ui.View):
             + "\n".join(msgs)
         )
         try:
+            guild_id = interaction.guild.id if interaction.guild else None
             suggestion = await ask_gpt(
                 messages=[{"role": "user", "content": prompt}],
+                user_id=interaction.user.id,
+                guild_id=guild_id,
             )
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to get suggestion: {e}", ephemeral=True)

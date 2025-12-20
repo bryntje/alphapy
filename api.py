@@ -634,6 +634,35 @@ def _count_recent_events(events: List[GPTLogEvent], hours: int = 24) -> int:
     return count
 
 
+def _calculate_status(bot_metrics: BotMetrics, gpt_errors_1h: int) -> str:
+    """
+    Calculate system status based on bot health (online status + GPT errors).
+    This function is used consistently in both debug logs and persisted telemetry.
+    
+    Status logic:
+    - outage: Bot offline (after startup grace period) OR >5 GPT errors/hour
+    - degraded: Bot starting up (<2min) OR 1-5 GPT errors/hour
+    - operational: Bot online and no recent GPT errors
+    """
+    if not bot_metrics.online:
+        # If bot has been running for more than 2 minutes and goes offline, it's a real outage
+        # (could be Railway/host issue, bot crash, etc.)
+        if bot_metrics.uptime_seconds and bot_metrics.uptime_seconds >= 120:
+            return "outage"  # Bot was running but went offline - real outage (host issue, crash, etc.)
+        elif bot_metrics.uptime_seconds and bot_metrics.uptime_seconds < 120:
+            return "degraded"  # Still starting up, give it time
+        else:
+            # No uptime data - bot might not have started yet, or truly offline
+            # If we have guilds, bot was connected before, so likely an outage
+            return "outage" if len(bot_metrics.guilds) > 0 else "degraded"
+    elif gpt_errors_1h > 5:
+        return "outage"  # Too many recent GPT errors
+    elif gpt_errors_1h > 0:
+        return "degraded"  # Some GPT errors, but not critical
+    else:
+        return "operational"  # Bot is online and no recent errors
+
+
 async def _telemetry_ingest_loop(interval: int = 45) -> None:
     """
     Background task that periodically ingests telemetry data to Supabase.
@@ -669,14 +698,16 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
             # Persist to Supabase
             await _persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats)
             
-            # Log the calculated status for debugging
-            incidents_open = ticket_stats.open_count + _count_recent_events(gpt_metrics.recent_errors)
-            calculated_status = "outage" if (not bot_metrics.online or incidents_open > 5) else ("degraded" if incidents_open > 0 else "operational")
+            # Log the calculated status for debugging (using same logic as _persist_telemetry_snapshot)
+            # Status is based ONLY on bot health (online status + GPT errors), NOT on open tickets
+            gpt_errors_1h = _count_recent_events(gpt_metrics.recent_errors, hours=1)
+            calculated_status = _calculate_status(bot_metrics, gpt_errors_1h)
             
             logger.debug(
                 f"✅ Telemetry snapshot ingested: bot_online={bot_metrics.online}, "
                 f"status={calculated_status}, uptime={bot_metrics.uptime_seconds}s, "
-                f"guilds={len(bot_metrics.guilds)}, incidents={incidents_open}"
+                f"guilds={len(bot_metrics.guilds)}, gpt_errors_1h={gpt_errors_1h}, "
+                f"open_tickets={ticket_stats.open_count} (tickets excluded from status)"
             )
             
         except asyncio.CancelledError:
@@ -757,23 +788,15 @@ async def _persist_telemetry_snapshot(
     queue_depth = ticket_stats.open_count
     active_bots = len(bot_metrics.guilds) or None
 
-    incidents_open = ticket_stats.open_count + gpt_errors_24h
+    # Only count recent GPT errors (last hour) for status, not all 24h errors
+    # Old errors shouldn't keep the system in degraded state
+    # NOTE: Open tickets are NOT an indicator of bot health - they're normal business operations
+    gpt_errors_1h = _count_recent_events(gpt_metrics.recent_errors, hours=1)
     
-    # Determine status with better handling for startup phase
-    # If bot is not online, check if it's still starting up or truly down
-    if not bot_metrics.online:
-        # If we have uptime data and it's less than 2 minutes, bot is likely still starting
-        # Also if we have guilds, the bot was connected at some point
-        if (bot_metrics.uptime_seconds and bot_metrics.uptime_seconds < 120) or len(bot_metrics.guilds) > 0:
-            status = "degraded"  # Starting up, not a full outage
-        else:
-            status = "outage"  # Truly offline
-    elif incidents_open > 5:
-        status = "outage"
-    elif incidents_open > 0:
-        status = "degraded"
-    else:
-        status = "operational"
+    # Status is based ONLY on technical health: bot online status and GPT errors
+    # Open tickets are excluded - they're a normal part of ticket bot functionality
+    # Use the same calculation function as debug logs for consistency
+    status = _calculate_status(bot_metrics, gpt_errors_1h)
 
     notes = (
         f"{total_activity_24h} events/24h · {ticket_stats.open_count} open tickets · "
