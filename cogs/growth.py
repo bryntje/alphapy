@@ -56,9 +56,22 @@ Offer a bit of perspective or guidance.
 Ask 1 or 2 deeper questions to support clarity.
 Be encouraging, not forceful.
 """
+        guild_id = interaction.guild.id if interaction.guild else None
+        
         try:
             await interaction.response.defer(thinking=True, ephemeral=True)
-            guild_id = interaction.guild.id if interaction.guild else None
+        except Exception as e:
+            # Error during defer - log it (happens before ask_gpt)
+            error_type = f"{type(e).__name__}: {str(e)}"
+            log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
+            await interaction.followup.send(
+                "❌ Something went wrong while processing your check-in. Please try again later.",
+                ephemeral=True,
+            )
+            return
+        
+        # Call ask_gpt (ask_gpt logs its own errors)
+        try:
             reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id)
             # ask_gpt() already logs success internally
             await interaction.followup.send(reply, ephemeral=True)
@@ -94,18 +107,7 @@ Be encouraging, not forceful.
 
             asyncio.create_task(_store_reflection())
         except Exception as e:
-            guild_id = interaction.guild.id if interaction.guild else None
-            error_type = f"{type(e).__name__}: {str(e)}"
-            # Check if error occurred before ask_gpt() was called
-            # ask_gpt() logs its own errors internally, so we only log pre-call errors
-            # RuntimeError with API key message indicates ask_gpt() was called and failed
-            is_ask_gpt_error = (
-                isinstance(e, RuntimeError) and 
-                ("GROK_API_KEY" in str(e) or "OPENAI_API_KEY" in str(e) or "ontbreekt" in str(e))
-            )
-            if not is_ask_gpt_error:
-                # Error occurred before ask_gpt() call (e.g., network issues, validation errors)
-                log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
+            # ask_gpt() already logs all its errors internally, so we don't log again
             await interaction.followup.send(
                 "❌ Something went wrong while processing your check-in. Please try again later.",
                 ephemeral=True,
