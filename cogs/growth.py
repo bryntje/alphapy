@@ -62,12 +62,20 @@ Be encouraging, not forceful.
             await interaction.response.defer(thinking=True, ephemeral=True)
         except Exception as e:
             # Error during defer - log it (happens before ask_gpt)
+            # Use response.send_message() since defer failed and followup is not available
             error_type = f"{type(e).__name__}: {str(e)}"
             log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
-            await interaction.followup.send(
-                "❌ Something went wrong while processing your check-in. Please try again later.",
-                ephemeral=True,
-            )
+            try:
+                await interaction.response.send_message(
+                    "❌ Something went wrong while processing your check-in. Please try again later.",
+                    ephemeral=True,
+                )
+            except Exception:
+                # If response is already used, try followup as fallback
+                await interaction.followup.send(
+                    "❌ Something went wrong while processing your check-in. Please try again later.",
+                    ephemeral=True,
+                )
             return
         
         # Call ask_gpt (ask_gpt logs its own errors)
