@@ -22,14 +22,33 @@ class LearnTopic(commands.Cog):
     @app_commands.command(name="learn_topic", description="Ask a topic and get a short, clear explanation from GPT.")
     @app_commands.describe(topic="e.g. RSI, scalping, risk management…")
     async def learn_topic(self, interaction: discord.Interaction, topic: str):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        guild_id = interaction.guild.id if interaction.guild else None
+        
+        # Defer the interaction response
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except Exception as e:
+            # Error during defer - log it and use response.send_message() instead
+            error_type = f"{type(e).__name__}: {str(e)}"
+            log_gpt_error(error_type=error_type, user_id=interaction.user.id, guild_id=guild_id)
+            try:
+                await interaction.response.send_message(
+                    "❌ Something went wrong while processing your request. Please try again later.",
+                    ephemeral=True,
+                )
+            except Exception:
+                # If response is already used, try followup as fallback
+                await interaction.followup.send(
+                    "❌ Something went wrong while processing your request. Please try again later.",
+                    ephemeral=True,
+                )
+            return
 
         if not is_allowed_prompt(topic):
             await interaction.followup.send(
                 "❌ That question doesn't align with Innersync • Alphapy's intent. Try a more purposeful topic.",
                 ephemeral=True
             )
-            guild_id = interaction.guild.id if interaction.guild else None
             log_gpt_error("filtered_prompt", user_id=interaction.user.id, guild_id=guild_id)
             return
 
