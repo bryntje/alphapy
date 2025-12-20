@@ -1300,6 +1300,7 @@ class TicketActionView(discord.ui.View):
             guild_id = interaction.guild.id if interaction.guild else None
             suggestion = await ask_gpt(
                 messages=[{"role": "user", "content": prompt}],
+                user_id=interaction.user.id,
                 guild_id=guild_id,
             )
         except Exception as e:
