@@ -124,13 +124,13 @@ settings_service.register(
         allow_null=True,
     )
 )
-# Default model depends on LLM_PROVIDER (grok-beta for Grok, gpt-3.5-turbo for OpenAI)
-_default_llm_model = "grok-beta" if getattr(config, "LLM_PROVIDER", "grok").strip().lower() == "grok" else "gpt-3.5-turbo"
+# Default model depends on LLM_PROVIDER (grok-3 for Grok, gpt-3.5-turbo for OpenAI)
+_default_llm_model = "grok-3" if getattr(config, "LLM_PROVIDER", "grok").strip().lower() == "grok" else "gpt-3.5-turbo"
 settings_service.register(
     SettingDefinition(
         scope="gpt",
         key="model",
-        description="Standaard AI-model voor GPT commando's (grok-beta voor Grok, gpt-3.5-turbo/gpt-4 voor OpenAI).",
+        description="Standaard AI-model voor GPT commando's (grok-3 voor Grok, gpt-3.5-turbo/gpt-4 voor OpenAI).",
         value_type="str",
         default=_default_llm_model,
     )

@@ -954,7 +954,7 @@ class TicketActionView(discord.ui.View):
             )
 
             try:
-                # Use default model from ask_gpt (defaults to grok-beta for Grok, gpt-3.5-turbo for OpenAI)
+                # Use default model from ask_gpt (defaults to grok-3 for Grok, gpt-3.5-turbo for OpenAI)
                 guild_id = channel.guild.id if channel.guild else None
                 summary_text = await ask_gpt(
                     messages=[{"role": "user", "content": prompt}],

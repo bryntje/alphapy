@@ -133,7 +133,7 @@ if _llm_provider == "grok":
     _api_key = _grok_api_key
     _api_key_name = "GROK_API_KEY"
     _base_url = "https://api.x.ai/v1"
-    _default_model = "grok-beta"
+    _default_model = "grok-3"
 else:
     _api_key = _openai_api_key
     _api_key_name = "OPENAI_API_KEY"

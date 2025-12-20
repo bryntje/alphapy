@@ -28,7 +28,7 @@ class GPTStatusLogs:
         self.average_latency_ms: int = 0
         self.total_tokens_today: int = 0
         self.rate_limit_reset: str = "~"
-        self.current_model: str = "grok-beta"  # Default, will be updated from actual usage
+        self.current_model: str = "grok-3"  # Default, will be updated from actual usage
         self.last_user: Optional[int] = None
         self.success_count: int = 0
         self.error_count: int = 0
