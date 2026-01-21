@@ -356,6 +356,39 @@ async def on_ready():
     logger.info(f"✅ Bot has successfully started and connected to {len(bot.guilds)} server(s)!")
     
     bot.add_view(GDPRView(bot))
+    
+    # Sync command tree
+    from utils.command_sync import safe_sync, should_sync_global, detect_guild_only_commands
+    
+    # Sync global commands once (if needed)
+    if should_sync_global():
+        global_result = await safe_sync(bot, guild=None, force=False)
+        if global_result.success:
+            logger.info(f"✅ Global commands synced: {global_result.command_count} commands")
+        else:
+            logger.warning(f"⚠️ Global sync skipped: {global_result.error}")
+    
+    # Sync guild-only commands for existing guilds (parallel for speed)
+    has_guild_only = detect_guild_only_commands(bot)
+    if has_guild_only:
+        logger.info("🔄 Syncing guild-only commands for existing guilds...")
+        # Run guild syncs in parallel for faster startup
+        sync_tasks = [safe_sync(bot, guild=guild, force=False) for guild in bot.guilds]
+        results = await asyncio.gather(*sync_tasks, return_exceptions=True)
+        
+        synced_count = 0
+        skipped_count = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"❌ Sync error for {bot.guilds[i].name}: {result}")
+                skipped_count += 1
+            elif result.success:
+                synced_count += 1
+            else:
+                skipped_count += 1
+                if result.cooldown_remaining:
+                    logger.debug(f"⏸️ Skipped sync for {bot.guilds[i].name} (cooldown)")
+        logger.info(f"✅ Guild syncs completed: {synced_count} synced, {skipped_count} skipped (cooldown)")
 
 
 set_bot_instance(bot)  # This also starts the GPT retry queue task
@@ -436,6 +469,29 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
         )
     except Exception:
         pass  # Don't break error handling if tracking fails
+
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    """Sync guild-only commands when bot joins a new guild."""
+    from utils.command_sync import safe_sync, detect_guild_only_commands
+    
+    logger.info(f"🆕 Bot joined new guild: {guild.name} (ID: {guild.id})")
+    
+    # Check if we have guild-only commands
+    has_guild_only = detect_guild_only_commands(bot)
+    if has_guild_only:
+        logger.info(f"🔄 Syncing guild-only commands for {guild.name}...")
+        result = await safe_sync(bot, guild=guild, force=False)
+        if result.success:
+            logger.info(f"✅ Guild commands synced for {guild.name}: {result.command_count} commands")
+        else:
+            if result.cooldown_remaining:
+                logger.info(f"⏸️ Guild sync skipped for {guild.name} (cooldown: {result.cooldown_remaining:.0f}s)")
+            else:
+                logger.warning(f"⚠️ Guild sync failed for {guild.name}: {result.error}")
+    else:
+        logger.debug(f"ℹ️ No guild-only commands detected, skipping sync for {guild.name}")
 
 
 async def setup_hook():

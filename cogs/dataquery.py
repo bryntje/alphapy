@@ -68,6 +68,5 @@ class DataQuery(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(DataQuery(bot))
-    # Voor multi-guild support: sync global slash commands
-    # Individuele guilds kunnen hun eigen command overrides hebben
-    await bot.tree.sync()
+    # Command sync is now handled centrally in bot.py on_ready() hook
+    # This prevents blocking startup and respects rate limits

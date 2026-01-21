@@ -84,21 +84,32 @@ class CustomSlashCommands(commands.Cog):
     @commands.command(name="sync", hidden=True)
     @commands.is_owner()
     async def sync(self, ctx: commands.Context):
-        await ctx.send("🔄 Synchronizing all slash commands...")
+        """Synchronize slash commands with cooldown protection."""
+        from utils.command_sync import safe_sync, format_cooldown_message
+        
         guild = ctx.guild
-        try:
-            if guild is None:
-                # Sync globally if no guild context
-                synced = await self.bot.tree.sync()
-                await ctx.send(f"✅ Synced {len(synced)} global slash commands!")
+        force = "--force" in ctx.message.content or "-f" in ctx.message.content
+        
+        await ctx.send("🔄 Synchronizing slash commands...")
+        
+        result = await safe_sync(self.bot, guild=guild, force=force)
+        
+        if result.success:
+            sync_type = "global" if guild is None else f"guild ({guild.name})"
+            await ctx.send(
+                f"✅ Synced {result.command_count} {sync_type} slash commands!"
+            )
+        else:
+            if result.cooldown_remaining:
+                cooldown_msg = format_cooldown_message(result.cooldown_remaining)
+                await ctx.send(
+                    f"⏸️ Sync skipped: {result.error}\n"
+                    f"⏰ Cooldown remaining: {cooldown_msg}\n"
+                    f"💡 Use `!sync --force` to bypass cooldown (use with caution)"
+                )
             else:
-                # Sync to specific guild
-                self.bot.tree.copy_global_to(guild=guild)  # ✅ Force a guild sync
-                synced = await self.bot.tree.sync(guild=guild)
-                await ctx.send(f"✅ Synced {len(synced)} slash commands to {guild.name}!")
-        except Exception as e:
-            await ctx.send(f"❌ Error syncing commands: {e}")
-            logger.error(f"Error syncing commands: {e}", exc_info=True)
+                await ctx.send(f"❌ Sync failed: {result.error}")
+                logger.error(f"Error syncing commands: {result.error}", exc_info=True)
 
 
 class EmbedBuilderModal(Modal, title="Create Embed"):
