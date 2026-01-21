@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
   - Graceful shutdown with complete resource cleanup (all pools, tasks, cogs)
   - Eliminates race conditions: Sequential phases ensure dependencies are ready before use
   - Better debugging: Phase-by-phase logging makes it clear where startup/shutdown fails
+- **Startup/Shutdown Improvements:**
+  - Fixed "Known guilds: 0" logging issue - guilds load after connect, now shows debug message if not yet available
+  - Fixed python-dotenv warning about empty lines in .env file - warnings now suppressed (harmless trailing newlines)
+  - Added shard ID logging - shows debug message for single-shard bots (normal), ready for future multi-shard support
 - **Input Sanitization & Security:**
   - Centralized sanitization utility (`utils/sanitizer.py`) for protecting against injection attacks
   - `escape_markdown()`: Escapes Discord markdown characters to prevent injection
