@@ -593,10 +593,27 @@ class ReminderCog(commands.Cog):
         current_days = current_days[:50] if len(current_days) > 50 else current_days
         
         # Ensure current_message is a valid string
+        # Extract footer from message if present (footer was appended with \n\n separator)
         current_message = row["message"] or ""
         if not isinstance(current_message, str):
             current_message = str(current_message) if current_message else ""
+        
+        # Try to extract footer from message (footer is appended with \n\n)
+        # Look for the pattern: message ends with \n\n followed by footer-like text
+        current_footer = ""
+        if current_message and "\n\n" in current_message:
+            # Split by double newline - last part might be footer
+            parts = current_message.rsplit("\n\n", 1)
+            if len(parts) == 2:
+                # Check if the last part looks like a footer (short text, possibly at end)
+                potential_footer = parts[1].strip()
+                # If it's relatively short (likely footer) and the message part exists
+                if len(potential_footer) < 200 and parts[0].strip():
+                    current_message = parts[0].strip()
+                    current_footer = potential_footer
+        
         current_message = current_message[:1000] if len(current_message) > 1000 else current_message
+        current_footer = current_footer[:500] if len(current_footer) > 500 else current_footer
         
         # Ensure current_channel_id is an integer
         current_channel_id = row["channel_id"]
@@ -608,10 +625,6 @@ class ReminderCog(commands.Cog):
                 await interaction.response.send_message("❌ Invalid reminder data (channel_id).", ephemeral=True)
                 return
         
-        # Debug logging
-        logger.info(f"🔧 Edit modal values - name: '{current_name}' (len={len(current_name)}), time: '{current_time}' (len={len(current_time)}), days: '{current_days}' (len={len(current_days)}), message: '{current_message[:50]}...' (len={len(current_message)})")
-        logger.debug(f"🔧 Edit modal DB values - call_time={row.get('call_time')}, event_time={row.get('event_time')}, time={row.get('time')}, days={row.get('days')}")
-
         # Show edit modal
         modal = EditReminderModal(
             reminder_id=reminder_id,
@@ -737,19 +750,8 @@ class ReminderCog(commands.Cog):
         next_day = str((now.weekday() + 1) % 7)  # Wrap around: 7 becomes 0 (Monday)
         next_date = (now + timedelta(days=1)).date()
 
-        logger.info(f"🔁 Reminder check: {current_time_str} op dag {current_day} (date: {current_date})")
-
         try:
             async with self.db.acquire() as conn:
-                # Debug: Check what's actually in the database
-                all_reminders = await conn.fetch(
-                    "SELECT id, name, time, call_time, days, event_time FROM reminders WHERE guild_id IN (SELECT DISTINCT guild_id FROM reminders) LIMIT 10"
-                )
-                if all_reminders:
-                    logger.debug(f"🔍 Sample reminders in DB:")
-                    for r in all_reminders:
-                        logger.debug(f"  ID {r['id']}: time={r['time']} (type: {type(r['time'])}), call_time={r['call_time']} (type: {type(r['call_time'])}), days={r['days']}, event_time={r['event_time']}")
-                
                 # Build day matching: support both numeric ("0", "1", "2") and text ("ma", "di", "woe", etc.)
                 day_abbrevs = {
                     "0": ["0", "ma", "maandag", "monday"],
@@ -762,8 +764,6 @@ class ReminderCog(commands.Cog):
                 }
                 current_day_variants = day_abbrevs.get(current_day, [current_day])
                 next_day_variants = day_abbrevs.get(next_day, [next_day])
-                logger.debug(f"🔍 Day variants for {current_day}: {current_day_variants}, next day {next_day}: {next_day_variants}")
-                logger.debug(f"🔍 Query params: current_time_hhmm={current_time_hhmm}, current_date={current_date}, current_day={current_day}, next_date={next_date}, next_day={next_day}")
                 
                 # Check if any day variant matches the days array
                 # time and call_time are TIME columns, so we compare them directly
@@ -883,9 +883,8 @@ class ReminderCog(commands.Cog):
             return
 
         try:
-            logger.info(f"🔎 Checking reminders at {current_time_str} (found {len(rows)} matching reminders)")
             if len(rows) > 0:
-                logger.info(f"📋 Reminders to process: {[r['id'] for r in rows]}")
+                logger.info(f"🔎 Checking reminders at {current_time_str} - found {len(rows)} reminder(s) to process: {[r['id'] for r in rows]}")
             for row in rows:
                 # Idempotency guard: skip if already sent in this minute
                 last_sent = row.get("last_sent_at")
@@ -1279,27 +1278,6 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
                         logger.warning(f"⚠️ Onbekende dag: {day}, wordt overgeslagen")
             days_list = list(set(normalized_days))  # Remove duplicates
 
-        # Parse channel (optional)
-        channel_id = None
-        channel_input_str = self.channel_input.value.strip()
-        if channel_input_str:
-            try:
-                channel_id = int(channel_input_str)
-                # Validate channel exists
-                channel = self.cog.bot.get_channel(channel_id)
-                if not channel:
-                    try:
-                        channel = await self.cog.bot.fetch_channel(channel_id)
-                    except Exception:
-                        await interaction.followup.send(f"❌ Channel with ID `{channel_id}` not found.", ephemeral=True)
-                        return
-                if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-                    await interaction.followup.send("❌ Channel must be a text channel or thread.", ephemeral=True)
-                    return
-            except ValueError:
-                await interaction.followup.send("❌ Invalid channel ID format.", ephemeral=True)
-                return
-
         # Fetch current reminder to preserve event_time and call_time logic
         async with self.cog.db.acquire() as conn:
             current_row = await conn.fetchrow(
@@ -1309,6 +1287,30 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
             if not current_row:
                 await interaction.followup.send("❌ Reminder not found.", ephemeral=True)
                 return
+
+            # Parse channel (optional)
+            channel_id = None
+            channel_input_str = self.channel_input.value.strip()
+            if channel_input_str:
+                try:
+                    channel_id = int(channel_input_str)
+                    # Validate channel exists
+                    channel = self.cog.bot.get_channel(channel_id)
+                    if not channel:
+                        try:
+                            channel = await self.cog.bot.fetch_channel(channel_id)
+                        except Exception:
+                            await interaction.followup.send(f"❌ Channel with ID `{channel_id}` not found.", ephemeral=True)
+                            return
+                    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+                        await interaction.followup.send("❌ Channel must be a text channel or thread.", ephemeral=True)
+                        return
+                except ValueError:
+                    await interaction.followup.send("❌ Invalid channel ID format.", ephemeral=True)
+                    return
+            else:
+                # Use existing channel_id if not provided
+                channel_id = current_row.get("channel_id")
 
             # Determine call_time and time:
             # - time = reminder tijd (T-60, wanneer reminder wordt verzonden)
@@ -1332,6 +1334,9 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
                 call_time_obj = time_obj  # Event tijd (wat gebruiker instelt)
                 time_obj = reminder_time_obj  # Reminder tijd (1 uur eerder)
 
+            # Get message value (footer remains in message if it was there originally)
+            final_message = self.message_input.value.strip() if self.message_input.value else None
+            
             # Update reminder (time and call_time are TIME columns, so we pass time objects)
             if channel_id:
                 await conn.execute(
@@ -1344,7 +1349,7 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
                 time_obj,  # reminder tijd (T-60) as time object
                 call_time_obj,  # event tijd (T0) as time object
                 days_list if days_list else [],
-                self.message_input.value.strip() or None,
+                final_message,
                     channel_id,
                     self.reminder_id,
                     self.guild_id
@@ -1360,7 +1365,7 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
                 time_obj,  # reminder tijd (T-60) as time object
                 call_time_obj,  # event tijd (T0) as time object
                 days_list if days_list else [],
-                    self.message_input.value.strip() or None,
+                    final_message,
                     self.reminder_id,
                     self.guild_id
                 )

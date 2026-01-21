@@ -320,7 +320,6 @@ async def on_ready():
     
     # Start GPT retry queue task now that event loop is running
     from gpt.helpers import _retry_task, _retry_gpt_requests
-    import asyncio
     import gpt.helpers as gpt_helpers
     if gpt_helpers._retry_task is None or gpt_helpers._retry_task.done():
         gpt_helpers._retry_task = asyncio.create_task(_retry_gpt_requests())

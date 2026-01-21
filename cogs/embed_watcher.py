@@ -111,7 +111,6 @@ class EmbedReminderWatcher(commands.Cog):
         
         announcements_channel_id = self._get_announcements_channel_id(message.guild.id)
         if message.channel.id != announcements_channel_id:
-            logger.debug(f"[📣] Channel ID: {message.channel.id} - not announcements channel (expected: {announcements_channel_id})")
             return
         
         is_bot_message = message.author.id == getattr(self.bot.user, 'id', None)
@@ -119,10 +118,7 @@ class EmbedReminderWatcher(commands.Cog):
         # Skip messages from the bot itself unless processing bot messages is enabled
         if is_bot_message:
             if not self._is_process_bot_messages_enabled(message.guild.id):
-                logger.debug(f"[📣] Bot message in announcements channel (ID: {message.id}) - skipped (bot messages disabled)")
                 return
-            else:
-                logger.info(f"[📣] Processing bot's own message (ID: {message.id}) - process_bot_messages enabled")
         
         # Loop protection: Check if we already processed this message (for both bot and user messages)
         # This prevents duplicate reminders from the same message
@@ -132,8 +128,6 @@ class EmbedReminderWatcher(commands.Cog):
                 logger.info(f"⏭️ Message {message.id} already has a reminder (ID: {existing}) - skipping to prevent duplicate processing")
                 await self._log_message_processed(message, "skipped", f"Already processed (reminder ID: {existing})", message.guild.id)
                 return
-        
-        logger.debug(f"[📣] Message detected in announcements channel: ID={message.id}, Author={message.author}, Embeds={len(message.embeds)}, Content={bool(message.content)}")
         
         # Check for embeds first
         message_type = "embed"
@@ -146,14 +140,12 @@ class EmbedReminderWatcher(commands.Cog):
             # ⛔️ Skip reminders that the bot itself has already posted (to avoid loops)
             # Check for auto-reminder footer (from reminder system)
             if embed.footer and embed.footer.text == "auto-reminder":
-                logger.debug("[🔁] Embed ignored (auto-reminder tag found)")
                 await self._log_message_processed(message, "skipped", "Auto-reminder tag detected", message.guild.id)
                 return
             
             # Additional loop protection: Check embed footer for "processed" markers
             # (Future: we could add a marker when we create reminders from embeds)
             if embed.footer and "embedwatcher-processed" in (embed.footer.text or "").lower():
-                logger.debug("[🔁] Embed ignored (already processed marker)")
                 return
             
             if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
@@ -161,7 +153,6 @@ class EmbedReminderWatcher(commands.Cog):
             else:
                 channel_name = f"#{getattr(message.channel, 'name', 'unknown')}" if hasattr(message.channel, 'name') else str(message.channel.id)
             logger.info(f"📥 Processing embed message from {message.author} in {channel_name} (ID: {message.id})")
-            logger.debug(f"🔍 Embed details: title={embed.title}, description={embed.description[:100] if embed.description else None}, fields={len(embed.fields)}, footer={embed.footer.text if embed.footer else None}")
             parsed = await self.parse_embed_for_reminder(embed, message.guild.id)
             if not parsed:
                 logger.warning(f"⚠️ Failed to parse embed message {message.id} - parse_embed_for_reminder returned None")
@@ -185,11 +176,7 @@ class EmbedReminderWatcher(commands.Cog):
             logger.info(f"📥 Processing text message from {message.author} in {channel_name} (ID: {message.id})")
             parsed = await self.parse_embed_for_reminder(mock_embed, message.guild.id)
         else:
-            logger.debug(f"[📣] Channel ID: {message.channel.id} - no embeds and non-embed disabled")
             return
-
-        logger.debug(f"[🐛] Parsed result: {parsed}")
-        logger.debug(f"[🐛] DB connection available? {self.conn is not None}")
 
         if parsed and parsed["reminder_time"]:
             # Successfully parsed
@@ -391,7 +378,6 @@ class EmbedReminderWatcher(commands.Cog):
                     # This helps in the edit modal to show which day the event is on
                     weekday = str(dt.weekday())
                     days_list = [weekday]  # Store weekday for one-off events too
-                    logger.debug(f"📅 One-off event on weekday {weekday} ({dt.strftime('%A')}) - stored for info")
                 else:
                     logger.warning("⚠️ No date and no days specified → reminder not created.")
                     return None
@@ -648,11 +634,9 @@ class EmbedReminderWatcher(commands.Cog):
             if overlap_ratio > 0.5 or desc_val.startswith(title_val) or title_normalized.lower() in desc_start.lower():
                 # Title is already in description - use description only
                 message = desc_val
-                logger.debug(f"🔧 Message construction: using description only (title overlap: {overlap_ratio:.2%})")
             else:
                 # Real embed where title and description are different - combine them
                 message = f"{title_val}\n\n{desc_val}"
-                logger.debug(f"🔧 Message construction: combining title and description (low overlap: {overlap_ratio:.2%})")
         elif desc_val and desc_val != "-":
             # Only description available
             message = desc_val
@@ -695,7 +679,6 @@ class EmbedReminderWatcher(commands.Cog):
 
             log_channel_id = self._get_log_channel_id(guild_id)
             log_channel = self.bot.get_channel(log_channel_id)
-            logger.debug(f"[🪵] Log channel: {log_channel}")
             if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
                 # Create embed for cleaner log display
                 db_log_embed = discord.Embed(
