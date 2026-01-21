@@ -585,6 +585,7 @@ class TicketStats(BaseModel):
     average_close_seconds: Optional[int]
     average_close_human: Optional[str]
     open_items: List[TicketListItem]
+    open_ticket_ids: List[int]  # List of IDs for easy access
 
 
 class SettingOverride(BaseModel):
@@ -780,6 +781,7 @@ async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
         average_close_seconds=None,
         average_close_human=None,
         open_items=[],
+        open_ticket_ids=[],
     )
     global db_pool
     if db_pool is None or db_pool.is_closing():
@@ -853,6 +855,9 @@ async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
         )
         for row in open_rows or []
     ]
+    
+    # Extract IDs for easy access
+    open_ticket_ids = [item.id for item in open_items]
 
     return TicketStats(
         total=total,
@@ -862,6 +867,7 @@ async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
         average_close_seconds=avg_seconds,
         average_close_human=avg_human,
         open_items=open_items,
+        open_ticket_ids=open_ticket_ids,
     )
 
 
@@ -1033,10 +1039,10 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
             except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
                 # Pool is closing - use default stats
                 logger.debug(f"Telemetry loop: Database unavailable (pool closing?): {conn_err.__class__.__name__}")
-                ticket_stats = TicketStats(total=0, per_status={}, open_count=0, last_ticket_created_at=None, average_close_seconds=None, average_close_human=None, open_items=[])
+                ticket_stats = TicketStats(total=0, per_status={}, open_count=0, last_ticket_created_at=None, average_close_seconds=None, average_close_human=None, open_items=[], open_ticket_ids=[])
             except Exception as exc:
                 logger.debug(f"Telemetry loop: Failed to fetch ticket stats: {exc}")
-                ticket_stats = TicketStats(total=0, per_status={}, open_count=0, last_ticket_created_at=None, average_close_seconds=None, average_close_human=None, open_items=[])
+                ticket_stats = TicketStats(total=0, per_status={}, open_count=0, last_ticket_created_at=None, average_close_seconds=None, average_close_human=None, open_items=[], open_ticket_ids=[])
             
             # Persist to Supabase
             try:
