@@ -22,7 +22,7 @@ class GDPRMigration(commands.Cog):
         """)
 
         await pg_conn.close()
-        print("✅ GDPR-tabel gecontroleerd/aangemaakt!")
+        print("✅ GDPR table checked/created!")
 
 
     @commands.command(name="migrate_gdpr")

@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 from discord.app_commands import checks as app_checks
 import asyncpg
+from asyncpg import exceptions as pg_exceptions
 import json
 import asyncio
 from datetime import datetime, timedelta
@@ -35,7 +36,7 @@ class TicketBot(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.conn: Optional[asyncpg.Connection] = None
+        self.db: Optional[asyncpg.Pool] = None
         settings = getattr(bot, "settings", None)
         if not isinstance(settings, SettingsService):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -53,123 +54,137 @@ class TicketBot(commands.Cog):
     async def setup_db(self) -> None:
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
         try:
-            conn = await asyncpg.connect(config.DATABASE_URL)
-            log_database_event("DB_CONNECTED", details="TicketBot database connection established")
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS support_tickets (
-                    id SERIAL PRIMARY KEY,
-                    guild_id BIGINT NOT NULL,
-                    user_id BIGINT NOT NULL,
-                    username TEXT,
-                    description TEXT NOT NULL,
-                    status TEXT DEFAULT 'open',
-                    created_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
+            pool = await asyncpg.create_pool(
+                config.DATABASE_URL,
+                min_size=1,
+                max_size=10,
+                command_timeout=10.0
             )
-            # Nieuwe kolom voor ticketkanaal
-            try:
+            log_database_event("DB_CONNECTED", details="TicketBot database pool created")
+            
+            async with pool.acquire() as conn:
                 await conn.execute(
-                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS channel_id BIGINT;"
+                    """
+                    CREATE TABLE IF NOT EXISTS support_tickets (
+                        id SERIAL PRIMARY KEY,
+                        guild_id BIGINT NOT NULL,
+                        user_id BIGINT NOT NULL,
+                        username TEXT,
+                        description TEXT NOT NULL,
+                        status TEXT DEFAULT 'open',
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
                 )
-            except Exception as e:
-                logger.warning(f"⚠️ TicketBot: kon kolom channel_id niet toevoegen: {e}")
-            # Backwards compatible schema upgrades
-            try:
+                # Nieuwe kolom voor ticketkanaal
+                try:
+                    await conn.execute(
+                        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS channel_id BIGINT;"
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ TicketBot: kon kolom channel_id niet toevoegen: {e}")
+                # Backwards compatible schema upgrades
+                try:
+                    await conn.execute(
+                        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claimed_by BIGINT;"
+                    )
+                    await conn.execute(
+                        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;"
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ TicketBot: kon schema niet upgraden: {e}")
+                # Indexen voor snellere queries later
                 await conn.execute(
-                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claimed_by BIGINT;"
-                )
-                await conn.execute(
-                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;"
-                )
-            except Exception as e:
-                logger.warning(f"⚠️ TicketBot: kon schema niet upgraden: {e}")
-            # Indexen voor snellere queries later
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_id);"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_support_tickets_channel_id ON support_tickets(channel_id);"
-            )
-            # Status workflow columns (M2)
-            try:
-                await conn.execute(
-                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();"
+                    "CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_id);"
                 )
                 await conn.execute(
-                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS escalated_to BIGINT;"
+                    "CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);"
                 )
                 await conn.execute(
-                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;"
+                    "CREATE INDEX IF NOT EXISTS idx_support_tickets_channel_id ON support_tickets(channel_id);"
+                )
+                # Status workflow columns (M2)
+                try:
+                    await conn.execute(
+                        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();"
+                    )
+                    await conn.execute(
+                        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS escalated_to BIGINT;"
+                    )
+                    await conn.execute(
+                        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;"
+                    )
+                    await conn.execute(
+                        "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS archived_by BIGINT;"
+                    )
+                except Exception:
+                    pass
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_support_tickets_updated_at ON support_tickets(updated_at);"
+                )
+                # Handige index voor claims
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_support_tickets_claimed_by ON support_tickets(claimed_by);"
+                )
+                # Summaries table for FAQ detection
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ticket_summaries (
+                      id SERIAL PRIMARY KEY,
+                      ticket_id INT NOT NULL,
+                      summary TEXT NOT NULL,
+                      similarity_key TEXT,
+                      created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
                 )
                 await conn.execute(
-                    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS archived_by BIGINT;"
+                    "CREATE INDEX IF NOT EXISTS idx_ticket_summaries_key ON ticket_summaries(similarity_key);"
                 )
-            except Exception:
-                pass
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_support_tickets_updated_at ON support_tickets(updated_at);"
-            )
-            # Handige index voor claims
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_support_tickets_claimed_by ON support_tickets(claimed_by);"
-            )
-            # Summaries table for FAQ detection
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS ticket_summaries (
-                  id SERIAL PRIMARY KEY,
-                  ticket_id INT NOT NULL,
-                  summary TEXT NOT NULL,
-                  similarity_key TEXT,
-                  created_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ticket_summaries_key ON ticket_summaries(similarity_key);"
-            )
-            # FAQ entries table
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS faq_entries (
-                  id SERIAL PRIMARY KEY,
-                  similarity_key TEXT,
-                  summary TEXT NOT NULL,
-                  created_by BIGINT,
-                  created_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
-            )
-            # Metrics snapshots (optional)
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS ticket_metrics (
-                  id BIGSERIAL PRIMARY KEY,
-                  snapshot JSONB NOT NULL,
-                  created_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
-            )
-            # Evolve metrics to structured columns
-            try:
-                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS scope TEXT;")
-                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS counts JSONB;")
-                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS average_cycle_time BIGINT;")
-                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS triggered_by BIGINT;")
-                await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS topics JSONB;")
-            except Exception:
-                pass
-            self.conn = conn
+                # FAQ entries table
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS faq_entries (
+                      id SERIAL PRIMARY KEY,
+                      similarity_key TEXT,
+                      summary TEXT NOT NULL,
+                      created_by BIGINT,
+                      created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+                # Metrics snapshots (optional)
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ticket_metrics (
+                      id BIGSERIAL PRIMARY KEY,
+                      snapshot JSONB NOT NULL,
+                      created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+                # Evolve metrics to structured columns
+                try:
+                    await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS scope TEXT;")
+                    await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS counts JSONB;")
+                    await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS average_cycle_time BIGINT;")
+                    await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS triggered_by BIGINT;")
+                    await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS topics JSONB;")
+                except Exception:
+                    pass
+            
+            self.db = pool
             logger.info("✅ TicketBot: DB ready (support_tickets)")
             log_database_event("DB_READY", details="TicketBot database fully initialized")
         except Exception as e:
             log_database_event("DB_INIT_ERROR", details=f"TicketBot setup failed: {e}")
             logger.error(f"❌ TicketBot: DB init error: {e}")
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
 
     async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
         """Send log embed to the correct guild's log channel"""
@@ -228,7 +243,7 @@ class TicketBot(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         # Zorg dat DB klaar is
-        if self.conn is None:
+        if self.db is None or self.db.is_closing():
             try:
                 await self.setup_db()
             except Exception as e:
@@ -240,18 +255,28 @@ class TicketBot(commands.Cog):
         user_display = f"{user} ({user.id})"
 
         try:
-            conn_safe = cast(asyncpg.Connection, self.conn)
-            row = await conn_safe.fetchrow(
-                """
-                INSERT INTO support_tickets (guild_id, user_id, username, description)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, created_at
-                """,
-                interaction.guild.id,
-                int(user.id),
-                str(user),
-                description.strip(),
-            )
+            async with self.db.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO support_tickets (guild_id, user_id, username, description)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id, created_at
+                    """,
+                    interaction.guild.id,
+                    int(user.id),
+                    str(user),
+                    description.strip(),
+                )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
+            logger.warning(f"Database connection error: {conn_err}")
+            await interaction.followup.send("❌ Database connection error. Please try again later.")
+            return
         except Exception as e:
             logger.exception("🚨 TicketBot: insert failed")
             await self.send_log_embed(
@@ -297,7 +322,7 @@ class TicketBot(commands.Cog):
                 raise RuntimeError("Ticket categorie niet ingesteld")
             fetched_channel = guild.get_channel(category_id) or await self.bot.fetch_channel(category_id)
             if not isinstance(fetched_channel, discord.CategoryChannel):
-                raise RuntimeError("Category kanaal niet gevonden of geen category type")
+                raise RuntimeError("Category channel not found or not a category type")
             category = fetched_channel
 
             support_role = self._resolve_support_role(guild)
@@ -324,18 +349,18 @@ class TicketBot(commands.Cog):
                 name=f"ticket-{ticket_id}",
                 category=category,
                 overwrites=overwrites,
-                reason=f"Ticket {ticket_id} aangemaakt door {user}"
+                reason=f"Ticket {ticket_id} created by {user}"
             )
 
             # Update DB met channel_id
             try:
-                conn_safe2 = cast(asyncpg.Connection, self.conn)
-                await conn_safe2.execute(
-                    "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
-                    int(channel.id),
-                    ticket_id,
-                    interaction.guild.id,
-                )
+                async with self.db.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
+                        int(channel.id),
+                        ticket_id,
+                        interaction.guild.id,
+                    )
             except Exception as e:
                 logger.warning(f"⚠️ TicketBot: kon channel_id niet opslaan: {e}")
 
@@ -353,7 +378,6 @@ class TicketBot(commands.Cog):
             )
             view = TicketActionView(
                 bot=self.bot,
-                conn=conn_safe2,
                 ticket_id=ticket_id,
                 support_role_id=support_role.id if support_role else None,
                 cog=self,
@@ -410,7 +434,7 @@ class TicketBot(commands.Cog):
 
     async def create_ticket_for_user(self, interaction: discord.Interaction, description: str) -> None:
         # Ensure DB
-        if self.conn is None:
+        if self.db is None or self.db.is_closing():
             try:
                 await self.setup_db()
             except Exception as e:
@@ -421,18 +445,28 @@ class TicketBot(commands.Cog):
         user = interaction.user
         user_display = f"{user} ({user.id})"
         try:
-            conn_safe = cast(asyncpg.Connection, self.conn)
-            row = await conn_safe.fetchrow(
-                """
-                INSERT INTO support_tickets (guild_id, user_id, username, description)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, created_at
-                """,
-                interaction.guild.id if interaction.guild else 0,
-                int(user.id),
-                str(user),
-                (description or "").strip() or "—",
-            )
+            async with self.db.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO support_tickets (guild_id, user_id, username, description)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id, created_at
+                    """,
+                    interaction.guild.id if interaction.guild else 0,
+                    int(user.id),
+                    str(user),
+                    (description or "").strip() or "—",
+                )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
+            logger.warning(f"Database connection error: {conn_err}")
+            await interaction.followup.send("❌ Database connection error. Please try again later.")
+            return
         except Exception as e:
             logger.exception("🚨 TicketBot: insert failed")
             await self.send_log_embed(
@@ -484,10 +518,10 @@ class TicketBot(commands.Cog):
             reason=f"Ticket {ticket_id} created by {user}"
         )
         # Store channel id
-        conn_safe2 = cast(asyncpg.Connection, self.conn)
         try:
             if row and "id" in row:
-                await conn_safe2.execute(
+                async with self.db.acquire() as conn:
+                    await conn.execute(
                         "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
                         int(channel.id), int(row["id"]), interaction.guild.id if interaction.guild else 0
                     )
@@ -514,7 +548,6 @@ class TicketBot(commands.Cog):
         )
         view = TicketActionView(
             bot=self.bot,
-            conn=conn_safe2,
             ticket_id=ticket_id,
             support_role_id=support_role.id if support_role else None,
             cog=self,
@@ -542,52 +575,68 @@ class TicketBot(commands.Cog):
 
     async def _compute_stats(self, scope: str, guild_id: Optional[int] = None) -> tuple[dict, Optional[int]]:
         # scope: 'all' | '7d' | '30d'
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             return {}, None
-        where_parts = []
-        if guild_id is not None:
-            where_parts.append(f"guild_id = {guild_id}")
-        if scope == "7d":
-            where_parts.append("created_at >= NOW() - INTERVAL '7 days'")
-        elif scope == "30d":
-            where_parts.append("created_at >= NOW() - INTERVAL '30 days'")
-        where = "WHERE " + " AND ".join(where_parts) if where_parts else ""
-        counts = await self.conn.fetch(f"SELECT status, COUNT(*) c FROM support_tickets {where} GROUP BY status")
-        status_to_count = {r["status"] or "-": int(r["c"]) for r in counts}
-        # average cycle (closed only)
-        avg_where_parts = where_parts + ["status='closed'"] if where_parts else ["status='closed'"]
-        avg_where = "WHERE " + " AND ".join(avg_where_parts) if avg_where_parts else ""
-        avg_row = await self.conn.fetchrow(
-            f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {avg_where}"
-        )
-        avg_seconds: Optional[int] = None
-        if avg_row and avg_row["avg_s"] is not None:
-            try:
-                avg_seconds = int(float(avg_row["avg_s"]))
-            except Exception:
-                avg_seconds = None
-        return status_to_count, avg_seconds
+        try:
+            async with self.db.acquire() as conn:
+                where_parts = []
+                if guild_id is not None:
+                    where_parts.append(f"guild_id = {guild_id}")
+                if scope == "7d":
+                    where_parts.append("created_at >= NOW() - INTERVAL '7 days'")
+                elif scope == "30d":
+                    where_parts.append("created_at >= NOW() - INTERVAL '30 days'")
+                where = "WHERE " + " AND ".join(where_parts) if where_parts else ""
+                counts = await conn.fetch(f"SELECT status, COUNT(*) c FROM support_tickets {where} GROUP BY status")
+                status_to_count = {r["status"] or "-": int(r["c"]) for r in counts}
+                # average cycle (closed only)
+                avg_where_parts = where_parts + ["status='closed'"] if where_parts else ["status='closed'"]
+                avg_where = "WHERE " + " AND ".join(avg_where_parts) if avg_where_parts else ""
+                avg_row = await conn.fetchrow(
+                    f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {avg_where}"
+                )
+                avg_seconds: Optional[int] = None
+                if avg_row and avg_row["avg_s"] is not None:
+                    try:
+                        avg_seconds = int(float(avg_row["avg_s"]))
+                    except Exception:
+                        avg_seconds = None
+                return status_to_count, avg_seconds
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in _compute_stats: {conn_err}")
+            return {}, None
+        except Exception as e:
+            logger.error(f"Database error in _compute_stats: {e}")
+            return {}, None
 
     async def _top_topics(self, limit: int = 5) -> Dict[str, int]:
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             return {}
-        rows = await self.conn.fetch(
-            """
-            SELECT similarity_key, COUNT(*) AS cnt
-            FROM ticket_summaries
-            WHERE similarity_key IS NOT NULL AND similarity_key <> ''
-              AND created_at >= NOW() - INTERVAL '30 days'
-            GROUP BY similarity_key
-            ORDER BY cnt DESC, similarity_key
-            LIMIT $1
-            """,
-            int(limit),
-        )
-        topics: Dict[str, int] = {}
-        for row in rows:
-            key = row.get("similarity_key") or "-"
-            topics[key] = int(row.get("cnt") or 0)
-        return topics
+        try:
+            async with self.db.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT similarity_key, COUNT(*) AS cnt
+                    FROM ticket_summaries
+                    WHERE similarity_key IS NOT NULL AND similarity_key <> ''
+                      AND created_at >= NOW() - INTERVAL '30 days'
+                    GROUP BY similarity_key
+                    ORDER BY cnt DESC, similarity_key
+                    LIMIT $1
+                    """,
+                    int(limit),
+                )
+                topics: Dict[str, int] = {}
+                for row in rows:
+                    key = row.get("similarity_key") or "-"
+                    topics[key] = int(row.get("cnt") or 0)
+                return topics
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in _top_topics: {conn_err}")
+            return {}
+        except Exception as e:
+            logger.error(f"Database error in _top_topics: {e}")
+            return {}
 
     def _settings_get(self, scope: str, key: str, guild_id: int, fallback: Optional[int] = None):
         if self.settings:
@@ -634,12 +683,11 @@ class TicketBot(commands.Cog):
             await channel.send(embed=embed)
             
             # Register summary for FAQ detection
-            if self.conn:
+            if self.db and not self.db.is_closing():
                 try:
                     # Create a temporary view instance for the static method
                     temp_view = TicketActionView(
                         bot=self.bot,
-                        conn=self.conn,
                         ticket_id=ticket_id,
                         support_role_id=None,
                         cog=self,
@@ -670,7 +718,7 @@ class TicketBot(commands.Cog):
         return None
 
     def _get_log_channel_id(self, guild_id: int) -> int:
-        value = self._settings_get("system", "log_channel_id", guild_id, 0)  # Moet geconfigureerd worden via /config system set_log_channel
+        value = self._settings_get("system", "log_channel_id", guild_id, 0)  # Must be configured via /config system set_log_channel
         return int(value) if value is not None else 0
 
     def _get_ticket_category_id(self, guild_id: int) -> Optional[int]:
@@ -723,7 +771,7 @@ class TicketBot(commands.Cog):
         topic: Optional[str] = None,
         summary: Optional[str] = None,
     ) -> None:
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             return
 
         counts, avg_seconds = await self._compute_stats("all", None)
@@ -761,18 +809,24 @@ class TicketBot(commands.Cog):
         counts_json = json.dumps(counts)
         topics_json = json.dumps(topics_payload) if topics_payload is not None else None
 
-        await self.conn.execute(
-            """
-            INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by, topics)
-            VALUES ($1::jsonb, $2, $3::jsonb, $4, $5, CASE WHEN $6 IS NULL THEN NULL ELSE $6::jsonb END)
-            """,
-            snapshot_json,
-            scope,
-            counts_json,
-            avg_seconds,
-            int(triggered_by),
-            topics_json,
-        )
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by, topics)
+                    VALUES ($1::jsonb, $2, $3::jsonb, $4, $5, CASE WHEN $6 IS NULL THEN NULL ELSE $6::jsonb END)
+                    """,
+                    snapshot_json,
+                    scope,
+                    counts_json,
+                    avg_seconds,
+                    int(triggered_by),
+                    topics_json,
+                )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in capture_metrics_snapshot: {conn_err}")
+        except Exception as e:
+            logger.error(f"Database error in capture_metrics_snapshot: {e}")
 
         try:
             await self.send_log_embed(
@@ -824,15 +878,19 @@ class TicketBot(commands.Cog):
                     description=f"by={interaction.user.id} • scope={self.scope} • counts={counts}",
                     level="info",
                 )
-                if self.cog.conn:
-                    await self.cog.conn.execute(
-                        "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1::jsonb,$2,$3::jsonb,$4,$5)",
-                        json.dumps({"counts": counts, "avg": avg_seconds, "scope": self.scope}),
-                        self.scope,
-                        json.dumps(counts),
-                        avg_seconds,
-                        int(interaction.user.id)
-                    )
+                if self.cog.db and not self.cog.db.is_closing():
+                    try:
+                        async with self.cog.db.acquire() as conn:
+                            await conn.execute(
+                                "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1::jsonb,$2,$3::jsonb,$4,$5)",
+                                json.dumps({"counts": counts, "avg": avg_seconds, "scope": self.scope}),
+                                self.scope,
+                                json.dumps(counts),
+                                avg_seconds,
+                                int(interaction.user.id)
+                            )
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -860,7 +918,7 @@ class TicketBot(commands.Cog):
             return
         await interaction.response.defer(ephemeral=not public)
 
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             await interaction.followup.send("❌ Database not connected.", ephemeral=not public)
             return
         counts, avg_seconds = await self._compute_stats("all", None)
@@ -873,14 +931,15 @@ class TicketBot(commands.Cog):
             level="info",
         )
         try:
-            await self.conn.execute(
-                "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1::jsonb,$2,$3::jsonb,$4,$5)",
-                json.dumps({"counts": counts, "avg": avg_seconds, "scope": "all"}),
-                "all",
-                json.dumps(counts),
-                avg_seconds,
-                int(interaction.user.id)
-            )
+            async with self.db.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1::jsonb,$2,$3::jsonb,$4,$5)",
+                    json.dumps({"counts": counts, "avg": avg_seconds, "scope": "all"}),
+                    "all",
+                    json.dumps(counts),
+                    avg_seconds,
+                    int(interaction.user.id)
+                )
         except Exception:
             pass
 
@@ -911,7 +970,7 @@ class TicketBot(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             await interaction.followup.send("❌ Database not connected.", ephemeral=True)
             return
 
@@ -921,37 +980,48 @@ class TicketBot(commands.Cog):
 
         new_status = status.value
         try:
-            if new_status == "escalated":
-                await self.conn.execute(
-                    "UPDATE support_tickets SET status=$1, escalated_to=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
-                    new_status,
-                    int(escalate_to.id) if escalate_to else None,
-                    id,
-                    interaction.guild.id,
-                )
-            elif new_status == "claimed":
-                await self.conn.execute(
-                    "UPDATE support_tickets SET status=$1, updated_at=NOW(), claimed_by=COALESCE(claimed_by,$2), claimed_at=COALESCE(claimed_at,NOW()) WHERE id=$3 AND guild_id=$4",
-                    new_status,
-                    int(interaction.user.id),
-                    id,
-                    interaction.guild.id,
-                )
-            elif new_status == "archived":
-                await self.conn.execute(
-                    "UPDATE support_tickets SET status=$1, archived_at=NOW(), archived_by=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
-                    new_status,
-                    int(interaction.user.id),
-                    id,
-                    interaction.guild.id,
-                )
-            else:
-                await self.conn.execute(
-                    "UPDATE support_tickets SET status=$1, updated_at=NOW() WHERE id=$2 AND guild_id=$3",
-                    new_status,
-                    id,
-                    interaction.guild.id,
-                )
+            async with self.db.acquire() as conn:
+                if new_status == "escalated":
+                    await conn.execute(
+                        "UPDATE support_tickets SET status=$1, escalated_to=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
+                        new_status,
+                        int(escalate_to.id) if escalate_to else None,
+                        id,
+                        interaction.guild.id,
+                    )
+                elif new_status == "claimed":
+                    await conn.execute(
+                        "UPDATE support_tickets SET status=$1, updated_at=NOW(), claimed_by=COALESCE(claimed_by,$2), claimed_at=COALESCE(claimed_at,NOW()) WHERE id=$3 AND guild_id=$4",
+                        new_status,
+                        int(interaction.user.id),
+                        id,
+                        interaction.guild.id,
+                    )
+                elif new_status == "archived":
+                    await conn.execute(
+                        "UPDATE support_tickets SET status=$1, archived_at=NOW(), archived_by=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
+                        new_status,
+                        int(interaction.user.id),
+                        id,
+                        interaction.guild.id,
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE support_tickets SET status=$1, updated_at=NOW() WHERE id=$2 AND guild_id=$3",
+                        new_status,
+                        id,
+                        interaction.guild.id,
+                    )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
+            logger.warning(f"Database connection error: {conn_err}")
+            await interaction.followup.send("❌ Database connection error. Please try again later.", ephemeral=True)
+            return
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to update status: {e}", ephemeral=True)
             return
@@ -974,10 +1044,9 @@ class TicketBot(commands.Cog):
 
 
 class TicketActionView(discord.ui.View):
-    def __init__(self, bot: commands.Bot, conn: asyncpg.Connection, ticket_id: int, support_role_id: Optional[int] = None, cog: Optional["TicketBot"] = None, timeout: Optional[float] = None):
+    def __init__(self, bot: commands.Bot, ticket_id: int, support_role_id: Optional[int] = None, cog: Optional["TicketBot"] = None, timeout: Optional[float] = None):
         super().__init__(timeout=timeout)
         self.bot = bot
-        self.conn = conn
         self.ticket_id = ticket_id
         self.support_role_id = support_role_id
         self.cog = cog
@@ -995,7 +1064,7 @@ class TicketActionView(discord.ui.View):
             color = color_map.get(level, 0x3498db)
             embed = discord.Embed(title=title, description=desc, color=color)
             embed.set_footer(text="ticketbot")
-            channel = self.bot.get_channel(0)  # Moet geconfigureerd worden via /config system set_log_channel
+            channel = self.bot.get_channel(0)  # Must be configured via /config system set_log_channel
             if channel and hasattr(channel, "send"):
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
@@ -1069,64 +1138,71 @@ class TicketActionView(discord.ui.View):
     @staticmethod
     async def _register_summary(view_instance, ticket_id: int, summary: str) -> Optional[str]:
         try:
-            key = self._compute_similarity_key(summary)
+            if not view_instance.cog or not view_instance.cog.db or view_instance.cog.db.is_closing():
+                return None
+            key = TicketActionView._compute_similarity_key(summary)
             since = datetime.utcnow() - timedelta(days=7)
-            # Insert summary
-            await view_instance.conn.execute(
-                "INSERT INTO ticket_summaries (ticket_id, summary, similarity_key) VALUES ($1, $2, $3)",
-                int(ticket_id), summary, key
-            )
-            # Check recent similar summaries
-            rows = await view_instance.conn.fetch(
-                """
-                SELECT id FROM ticket_summaries
-                WHERE similarity_key = $1 AND created_at >= $2
-                ORDER BY created_at DESC
-                LIMIT 30
-                """,
-                key, since
-            )
-            if len(rows) >= 3:
-                # Propose FAQ to admins via log channel with a button
-                embed = discord.Embed(
-                    title="💡 Repeated Ticket Pattern Detected",
-                    description=(
-                        "We detected multiple tickets with a similar topic in the last 7 days.\n\n"
-                        f"Similarity key: `{key}`\n"
-                        f"Occurrences: **{len(rows)}**\n\n"
-                        "Consider adding an FAQ entry for this topic."
-                    ),
-                    color=discord.Color.gold(),
+            async with view_instance.cog.db.acquire() as conn:
+                # Insert summary
+                await conn.execute(
+                    "INSERT INTO ticket_summaries (ticket_id, summary, similarity_key) VALUES ($1, $2, $3)",
+                    int(ticket_id), summary, key
                 )
-                # Show a sample of the latest summary in the footer to aid admins
-                sample_preview = (summary[:180] + "…") if len(summary) > 180 else summary
-                embed.set_footer(text=f"Sample: {sample_preview}")
-                # Lightweight view with a placeholder button
-                view = discord.ui.View()
+                # Check recent similar summaries
+                rows = await conn.fetch(
+                    """
+                    SELECT id FROM ticket_summaries
+                    WHERE similarity_key = $1 AND created_at >= $2
+                    ORDER BY created_at DESC
+                    LIMIT 30
+                    """,
+                    key, since
+                )
+                if len(rows) >= 3:
+                    # Propose FAQ to admins via log channel with a button
+                    embed = discord.Embed(
+                        title="💡 Repeated Ticket Pattern Detected",
+                        description=(
+                            "We detected multiple tickets with a similar topic in the last 7 days.\n\n"
+                            f"Similarity key: `{key}`\n"
+                            f"Occurrences: **{len(rows)}**\n\n"
+                            "Consider adding an FAQ entry for this topic."
+                        ),
+                        color=discord.Color.gold(),
+                    )
+                    # Show a sample of the latest summary in the footer to aid admins
+                    sample_preview = (summary[:180] + "…") if len(summary) > 180 else summary
+                    embed.set_footer(text=f"Sample: {sample_preview}")
+                    # Lightweight view with a placeholder button
+                    view = discord.ui.View()
 
-                async def add_faq_callback(interaction: discord.Interaction) -> None:
-                    if not await is_owner_or_admin_interaction(interaction):
-                        await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
-                        return
-                    try:
-                        # Insert FAQ entry
-                        await view_instance.conn.execute(
-                            "INSERT INTO faq_entries (similarity_key, summary, created_by) VALUES ($1, $2, $3)",
-                            key, summary, int(interaction.user.id)
-                        )
-                        await interaction.response.send_message("✅ FAQ entry added.", ephemeral=True)
-                        await view_instance._log(
-                            interaction,
-                            title="✅ FAQ entry created",
-                            desc=(
-                                f"Key: `{key}`\n"
-                                f"By: {interaction.user} ({interaction.user.id})\n"
-                                f"Snippet: {sample_preview}"
-                            ),
-                            level="success",
-                        )
-                    except Exception as e:
-                        await interaction.response.send_message(f"❌ Failed to add FAQ: {e}", ephemeral=True)
+                    async def add_faq_callback(interaction: discord.Interaction) -> None:
+                        if not await is_owner_or_admin_interaction(interaction):
+                            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+                            return
+                        if not view_instance.cog or not view_instance.cog.db or view_instance.cog.db.is_closing():
+                            await interaction.response.send_message("❌ Database not available.", ephemeral=True)
+                            return
+                        try:
+                            async with view_instance.cog.db.acquire() as conn:
+                                # Insert FAQ entry
+                                await conn.execute(
+                                    "INSERT INTO faq_entries (similarity_key, summary, created_by) VALUES ($1, $2, $3)",
+                                    key, summary, int(interaction.user.id)
+                                )
+                            await interaction.response.send_message("✅ FAQ entry added.", ephemeral=True)
+                            await view_instance._log(
+                                interaction,
+                                title="✅ FAQ entry created",
+                                desc=(
+                                    f"Key: `{key}`\n"
+                                    f"By: {interaction.user} ({interaction.user.id})\n"
+                                    f"Snippet: {sample_preview}"
+                                ),
+                                level="success",
+                            )
+                        except Exception as e:
+                            await interaction.response.send_message(f"❌ Failed to add FAQ: {e}", ephemeral=True)
 
                 btn = discord.ui.Button(label="Add to FAQ", style=discord.ButtonStyle.success)
                 btn.callback = add_faq_callback  # type: ignore
@@ -1153,17 +1229,25 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te claimen.", ephemeral=True)
             return
+        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+            await interaction.response.send_message("❌ Database not available.", ephemeral=True)
+            return
         try:
-            row = await self.conn.fetchrow(
-                """
-                UPDATE support_tickets
-                SET claimed_by = $1, claimed_at = NOW(), updated_at = NOW()
-                WHERE id = $2 AND (claimed_by IS NULL OR claimed_by = 0) AND status = 'open'
-                RETURNING id
-                """,
-                int(interaction.user.id),
-                int(self.ticket_id),
-            )
+            async with self.cog.db.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    UPDATE support_tickets
+                    SET claimed_by = $1, claimed_at = NOW(), updated_at = NOW()
+                    WHERE id = $2 AND (claimed_by IS NULL OR claimed_by = 0) AND status = 'open'
+                    RETURNING id
+                    """,
+                    int(interaction.user.id),
+                    int(self.ticket_id),
+                )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in claim_button: {conn_err}")
+            await interaction.response.send_message("❌ Database connection error. Please try again later.", ephemeral=True)
+            return
         except Exception as e:
             await interaction.response.send_message(f"❌ Claim failed: {e}", ephemeral=True)
             return
@@ -1194,17 +1278,25 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te sluiten.", ephemeral=True)
             return
+        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+            await interaction.response.send_message("❌ Database not available.", ephemeral=True)
+            return
 
         try:
-            row = await self.conn.fetchrow(
-                """
-                UPDATE support_tickets
-                SET status = 'closed', updated_at = NOW()
-                WHERE id = $1 AND status <> 'closed'
-                RETURNING id, user_id, channel_id
-                """,
-                int(self.ticket_id),
-            )
+            async with self.cog.db.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    UPDATE support_tickets
+                    SET status = 'closed', updated_at = NOW()
+                    WHERE id = $1 AND status <> 'closed'
+                    RETURNING id, user_id, channel_id
+                    """,
+                    int(self.ticket_id),
+                )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in close_button: {conn_err}")
+            await interaction.response.send_message("❌ Database connection error. Please try again later.", ephemeral=True)
+            return
         except Exception as e:
             await interaction.response.send_message(f"❌ Close failed: {e}", ephemeral=True)
             return
@@ -1283,17 +1375,27 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
-        await self.conn.execute(
-            "UPDATE support_tickets SET status='waiting_for_user', updated_at = NOW() WHERE id = $1",
-            int(self.ticket_id),
-        )
-        await interaction.response.send_message("✅ Status set to waiting_for_user.", ephemeral=True)
-        await self._log(interaction, "🕒 Ticket status", f"id={self.ticket_id} → waiting_for_user")
+        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+            await interaction.response.send_message("❌ Database not available.", ephemeral=True)
+            return
+        try:
+            async with self.cog.db.acquire() as conn:
+                await conn.execute(
+                    "UPDATE support_tickets SET status='waiting_for_user', updated_at = NOW() WHERE id = $1",
+                    int(self.ticket_id),
+                )
+            await interaction.response.send_message("✅ Status set to waiting_for_user.", ephemeral=True)
+            await self._log(interaction, "🕒 Ticket status", f"id={self.ticket_id} → waiting_for_user")
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to update status: {e}", ephemeral=True)
 
     @discord.ui.button(label="🚩 Escalate", style=discord.ButtonStyle.secondary, custom_id="ticket_escalate_btn")
     async def escalate_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            return
+        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+            await interaction.response.send_message("❌ Database not available.", ephemeral=True)
             return
         escalated_to = None
         if self.cog and interaction.guild:
@@ -1301,13 +1403,17 @@ class TicketActionView(discord.ui.View):
         if escalated_to is None:
             target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
             escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None
-        await self.conn.execute(
-            "UPDATE support_tickets SET status='escalated', escalated_to=$1, updated_at = NOW() WHERE id = $2",
-            escalated_to,
-            int(self.ticket_id),
-        )
-        await interaction.response.send_message("✅ Ticket escalated.", ephemeral=True)
-        await self._log(interaction, "🚩 Ticket escalated", f"id={self.ticket_id} • to={escalated_to or '-'}")
+        try:
+            async with self.cog.db.acquire() as conn:
+                await conn.execute(
+                    "UPDATE support_tickets SET status='escalated', escalated_to=$1, updated_at = NOW() WHERE id = $2",
+                    escalated_to,
+                    int(self.ticket_id),
+                )
+            await interaction.response.send_message("✅ Ticket escalated.", ephemeral=True)
+            await self._log(interaction, "🚩 Ticket escalated", f"id={self.ticket_id} • to={escalated_to or '-'}")
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to escalate: {e}", ephemeral=True)
 
     @discord.ui.button(label="🗄 Archive ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_archive_btn", disabled=True)
     async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -1315,18 +1421,22 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
+        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+            await interaction.response.send_message("❌ Database not available.", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
 
         try:
-            await self.conn.execute(
-                """
-                UPDATE support_tickets
-                SET status = 'archived', archived_at = NOW(), archived_by = $1, updated_at = NOW()
-                WHERE id = $2
-                """,
-                int(interaction.user.id),
-                int(self.ticket_id),
-            )
+            async with self.cog.db.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE support_tickets
+                    SET status = 'archived', archived_at = NOW(), archived_by = $1, updated_at = NOW()
+                    WHERE id = $2
+                    """,
+                    int(interaction.user.id),
+                    int(self.ticket_id),
+                )
         except Exception as e:
             await interaction.followup.send(f"❌ Archiving failed: {e}", ephemeral=True)
             return
@@ -1401,7 +1511,7 @@ class TicketOpenView(discord.ui.View):
     @tasks.loop(hours=24)
     async def check_idle_tickets(self) -> None:
         """Check for idle tickets and send reminders or auto-close."""
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             return
         
         try:
@@ -1409,32 +1519,33 @@ class TicketOpenView(discord.ui.View):
             idle_threshold = self._settings_get("ticketbot", "idle_days_threshold", 0, 5) or 5
             auto_close_threshold = self._settings_get("ticketbot", "auto_close_days_threshold", 0, 14) or 14
             
-            # Query idle tickets (5+ days, not closed/archived, but not old enough for auto-close)
-            idle_tickets = await self.conn.fetch(
-                """
-                SELECT id, guild_id, user_id, username, channel_id, description, updated_at
-                FROM support_tickets
-                WHERE status IN ('open', 'claimed', 'waiting_for_user')
-                  AND updated_at < NOW() - ($1 || ' days')::INTERVAL
-                  AND updated_at >= NOW() - ($2 || ' days')::INTERVAL
-                ORDER BY updated_at ASC
-                """,
-                str(idle_threshold), str(auto_close_threshold)
-            )
+            async with self.db.acquire() as conn:
+                # Query idle tickets (5+ days, not closed/archived, but not old enough for auto-close)
+                idle_tickets = await conn.fetch(
+                    """
+                    SELECT id, guild_id, user_id, username, channel_id, description, updated_at
+                    FROM support_tickets
+                    WHERE status IN ('open', 'claimed', 'waiting_for_user')
+                      AND updated_at < NOW() - ($1 || ' days')::INTERVAL
+                      AND updated_at >= NOW() - ($2 || ' days')::INTERVAL
+                    ORDER BY updated_at ASC
+                    """,
+                    str(idle_threshold), str(auto_close_threshold)
+                )
+                
+                # Query very old tickets (14+ days, auto-close)
+                old_tickets = await conn.fetch(
+                    """
+                    SELECT id, guild_id, user_id, username, channel_id, description, updated_at
+                    FROM support_tickets
+                    WHERE status IN ('open', 'claimed', 'waiting_for_user')
+                      AND updated_at < NOW() - ($1 || ' days')::INTERVAL
+                    ORDER BY updated_at ASC
+                    """,
+                    str(auto_close_threshold)
+                )
             
-            # Query very old tickets (14+ days, auto-close)
-            old_tickets = await self.conn.fetch(
-                """
-                SELECT id, guild_id, user_id, username, channel_id, description, updated_at
-                FROM support_tickets
-                WHERE status IN ('open', 'claimed', 'waiting_for_user')
-                  AND updated_at < NOW() - ($1 || ' days')::INTERVAL
-                ORDER BY updated_at ASC
-                """,
-                str(auto_close_threshold)
-            )
-            
-            # Process idle tickets (send DM reminders)
+            # Process idle tickets (send DM reminders) - queries already executed, process results
             for ticket in idle_tickets:
                 try:
                     guild_id = ticket["guild_id"]
@@ -1501,14 +1612,19 @@ class TicketOpenView(discord.ui.View):
                     channel_id = ticket.get("channel_id")
                     
                     # Auto-close the ticket
-                    await self.conn.execute(
-                        """
-                        UPDATE support_tickets
-                        SET status = 'closed', updated_at = NOW()
-                        WHERE id = $1 AND guild_id = $2
-                        """,
-                        ticket_id, guild_id
-                    )
+                    if self.db and not self.db.is_closing():
+                        try:
+                            async with self.db.acquire() as conn:
+                                await conn.execute(
+                                    """
+                                    UPDATE support_tickets
+                                    SET status = 'closed', updated_at = NOW()
+                                    WHERE id = $1 AND guild_id = $2
+                                    """,
+                                    ticket_id, guild_id
+                                )
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to auto-close ticket {ticket_id} in DB: {e}")
                     
                     # Get channel and post summary
                     if channel_id:
@@ -1570,7 +1686,7 @@ class TicketOpenView(discord.ui.View):
     async def before_check_idle_tickets(self):
         await self.bot.wait_until_ready()
         # Wait for database to be ready
-        while self.conn is None:
+        while self.db is None or self.db.is_closing():
             await asyncio.sleep(2)
 
 
@@ -1584,20 +1700,21 @@ class IdleTicketView(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="idle_close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not self.cog.conn:
+        if not self.cog.db or self.cog.db.is_closing():
             await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
             return
         
         try:
             # Update ticket status
-            await self.cog.conn.execute(
-                """
-                UPDATE support_tickets
-                SET status = 'closed', updated_at = NOW()
-                WHERE id = $1 AND guild_id = $2
-                """,
-                self.ticket_id, self.guild_id
-            )
+            async with self.cog.db.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE support_tickets
+                    SET status = 'closed', updated_at = NOW()
+                    WHERE id = $1 AND guild_id = $2
+                    """,
+                    self.ticket_id, self.guild_id
+                )
             
             await interaction.response.send_message(
                 f"✅ Ticket #{self.ticket_id} has been closed.",
@@ -1616,20 +1733,21 @@ class IdleTicketView(discord.ui.View):
 
     @discord.ui.button(label="Keep Open", style=discord.ButtonStyle.secondary, custom_id="idle_keep")
     async def keep_open(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not self.cog.conn:
+        if not self.cog.db or self.cog.db.is_closing():
             await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
             return
         
         try:
             # Update updated_at to reset idle timer
-            await self.cog.conn.execute(
-                """
-                UPDATE support_tickets
-                SET updated_at = NOW()
-                WHERE id = $1 AND guild_id = $2
-                """,
-                self.ticket_id, self.guild_id
-            )
+            async with self.cog.db.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE support_tickets
+                    SET updated_at = NOW()
+                    WHERE id = $1 AND guild_id = $2
+                    """,
+                    self.ticket_id, self.guild_id
+                )
             
             await interaction.response.send_message(
                 f"✅ Ticket #{self.ticket_id} will remain open. The idle timer has been reset.",
@@ -1643,6 +1761,15 @@ class IdleTicketView(discord.ui.View):
         """Called when the cog is loaded - start the idle ticket check task."""
         if not self.check_idle_tickets.is_running():
             self.check_idle_tickets.start()
+
+    async def cog_unload(self):
+        """Called when the cog is unloaded - close the database pool."""
+        if self.db:
+            try:
+                await self.db.close()
+            except Exception:
+                pass
+            self.db = None
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketBot(bot))

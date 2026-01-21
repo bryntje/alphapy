@@ -139,12 +139,15 @@ class ReminderCog(commands.Cog):
             log_database_event("DB_SETUP_ERROR", details=f"Failed to setup reminders table: {setup_e}")
             raise
 
-        logger.info("✅ Verbonden met database pool!")
+        logger.info("✅ Connected to database pool!")
         log_database_event("DB_CONNECTION_ESTABLISHED", details="Reminders database pool ready")
 
     async def _ensure_connection(self) -> bool:
-        if self.db:
+        if self.db and not self.db.is_closing():
             return True
+        if self.db and self.db.is_closing():
+            logger.debug("Reminder DB pool is closing, cannot ensure connection")
+            return False
         try:
             await self._connect_database()
             return True
@@ -369,16 +372,16 @@ class ReminderCog(commands.Cog):
         )
             rid_row = await conn.fetchrow("SELECT currval(pg_get_serial_sequence('reminders','id')) AS id")
             rid = rid_row["id"] if rid_row else None
-            logger.info(f"🟢 Reminder aangemaakt (ID={rid}): {name} @ {time_obj} days={days_list} channel={channel_id}")
+            logger.info(f"🟢 Reminder created (ID={rid}): {name} @ {time_obj} days={days_list} channel={channel_id}")
         await self.send_log_embed(
-            title="🟢 Reminder aangemaakt",
+            title="🟢 Reminder created",
             description=(
                 f"ID: `{rid}`\n"
-                f"Naam: **{name}**\n"
-                f"Kanaal: <#{channel_id}>\n"
-                f"Tijd: `{time_obj.strftime('%H:%M')}`\n"
+                f"Name: **{name}**\n"
+                f"Channel: <#{channel_id}>\n"
+                f"Time: `{time_obj.strftime('%H:%M')}`\n"
                 f"Call time: `{call_time_obj.strftime('%H:%M')}`\n"
-                f"Dagen: `{', '.join(days_list) if days_list else '—'}`"
+                f"Days: `{', '.join(days_list) if days_list else '—'}`"
             ),
             level="success",
             guild_id=interaction.guild.id,
@@ -412,16 +415,20 @@ class ReminderCog(commands.Cog):
 
         guild_id = interaction.guild.id
         if is_admin:
-            query = "SELECT id, name, time, days FROM reminders WHERE guild_id = $1 ORDER BY time;"
+            query = """
+                SELECT id, name, time, call_time, days, event_time, location, message, channel_id
+                FROM reminders 
+                WHERE guild_id = $1 
+                ORDER BY COALESCE(call_time, time) ASC, name ASC;
+            """
             params: List[Any] = [guild_id]
         else:
-            query = (
-                """
-                SELECT id, name, time, days FROM reminders
+            query = """
+                SELECT id, name, time, call_time, days, event_time, location, message, channel_id
+                FROM reminders
                 WHERE guild_id = $1 AND (created_by = $2 OR channel_id = $3)
-                ORDER BY time;
-                """
-            )
+                ORDER BY COALESCE(call_time, time) ASC, name ASC;
+            """
             params = [guild_id, user_id, channel_id]
 
         try:
@@ -433,26 +440,153 @@ class ReminderCog(commands.Cog):
                 logger.info(f"🔍 Fetched {len(rows)} reminders ({'admin' if is_admin else 'user'})")
 
                 if not rows:
-                    await interaction.followup.send("❌ No reminders found.")
+                    embed = discord.Embed(
+                        title="📋 Active Reminders",
+                        description="No reminders found.",
+                        color=discord.Color.orange()
+                    )
+                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
-                msg_lines = [f"📋 **Actieve Reminders:**"]
-                for row in rows:
-                    # Normalize days from DB
-                    days_db = row["days"]
+                # Helper function to format days
+                def format_days(days_db: Any) -> str:
+                    """Convert day numbers/abbreviations to readable day names."""
                     if not days_db:
-                        days_list = []
-                    elif isinstance(days_db, str):
+                        return "One-off"
+                    if isinstance(days_db, str):
                         days_list = [days_db]
                     else:
                         days_list = list(days_db)
-                    days_str = ", ".join(days_list)
-                    time_str = row["time"].strftime("%H:%M") if row["time"] else "⛔"
-                    msg_lines.append(
-                        f"🔹 **{row['name']}** — ⏰ `{time_str}` op `{days_str}` (ID: `{row['id']}`)"
+                    
+                    day_names = {
+                        "0": "Monday", "1": "Tuesday", "2": "Wednesday", "3": "Thursday",
+                        "4": "Friday", "5": "Saturday", "6": "Sunday"
+                    }
+                    
+                    # Map abbreviations to numbers first
+                    day_map = {
+                        "ma": "0", "maandag": "0", "monday": "0",
+                        "di": "1", "dinsdag": "1", "tuesday": "1",
+                        "wo": "2", "woe": "2", "woensdag": "2", "wednesday": "2",
+                        "do": "3", "donderdag": "3", "thursday": "3",
+                        "vr": "4", "vrijdag": "4", "friday": "4",
+                        "za": "5", "zaterdag": "5", "saturday": "5",
+                        "zo": "6", "zondag": "6", "sunday": "6"
+                    }
+                    
+                    formatted_days = []
+                    for day in days_list:
+                        day_lower = day.lower().strip()
+                        # Try to map abbreviation to number
+                        if day_lower in day_map:
+                            day_num = day_map[day_lower]
+                        elif day_lower.isdigit() and 0 <= int(day_lower) <= 6:
+                            day_num = day_lower
+                        else:
+                            continue
+                        
+                        if day_num in day_names:
+                            formatted_days.append(day_names[day_num])
+                    
+                    if formatted_days:
+                        return ", ".join(formatted_days)
+                    return "One-off"
+
+                # Create embed
+                embed = discord.Embed(
+                    title="📋 Active Reminders",
+                    description=f"Found **{len(rows)}** reminder{'s' if len(rows) != 1 else ''}",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now(BRUSSELS_TZ)
+                )
+
+                # Group reminders by type for better organization
+                recurring_reminders = []
+                one_off_reminders = []
+                
+                for row in rows:
+                    is_one_off = not row["days"] or len(row["days"]) == 0
+                    if is_one_off:
+                        one_off_reminders.append(row)
+                    else:
+                        recurring_reminders.append(row)
+                
+                # Add recurring reminders first
+                if recurring_reminders:
+                    recurring_text = []
+                    for row in recurring_reminders[:10]:  # Limit to 10 per section
+                        # Use call_time (event time) if available, otherwise time (reminder time)
+                        display_time = row["call_time"] if row["call_time"] else row["time"]
+                        time_str = display_time.strftime("%H:%M") if display_time else "—"
+                        
+                        days_str = format_days(row["days"])
+                        location_str = f" • 📍 {row['location']}" if row.get("location") else ""
+                        
+                        # Get channel mention
+                        channel = self.bot.get_channel(row["channel_id"]) if row.get("channel_id") else None
+                        if channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
+                            channel_str = f" in {channel.mention}"
+                        else:
+                            channel_str = f" (Channel ID: {row['channel_id']})"
+                        
+                        recurring_text.append(
+                            f"**{row['name']}**\n"
+                            f"⏰ {time_str} • 📅 {days_str}{location_str}\n"
+                            f"📺 {channel_str} • ID: `{row['id']}`"
+                        )
+                    
+                    if len(recurring_reminders) > 10:
+                        recurring_text.append(f"\n*...and {len(recurring_reminders) - 10} more recurring reminders*")
+                    
+                    embed.add_field(
+                        name=f"🔄 Recurring ({len(recurring_reminders)})",
+                        value="\n\n".join(recurring_text) if recurring_text else "None",
+                        inline=False
+                    )
+                
+                # Add one-off reminders
+                if one_off_reminders:
+                    one_off_text = []
+                    for row in one_off_reminders[:10]:  # Limit to 10 per section
+                        # Use call_time (event time) if available, otherwise time (reminder time)
+                        display_time = row["call_time"] if row["call_time"] else row["time"]
+                        time_str = display_time.strftime("%H:%M") if display_time else "—"
+                        
+                        # Format event_time if available
+                        event_info = ""
+                        if row.get("event_time"):
+                            event_dt = row["event_time"]
+                            if isinstance(event_dt, datetime):
+                                event_dt = event_dt.astimezone(BRUSSELS_TZ)
+                                event_info = f" • 📅 {event_dt.strftime('%A, %B %d, %Y')}"
+                        
+                        location_str = f" • 📍 {row['location']}" if row.get("location") else ""
+                        
+                        # Get channel mention
+                        channel = self.bot.get_channel(row["channel_id"]) if row.get("channel_id") else None
+                        if channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
+                            channel_str = f" in {channel.mention}"
+                        else:
+                            channel_str = f" (Channel ID: {row['channel_id']})"
+                        
+                        one_off_text.append(
+                            f"**{row['name']}**\n"
+                            f"⏰ {time_str}{event_info}{location_str}\n"
+                            f"📺 {channel_str} • ID: `{row['id']}`"
+                        )
+                    
+                    if len(one_off_reminders) > 10:
+                        one_off_text.append(f"\n*...and {len(one_off_reminders) - 10} more one-off reminders*")
+                    
+                    embed.add_field(
+                        name=f"📌 One-off ({len(one_off_reminders)})",
+                        value="\n\n".join(one_off_text) if one_off_text else "None",
+                        inline=False
                     )
 
-                await interaction.followup.send("\n".join(msg_lines))
+                embed.set_footer(text=f"Use /reminder_edit <id> to edit or /reminder_delete <id> to delete")
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             logger.exception("Error fetching reminders")
             await interaction.followup.send(f"⚠️ Error fetching reminders: `{e}`")
@@ -485,7 +619,7 @@ class ReminderCog(commands.Cog):
 
             await conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)
         await interaction.followup.send(
-            f"🗑️ Reminder **{row['name']}** (ID: `{reminder_id}`) werd succesvol verwijderd."
+            f"🗑️ Reminder **{row['name']}** (ID: `{reminder_id}`) was successfully deleted."
         )
     
     @app_commands.command(name="reminder_edit", description="Edit an existing reminder")
@@ -724,19 +858,21 @@ class ReminderCog(commands.Cog):
         """Get reminder offset in minutes (default: 60 = 1 hour before event)."""
         if self.settings:
             try:
-                return int(self.settings.get("embedwatcher", "reminder_offset_minutes", guild_id))
-            except KeyError:
+                value = self.settings.get("embedwatcher", "reminder_offset_minutes", guild_id)
+                if value is not None:
+                    return int(value)
+            except (KeyError, TypeError, ValueError):
                 pass
         return 60  # Default: 1 hour before event
 
     @tasks.loop(seconds=60)
     async def check_reminders(self) -> None:
         if not await self._ensure_connection():
-            logger.warning("⛔ Database connection not ready.")
+            logger.debug("⛔ Database connection not ready, skipping reminder check.")
             return
 
-        if not self.db:
-            logger.warning("⛔ Database pool not available.")
+        if not self.db or self.db.is_closing():
+            logger.debug("⛔ Database pool not available or closing, skipping reminder check.")
             return
 
         now = datetime.now(BRUSSELS_TZ).replace(second=0, microsecond=0)
@@ -864,14 +1000,14 @@ class ReminderCog(commands.Cog):
             try:
                 await self.send_log_embed(
                     title="🚨 Reminder loop error",
-                    description=f"Databaseverbinding verbroken: {conn_err}",
+                    description=f"Database connection lost: {conn_err}",
                     level="error",
                 )
             except Exception:
                 pass
             return
         except Exception as e:
-            logger.exception("🚨 Reminder loop error bij ophalen gegevens")
+            logger.exception("🚨 Reminder loop error while fetching data")
             try:
                 await self.send_log_embed(
                     title="🚨 Reminder loop error",
@@ -899,14 +1035,14 @@ class ReminderCog(commands.Cog):
 
                 channel = self.bot.get_channel(int(row["channel_id"]))
                 if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-                    logger.warning(f"⚠️ Kanaal {row['channel_id']} niet gevonden voor reminder {row['id']}.")
+                    logger.warning(f"⚠️ Channel {row['channel_id']} not found for reminder {row['id']}.")
                     await self.send_log_embed(
-                        title="⚠️ Reminder kanal niet gevonden",
+                        title="⚠️ Reminder channel not found",
                         description=(
                             f"ID: `{row['id']}`\n"
-                            f"Naam: **{row['name']}**\n"
-                            f"Kanaal ID: `{row['channel_id']}`\n"
-                            f"Kanaal niet gevonden of verwijderd"
+                            f"Name: **{row['name']}**\n"
+                            f"Channel ID: `{row['channel_id']}`\n"
+                            f"Channel not found or deleted"
                         ),
                         level="warning",
                         guild_id=row["guild_id"],
@@ -957,19 +1093,19 @@ class ReminderCog(commands.Cog):
                         embed=embed,
                         allowed_mentions=discord.AllowedMentions(everyone=mention_enabled)
                     )
-                    logger.info(f"📤 Reminder verzonden (ID={row['id']}) naar kanaal {row['channel_id']}: {row['name']}")
+                    logger.info(f"📤 Reminder sent (ID={row['id']}) to channel {row['channel_id']}: {row['name']}")
                     # Format date/time for log
                     date_str = event_dt.strftime('%Y-%m-%d') if event_dt else 'N/A'
                     time_str = call_time_obj.strftime('%H:%M') if call_time_obj else 'N/A'
                     
                     await self.send_log_embed(
-                        title="📤 Reminder verzonden",
+                        title="📤 Reminder sent",
                         description=(
                             f"ID: `{row['id']}`\n"
-                            f"Naam: **{row['name']}**\n"
-                            f"Kanaal: <#{row['channel_id']}>\n"
-                            f"Datum: {date_str}\n"
-                            f"Tijd (weergave): `{time_str}`"
+                            f"Name: **{row['name']}**\n"
+                            f"Channel: <#{row['channel_id']}>\n"
+                            f"Date: {date_str}\n"
+                            f"Time (display): `{time_str}`"
                         ),
                         level="info",
                         guild_id=row["guild_id"],
@@ -984,42 +1120,42 @@ class ReminderCog(commands.Cog):
                                 row["guild_id"],
                             )
                     except Exception:
-                        logger.exception("⚠️ Kon last_sent_at niet updaten")
+                        logger.exception("⚠️ Could not update last_sent_at")
                 except discord.Forbidden:
-                    logger.warning(f"⚠️ Reminder {row['id']} kon niet verzonden worden: geen permissies in kanaal {row['channel_id']}")
+                    logger.warning(f"⚠️ Reminder {row['id']} could not be sent: no permissions in channel {row['channel_id']}")
                     await self.send_log_embed(
-                        title="⚠️ Reminder verzenden mislukt",
+                        title="⚠️ Reminder send failed",
                         description=(
                             f"ID: `{row['id']}`\n"
-                            f"Naam: **{row['name']}**\n"
-                            f"Kanaal: <#{row['channel_id']}>\n"
-                            f"Fout: Geen permissies om te verzenden in dit kanaal"
+                            f"Name: **{row['name']}**\n"
+                            f"Channel: <#{row['channel_id']}>\n"
+                            f"Error: No permissions to send in this channel"
                         ),
                         level="error",
                         guild_id=row["guild_id"],
                     )
                 except discord.NotFound:
-                    logger.warning(f"⚠️ Reminder {row['id']} kon niet verzonden worden: kanaal {row['channel_id']} niet gevonden")
+                    logger.warning(f"⚠️ Reminder {row['id']} could not be sent: channel {row['channel_id']} not found")
                     await self.send_log_embed(
-                        title="⚠️ Reminder verzenden mislukt",
+                        title="⚠️ Reminder send failed",
                         description=(
                             f"ID: `{row['id']}`\n"
-                            f"Naam: **{row['name']}**\n"
-                            f"Kanaal: <#{row['channel_id']}>\n"
-                            f"Fout: Kanaal niet gevonden (mogelijk verwijderd)"
+                            f"Name: **{row['name']}**\n"
+                            f"Channel: <#{row['channel_id']}>\n"
+                            f"Error: Channel not found (possibly deleted)"
                         ),
                         level="error",
                         guild_id=row["guild_id"],
                     )
                 except Exception as send_error:
-                    logger.exception(f"❌ Reminder {row['id']} kon niet verzonden worden: {send_error}")
+                    logger.exception(f"❌ Reminder {row['id']} could not be sent: {send_error}")
                     await self.send_log_embed(
-                        title="❌ Reminder verzenden mislukt",
+                        title="❌ Reminder send failed",
                         description=(
                             f"ID: `{row['id']}`\n"
-                            f"Naam: **{row['name']}**\n"
-                            f"Kanaal: <#{row['channel_id']}>\n"
-                            f"Fout: {str(send_error)[:200]}"
+                            f"Name: **{row['name']}**\n"
+                            f"Channel: <#{row['channel_id']}>\n"
+                            f"Error: {str(send_error)[:200]}"
                         ),
                         level="error",
                         guild_id=row["guild_id"],
@@ -1039,14 +1175,14 @@ class ReminderCog(commands.Cog):
                     if is_t0_send:
                         async with self.db.acquire() as delete_conn:
                             await delete_conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", row["id"], row["guild_id"])
-                        logger.info(f"🗑️ Reminder {row['id']} (eenmalig) verwijderd na T0-verzenden.")
+                        logger.info(f"🗑️ Reminder {row['id']} (one-off) deleted after T0 send.")
                         await self.send_log_embed(
-                            title="🗑️ Reminder verwijderd (one-off)",
+                            title="🗑️ Reminder deleted (one-off)",
                             description=(
                                 f"ID: `{row['id']}`\n"
-                                f"Naam: **{row['name']}**\n"
-                                f"Kanaal: <#{row['channel_id']}>\n"
-                                f"Verwijderd na T0 op {now.strftime('%Y-%m-%d %H:%M')}"
+                                f"Name: **{row['name']}**\n"
+                                f"Channel: <#{row['channel_id']}>\n"
+                                f"Deleted after T0 at {now.strftime('%Y-%m-%d %H:%M')}"
                             ),
                             level="warning",
                             guild_id=row["guild_id"],
@@ -1067,16 +1203,39 @@ class ReminderCog(commands.Cog):
 
 
 # Voor extern gebruik via FastAPI
-async def get_reminders_for_user(conn: asyncpg.Connection, user_id: str):
-    query = (
-        """
-        SELECT id, name, time, days, message, channel_id, created_by
-        FROM reminders
-        WHERE created_by = $1 OR created_by = '717695552669745152'
-        ORDER BY time
-        """
-    )
-    return await conn.fetch(query, user_id)
+async def get_reminders_for_user(conn: asyncpg.Connection, user_id: str, guild_id: Optional[int] = None):
+    """
+    Get reminders for a specific user.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        guild_id: Optional guild ID to filter by (for multi-guild support)
+    
+    Returns:
+        List of reminder records
+    """
+    if guild_id:
+        query = (
+            """
+            SELECT id, name, time, call_time, days, event_time, message, channel_id, created_by, location
+            FROM reminders
+            WHERE guild_id = $1 AND created_by = $2
+            ORDER BY COALESCE(call_time, time) ASC
+            """
+        )
+        return await conn.fetch(query, guild_id, user_id)
+    else:
+        # Legacy: no guild filtering (for backwards compatibility)
+        query = (
+            """
+            SELECT id, name, time, call_time, days, event_time, message, channel_id, created_by, location
+            FROM reminders
+            WHERE created_by = $1
+            ORDER BY COALESCE(call_time, time) ASC
+            """
+        )
+        return await conn.fetch(query, user_id)
 
 
 async def create_reminder(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:

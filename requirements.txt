@@ -8,5 +8,9 @@ fastapi
 uvicorn
 pytz
 pytest>=7.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.10.0
+alembic>=1.13.0
+sqlalchemy>=2.0.0
 PyJWT[crypto]
 httpx

@@ -1,25 +1,26 @@
 # 🤖 Alphapy Discord Bot
 
-Een krachtige, modulaire Discord-bot voor bewuste communities — praktische servertools gecombineerd met AI-functies voor growth coaching en kennisdeling.
+A powerful, modular Discord bot for conscious communities — practical server tools combined with AI features for growth coaching and knowledge sharing.
 
-**🔗 Verwante repositories:**
-- 🌐 **[alphapy-dashboard](https://github.com/bryntje/alphapy-dashboard)** - Next.js web interface voor configuratie
+**🔗 Related repositories:**
+- 🌐 **[alphapy-dashboard](https://github.com/bryntje/alphapy-dashboard)** - Next.js web interface for configuration
 
 ---
 
 ## 🌱 Overview
 
-**Alphapy** is een Discord bot gebouwd voor de Innersync • Alphapips community, met focus op waarde-gedreven trading workflows en persoonlijke groei.
+**Alphapy** is a Discord bot built for the Innersync • Alphapips community, focused on value-driven trading workflows and personal growth.
 
-De bot combineert essentiële Discord utilities met een optionele AI laag:
+The bot combines essential Discord utilities with an optional AI layer:
 
 - 🧘‍♂️ **Growth coaching** via `/growthcheckin`
-- 🧠 **Hybride kennis search** via `/learn_topic`
-- ✍️ **Caption generatie** via `/create_caption`
-- 🎫 **Ticket systeem** voor support
-- 📊 **Metrics & dashboards** API
-
-Modulair, schaalbaar en eenvoudig uit te breiden — met schone architectuur en duidelijke intenties.
+- 🧠 **Hybrid knowledge search** via `/learn_topic`
+- ✍️ **Caption generation** via `/create_caption`
+- 🎫 **Ticket system** for support
+- ⏰ **Smart reminders** with auto-detection from embeds
+- 📊 **Metrics & dashboards** API with command analytics
+- 🔄 **Database migrations** with Alembic
+- 🧪 **Test infrastructure** with pytest
 
 ---
 
@@ -28,20 +29,30 @@ Modulair, schaalbaar en eenvoudig uit te breiden — met schone architectuur en 
 ```plaintext
 alphapy/
 ├── bot.py                # Main Discord bot runner
-├── api.py                # FastAPI server voor metrics/dashboard API
-├── cogs/                 # Bot command modules (28 commands)
+├── api.py                # FastAPI server for metrics/dashboard API
+├── cogs/                 # Bot command modules (30+ commands)
 │   ├── growth.py         # AI growth coaching (/growthcheckin)
 │   ├── learn.py          # Hybrid knowledge search (/learn_topic)
 │   ├── ticketbot.py      # Support ticket system
-│   ├── reminders.py      # Scheduled reminders
-│   └── ...               # 24 andere commands
-├── utils/                # Core utilities (12 modules)
+│   ├── reminders.py      # Scheduled reminders with edit support
+│   ├── embed_watcher.py  # Auto-reminder detection from embeds
+│   ├── migrations.py     # Database migration management
+│   └── ...               # 24+ other commands
+├── utils/                # Core utilities (13 modules)
 │   ├── supabase_client.py # Database connectivity
 │   ├── runtime_metrics.py # Live bot metrics
+│   ├── command_tracker.py # Command usage analytics
 │   └── ...               # Logging, timezone, quiz state, etc.
 ├── gpt/                  # AI functionality
-│   ├── helpers.py        # GPT API calls + logging
-│   └── dataset_loader.py # Content loading voor learn_topic
+│   ├── helpers.py        # GPT API calls + retry queue
+│   └── dataset_loader.py # Content loading for learn_topic
+├── tests/                # Test suite
+│   ├── test_embed_watcher_parsing.py
+│   ├── test_reminder_parsing.py
+│   └── conftest.py       # Test fixtures
+├── alembic/              # Database migrations
+│   ├── versions/         # Migration files
+│   └── env.py            # Alembic configuration
 ├── data/prompts/         # Local knowledge base (.md files)
 ├── webhooks/             # Supabase webhooks
 ├── docs/                 # Documentation
@@ -50,16 +61,17 @@ alphapy/
 └── .github/workflows/    # CI/CD pipelines
 ```
 
-**🎯 Schone scheiding:** Bot logica ↔ Web interface
+**🎯 Clean separation:** Bot logic ↔ Web interface ↔ Database
 
 ---
 
 ## 🚀 Installation
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.9+
 - Discord Bot Token
-- Supabase project (voor database)
+- PostgreSQL database (via Supabase or standalone)
+- (Optional) OpenAI/Grok API key for AI features
 
 ### Setup Steps
 
@@ -74,27 +86,49 @@ cd alphapy
 pip install -r requirements.txt
 ```
 
-3. **Configureer de bot:**
+3. **Configure the bot:**
 ```bash
-# Kopieer environment template
+# Copy environment template
 cp .env.example .env
 
-# Bewerk .env met je credentials:
-# - DISCORD_TOKEN=your_bot_token
-# - SUPABASE_URL=your_supabase_url
-# - SUPABASE_ANON_KEY=your_anon_key
-# - SUPABASE_SERVICE_ROLE_KEY=your_service_key
+# Edit .env with your credentials:
+# - BOT_TOKEN=your_bot_token
+# - DATABASE_URL=postgresql://user:pass@host:port/database
+# - GROK_API_KEY=your_grok_key (or OPENAI_API_KEY)
+# - (Optional) API_KEY=your_api_key
 ```
 
-4. **Run de bot:**
+4. **Run database migrations (if needed):**
+```bash
+# For existing databases, mark baseline as applied:
+alembic stamp head
+
+# For new databases, apply all migrations:
+alembic upgrade head
+```
+
+5. **Run the bot:**
 ```bash
 python bot.py
 ```
 
+### 🧪 Running Tests
+```bash
+# Install test dependencies
+pip install -r requirements.txt
+
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_embed_watcher_parsing.py -v
+```
+
 ### 🚀 Deployment
-- **Lokale development:** `python bot.py`
-- **Railway:** Configureer een Python service die `python bot.py` draait
-- **Environment variables:** Alle vars uit `.env`
+- **Local development:** `python bot.py`
+- **Railway:** Configure a Python service running `python bot.py`
+- **Environment variables:** All vars from `.env`
+- **Database migrations:** Run `alembic upgrade head` on deployment
 
 ---
 
@@ -171,31 +205,72 @@ python bot.py
 
 ---
 
-## 🛣️ Roadmap (Tickets)
+## 🧪 Testing
 
-- `/faq` command
-  - `/faq list` to show recent/pinned entries
-  - `/faq view <id|keyword>` to show a specific entry
-  - Optional `/faq search <query>` (keyword match)
-- Tests
-  - Unit tests for summary prompt builder and storage
-  - Interaction tests for claim/close/permissions
-- CI (future)
-  - Lightweight migration check (ensure tables/columns exist)
-  - Lint and type checks on PRs
+The project includes comprehensive test coverage:
+
+- **Unit tests** for embed parsing (`tests/test_embed_watcher_parsing.py`)
+- **Unit tests** for reminder logic (`tests/test_reminder_parsing.py`)
+- **Test fixtures** for Discord objects and database mocks (`tests/conftest.py`)
+- **53 tests** covering parsing, timing, and edge cases
+
+Run tests with:
+```bash
+pytest tests/ -v
+```
+
+## 🔄 Database Migrations
+
+The project uses [Alembic](https://alembic.sqlalchemy.org/) for database schema management:
+
+- **Baseline migration** (`001_initial_schema.py`) documents all existing tables
+- **Migration commands** via `/migrate` and `/migrate_status` Discord commands
+- **Migration guide** in `docs/migrations.md`
+
+See [docs/migrations.md](docs/migrations.md) for complete migration workflow.
+
+## 📊 Analytics & Monitoring
+
+### Command Usage Analytics
+- All commands are automatically tracked in `audit_logs` table
+- View top commands via `/top-commands` API endpoint
+- Command statistics included in dashboard metrics
+
+### Health Monitoring
+- Enhanced `/api/health` endpoint with detailed metrics
+- Health check history stored in `health_check_history` table
+- Historical trends available via `/api/health/history`
+
+### Telemetry
+- Background telemetry ingest job writes metrics to Supabase every 30-60 seconds
+- Real-time bot status, latency, throughput, error rates
+- Integrated with Mind dashboard for monitoring
 
 ---
 
 ## 🌐 API Endpoints
 
-De bot bevat een ingebouwde FastAPI server voor metrics en health checks:
+The bot includes a FastAPI server for metrics, health checks, and analytics:
 
-- `GET /health` – JSON health probe met uptime, database status
-- `GET /api/dashboard/metrics` – Live bot metrics (latency, guilds, commands)
-- `GET /export_tickets` – CSV export van tickets
-- `GET /export_faq` – CSV export van FAQ entries
+### Health & Status
+- `GET /api/health` – Enhanced health probe with uptime, database status, guild count, command usage, GPT status
+- `GET /api/health/history` – Historical health check data for trend analysis
 
-**⚠️ Belangrijk:** Voor de **volledige web dashboard** (grafieken, configuratie UI), zie:
+### Metrics & Analytics
+- `GET /api/dashboard/metrics` – Live bot metrics (latency, guilds, commands, GPT stats, reminders, tickets)
+- `GET /top-commands` – Command usage analytics (top commands by usage, filterable by guild and time period)
+
+### Reminder Management
+- `GET /api/reminders` – List reminders for a user (requires API key + `X-User-Id`)
+- `POST /api/reminders` – Create a reminder (requires API key + `X-User-Id`)
+- `PUT /api/reminders/{id}` – Update a reminder (requires API key + `X-User-Id`)
+- `DELETE /api/reminders/{id}` – Delete a reminder (requires API key + `X-User-Id`)
+
+### Exports
+- `GET /export_tickets` – CSV export of tickets
+- `GET /export_faq` – CSV export of FAQ entries
+
+**⚠️ Important:** For the **full web dashboard** (charts, configuration UI), see:
 **👉 [alphapy-dashboard repository](https://github.com/bryntje/alphapy-dashboard)**
 
 ### Environment Variables
@@ -221,17 +296,21 @@ API_KEY=optional_internal_key
 │   alphapy       │    │ alphapy-dashboard │
 │   (Discord Bot) │    │  (Next.js Web)   │
 ├─────────────────┤    ├──────────────────┤
-│ • 28 Commands   │    │ • Config UI      │
+│ • 30+ Commands  │    │ • Config UI      │
 │ • AI Features   │◄──►│ • Live Metrics   │
 │ • Ticket System │    │ • Admin Panel    │
-│ • Database      │    │ • Charts         │
-│ • Webhooks      │    │ • API Proxy      │
+│ • Reminders     │    │ • Charts         │
+│ • Analytics     │    │ • API Proxy      │
+│ • Migrations    │    │                  │
+│ • Tests         │    │                  │
+│ • Database      │    │                  │
+│ • Webhooks      │    │                  │
 └─────────────────┘    └──────────────────┘
         │                       │
         └────── Supabase ───────┘
 ```
 
-**Schone scheiding:** Bot logica ↔ Web interface ↔ Database
+**Clean separation:** Bot logic ↔ Web interface ↔ Database
 
 ## 🤝 Contributing
 
@@ -320,7 +399,10 @@ Use this quick checklist after adding the bot to a new server to configure it pr
 
 - Start the bot and watch the process logs; you should see:
   - ✅ "DB pool created"
-  - ✅ "✅ Bot is succesvol opgestart en verbonden met X server(s)!"
+  - ✅ "✅ audit_logs table created/verified"
+  - ✅ "✅ health_check_history table created/verified"
+  - ✅ "✅ Command tracker: Database pool set"
+  - ✅ "Bot has successfully started and connected to X server(s)!"
   - ✅ Guild enumeration with server names and IDs
 
 ### Testing Functionality
@@ -331,8 +413,9 @@ Use this quick checklist after adding the bot to a new server to configure it pr
    - Check `/config system show` to verify channel settings
 
 2) **Manual reminder test**
-   - Use `/reminder add` command
+   - Use `/add_reminder` command
    - Verify reminder appears in list and triggers at correct time
+   - Test `/reminder_edit` to modify existing reminders
 
 3) **Import functionality test**
    - Use `/import_onboarding` and `/import_invites` commands (owner only)
