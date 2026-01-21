@@ -4,6 +4,89 @@ All notable releases of Alphapy will be documented in this file.
 
 ---
 
+## [2.0.0] - 2026-01-22 - "Lifecycle Manager"
+
+### 🎉 Major Feature: Centralized Lifecycle Management & Phased Startup/Shutdown
+
+This release introduces a complete refactoring of bot startup and shutdown sequences with phased initialization, centralized resource management, and comprehensive security enhancements.
+
+#### What's New
+- **Lifecycle Manager (`utils/lifecycle.py`):**
+  - `StartupManager` with 6-phase startup sequence: Database → Settings → Cogs → Command Sync → Background Tasks → Ready
+  - `ShutdownManager` with 4-phase shutdown sequence: Cancel Tasks → Unload Cogs → Close Pools → Final Cleanup
+  - Reconnect handling with light resync phase (only guild-only commands if intents missing)
+  - Humorous logging: "haha bot dropped the call, morgen lachen we er weer mee"
+  - Phase-by-phase logging for easier debugging
+- **Centralized Database Pool Creation:**
+  - `utils/db_helpers.create_db_pool()` with automatic pool registry
+  - All 15 cogs now use centralized pool creation (ticketbot, reminders, embed_watcher, faq, onboarding, dataquery, status, exports, inviteboard, gdpr, importdata, importinvite)
+  - Consistent pool configuration across all cogs
+  - Automatic cleanup via `close_all_pools()` during shutdown
+- **Input Sanitization & Security:**
+  - Centralized sanitization utility (`utils/sanitizer.py`) for protecting against injection attacks
+  - `escape_markdown()`, `strip_mentions()`, `url_filter()`, `safe_embed_text()`, `safe_prompt()`, `safe_log_message()`
+  - Applied sanitization to all user input flows (reminders, tickets, FAQ, onboarding, GPT prompts)
+  - Comprehensive test suite with 50+ parametrized tests
+- **Memory Leak Fixes & Resource Management:**
+  - Command tracker batching with in-memory queue (max 10k entries)
+  - Guild settings LRU cache with max 500 entries
+  - IP rate limits cleanup with max 1000 entries
+  - Command stats TTL cache (30-second TTL, max 50 entries)
+  - Sync cooldowns cleanup (every 10 minutes, max 500 entries)
+  - Ticket bot cooldowns cleanup (max age 1 hour, max 1000 entries)
+  - Cache size monitoring via `CacheMetrics` in dashboard endpoint
+- **Command Tree Sync Refactoring:**
+  - Centralized command sync utility (`utils/command_sync.py`) with cooldown protection
+  - Automatic sync on bot startup (global once, then guild-only per guild in parallel)
+  - Automatic sync when bot joins new guilds
+  - Cooldown tracking: 60 minutes for global syncs, 30 minutes for per-guild syncs
+  - Rate limit protection with graceful error handling
+- **Rate Limiting & Abuse Prevention:**
+  - Command cooldowns for high-risk operations (`/add_reminder`, `/learn_topic`, `/create_caption`, `/growthcheckin`, `/leaderhelp`)
+  - FastAPI IP-based rate limiting middleware (30 reads/min, 10 writes/min per IP)
+  - In-memory cooldown for ticket "Suggest reply" button
+
+#### Technical Improvements
+- **Startup/Shutdown Improvements:**
+  - Fixed "Known guilds: 0" logging issue - guilds load after connect, now shows debug message if not yet available
+  - Fixed python-dotenv warning about empty lines in .env file - warnings now suppressed
+  - Added shard ID logging - shows debug message for single-shard bots, ready for future multi-shard support
+- **Dependency Ordering:**
+  - SettingsService initialized before cogs
+  - Cogs loaded before command sync
+  - Background tasks started after all initialization
+- **Resource Cleanup:**
+  - All database pools properly closed during shutdown
+  - Background tasks cancelled with timeouts
+  - Cogs unloaded in reverse order of loading
+
+#### Bug Fixes
+- **Race Conditions:**
+  - Eliminated DB pool race conditions - sequential phases ensure dependencies are ready
+  - Fixed SettingsService dependency - guaranteed initialization before cog `__init__`
+  - Fixed command sync timing - sync happens after cogs are fully loaded
+- **Double Sync:**
+  - Explicit tracking of first startup vs reconnect prevents duplicate syncs
+  - Reconnect phase only syncs guild-only commands if intents missing
+- **Missing Cleanup:**
+  - All background tasks now properly cancelled on shutdown
+  - All database pools closed in correct order
+  - Bot-level tasks cleaned up (sync cooldowns cleanup, command tracker flush, GPT retry queue)
+
+#### Security Enhancements
+- **Input Sanitization:**
+  - Protection against markdown injection attacks (15+ patterns tested)
+  - Protection against mention spam attempts
+  - Protection against prompt injection/jailbreak attempts (15+ patterns tested)
+  - URL exploit filtering
+  - Length limit attacks prevented
+- **Rate Limiting:**
+  - Command cooldowns prevent spam and cost explosions
+  - API IP-based rate limiting prevents anonymous abuse
+  - Health/metrics endpoints excluded from rate limiting
+
+---
+
 ## [1.9.0] - 2026-01-21 - "Enhanced Reminders"
 
 ### 🎉 Major Feature: Reminder Management & Embed Watcher Improvements
