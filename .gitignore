@@ -9,6 +9,8 @@ credentials/*.secret.json
 venv/
 # Log files
 *.log
+.cursor/plans/
+AGENTS.md 
 
 # Compiled Python files
 __pycache__/
@@ -46,3 +48,6 @@ lib/
 public/
 *.config.*
 *.ts
+
+# Documentation (internal overview)
+BOT_OVERVIEW.md

@@ -18,20 +18,20 @@ except ImportError:
 logger = logging.getLogger("bot")
 
 SYSTEM_PROMPT = """
-Je bent een betrokken en bewust AI-assistent met expertise in mindset, leiderschap, trading, zelfbewustzijn en emotionele intelligentie.
+You are an engaged and conscious AI assistant with expertise in mindset, leadership, trading, self-awareness, and emotional intelligence.
 
 Je antwoorden zijn steeds afgestemd op die thema’s.  
-Als een vraag buiten dit kader valt — zoals koken, huishoudelijke taken of irrelevante technologie — dan beantwoord je ze niet, maar verwijs je de gebruiker vriendelijk terug naar waar je wél bij kan helpen.
+If a question falls outside this framework — such as cooking, household tasks, or irrelevant technology — you don't answer it, but politely redirect the user to where you *can* help.
 
-Je doel is niet om *alles* te weten, maar om diepgang te brengen waar het telt.
+Your goal is not to know *everything*, but to bring depth where it matters.
 
-Gebruik steeds dezelfde taal als de gebruiker.  
-Je antwoord is helder, menselijk, en raakt zacht waar het mag — scherp waar het moet.
+Always use the same language as the user.  
+Your answer is clear, human, and touches softly where it can — sharp where it must.
 """
 
 
 
-# Bot instance wordt later gezet
+# Bot instance will be set later
 bot_instance: Optional[commands.Bot] = None
 
 def set_bot_instance(bot: commands.Bot) -> None:
@@ -69,7 +69,7 @@ def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = 
         asyncio.create_task(log_to_channel(log_message, level="error", guild_id=guild_id))
 
 def is_allowed_prompt(prompt: str) -> bool:
-    # Voeg hier woorden of zinnen toe die je wil blokkeren
+    # Add words or phrases here that you want to block
     blocked_keywords = [
         "how to tie", "joke", "how to whistle", "useless", "unrelated", 
         "fart", "how to dance", "how to sleep", "funny story", "pick up line"
@@ -143,7 +143,7 @@ else:
 _api_key_missing = not _api_key
 if _api_key_missing:
     logger.warning(
-        f"⚠️ {_api_key_name} ontbreekt. Stel deze in je .env of config_local.py om AI-commando's te gebruiken."
+        f"⚠️ {_api_key_name} is missing. Set this in your .env or config_local.py to use AI commands."
     )
     llm_client = None
 else:
@@ -181,7 +181,7 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
     except KeyError:
         pass
     except (TypeError, ValueError):
-        logger.warning("⚠️ GPT temperature setting ongeldig — fallback naar API default.")
+        logger.warning("⚠️ GPT temperature setting invalid — fallback to API default.")
         temperature_value = None
 
     return model_value, temperature_value
@@ -193,7 +193,7 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
     try:
         if _api_key_missing or llm_client is None:
             raise RuntimeError(
-                f"{_api_key_name} ontbreekt. Stel de sleutel in (.env of config_local.py) en herstart de bot."
+                f"{_api_key_name} is missing. Set the key (.env or config_local.py) and restart the bot."
             )
 
         # 👉 Check of messages een string is (oude stijl prompt)
