@@ -23,6 +23,18 @@ All notable changes to this project will be documented in this file.
   - Fallback message for degraded AI service scenarios
   - Background task for processing queued requests
   - Graceful error handling that doesn't block user interactions
+- **Command Usage Statistics:**
+  - `/command_stats` Discord slash command for viewing command usage statistics (admin-only)
+  - Filterable by time period (1-30 days) and scope (guild-specific or all servers)
+  - Displays top commands and total command count
+  - Persistent tracking across bot restarts
+- **Database Connection Pool Architecture:**
+  - All database operations now use `asyncpg` connection pools instead of direct connections
+  - Improved concurrency and resource management
+  - Each cog manages its own connection pool with appropriate size limits
+  - Command tracker uses dedicated pool in bot's event loop to avoid event loop conflicts
+  - Graceful error handling for connection errors (`ConnectionDoesNotExistError`, `InterfaceError`, `ConnectionResetError`)
+  - Background tasks check pool status before operations and handle shutdown gracefully
 
 ### Changed
 - **Internationalization:** All Dutch user-facing text replaced with English across all cogs
@@ -34,10 +46,17 @@ All notable changes to this project will be documented in this file.
   - Converted plain text logs to structured Discord embeds for better readability
   - Reduced console verbosity by removing excessive debug statements
   - Enhanced log formatting with proper day names and structured fields
+  - Improved command tracker error logging (warnings for table issues, debug for connection errors)
 - **Message Content Handling:**
   - Smart duplicate detection prevents title/description overlap in reminder messages
   - Footer handling in embed watcher for consistent message formatting
   - Name field sanitization for Discord modal compliance (no newlines, max 100 chars)
+- **Database Architecture:**
+  - Migrated all cogs from direct `asyncpg.connect()` calls to connection pools
+  - Improved connection lifecycle management with proper pool cleanup on cog unload
+  - Enhanced error handling with connection status checks before operations
+  - Telemetry ingest loop now checks pool status before database operations
+  - Reminder loop checks pool status before fetching reminders
 
 ### Fixed
 - **Reminder Edit Modal:**
@@ -54,6 +73,13 @@ All notable changes to this project will be documented in this file.
   - Fixed `RuntimeError: no running event loop` when starting retry queue task
   - Corrected linter error for `status_code` attribute access
   - Improved error handling for rate limits and API failures
+- **Database Connection Issues:**
+  - Fixed `ConnectionDoesNotExistError` errors caused by direct database connections
+  - Resolved "Future exception was never retrieved" errors from background tasks
+  - Fixed "attached to a different loop" error in command tracker by using bot's event loop
+  - Improved error handling in telemetry ingest loop and reminder check loop
+  - Fixed TicketBot setup database connection errors with proper async context management
+  - Command tracker now correctly initializes in bot's event loop and persists across restarts
 
 ---
 

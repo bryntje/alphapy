@@ -1,6 +1,7 @@
 import io
 import csv
 import asyncpg
+from asyncpg import exceptions as pg_exceptions
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -12,19 +13,40 @@ except ImportError:
     import config  # type: ignore
 
 from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.logger import logger
 
 
 class Exports(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.conn: Optional[asyncpg.Connection] = None
+        self.db: Optional[asyncpg.Pool] = None
         self.bot.loop.create_task(self._setup())
 
     async def _setup(self) -> None:
         try:
-            self.conn = await asyncpg.connect(config.DATABASE_URL)
-        except Exception:
-            self.conn = None
+            self.db = await asyncpg.create_pool(
+                config.DATABASE_URL,
+                min_size=1,
+                max_size=5,
+                command_timeout=10.0
+            )
+        except Exception as e:
+            logger.error(f"❌ Exports: DB pool creation error: {e}")
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
+
+    async def cog_unload(self):
+        """Called when the cog is unloaded - close the database pool."""
+        if self.db:
+            try:
+                await self.db.close()
+            except Exception:
+                pass
+            self.db = None
 
     @app_commands.command(name="export_tickets", description="Export tickets as CSV (admin)")
     @app_commands.describe(scope="Optional: 7d, 30d, all (default: all)")
@@ -33,17 +55,27 @@ class Exports(commands.Cog):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             await interaction.followup.send("❌ Database not connected.", ephemeral=True)
             return
-        where = ""
-        if scope == "7d":
-            where = "WHERE created_at >= NOW() - INTERVAL '7 days'"
-        elif scope == "30d":
-            where = "WHERE created_at >= NOW() - INTERVAL '30 days'"
-        rows = await self.conn.fetch(
-            f"SELECT id, user_id, username, status, created_at, updated_at, claimed_by, channel_id FROM support_tickets {where} ORDER BY id DESC"
-        )
+        try:
+            where = ""
+            if scope == "7d":
+                where = "WHERE created_at >= NOW() - INTERVAL '7 days'"
+            elif scope == "30d":
+                where = "WHERE created_at >= NOW() - INTERVAL '30 days'"
+            async with self.db.acquire() as conn:
+                rows = await conn.fetch(
+                    f"SELECT id, user_id, username, status, created_at, updated_at, claimed_by, channel_id FROM support_tickets {where} ORDER BY id DESC"
+                )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in export_tickets: {conn_err}")
+            await interaction.followup.send("❌ Database connection error. Please try again later.", ephemeral=True)
+            return
+        except Exception as e:
+            logger.error(f"Database error in export_tickets: {e}")
+            await interaction.followup.send(f"❌ Error exporting tickets: {e}", ephemeral=True)
+            return
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(["id","user_id","username","status","created_at","updated_at","claimed_by","channel_id"])
@@ -61,10 +93,20 @@ class Exports(commands.Cog):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             await interaction.followup.send("❌ Database not connected.", ephemeral=True)
             return
-        rows = await self.conn.fetch("SELECT id, title, summary, keywords, created_at FROM faq_entries ORDER BY id DESC")
+        try:
+            async with self.db.acquire() as conn:
+                rows = await conn.fetch("SELECT id, title, summary, keywords, created_at FROM faq_entries ORDER BY id DESC")
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in export_faq: {conn_err}")
+            await interaction.followup.send("❌ Database connection error. Please try again later.", ephemeral=True)
+            return
+        except Exception as e:
+            logger.error(f"Database error in export_faq: {e}")
+            await interaction.followup.send(f"❌ Error exporting FAQ: {e}", ephemeral=True)
+            return
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(["id","title","summary","keywords","created_at"])

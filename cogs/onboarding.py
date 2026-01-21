@@ -403,7 +403,7 @@ class Onboarding(commands.Cog):
                 await asyncio.sleep(base_delay * attempt)
             except Exception as exc:
                 last_error = exc
-                logger.exception("❌ Onboarding: onverwachte DB-init fout")
+                logger.exception("❌ Onboarding: unexpected DB-init error")
                 break
 
         logger.error(f"❌ Onboarding: kon DB-verbinding niet opzetten: {last_error}")

@@ -34,7 +34,8 @@ class FakeConn:
 
     async def fetch(self, query: str, *params):
         (uid,) = params
-        result = [r for r in self.rows if r["created_by"] == uid or r["created_by"] == '717695552669745152']
+        # Test function: return reminders for the user (no hardcoded admin ID)
+        result = [r for r in self.rows if r["created_by"] == uid]
         # Emuleer ORDER BY time (niet strikt nodig voor test invariants)
         return result
 
