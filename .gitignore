@@ -9,7 +9,7 @@ credentials/*.secret.json
 venv/
 # Log files
 *.log
-.cursor/plans/
+.cursor/
 AGENTS.md 
 
 # Compiled Python files
