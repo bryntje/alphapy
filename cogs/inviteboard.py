@@ -1,4 +1,5 @@
 import asyncpg
+from asyncpg import exceptions as pg_exceptions
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -14,6 +15,7 @@ class InviteTracker(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.invites_cache = {}  # Hier slaan we de invites op
+        self.db: Optional[asyncpg.Pool] = None
         settings = getattr(bot, "settings", None)
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -32,53 +34,90 @@ class InviteTracker(commands.Cog):
 
     async def setup_database(self):
         """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
-        conn = await asyncpg.connect(config.DATABASE_URL)
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS invite_tracker (
-                guild_id BIGINT NOT NULL,
-                user_id BIGINT NOT NULL,
-                invite_count INTEGER DEFAULT 0,
-                PRIMARY KEY(guild_id, user_id)
-            );
-        ''')
-        await conn.close()
+        try:
+            self.db = await asyncpg.create_pool(
+                config.DATABASE_URL,
+                min_size=1,
+                max_size=5,
+                command_timeout=10.0
+            )
+            async with self.db.acquire() as conn:
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS invite_tracker (
+                        guild_id BIGINT NOT NULL,
+                        user_id BIGINT NOT NULL,
+                        invite_count INTEGER DEFAULT 0,
+                        PRIMARY KEY(guild_id, user_id)
+                    );
+                ''')
+        except Exception as e:
+            logger.error(f"❌ InviteTracker: DB pool creation error: {e}")
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
+
+    async def cog_unload(self):
+        """Called when the cog is unloaded - close the database pool."""
+        if self.db:
+            try:
+                await self.db.close()
+            except Exception:
+                pass
+            self.db = None
 
     async def update_invite_count(self, guild_id: int, inviter_id: int, count: Optional[int] = None):
         """Verhoog of stel de invite count in de database in."""
-        conn = await asyncpg.connect(config.DATABASE_URL)
-
-        if count is None:
-            # Verhoog de invites met 1 als er geen specifieke waarde wordt gegeven
-            await conn.execute(
-                """
-                INSERT INTO invite_tracker (guild_id, user_id, invite_count)
-                VALUES ($1, $2, 1)
-                ON CONFLICT(guild_id, user_id) DO UPDATE SET invite_count = invite_tracker.invite_count + 1;
-                """,
-                guild_id, inviter_id
-            )
-        else:
-            # Stel het aantal invites handmatig in
-            await conn.execute(
-                """
-                INSERT INTO invite_tracker (guild_id, user_id, invite_count)
-                VALUES ($1, $2, $3)
-                ON CONFLICT(guild_id, user_id) DO UPDATE SET invite_count = $3;
-                """,
-                guild_id, inviter_id, count
-            )
-
-        await conn.close()
+        if self.db is None or self.db.is_closing():
+            logger.warning("⚠️ InviteTracker: Database pool not available")
+            return
+        try:
+            async with self.db.acquire() as conn:
+                if count is None:
+                    # Verhoog de invites met 1 als er geen specifieke waarde wordt gegeven
+                    await conn.execute(
+                        """
+                        INSERT INTO invite_tracker (guild_id, user_id, invite_count)
+                        VALUES ($1, $2, 1)
+                        ON CONFLICT(guild_id, user_id) DO UPDATE SET invite_count = invite_tracker.invite_count + 1;
+                        """,
+                        guild_id, inviter_id
+                    )
+                else:
+                    # Stel het aantal invites handmatig in
+                    await conn.execute(
+                        """
+                        INSERT INTO invite_tracker (guild_id, user_id, invite_count)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT(guild_id, user_id) DO UPDATE SET invite_count = $3;
+                        """,
+                        guild_id, inviter_id, count
+                    )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in update_invite_count: {conn_err}")
+        except Exception as e:
+            logger.error(f"Database error in update_invite_count: {e}")
     
     async def get_invite_leaderboard(self, guild_id: int, limit=10):
         """Haal de top gebruikers op met de meeste invites."""
-        conn = await asyncpg.connect(config.DATABASE_URL)
-        rows = await conn.fetch(
-            "SELECT user_id, invite_count FROM invite_tracker WHERE guild_id = $1 ORDER BY invite_count DESC LIMIT $2",
-            guild_id, limit
-        )
-        await conn.close()
-        return rows
+        if self.db is None or self.db.is_closing():
+            logger.warning("⚠️ InviteTracker: Database pool not available")
+            return []
+        try:
+            async with self.db.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT user_id, invite_count FROM invite_tracker WHERE guild_id = $1 ORDER BY invite_count DESC LIMIT $2",
+                    guild_id, limit
+                )
+                return rows
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in get_invite_leaderboard: {conn_err}")
+            return []
+        except Exception as e:
+            logger.error(f"Database error in get_invite_leaderboard: {e}")
+            return []
 
     def _is_enabled(self, guild_id: int) -> bool:
         if self.settings:
@@ -198,7 +237,7 @@ class InviteTracker(commands.Cog):
         try:
             new_invites = await guild.invites()
         except Exception as e:
-            print(f"⚠️ Kan guild invites niet ophalen: {e}")
+            logger.warning(f"⚠️ Could not fetch guild invites: {e}")
             return
         old_invites = self.invites_cache.get(guild.id, [])
 
@@ -229,28 +268,18 @@ class InviteTracker(commands.Cog):
             logger.warning("⚠️ InviteTracker: kon announcement channel niet vinden of betreden.")
             return
 
-        conn: Optional[asyncpg.Connection] = None
-
         if inviter:
             await self.update_invite_count(member.guild.id, inviter.id)
             # Haal de huidige invite count op na de update
-            try:
-                conn = await asyncpg.connect(config.DATABASE_URL)
-                if conn is not None:
-                    row = await conn.fetchrow("SELECT invite_count FROM invite_tracker WHERE guild_id = $1 AND user_id = $2", member.guild.id, inviter.id)
-                else:
-                    row = None
-            except Exception as e:
-                logger.warning(f"⚠️ InviteTracker: DB-fout bij ophalen invite_count: {e}")
-                row = None
-            finally:
-                if conn is not None:
-                    try:
-                        await conn.close()
-                    except Exception:
-                        pass
-
-            invite_count = row["invite_count"] if row else 0
+            invite_count = 0
+            if self.db and not self.db.is_closing():
+                try:
+                    async with self.db.acquire() as conn:
+                        row = await conn.fetchrow("SELECT invite_count FROM invite_tracker WHERE guild_id = $1 AND user_id = $2", member.guild.id, inviter.id)
+                        invite_count = row["invite_count"] if row else 0
+                except Exception as e:
+                    logger.warning(f"⚠️ InviteTracker: DB error while fetching invite_count: {e}")
+                    invite_count = 0
             message = self._render_template(
                 self._get_template(with_inviter=True, guild_id=member.guild.id),
                 member=member,

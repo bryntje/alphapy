@@ -1,5 +1,6 @@
 import re
 import asyncpg
+from asyncpg import exceptions as pg_exceptions
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -53,36 +54,65 @@ def _score_entry(query_tokens: List[str], entry: Dict[str, Any]) -> int:
 class FAQ(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.conn: Optional[asyncpg.Connection] = None
+        self.db: Optional[asyncpg.Pool] = None
         self.bot.loop.create_task(self._setup_db())
 
     async def _setup_db(self) -> None:
         try:
-            conn = await asyncpg.connect(config.DATABASE_URL)
-            # Ensure columns on faq_entries
-            await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS title TEXT;")
-            await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS keywords TEXT[];")
-            # Logs table
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS faq_search_logs (
-                  id SERIAL PRIMARY KEY,
-                  query TEXT NOT NULL,
-                  match_count INT NOT NULL,
-                  created_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
+            pool = await asyncpg.create_pool(
+                config.DATABASE_URL,
+                min_size=1,
+                max_size=5,
+                command_timeout=10.0
             )
-            self.conn = conn
+            async with pool.acquire() as conn:
+                # Ensure columns on faq_entries
+                await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS title TEXT;")
+                await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS keywords TEXT[];")
+                # Logs table
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS faq_search_logs (
+                      id SERIAL PRIMARY KEY,
+                      query TEXT NOT NULL,
+                      match_count INT NOT NULL,
+                      created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+            self.db = pool
             logger.info("✅ FAQ: DB ready")
         except Exception as e:
             logger.error(f"❌ FAQ: DB init error: {e}")
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
+
+    async def cog_unload(self):
+        """Called when the cog is unloaded - close the database pool."""
+        if self.db:
+            try:
+                await self.db.close()
+            except Exception:
+                pass
+            self.db = None
 
     async def _fetch_entries(self) -> List[asyncpg.Record]:
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             return []
-        rows = await self.conn.fetch("SELECT id, title, summary, keywords, created_at FROM faq_entries ORDER BY created_at DESC")
-        return rows
+        try:
+            async with self.db.acquire() as conn:
+                rows = await conn.fetch("SELECT id, title, summary, keywords, created_at FROM faq_entries ORDER BY created_at DESC")
+                return rows
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in _fetch_entries: {conn_err}")
+            return []
+        except Exception as e:
+            logger.error(f"Database error in _fetch_entries: {e}")
+            return []
 
     async def _search_entries(self, query: str, limit: int = 5) -> List[asyncpg.Record]:
         rows = await self._fetch_entries()
@@ -96,8 +126,9 @@ class FAQ(commands.Cog):
         results = [r for _, r in scored[:limit]]
         # log
         try:
-            if self.conn:
-                await self.conn.execute("INSERT INTO faq_search_logs (query, match_count) VALUES ($1, $2)", query, len(results))
+            if self.db and not self.db.is_closing():
+                async with self.db.acquire() as conn:
+                    await conn.execute("INSERT INTO faq_search_logs (query, match_count) VALUES ($1, $2)", query, len(results))
         except Exception:
             pass
         return results
@@ -189,10 +220,20 @@ class FAQ(commands.Cog):
     @app_commands.describe(id="FAQ entry ID", public="Post in channel instead of ephemeral (default: false)")
     async def faq_view(self, interaction: discord.Interaction, id: int, public: bool = False):
         await interaction.response.defer(ephemeral=not public)
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             await interaction.followup.send("Database not connected.", ephemeral=not public)
             return
-        row = await self.conn.fetchrow("SELECT id, title, summary, keywords, created_at FROM faq_entries WHERE id = $1", id)
+        try:
+            async with self.db.acquire() as conn:
+                row = await conn.fetchrow("SELECT id, title, summary, keywords, created_at FROM faq_entries WHERE id = $1", id)
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in faq_view: {conn_err}")
+            await interaction.followup.send("❌ Database connection error. Please try again later.", ephemeral=not public)
+            return
+        except Exception as e:
+            logger.error(f"Database error in faq_view: {e}")
+            await interaction.followup.send(f"❌ Error fetching FAQ entry: {e}", ephemeral=not public)
+            return
         if not row:
             await interaction.followup.send("Entry not found.", ephemeral=not public)
             return
@@ -282,16 +323,16 @@ class FAQ(commands.Cog):
                 await interaction.response.send_message("❌ Title and summary are required.", ephemeral=True)
                 return
             try:
-                conn = self.cog.conn
-                if conn is None:
+                if self.cog.db is None or self.cog.db.is_closing():
                     await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
                     return
-                row = await conn.fetchrow(
-                    "INSERT INTO faq_entries (title, summary, keywords) VALUES ($1, $2, $3) RETURNING id",
-                    title,
-                    summary,
-                    keywords,
-                )
+                async with self.cog.db.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "INSERT INTO faq_entries (title, summary, keywords) VALUES ($1, $2, $3) RETURNING id",
+                        title,
+                        summary,
+                        keywords,
+                    )
                 new_id = row["id"] if row else None
                 embed = discord.Embed(
                     title="✅ FAQ entry created",
@@ -351,17 +392,17 @@ class FAQ(commands.Cog):
                 await interaction.response.send_message("❌ Title and summary are required.", ephemeral=True)
                 return
             try:
-                conn = self.cog.conn
-                if conn is None:
+                if self.cog.db is None or self.cog.db.is_closing():
                     await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
                     return
-                await conn.execute(
-                    "UPDATE faq_entries SET title=$1, summary=$2, keywords=$3 WHERE id=$4",
-                    title,
-                    summary,
-                    keywords,
-                    int(self.entry_id),
-                )
+                async with self.cog.db.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE faq_entries SET title=$1, summary=$2, keywords=$3 WHERE id=$4",
+                        title,
+                        summary,
+                        keywords,
+                        int(self.entry_id),
+                    )
                 embed = discord.Embed(
                     title="✅ FAQ entry updated",
                     description=f"ID: `{self.entry_id}`\nTitle: **{title}**",
@@ -381,10 +422,20 @@ class FAQ(commands.Cog):
         if not await is_owner_or_admin_interaction(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
             return
-        row = await self.conn.fetchrow("SELECT id, title, summary, keywords FROM faq_entries WHERE id = $1", id)
+        try:
+            async with self.db.acquire() as conn:
+                row = await conn.fetchrow("SELECT id, title, summary, keywords FROM faq_entries WHERE id = $1", id)
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in faq_edit: {conn_err}")
+            await interaction.response.send_message("❌ Database connection error. Please try again later.", ephemeral=True)
+            return
+        except Exception as e:
+            logger.error(f"Database error in faq_edit: {e}")
+            await interaction.response.send_message(f"❌ Error fetching FAQ entry: {e}", ephemeral=True)
+            return
         if not row:
             await interaction.response.send_message("❌ Entry not found.", ephemeral=True)
             return

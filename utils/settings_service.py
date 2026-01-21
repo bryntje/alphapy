@@ -68,7 +68,7 @@ class SettingsService:
                 raise
 
         log_database_event("POOL_INIT_FAILED", details=f"All {attempts} attempts failed: {last_error}")
-        raise RuntimeError(f"SettingsService: kon databasepool niet initialiseren: {last_error}")
+        raise RuntimeError(f"SettingsService: could not initialize database pool: {last_error}")
 
     async def _create_pool(self) -> None:
         """Create database connection pool."""

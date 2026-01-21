@@ -318,6 +318,27 @@ async def on_ready():
         import time
         setattr(bot, "start_time", time.time())  # pyright: ignore[reportGeneralTypeIssues]
     
+    # Initialize command tracker with database pool in bot's event loop
+    # Note: on_ready() can be called multiple times (e.g., on reconnect),
+    # so set_db_pool() handles closing any existing pool before setting a new one
+    try:
+        import asyncpg
+        from utils.command_tracker import set_db_pool, _db_pool
+        # Only create new pool if we don't have one or it's closing
+        if _db_pool is None or _db_pool.is_closing():
+            command_tracker_pool = await asyncpg.create_pool(
+                config.DATABASE_URL,
+                min_size=1,
+                max_size=5,
+                command_timeout=10.0
+            )
+            set_db_pool(command_tracker_pool)
+            logger.info("✅ Command tracker: Database pool initialized in bot event loop")
+        else:
+            logger.debug("Command tracker: Database pool already initialized, skipping")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to initialize command tracker pool: {e}")
+    
     # Start GPT retry queue task now that event loop is running
     from gpt.helpers import _retry_task, _retry_gpt_requests
     import gpt.helpers as gpt_helpers
@@ -343,7 +364,78 @@ set_bot_instance(bot)  # This also starts the GPT retry queue task
 @bot.event
 async def on_command_error(ctx, error):
     logger.error(f"⚠️ Error in command '{ctx.command}': {error}")
+    
+    # Track command error
+    try:
+        from utils.command_tracker import log_command_usage
+        command_name = ctx.command.name if ctx.command else "unknown"
+        guild_id = ctx.guild.id if ctx.guild else None
+        await log_command_usage(
+            guild_id=guild_id,
+            user_id=ctx.author.id,
+            command_name=command_name,
+            command_type="text",
+            success=False,
+            error_message=str(error)[:500]
+        )
+    except Exception:
+        pass  # Don't break error handling if tracking fails
+    
     await ctx.send("❌ Oops! An error occurred. Please try again later.")
+
+
+@bot.event
+async def on_command_completion(ctx):
+    """Track successful text command execution."""
+    try:
+        from utils.command_tracker import log_command_usage
+        command_name = ctx.command.name if ctx.command else "unknown"
+        guild_id = ctx.guild.id if ctx.guild else None
+        await log_command_usage(
+            guild_id=guild_id,
+            user_id=ctx.author.id,
+            command_name=command_name,
+            command_type="text",
+            success=True
+        )
+    except Exception:
+        pass  # Don't break command execution if tracking fails
+
+
+@bot.event
+async def on_app_command_completion(interaction: discord.Interaction, command: discord.app_commands.Command):
+    """Track successful slash command execution."""
+    try:
+        from utils.command_tracker import log_command_usage
+        guild_id = interaction.guild.id if interaction.guild else None
+        await log_command_usage(
+            guild_id=guild_id,
+            user_id=interaction.user.id,
+            command_name=command.name,
+            command_type="slash",
+            success=True
+        )
+    except Exception:
+        pass  # Don't break command execution if tracking fails
+
+
+@bot.event
+async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    """Track failed slash command execution."""
+    try:
+        from utils.command_tracker import log_command_usage
+        command_name = interaction.command.name if interaction.command else "unknown"
+        guild_id = interaction.guild.id if interaction.guild else None
+        await log_command_usage(
+            guild_id=guild_id,
+            user_id=interaction.user.id,
+            command_name=command_name,
+            command_type="slash",
+            success=False,
+            error_message=str(error)[:500]
+        )
+    except Exception:
+        pass  # Don't break error handling if tracking fails
 
 
 async def setup_hook():
@@ -373,6 +465,7 @@ async def setup_hook():
     await bot.load_extension("cogs.ticketbot")
     await bot.load_extension("cogs.faq")
     await bot.load_extension("cogs.exports")
+    await bot.load_extension("cogs.migrations")
 
 
 

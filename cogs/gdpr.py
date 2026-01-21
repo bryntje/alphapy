@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import asyncpg
+from asyncpg import exceptions as pg_exceptions
 import config
 from typing import Any, Optional
 from utils.settings_service import SettingsService
@@ -26,7 +27,7 @@ class GDPRAnnouncement(commands.Cog):
 
         channel_id = self._get_channel_id(ctx.guild.id)
         if not channel_id:
-            await ctx.send("⚠️ Geen GDPR kanaal ingesteld.")
+            await ctx.send("⚠️ No GDPR channel configured.")
             return
         channel = self.bot.get_channel(channel_id)
         if channel is None:
@@ -38,7 +39,7 @@ class GDPRAnnouncement(commands.Cog):
             await ctx.send("GDPR channel not found.")
             return
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await ctx.send("GDPR channel moet een tekstkanaal zijn.")
+            await ctx.send("GDPR channel must be a text channel.")
             return
 
         gdpr_text = (
@@ -137,22 +138,53 @@ class GDPRButton(discord.ui.Button):
                 pass
         return True
 
+# Module-level pool for GDPR operations
+_gdpr_db_pool: Optional[asyncpg.Pool] = None
+
+async def _ensure_gdpr_pool() -> Optional[asyncpg.Pool]:
+    """Ensure the GDPR database pool is initialized."""
+    global _gdpr_db_pool
+    if _gdpr_db_pool is None or _gdpr_db_pool.is_closing():
+        try:
+            _gdpr_db_pool = await asyncpg.create_pool(
+                config.DATABASE_URL,
+                min_size=1,
+                max_size=3,
+                command_timeout=10.0
+            )
+        except Exception as e:
+            logger.error(f"❌ GDPR: Failed to create database pool: {e}")
+            _gdpr_db_pool = None
+    return _gdpr_db_pool
+
 async def store_gdpr_acceptance(user_id: int) -> None:
     """Slaat de GDPR-acceptatie op in PostgreSQL."""
+    pool = await _ensure_gdpr_pool()
+    if pool is None or pool.is_closing():
+        logger.warning(f"⚠️ GDPR: Database pool not available for user {user_id}")
+        return
     try:
-        conn = await asyncpg.connect(config.DATABASE_URL)
-        await conn.execute(
-            """
-            INSERT INTO gdpr_acceptance (user_id, accepted, timestamp)
-            VALUES ($1, $2, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id) DO UPDATE SET accepted = $2, timestamp = CURRENT_TIMESTAMP;
-            """,
-            user_id, 1
-        )
-        await conn.close()
-        logger.info(f"✅ GDPR-acceptatie opgeslagen voor {user_id}")
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO gdpr_acceptance (user_id, accepted, timestamp)
+                VALUES ($1, $2, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id) DO UPDATE SET accepted = $2, timestamp = CURRENT_TIMESTAMP;
+                """,
+                user_id, 1
+            )
+        logger.info(f"✅ GDPR acceptance saved for {user_id}")
+    except (asyncpg.exceptions.ConnectionDoesNotExistError, asyncpg.exceptions.InterfaceError, ConnectionResetError) as conn_err:
+        logger.warning(f"Database connection error saving GDPR acceptance: {conn_err}")
+        global _gdpr_db_pool
+        if _gdpr_db_pool:
+            try:
+                await _gdpr_db_pool.close()
+            except Exception:
+                pass
+            _gdpr_db_pool = None
     except Exception as e:
-        logger.exception(f"❌ Fout bij opslaan GDPR-acceptatie voor {user_id}: {e}")
+        logger.exception(f"❌ Error saving GDPR acceptance for {user_id}: {e}")
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(GDPRAnnouncement(bot))

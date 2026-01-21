@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord.ui import Modal, TextInput
 import config
 from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.logger import logger
 
 # Combined check function
 def is_owner_or_admin():
@@ -84,12 +85,19 @@ class CustomSlashCommands(commands.Cog):
     async def sync(self, ctx: commands.Context):
         await ctx.send("🔄 Synchronizing all slash commands...")
         guild = ctx.guild
-        if guild is None:
-            await ctx.send("❌ No guild context.")
-            return
-        self.bot.tree.copy_global_to(guild=guild)  # ✅ Force a guild sync
-        await self.bot.tree.sync(guild=guild)
-        await ctx.send("✅ All slash commands have been synchronized!")
+        try:
+            if guild is None:
+                # Sync globally if no guild context
+                synced = await self.bot.tree.sync()
+                await ctx.send(f"✅ Synced {len(synced)} global slash commands!")
+            else:
+                # Sync to specific guild
+                self.bot.tree.copy_global_to(guild=guild)  # ✅ Force a guild sync
+                synced = await self.bot.tree.sync(guild=guild)
+                await ctx.send(f"✅ Synced {len(synced)} slash commands to {guild.name}!")
+        except Exception as e:
+            await ctx.send(f"❌ Error syncing commands: {e}")
+            logger.error(f"Error syncing commands: {e}", exc_info=True)
 
 
 class EmbedBuilderModal(Modal, title="Create Embed"):
