@@ -127,6 +127,17 @@
   - Shared regex patterns and date functions used by embed watcher and reminders
   - Includes unit tests in `tests/test_parsers.py`
 
+- `utils/sanitizer.py`
+  - Centralized input sanitization utilities for security
+  - `escape_markdown()`: Escapes Discord markdown characters (*, _, `, [, ], >, |, ~) to prevent injection
+  - `strip_mentions()`: Removes user mentions (`<@123456>`), role mentions (`<@&123456>`), channel mentions (`<#123456>`), and `@everyone`/`@here` to prevent spam
+  - `url_filter()`: Filters or sanitizes URLs (can allow http/https or remove all URLs)
+  - `safe_embed_text()`: Combines markdown escaping + mention removal + length truncation for embed-safe text
+  - `safe_prompt()`: Blocks prompt injection/jailbreak attempts in GPT prompts by detecting patterns like "ignore previous", "act as", "system:", etc.
+  - `safe_log_message()`: Sanitizes text for logging with control character removal and length limits (default 200 chars) to prevent log spam
+  - Used across all cogs to sanitize user input before it reaches embeds, GPT prompts, or logs
+  - Comprehensive test suite in `tests/test_sanitizer.py` with parametrized tests for attack vectors
+
 - `utils/background_tasks.py`
   - Robust background task management
   - `BackgroundTask` class: Manages asynchronous loops with graceful shutdown
@@ -339,6 +350,15 @@ Each Discord server configures its own settings via `/config` commands:
 ## Security
 - Tokens and DB credentials via env only (no hardcoded secrets)
 - Optional controlled `@everyone` mentions via `ENABLE_EVERYONE_MENTIONS`
+- **Input Sanitization & Injection Prevention:**
+  - Centralized sanitization utilities in `utils/sanitizer.py`
+  - **Markdown Injection Protection**: All user input sanitized before going into embed titles, descriptions, and fields
+  - **Mention Spam Prevention**: User/role/channel mentions stripped from user input in embeds
+  - **Prompt Injection Protection**: GPT prompts sanitized to block jailbreak attempts (patterns like "ignore previous", "act as", "system:", etc.)
+  - **URL Filtering**: Optional URL removal from user input to prevent exploits
+  - **Log Spam Prevention**: Log messages sanitized with length limits (200 chars) and control character removal
+  - Applied across all user input flows: reminders, tickets, FAQs, onboarding, GPT commands
+  - Comprehensive test suite with parametrized tests for attack vectors
 - **Rate Limiting & Abuse Prevention:**
   - Discord command cooldowns via `@app_checks.cooldown()` decorator:
     - `/add_reminder`: 5 per minute per guild+user
@@ -360,7 +380,8 @@ Each Discord server configures its own settings via `/config` commands:
 - **Test fixtures** in `tests/conftest.py` (MockBot, MockSettingsService, sample embeds)
 - **Unit tests** for embed parsing (`tests/test_embed_watcher_parsing.py`) - 30 tests
 - **Unit tests** for reminder logic (`tests/test_reminder_parsing.py`) - 20 tests
-- **53 total tests** covering parsing, timing, edge cases, and day matching
+- **Unit tests** for input sanitization (`tests/test_sanitizer.py`) - parametrized tests for markdown injection, mention spam, prompt injection/jailbreak attempts, URL exploits, length limits, and edge cases
+- **53+ total tests** covering parsing, timing, edge cases, day matching, and security
 
 ### Database Migrations
 - **Alembic** migration system configured (`alembic/` directory)

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Input Sanitization & Security:**
+  - Centralized sanitization utility (`utils/sanitizer.py`) for protecting against injection attacks
+  - `escape_markdown()`: Escapes Discord markdown characters to prevent injection
+  - `strip_mentions()`: Removes user/role/channel mentions to prevent spam
+  - `url_filter()`: Filters or sanitizes URLs to prevent exploits
+  - `safe_embed_text()`: Combined sanitization for embed titles, descriptions, and fields (escapes markdown + strips mentions + truncates)
+  - `safe_prompt()`: Blocks prompt injection/jailbreak attempts in GPT prompts with pattern detection
+  - `safe_log_message()`: Sanitizes text for logging with length limits (max 200 chars) to prevent log spam
+  - Applied sanitization to all user input flows:
+    - Reminder messages (name, message, location) in embeds
+    - Ticket descriptions and GPT-generated summaries
+    - FAQ entries (title and summary fields)
+    - Onboarding answers in summary and log embeds
+    - GPT prompts in learn, leadership, growth, and contentgen commands
+    - Embed text before sending to GPT for parsing
+  - Comprehensive test suite (`tests/test_sanitizer.py`) with parametrized tests for:
+    - Markdown injection attacks (15+ patterns)
+    - Mention spam attempts
+    - Prompt injection/jailbreak attempts (15+ patterns)
+    - URL exploits
+    - Length limit attacks
+    - Edge cases (empty strings, control characters, unicode)
 - **Memory Leak Fixes & Resource Management:**
   - Command tracker batching: In-memory queue (max 10k entries) with batch flush every 30s or at 1k entries threshold
   - Guild settings LRU cache: OrderedDict-based cache with max 500 entries and automatic eviction logging
