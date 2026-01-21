@@ -2,10 +2,13 @@
 
 ## High-level overview
 - Discord bot (discord.py) with modular cogs under `cogs/`
-- FastAPI app (`api.py`) for HTTP access to reminders and dashboard telemetry
-- PostgreSQL for persistent storage (onboarding, reminders, GDPR, etc.)
-- GPT helpers under `gpt/` and utilities in `utils/`
-- Configuration via environment variables in `config.py`
+- FastAPI app (`api.py`) for HTTP access to reminders, dashboard telemetry, and analytics
+- PostgreSQL for persistent storage (onboarding, reminders, GDPR, tickets, analytics, etc.)
+- Alembic for database schema migrations (`alembic/` directory)
+- Pytest test suite (`tests/` directory) with 53+ tests
+- GPT helpers under `gpt/` with retry queue and fallback handling
+- Utilities in `utils/` including command tracking and runtime metrics
+- Configuration via environment variables in `config.py` and database-driven guild settings
 - Authentication via Supabase Auth (Google/GitHub/Discord OAuth, JWT validated in `utils/supabase_auth.py`)
 
 ## Key modules
@@ -22,14 +25,27 @@
   - Detects existing onboarding message via button `custom_id="start_onboarding"`
 
 - `cogs/reminders.py`
-  - Slash commands: `/add_reminder`, `/reminder_list`, `/reminder_delete`
+  - Slash commands: `/add_reminder`, `/reminder_list`, `/reminder_delete`, `/reminder_edit`
   - Accepts optional embed link and parses details (title, time, days, location)
   - Stores reminders (recurring or one-off) with `call_time` support
   - Periodic job (`tasks.loop`) dispatches reminders
   - Idempotency: `last_sent_at` prevents duplicate sends in the same minute
   - T0 support: One-off reminders send at T−60 and at `event_time` (T0)
+  - Edit modal: `/reminder_edit` allows editing name, time, days, message, and channel
 
 - `cogs/embed_watcher.py`
+  - Listens in announcements channel and auto-creates reminders from embeds
+  - Robust datetime parsing with Brussels timezone
+  - Supports relative dates ("This Wednesday", "Next Friday", "Tomorrow")
+  - Parses non-embed messages (configurable via settings)
+  - Rich embed logging for parsing success/failure
+  - Persists via `reminders` table, logs to log channel
+
+- `cogs/migrations.py`
+  - Database migration management via Alembic
+  - `/migrate` command: status, upgrade, downgrade, history
+  - Admin-only access for safety
+
 - `cogs/ticketbot.py`
   - Slash commands: `/ticket`, `/ticket_list`, `/ticket_claim`, `/ticket_close`, `/ticket_panel_post`
   - Channel UX: per-ticket private channel under `TICKET_CATEGORY_ID`
@@ -49,18 +65,63 @@
 
 - `api.py`
   - FastAPI entrypoint, exposes read endpoints for dashboards/tools
-  - `/api/dashboard/metrics` aggregates live bot telemetry (uptime, latency, guilds, command count) via `utils/runtime_metrics.get_bot_snapshot`
-  - `/health` returns service metadata (name, version, uptime, timestamp) and performs a lightweight DB ping for readiness probes
+  - Uses `asyncpg` connection pool for database access (shared with bot)
+  - `/api/dashboard/metrics` aggregates live bot telemetry (uptime, latency, guilds, command count, command usage stats) via `utils/runtime_metrics.get_bot_snapshot`
+  - `/api/health` enhanced health probe with guild count, command usage, GPT status, database pool size
+  - `/api/health/history` historical health check data for trend analysis
+  - `/top-commands` command usage analytics endpoint (filterable by guild and time period)
   - Reminder CRUD endpoints secured with API key + `X-User-Id`
-  - **Telemetry Ingest Background Job**: `_telemetry_ingest_loop()` runs continuously, collecting metrics and writing to `telemetry.subsystem_snapshots` in Supabase every 30-60 seconds (configurable). Ensures Mind dashboard always has fresh data without requiring endpoint calls.
+  - **Telemetry Ingest Background Job**: `_telemetry_ingest_loop()` runs continuously, collecting metrics and writing to `telemetry.subsystem_snapshots` in Supabase every 30-60 seconds (configurable). Ensures Mind dashboard always has fresh data without requiring endpoint calls. Gracefully handles connection errors and pool shutdown.
+  - **Health Check History**: Automatic logging of health checks to `health_check_history` table
 
-## Data model (simplified)
+- `utils/command_tracker.py`
+  - Automatic tracking of all command executions via event handlers in `bot.py`
+  - Uses dedicated database connection pool created in bot's event loop (not FastAPI's loop) to avoid event loop conflicts
+  - Initialized in `on_ready()` event handler, persists across bot restarts
+  - Tracks both slash commands and text commands with success/failure status
+  - Stores data in `audit_logs` table for analytics and `/command_stats` command
+
+## Database Schema
+
+The bot uses PostgreSQL for persistent storage. Schema is managed via Alembic migrations (see `alembic/versions/001_initial_schema.py` for complete schema).
+
+### Core Tables
+- `bot_settings`
+  - `guild_id BIGINT`, `scope TEXT`, `key TEXT` (composite primary key)
+  - `value JSONB`, `value_type TEXT`, `updated_by BIGINT`, `updated_at TIMESTAMPTZ`
+
+- `settings_history`
+  - `id SERIAL PRIMARY KEY`
+  - `guild_id BIGINT`, `scope TEXT`, `key TEXT`
+  - `old_value JSONB`, `new_value JSONB`, `changed_by BIGINT`, `changed_at TIMESTAMPTZ`, `change_type TEXT`
+
 - `onboarding`
-  - `user_id BIGINT PRIMARY KEY`
+  - `guild_id BIGINT`, `user_id BIGINT` (composite primary key)
   - `responses JSONB` (answers by index; values may be string | list[str] | {choice, followup, followup_label})
   - `timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
 
+- `guild_onboarding_questions`
+  - `id SERIAL PRIMARY KEY`
+  - `guild_id BIGINT`, `step_order INTEGER` (unique per guild)
+  - `question TEXT`, `question_type TEXT`, `options JSONB`, `followup JSONB`
+  - `required BOOLEAN`, `enabled BOOLEAN`
+
+- `guild_rules`
+  - `id SERIAL PRIMARY KEY`
+  - `guild_id BIGINT`, `rule_order INTEGER` (unique per guild)
+  - `title TEXT`, `description TEXT`, `enabled BOOLEAN`
+
 - `reminders`
+  - `id SERIAL PRIMARY KEY`
+  - `guild_id BIGINT`, `name TEXT`, `channel_id BIGINT`
+  - `time TIME` (reminder trigger time, T−60)
+  - `call_time TIME` (event display time, T0)
+  - `days TEXT[]` (0=Mon..6=Sun); empty for one-off events
+  - `message TEXT`, `created_by BIGINT`
+  - `origin_channel_id BIGINT`, `origin_message_id BIGINT`
+  - `event_time TIMESTAMPTZ` (one-off event timestamp)
+  - `location TEXT`, `last_sent_at TIMESTAMPTZ` (idempotency)
+
 - `support_tickets`
   - `id SERIAL PRIMARY KEY`
   - `user_id BIGINT`, `username TEXT`, `description TEXT`, `status TEXT DEFAULT 'open'`
@@ -155,17 +216,77 @@ Each Discord server configures its own settings via `/config` commands:
    - After send: update `last_sent_at`; delete one-offs after T0
 
 ## Observability
+
+### Logging
 - Centralized logging via `utils/logger.py`
-- Discord log embeds to `WATCHER_LOG_CHANNEL` for created/sent/deleted/errors
-- `/health` endpoint available for external uptime monitoring and DB sanity checks
+- Discord log embeds to configured log channel for created/sent/deleted/errors
+- Rich embed logging for embed watcher parsing results
+- Structured logging for health checks
+
+### Metrics & Analytics
+- `/api/health` enhanced endpoint with detailed metrics (guild count, command usage, GPT status, pool size)
+- `/api/health/history` historical health data for trend analysis
+- `/top-commands` command usage analytics (filterable by guild and time period)
+- `/command_stats` Discord slash command for command usage statistics (admin-only)
 - `utils/runtime_metrics.py` snapshots Discord bot state for the dashboard API without blocking the event loop
+- `utils/command_tracker.py` automatically tracks all command executions with dedicated database pool in bot's event loop
+- Command statistics included in `/api/dashboard/metrics`
+- All command tracking persists across bot restarts
+
+### Telemetry
 - **Telemetry Ingest**: Background job continuously writes subsystem snapshots to Supabase `telemetry.subsystem_snapshots` table, ensuring Mind dashboard always has fresh data (runs every 30-60 seconds, configurable via `TELEMETRY_INGEST_INTERVAL`)
+- **Health Check History**: All health checks are automatically logged to `health_check_history` table
+- **Command Analytics**: All command executions are tracked in `audit_logs` table for usage analysis
 
 ## Security
 - Tokens and DB credentials via env only (no hardcoded secrets)
 - Optional controlled `@everyone` mentions via `ENABLE_EVERYONE_MENTIONS`
 
-## Future improvements
-- Migrations with Alembic for schema evolution
-- Unit tests for parsing helpers and onboarding formatters
-- Health endpoints and structured logging for the API
+## Testing & Quality
+
+### Test Infrastructure
+- **Pytest** configuration with `pytest.ini`
+- **Test fixtures** in `tests/conftest.py` (MockBot, MockSettingsService, sample embeds)
+- **Unit tests** for embed parsing (`tests/test_embed_watcher_parsing.py`) - 30 tests
+- **Unit tests** for reminder logic (`tests/test_reminder_parsing.py`) - 20 tests
+- **53 total tests** covering parsing, timing, edge cases, and day matching
+
+### Database Migrations
+- **Alembic** migration system configured (`alembic/` directory)
+- **Baseline migration** (`001_initial_schema.py`) documents all existing tables
+- **Migration commands** via `/migrate` and `/migrate_status` Discord commands
+- **Migration guide** in `docs/migrations.md`
+- Schema changes can now be versioned and tracked
+
+## Recent Improvements (v1.9.0+)
+
+### Database Architecture
+- **Connection Pools**: All database connections use `asyncpg` connection pools instead of direct connections
+- **Improved Reliability**: Better error handling for connection errors (`ConnectionDoesNotExistError`, `InterfaceError`, `ConnectionResetError`)
+- **Graceful Shutdown**: Background tasks check pool status before operations and handle shutdown gracefully
+- **Event Loop Isolation**: Command tracker uses dedicated pool in bot's event loop to avoid conflicts with FastAPI
+- **Pool Management**: Each cog manages its own connection pool with appropriate size limits (typically 5-10 connections)
+
+### Command Analytics
+- Automatic tracking of all command executions via event handlers
+- Command usage statistics in dashboard metrics
+- `/top-commands` API endpoint for analytics
+- `/command_stats` Discord slash command for real-time statistics (admin-only)
+- Persistent tracking across bot restarts
+- Dedicated database pool for command tracking in bot's event loop
+
+### Health Monitoring
+- Enhanced health endpoint with detailed metrics
+- Health check history for trend analysis
+- Structured logging for health checks
+
+### Reminder Enhancements
+- `/reminder_edit` command with modal interface
+- Improved embed parsing with relative date support
+- Rich embed logging for parsing results
+- Midnight edge case handling
+
+### GPT Integration
+- Retry queue for rate-limited requests
+- Fallback messages when GPT is unavailable
+- Background retry task with exponential backoff

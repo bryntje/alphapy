@@ -20,7 +20,7 @@ from cogs.reminders import (
     get_reminders_for_user,
     update_reminder,
 )
-from utils.logger import get_gpt_status_logs
+from utils.logger import get_gpt_status_logs, logger
 from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
 from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
@@ -105,7 +105,73 @@ MAX_TELEMETRY_RETRIES = 5
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global db_pool
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
-    print("✅ DB pool created")
+    logger.info("✅ DB pool created")
+    
+    # Create audit_logs table for command usage analytics
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    command_name TEXT NOT NULL,
+                    command_type TEXT NOT NULL,
+                    success BOOLEAN DEFAULT TRUE,
+                    error_message TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_guild_created ON audit_logs(guild_id, created_at);"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_command ON audit_logs(command_name, created_at);"
+            )
+            logger.info("✅ audit_logs table created/verified")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to create audit_logs table: {e}")
+    
+    # Create health_check_history table for trend analysis
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS health_check_history (
+                    id SERIAL PRIMARY KEY,
+                    service TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    uptime_seconds INTEGER NOT NULL,
+                    db_status TEXT NOT NULL,
+                    guild_count INTEGER,
+                    active_commands_24h INTEGER,
+                    gpt_status TEXT,
+                    database_pool_size INTEGER,
+                    checked_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_health_check_history_checked_at ON health_check_history(checked_at DESC);"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_health_check_history_service ON health_check_history(service, checked_at DESC);"
+            )
+            # Cleanup old records (keep last 30 days)
+            await conn.execute(
+                """
+                DELETE FROM health_check_history
+                WHERE checked_at < NOW() - interval '30 days'
+                """
+            )
+            logger.info("✅ health_check_history table created/verified")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to create health_check_history table: {e}")
+    
+    # Note: Command tracker is initialized in bot.py on_ready() event
+    # to ensure it uses the bot's event loop, not FastAPI's event loop
     
     # Start background telemetry ingest task
     ingest_interval = getattr(config, "TELEMETRY_INGEST_INTERVAL", 45)
@@ -114,16 +180,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
-        # Cancel and wait for the background task to finish
+        # Cancel and wait for the background task to finish gracefully
+        logger.info("🛑 Shutting down telemetry ingest loop...")
         ingest_task.cancel()
         try:
-            await ingest_task
+            # Wait for task to finish, but with timeout to prevent hanging
+            await asyncio.wait_for(ingest_task, timeout=5.0)
         except asyncio.CancelledError:
             pass
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Telemetry task did not finish within timeout, continuing shutdown")
+        except Exception as exc:
+            # Handle any remaining exceptions from the task
+            logger.debug(f"Telemetry task exception during shutdown (expected): {exc.__class__.__name__}")
         
+        # Close database pool after tasks are done
         if db_pool:
-            await db_pool.close()
-        print("🔌 DB pool closed")
+            try:
+                await db_pool.close()
+                logger.info("🔌 DB pool closed")
+            except Exception as exc:
+                logger.debug(f"Error closing DB pool (expected during shutdown): {exc.__class__.__name__}")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -152,20 +229,108 @@ class HealthStatus(BaseModel):
     uptime_seconds: int
     db_status: str
     timestamp: str
+    guild_count: Optional[int] = None
+    active_commands_24h: Optional[int] = None
+    gpt_status: Optional[str] = None
+    database_pool_size: Optional[int] = None
 
 
 @app.get("/api/health", response_model=HealthStatus, include_in_schema=False)
 async def health_check() -> HealthStatus:
     uptime_seconds = int(time.time() - startup_time)
     db_status = "not_initialized"
+    guild_count: Optional[int] = None
+    active_commands_24h: Optional[int] = None
+    gpt_status: Optional[str] = None
+    database_pool_size: Optional[int] = None
 
+    # Check database status
     if db_pool:
         try:
             async with db_pool.acquire() as connection:
                 await connection.execute("SELECT 1")
             db_status = "ok"
+            try:
+                database_pool_size = db_pool.get_size()
+            except Exception:
+                pass
         except Exception as error:
             db_status = f"error:{error.__class__.__name__}"
+    
+    # Get bot metrics if available
+    try:
+        snapshot = await get_bot_snapshot()
+        if snapshot:
+            guild_count = len(snapshot.guilds)
+    except Exception:
+        pass  # Non-critical - bot might not be ready
+    
+    # Get GPT status
+    try:
+        gpt_logs = get_gpt_status_logs()
+        if gpt_logs.error_count > 0 and gpt_logs.success_count == 0:
+            gpt_status = "error"
+        elif gpt_logs.error_count > 5:
+            gpt_status = "degraded"
+        else:
+            gpt_status = "operational"
+    except Exception:
+        pass
+    
+    # Get command usage count (24h)
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                try:
+                    active_commands_24h = await conn.fetchval(
+                        """
+                        SELECT COUNT(*)
+                        FROM audit_logs
+                        WHERE created_at >= NOW() - interval '24 hours'
+                        """
+                    ) or 0
+                except pg_exceptions.UndefinedTableError:
+                    active_commands_24h = None  # Table doesn't exist yet
+        except Exception:
+            pass
+    
+    # Structured logging
+    health_data = {
+        "service": config.SERVICE_NAME,
+        "version": __version__,
+        "uptime_seconds": uptime_seconds,
+        "db_status": db_status,
+        "guild_count": guild_count,
+        "active_commands_24h": active_commands_24h,
+        "gpt_status": gpt_status,
+        "database_pool_size": database_pool_size,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    logger.info(f"Health check: {health_data}")
+
+    # Persist health check to history table (non-blocking)
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO health_check_history 
+                    (service, version, uptime_seconds, db_status, guild_count, active_commands_24h, gpt_status, database_pool_size)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    """,
+                    config.SERVICE_NAME,
+                    __version__,
+                    uptime_seconds,
+                    db_status,
+                    guild_count,
+                    active_commands_24h,
+                    gpt_status,
+                    database_pool_size
+                )
+        except pg_exceptions.UndefinedTableError:
+            pass  # Table doesn't exist yet - non-critical
+        except Exception as e:
+            logger.debug(f"Failed to persist health check history (non-critical): {e}")
 
     return HealthStatus(
         service=config.SERVICE_NAME,
@@ -173,6 +338,10 @@ async def health_check() -> HealthStatus:
         uptime_seconds=uptime_seconds,
         db_status=db_status,
         timestamp=datetime.now(timezone.utc).isoformat(),
+        guild_count=guild_count,
+        active_commands_24h=active_commands_24h,
+        gpt_status=gpt_status,
+        database_pool_size=database_pool_size,
     )
 
 
@@ -185,10 +354,127 @@ def get_status():
     }
 
 
+@app.get("/api/health/history")
+async def get_health_history(
+    hours: int = 24,
+    limit: int = 100
+) -> Dict[str, Any]:
+    """
+    Get health check history for trend analysis.
+    
+    Args:
+        hours: Number of hours to look back (default: 24)
+        limit: Maximum number of records to return (default: 100)
+    
+    Returns:
+        Dictionary with health check history records
+    """
+    global db_pool
+    if db_pool is None:
+        return {"error": "Database not initialized"}
+    
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT 
+                    service,
+                    version,
+                    uptime_seconds,
+                    db_status,
+                    guild_count,
+                    active_commands_24h,
+                    gpt_status,
+                    database_pool_size,
+                    checked_at
+                FROM health_check_history
+                WHERE checked_at >= NOW() - ($1 || ' hours')::INTERVAL
+                ORDER BY checked_at DESC
+                LIMIT $2
+                """,
+                str(hours),
+                limit
+            )
+            
+            history = []
+            for row in rows:
+                history.append({
+                    "service": row["service"],
+                    "version": row["version"],
+                    "uptime_seconds": row["uptime_seconds"],
+                    "db_status": row["db_status"],
+                    "guild_count": row["guild_count"],
+                    "active_commands_24h": row["active_commands_24h"],
+                    "gpt_status": row["gpt_status"],
+                    "database_pool_size": row["database_pool_size"],
+                    "checked_at": row["checked_at"].isoformat() if row["checked_at"] else None
+                })
+            
+            return {
+                "history": history,
+                "period_hours": hours,
+                "total_records": len(history)
+            }
+    except pg_exceptions.UndefinedTableError:
+        return {"error": "health_check_history table not initialized"}
+    except Exception as exc:
+        logger.error(f"Failed to get health history: {exc}")
+        return {"error": str(exc)}
+
+
 @app.get("/top-commands")
-def get_top_commands():
-    # Static placeholder for now; replace when usage analytics are wired in.
-    return {"create_caption": 182, "help": 39}
+async def get_top_commands(
+    guild_id: Optional[int] = None,
+    days: int = 7,
+    limit: int = 10
+) -> Dict[str, Any]:
+    """
+    Get top commands by usage.
+    
+    Args:
+        guild_id: Optional guild ID to filter by (None = all guilds)
+        days: Number of days to look back (default: 7)
+        limit: Maximum number of commands to return (default: 10)
+    
+    Returns:
+        Dictionary with command names and usage counts
+    """
+    global db_pool
+    if db_pool is None:
+        return {"error": "Database not initialized"}
+    
+    try:
+        async with db_pool.acquire() as conn:
+            where_clause = "WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL"
+            params: List[Any] = [str(days)]
+            
+            if guild_id is not None:
+                where_clause += " AND guild_id = $2"
+                params.append(guild_id)
+            
+            rows = await conn.fetch(
+                f"""
+                SELECT command_name, COUNT(*) as usage_count
+                FROM audit_logs
+                {where_clause}
+                GROUP BY command_name
+                ORDER BY usage_count DESC
+                LIMIT ${len(params) + 1}
+                """,
+                *params,
+                limit
+            )
+            
+            result = {row["command_name"]: row["usage_count"] for row in rows}
+            return {
+                "commands": result,
+                "period_days": days,
+                "guild_id": guild_id,
+                "total_commands": len(result)
+            }
+    except Exception as exc:
+        logger.error(f"Failed to get top commands: {exc}")
+        return {"error": str(exc)}
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +585,17 @@ class InfrastructureMetrics(BaseModel):
     checked_at: str
 
 
+class CommandUsage(BaseModel):
+    command_name: str
+    usage_count: int
+
+
+class CommandStats(BaseModel):
+    top_commands: List[CommandUsage]
+    total_commands_24h: int
+    period_days: int
+
+
 class DashboardMetrics(BaseModel):
     bot: BotMetrics
     gpt: GPTMetrics
@@ -306,6 +603,7 @@ class DashboardMetrics(BaseModel):
     tickets: TicketStats
     settings_overrides: List[SettingOverride]
     infrastructure: InfrastructureMetrics
+    command_usage: Optional[CommandStats] = None
 
 
 def _serialize_gpt_events(raw_events) -> List[GPTLogEvent]:
@@ -405,7 +703,7 @@ async def _fetch_reminder_stats(guild_id: Optional[int] = None) -> ReminderStats
     except pg_exceptions.UndefinedTableError:
         return default
     except Exception as exc:
-        print("[WARN] reminder stats failed:", exc)
+        logger.warning(f"[WARN] reminder stats failed: {exc}")
         return default
 
     if counts_row is None:
@@ -459,7 +757,7 @@ def _format_duration_seconds(seconds: int) -> str:
 
 
 async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
-    """Fetch ticket statistics for dashboard."""
+    """Fetch ticket statistics from database. Returns empty stats if database unavailable."""
     default = TicketStats(
         total=0,
         per_status={},
@@ -470,7 +768,7 @@ async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
         open_items=[],
     )
     global db_pool
-    if db_pool is None:
+    if db_pool is None or db_pool.is_closing():
         return default
     try:
         async with db_pool.acquire() as conn:
@@ -504,8 +802,12 @@ async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
             )
     except pg_exceptions.UndefinedTableError:
         return default
+    except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+        # Pool is closing or connection was lost - this is expected during shutdown
+        logger.debug(f"Ticket stats: Database connection unavailable (pool closing?): {conn_err.__class__.__name__}")
+        return default
     except Exception as exc:
-        print("[WARN] ticket stats failed:", exc)
+        logger.warning(f"[WARN] ticket stats failed: {exc}")
         return default
 
     per_status = {str(row["status"]): int(row["c"] or 0) for row in status_rows}
@@ -577,7 +879,7 @@ async def _fetch_settings_overrides(guild_id: Optional[int] = None) -> List[Sett
     except pg_exceptions.UndefinedTableError:
         return []
     except Exception as exc:
-        print("[WARN] settings overrides fetch failed:", exc)
+        logger.warning(f"[WARN] settings overrides fetch failed: {exc}")
         return []
 
     return [
@@ -599,7 +901,7 @@ async def _collect_infrastructure_metrics() -> InfrastructureMetrics:
             await conn.execute("SELECT 1;")
             database_up = True
     except Exception as exc:
-        print("[WARN] db health check failed:", exc)
+        logger.warning(f"[WARN] db health check failed: {exc}")
 
     pool_size: Optional[int]
     try:
@@ -685,6 +987,13 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
     
     while True:
         try:
+            # Check if pool is closing before starting operations
+            global db_pool
+            if db_pool is None or db_pool.is_closing():
+                logger.debug("Telemetry loop: Database pool is closing, skipping iteration")
+                await asyncio.sleep(interval)
+                continue
+            
             # Collect metrics
             snapshot = await get_bot_snapshot()
             bot_payload = serialize_snapshot(snapshot)
@@ -698,13 +1007,33 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
             if bot_metrics.online:
                 bot_has_been_online = True
             gpt_metrics = _collect_gpt_metrics()
-            ticket_stats = await _fetch_ticket_stats()
+            try:
+                ticket_stats = await _fetch_ticket_stats()
+            except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+                # Pool is closing - use default stats
+                logger.debug(f"Telemetry loop: Database unavailable (pool closing?): {conn_err.__class__.__name__}")
+                ticket_stats = TicketStats(total=0, per_status={}, open_count=0, last_ticket_created_at=None, average_close_seconds=None, average_close_human=None, open_items=[])
+            except Exception as exc:
+                logger.debug(f"Telemetry loop: Failed to fetch ticket stats: {exc}")
+                ticket_stats = TicketStats(total=0, per_status={}, open_count=0, last_ticket_created_at=None, average_close_seconds=None, average_close_human=None, open_items=[])
             
             # Persist to Supabase
-            await _persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats)
+            try:
+                await _persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats)
+            except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+                # Pool is closing - skip this snapshot
+                logger.debug(f"Telemetry loop: Database unavailable during persist (pool closing?): {conn_err.__class__.__name__}")
+                # Continue loop - don't raise
+            except Exception as exc:
+                logger.debug(f"Telemetry loop: Failed to persist snapshot: {exc}")
+                # Continue loop - don't raise
             
             # Flush retry queue after successful write
-            await _flush_telemetry_queue()
+            try:
+                await _flush_telemetry_queue()
+            except Exception as exc:
+                logger.debug(f"Telemetry loop: Failed to flush queue: {exc}")
+                # Continue loop - don't raise
             
             # Log the calculated status for debugging (using same logic as _persist_telemetry_snapshot)
             # Status is based ONLY on bot health (online status + GPT errors), NOT on open tickets
@@ -721,6 +1050,10 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
         except asyncio.CancelledError:
             logger.info("🛑 Telemetry ingest loop cancelled")
             raise
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            # Pool is closing or connection was lost - this is expected during shutdown
+            logger.debug(f"Telemetry loop: Database connection unavailable (pool closing?): {conn_err.__class__.__name__}")
+            # Continue loop - don't raise
         except Exception as exc:
             logger.warning(
                 f"⚠️ Telemetry ingest failed (will retry): {exc.__class__.__name__}: {exc}",
@@ -791,22 +1124,30 @@ async def _persist_telemetry_snapshot(
     global db_pool
     if db_pool:
         try:
-            async with db_pool.acquire() as conn:
-                try:
-                    command_events_24h = await conn.fetchval(
-                        """
-                        SELECT COUNT(*)
-                        FROM audit_logs
-                        WHERE created_at >= timezone('utc', now()) - interval '24 hours'
-                        """
-                    )
-                    if command_events_24h is None:
+            # Check if pool is closed before acquiring
+            if db_pool.is_closing():
+                command_events_24h = 0
+            else:
+                async with db_pool.acquire() as conn:
+                    try:
+                        command_events_24h = await conn.fetchval(
+                            """
+                            SELECT COUNT(*)
+                            FROM audit_logs
+                            WHERE created_at >= timezone('utc', now()) - interval '24 hours'
+                            """
+                        )
+                        if command_events_24h is None:
+                            command_events_24h = 0
+                    except pg_exceptions.UndefinedTableError:
                         command_events_24h = 0
-                except pg_exceptions.UndefinedTableError:
-                    command_events_24h = 0
-                except Exception as exc:
-                    logger.debug(f"Telemetry audit count failed (non-critical): {exc}")
-                    command_events_24h = 0
+                    except Exception as exc:
+                        logger.debug(f"Telemetry audit count failed (non-critical): {exc}")
+                        command_events_24h = 0
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            # Pool is closing or connection was lost - this is expected during shutdown
+            logger.debug(f"Telemetry: Database connection unavailable (pool closing?): {conn_err.__class__.__name__}")
+            command_events_24h = 0
         except Exception:
             command_events_24h = 0
 
@@ -916,6 +1257,65 @@ async def _persist_telemetry_snapshot(
             })
 
 
+async def _fetch_command_stats(guild_id: Optional[int] = None, days: int = 7, limit: int = 10) -> Optional[CommandStats]:
+    """Fetch command usage statistics for dashboard."""
+    global db_pool
+    if db_pool is None:
+        return None
+    
+    try:
+        async with db_pool.acquire() as conn:
+            where_clause = "WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL"
+            params: List[Any] = [str(days)]
+            
+            if guild_id is not None:
+                where_clause += " AND guild_id = $2"
+                params.append(guild_id)
+            
+            # Get top commands
+            command_rows = await conn.fetch(
+                f"""
+                SELECT command_name, COUNT(*) as usage_count
+                FROM audit_logs
+                {where_clause}
+                GROUP BY command_name
+                ORDER BY usage_count DESC
+                LIMIT ${len(params) + 1}
+                """,
+                *params,
+                limit
+            )
+            
+            # Get total count for 24h
+            total_24h_params: List[Any] = ["1"]
+            total_24h_where = "WHERE created_at >= NOW() - interval '24 hours'"
+            if guild_id is not None:
+                total_24h_where += " AND guild_id = $2"
+                total_24h_params.append(guild_id)
+            
+            total_24h = await conn.fetchval(
+                f"SELECT COUNT(*) FROM audit_logs {total_24h_where}",
+                *total_24h_params
+            ) or 0
+            
+            top_commands = [
+                CommandUsage(command_name=row["command_name"], usage_count=row["usage_count"])
+                for row in command_rows
+            ]
+            
+            return CommandStats(
+                top_commands=top_commands,
+                total_commands_24h=int(total_24h),
+                period_days=days
+            )
+    except pg_exceptions.UndefinedTableError:
+        # Table doesn't exist yet - return None (non-critical)
+        return None
+    except Exception as exc:
+        logger.debug(f"Command stats fetch failed (non-critical): {exc}")
+        return None
+
+
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)
 async def get_dashboard_metrics(
     guild_id: Optional[int] = None,
@@ -933,6 +1333,7 @@ async def get_dashboard_metrics(
     reminder_stats = await _fetch_reminder_stats(guild_id)
     ticket_stats = await _fetch_ticket_stats(guild_id)
     infrastructure = await _collect_infrastructure_metrics()
+    command_stats = await _fetch_command_stats(guild_id)
 
     # Persist a telemetry snapshot asynchronously; ignore failures.
     asyncio.create_task(_persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats))
@@ -945,6 +1346,7 @@ async def get_dashboard_metrics(
         # Guild filtering implemented for security - only shows settings for specified guild
         settings_overrides=await _fetch_settings_overrides(guild_id),
         infrastructure=infrastructure,
+        command_usage=command_stats,
     )
 
 
@@ -974,7 +1376,17 @@ class Reminder(BaseModel):
 
 
 @router.get("/reminders/{user_id}", response_model=List[Reminder])
-async def get_user_reminders(user_id: str, auth_user_id: str = Depends(get_authenticated_user_id)):
+async def get_user_reminders(
+    user_id: str, 
+    guild_id: Optional[int] = None,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Get reminders for a specific user.
+    
+    Users can only access their own reminders unless they are admins.
+    Guild filtering is recommended for multi-guild support.
+    """
     if auth_user_id != user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     global db_pool
@@ -982,21 +1394,24 @@ async def get_user_reminders(user_id: str, auth_user_id: str = Depends(get_authe
         raise HTTPException(status_code=503, detail="Database not available")
     try:
         async with db_pool.acquire() as conn:
-            rows = await get_reminders_for_user(conn, user_id)
+            rows = await get_reminders_for_user(conn, user_id, guild_id)
         return [
             {
                 "id": r["id"],
                 "name": r["name"],
-                "time": r["time"].strftime("%H:%M"),
+                "time": r["time"].strftime("%H:%M") if r.get("time") else None,
+                "call_time": r["call_time"].strftime("%H:%M") if r.get("call_time") else None,
                 "days": r["days"],
                 "message": r["message"],
                 "channel_id": r["channel_id"],
+                "location": r.get("location"),
+                "event_time": r["event_time"].isoformat() if r.get("event_time") else None,
                 "user_id": str(r["created_by"]),
             }
             for r in rows
         ]
     except Exception as exc:
-        print("[ERROR] Failed to get reminders:", exc)
+        logger.error(f"[ERROR] Failed to get reminders: {exc}")
         return []
 
 
@@ -1121,7 +1536,7 @@ async def get_guild_settings(
             return GuildSettingsResponse(**settings)
 
     except Exception as exc:
-        print("[ERROR] Failed to get guild settings:", exc)
+        logger.error(f"[ERROR] Failed to get guild settings: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch settings")
 
 

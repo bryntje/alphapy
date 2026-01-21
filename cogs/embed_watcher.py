@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta
 import config
 import asyncpg
+from asyncpg import exceptions as pg_exceptions
 from typing import Optional, Tuple, List, cast
 from utils.logger import logger
 from utils.timezone import BRUSSELS_TZ
@@ -57,7 +58,7 @@ def extract_datetime_from_text(text: str) -> Optional[datetime]:
 class EmbedReminderWatcher(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.conn: Optional[asyncpg.Connection] = None
+        self.db: Optional[asyncpg.Pool] = None
         settings = getattr(bot, "settings", None)
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -102,7 +103,21 @@ class EmbedReminderWatcher(commands.Cog):
         return ', '.join(formatted_days) if formatted_days else "—"
 
     async def setup_db(self) -> None:
-        self.conn = await asyncpg.connect(config.DATABASE_URL)
+        try:
+            self.db = await asyncpg.create_pool(
+                config.DATABASE_URL,
+                min_size=1,
+                max_size=10,
+                command_timeout=10.0
+            )
+        except Exception as e:
+            logger.error(f"❌ EmbedWatcher: DB pool creation error: {e}")
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -122,7 +137,7 @@ class EmbedReminderWatcher(commands.Cog):
         
         # Loop protection: Check if we already processed this message (for both bot and user messages)
         # This prevents duplicate reminders from the same message
-        if self.conn:
+        if self.db and not self.db.is_closing():
             existing = await self._check_existing_reminder_for_message(message.guild.id, message.channel.id, message.id)
             if existing:
                 logger.info(f"⏭️ Message {message.id} already has a reminder (ID: {existing}) - skipping to prevent duplicate processing")
@@ -237,7 +252,7 @@ class EmbedReminderWatcher(commands.Cog):
             else:
                 logger.warning("⚠️ Log channel not found or not accessible.")
 
-            if self.conn:
+            if self.db and not self.db.is_closing():
                 # Additional loop protection: Mark this message as processed by storing it
                 # This prevents the same message from being processed again if it gets re-triggered
                 await self.store_parsed_reminder(
@@ -383,7 +398,7 @@ class EmbedReminderWatcher(commands.Cog):
                     return None
 
             # Log the parsed datetime and days list for debugging purposes.
-            print(
+            logger.debug(
                 f"🕑 Parsed datetime: {dt.astimezone(BRUSSELS_TZ)} "
                 f"(weekday {dt.weekday()}) → days {days_list}"
             )
@@ -580,12 +595,12 @@ class EmbedReminderWatcher(commands.Cog):
                 word = re.sub(r"[^\w]", "", word)
                 if word in day_map:
                     found_days.append(day_map[word])
-            print(f"🔍 Check woord: '{word}' → match? {word in day_map}")
-            print(f"✅ Found days list: {found_days}")
+            logger.debug(f"🔍 Check word: '{word}' → match? {word in day_map}")
+            logger.debug(f"✅ Found days list: {found_days}")
             if found_days:
                 return ",".join(sorted(set(found_days)))
         # fallback to the weekday of the provided datetime
-        print(f"⚠️ Fallback triggered in parse_days — no valid days_line: '{days_line}' → weekday of dt: {dt.strftime('%A')} ({dt.weekday()})")
+        logger.debug(f"⚠️ Fallback triggered in parse_days — no valid days_line: '{days_line}' → weekday of dt: {dt.strftime('%A')} ({dt.weekday()})")
         return str(dt.weekday())
 
     async def store_parsed_reminder(self, parsed: dict, channel: int, created_by: int, guild_id: int, origin_channel_id: Optional[int]=None, origin_message_id: Optional[int]=None) -> None:
@@ -601,13 +616,25 @@ class EmbedReminderWatcher(commands.Cog):
         days_arr = parsed["days"]
         if isinstance(days_arr, str):
             days_arr = [d.strip() for d in days_arr.split(",") if d.strip()]
-            print(f"[DEBUG] Final days_arr for DB insert: {days_arr} ({type(days_arr)})")
+            logger.debug(f"[DEBUG] Final days_arr for DB insert: {days_arr} ({type(days_arr)})")
         # Sanitize title: remove newlines and extra whitespace for name field
         # (Discord modals don't accept newlines in TextInput default values)
         title_sanitized = parsed['title'].replace('\n', ' ').replace('\r', ' ').strip()
         # Collapse multiple spaces into single space
         title_sanitized = ' '.join(title_sanitized.split())
-        name = f"AutoReminder - {title_sanitized[:30]}"
+        
+        # Create reminder name with prefix
+        # Discord reminder name limit is 100 chars, prefix "🤖 Auto - " is 11 chars
+        # So we can use up to 89 chars for the title
+        prefix = "🤖 Auto - "
+        max_title_length = 100 - len(prefix)
+        truncated_title = title_sanitized[:max_title_length] if len(title_sanitized) > max_title_length else title_sanitized
+        
+        # Add ellipsis if truncated
+        if len(title_sanitized) > max_title_length:
+            truncated_title = truncated_title.rstrip() + "..."
+        
+        name = f"{prefix}{truncated_title}"
         
         # Construct message field: avoid duplication
         # For plain text messages and embeds where title is already in description, use only description
@@ -653,29 +680,39 @@ class EmbedReminderWatcher(commands.Cog):
         location = parsed.get("location", "-")
 
         try:
-            if not self.conn:
+            if self.db is None or self.db.is_closing():
                 raise RuntimeError("Database connection not available for store_parsed_reminder")
-            await self.conn.execute(
-                """
-                INSERT INTO reminders (
-                    name, channel_id, days, message, created_by, guild_id,
-                    location, origin_channel_id, origin_message_id,
-                    event_time, time, call_time
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                """,
-                name,
-                channel,
-                days_arr,  # geef als array door
-                message,
-                created_by,
-                guild_id,
-                location,
-                origin_channel_id,
-                origin_message_id,
-                event_dt,
-                trigger_time,  # reminder time (T-60) as time object
-                call_time_obj  # event time (T0) as time object
-            )
+            async with self.db.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO reminders (
+                        name, channel_id, days, message, created_by, guild_id,
+                        location, origin_channel_id, origin_message_id,
+                        event_time, time, call_time
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    """,
+                    name,
+                    channel,
+                    days_arr,  # geef als array door
+                    message,
+                    created_by,
+                    guild_id,
+                    location,
+                    origin_channel_id,
+                    origin_message_id,
+                    event_dt,
+                    trigger_time,  # reminder time (T-60) as time object
+                    call_time_obj  # event time (T0) as time object
+                )
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in store_parsed_reminder: {conn_err}")
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
+            raise
 
             log_channel_id = self._get_log_channel_id(guild_id)
             log_channel = self.bot.get_channel(log_channel_id)
@@ -818,14 +855,18 @@ class EmbedReminderWatcher(commands.Cog):
 
     async def _check_existing_reminder_for_message(self, guild_id: int, channel_id: int, message_id: int) -> Optional[int]:
         """Check if a reminder already exists for this message to prevent duplicate processing."""
-        if not self.conn:
+        if self.db is None or self.db.is_closing():
             return None
         try:
-            row = await self.conn.fetchrow(
-                "SELECT id FROM reminders WHERE guild_id = $1 AND origin_channel_id = $2 AND origin_message_id = $3 LIMIT 1",
-                guild_id, channel_id, message_id
-            )
-            return row["id"] if row else None
+            async with self.db.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT id FROM reminders WHERE guild_id = $1 AND origin_channel_id = $2 AND origin_message_id = $3 LIMIT 1",
+                    guild_id, channel_id, message_id
+                )
+                return row["id"] if row else None
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"⚠️ Database connection error checking existing reminder: {conn_err}")
+            return None
         except Exception as e:
             logger.warning(f"⚠️ Error checking existing reminder: {e}")
             return None
@@ -1044,6 +1085,15 @@ async def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
     """Convenience wrapper to parse a reminder embed outside of the cog."""
     parser = EmbedReminderWatcher(cast(commands.Bot, MockBot()))
     return await parser.parse_embed_for_reminder(embed, guild_id)
+
+    async def cog_unload(self):
+        """Called when the cog is unloaded - close the database pool."""
+        if self.db:
+            try:
+                await self.db.close()
+            except Exception:
+                pass
+            self.db = None
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)
