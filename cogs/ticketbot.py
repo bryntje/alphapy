@@ -719,7 +719,10 @@ class TicketBot(commands.Cog):
             # Sanitize each message before sending to GPT
             safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
-                "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
+                "This ticket has been closed. Provide a clear and concise summary of the conversation that occurred in this ticket. "
+                "Only summarize what was discussed - do not ask questions, do not offer further assistance, and do not hint at continuing the conversation. "
+                "This is a final summary for archival purposes only.\n\n"
+                "Conversation:\n"
                 + "\n".join(safe_messages)
             )
 
@@ -1452,7 +1455,10 @@ class TicketActionView(discord.ui.View):
             # Sanitize each message before sending to GPT
             safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
-                "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
+                "This ticket has been closed. Provide a clear and concise summary of the conversation that occurred in this ticket. "
+                "Only summarize what was discussed - do not ask questions, do not offer further assistance, and do not hint at continuing the conversation. "
+                "This is a final summary for archival purposes only.\n\n"
+                "Conversation:\n"
                 + "\n".join(safe_messages)
             )
 
