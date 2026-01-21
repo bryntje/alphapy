@@ -9,6 +9,7 @@ from typing import Optional, Tuple, List, cast
 from utils.logger import logger
 from utils.timezone import BRUSSELS_TZ
 from utils.settings_service import SettingsService
+import json
 
 
 # All logging timestamps in this module use Brussels time for clarity.
@@ -61,50 +62,227 @@ class EmbedReminderWatcher(commands.Cog):
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
         self.settings = settings  # type: ignore
+    
+    def format_days_for_display(self, days_list: List[str]) -> str:
+        """Convert day numbers to readable day names."""
+        day_names_nl = {
+            "0": "Maandag", "1": "Dinsdag", "2": "Woensdag", "3": "Donderdag",
+            "4": "Vrijdag", "5": "Zaterdag", "6": "Zondag"
+        }
+        
+        # Map of common abbreviations to numbers
+        day_map_to_num = {
+            "ma": "0", "maandag": "0", "monday": "0", "mon": "0",
+            "di": "1", "dinsdag": "1", "tuesday": "1", "tue": "1",
+            "woe": "2", "wo": "2", "woensdag": "2", "wednesday": "2", "wed": "2",
+            "do": "3", "donderdag": "3", "thursday": "3", "thu": "3",
+            "vr": "4", "vrijdag": "4", "friday": "4", "fri": "4",
+            "za": "5", "zaterdag": "5", "saturday": "5", "sat": "5",
+            "zo": "6", "zondag": "6", "sunday": "6", "sun": "6"
+        }
+        
+        # Valid day numbers (0-6)
+        valid_day_numbers = {"0", "1", "2", "3", "4", "5", "6"}
+        
+        formatted_days = []
+        for day in days_list:
+            day_lower = day.lower().strip()
+            # Check if it's a day number (0-6)
+            if day_lower in valid_day_numbers:
+                # Convert number to readable name (prefer Dutch)
+                formatted_days.append(day_names_nl.get(day_lower, day))
+            elif day_lower in day_map_to_num:
+                # It's an abbreviation, convert to number then to name
+                day_num = day_map_to_num[day_lower]
+                formatted_days.append(day_names_nl.get(day_num, day))
+            else:
+                # Already a readable name or unknown format, capitalize first letter
+                formatted_days.append(day.capitalize() if day else day)
+        
+        return ', '.join(formatted_days) if formatted_days else "—"
 
     async def setup_db(self) -> None:
         self.conn = await asyncpg.connect(config.DATABASE_URL)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        if message.author.id == getattr(self.bot.user, 'id', None):
-            return  # Skip messages from the bot itself
         if not message.guild:
             return  # Skip messages not in a guild
+        
         announcements_channel_id = self._get_announcements_channel_id(message.guild.id)
-        if message.channel.id != announcements_channel_id or not message.embeds:
-            logger.debug(f"[📣] Kanal ID: {message.channel.id} - embeds: {bool(message.embeds)}")
+        if message.channel.id != announcements_channel_id:
+            logger.debug(f"[📣] Channel ID: {message.channel.id} - not announcements channel (expected: {announcements_channel_id})")
+            return
+        
+        is_bot_message = message.author.id == getattr(self.bot.user, 'id', None)
+        
+        # Skip messages from the bot itself unless processing bot messages is enabled
+        if is_bot_message:
+            if not self._is_process_bot_messages_enabled(message.guild.id):
+                logger.debug(f"[📣] Bot message in announcements channel (ID: {message.id}) - skipped (bot messages disabled)")
+                return
+            else:
+                logger.info(f"[📣] Processing bot's own message (ID: {message.id}) - process_bot_messages enabled")
+        
+        # Loop protection: Check if we already processed this message (for both bot and user messages)
+        # This prevents duplicate reminders from the same message
+        if self.conn:
+            existing = await self._check_existing_reminder_for_message(message.guild.id, message.channel.id, message.id)
+            if existing:
+                logger.info(f"⏭️ Message {message.id} already has a reminder (ID: {existing}) - skipping to prevent duplicate processing")
+                await self._log_message_processed(message, "skipped", f"Already processed (reminder ID: {existing})", message.guild.id)
+                return
+        
+        logger.debug(f"[📣] Message detected in announcements channel: ID={message.id}, Author={message.author}, Embeds={len(message.embeds)}, Content={bool(message.content)}")
+        
+        # Check for embeds first
+        message_type = "embed"
+        embed_source = None
+        
+        if message.embeds:
+            embed = message.embeds[0]
+            embed_source = embed
+            
+            # ⛔️ Skip reminders that the bot itself has already posted (to avoid loops)
+            # Check for auto-reminder footer (from reminder system)
+            if embed.footer and embed.footer.text == "auto-reminder":
+                logger.debug("[🔁] Embed ignored (auto-reminder tag found)")
+                await self._log_message_processed(message, "skipped", "Auto-reminder tag detected", message.guild.id)
+                return
+            
+            # Additional loop protection: Check embed footer for "processed" markers
+            # (Future: we could add a marker when we create reminders from embeds)
+            if embed.footer and "embedwatcher-processed" in (embed.footer.text or "").lower():
+                logger.debug("[🔁] Embed ignored (already processed marker)")
+                return
+            
+            if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
+                channel_name = message.channel.mention
+            else:
+                channel_name = f"#{getattr(message.channel, 'name', 'unknown')}" if hasattr(message.channel, 'name') else str(message.channel.id)
+            logger.info(f"📥 Processing embed message from {message.author} in {channel_name} (ID: {message.id})")
+            logger.debug(f"🔍 Embed details: title={embed.title}, description={embed.description[:100] if embed.description else None}, fields={len(embed.fields)}, footer={embed.footer.text if embed.footer else None}")
+            parsed = await self.parse_embed_for_reminder(embed, message.guild.id)
+            if not parsed:
+                logger.warning(f"⚠️ Failed to parse embed message {message.id} - parse_embed_for_reminder returned None")
+                await self._log_message_processed(message, "failed", "Parse returned None - check logs for details", message.guild.id)
+                await self._log_failed_parse(embed, message.guild.id, message, "embed")
+                return
+        # Check for non-embed messages if enabled
+        elif self._is_non_embed_enabled(message.guild.id) and message.content:
+            message_type = "text"
+            # Convert message to a mock embed for parsing
+            mock_embed = discord.Embed(
+                title=message.content[:256] if len(message.content) > 100 else None,
+                description=message.content,
+                color=discord.Color.default()
+            )
+            embed_source = mock_embed
+            if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
+                channel_name = message.channel.mention
+            else:
+                channel_name = f"#{getattr(message.channel, 'name', 'unknown')}" if hasattr(message.channel, 'name') else str(message.channel.id)
+            logger.info(f"📥 Processing text message from {message.author} in {channel_name} (ID: {message.id})")
+            parsed = await self.parse_embed_for_reminder(mock_embed, message.guild.id)
+        else:
+            logger.debug(f"[📣] Channel ID: {message.channel.id} - no embeds and non-embed disabled")
             return
 
-        embed = message.embeds[0]
-        # ⛔️ Skip reminders die de bot zelf al gepost heeft (om loops te vermijden)
-        if embed.footer and embed.footer.text == "auto-reminder":
-            logger.debug("[🔁] Embed genegeerd (auto-reminder tag gevonden)")
-            return
-
-        parsed = self.parse_embed_for_reminder(embed, message.guild.id)
         logger.debug(f"[🐛] Parsed result: {parsed}")
-        logger.debug(f"[🐛] DB connection aanwezig? {self.conn is not None}")
+        logger.debug(f"[🐛] DB connection available? {self.conn is not None}")
 
         if parsed and parsed["reminder_time"]:
+            # Successfully parsed
+            logger.info(f"✅ Successfully parsed {message_type} message (ID: {message.id}) - reminder scheduled for {parsed['datetime'].strftime('%d/%m/%Y %H:%M')}")
+            
             log_channel_id = self._get_log_channel_id(message.guild.id)
             log_channel = self.bot.get_channel(log_channel_id)
             if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
-                await log_channel.send(
-                    f"🔔 Auto-reminder detected:\n"
-                    f"📌 **{parsed['title']}**\n"
-                    f"📅 {parsed['datetime'].strftime('%A %d %B %Y')} om {parsed['datetime'].strftime('%H:%M')}\n"
-                    f"⏰ Reminder zal triggeren om {parsed['reminder_time'].strftime('%H:%M')}."
-                    f" 📍 Locatie: {parsed.get('location') or '—'}"
+                if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
+                    channel_ref = message.channel.mention
+                else:
+                    channel_ref = f"#{getattr(message.channel, 'name', 'unknown')}" if hasattr(message.channel, 'name') else str(message.channel.id)
+                
+                # Create embed for cleaner log display
+                log_embed = discord.Embed(
+                    title="🔔 Auto-reminder Detected",
+                    description=f"Reminder automatically created from {message_type} message",
+                    color=discord.Color.green(),
+                    timestamp=datetime.now(BRUSSELS_TZ)
                 )
+                log_embed.add_field(
+                    name="📌 Title",
+                    value=parsed['title'] or "—",
+                    inline=False
+                )
+                log_embed.add_field(
+                    name="📅 Event Date & Time",
+                    value=f"{parsed['datetime'].strftime('%A %d %B %Y')} at {parsed['datetime'].strftime('%H:%M')}",
+                    inline=True
+                )
+                log_embed.add_field(
+                    name="⏰ Reminder Time",
+                    value=f"Will trigger at {parsed['reminder_time'].strftime('%H:%M')}",
+                    inline=True
+                )
+                if parsed.get('location') and parsed.get('location') != "-":
+                    log_embed.add_field(
+                        name="📍 Location",
+                        value=parsed.get('location'),
+                        inline=True
+                    )
+                log_embed.add_field(
+                    name="📝 Message Type",
+                    value=message_type.capitalize(),
+                    inline=True
+                )
+                if parsed.get('days'):
+                    days_display = self.format_days_for_display(parsed['days'])
+                    log_embed.add_field(
+                        name="📆 Recurring Days",
+                        value=days_display,
+                        inline=True
+                    )
+                log_embed.set_footer(text=f"Author: {message.author.display_name} | Channel: {channel_ref}")
+                log_embed.url = message.jump_url
+                
+                await log_channel.send(embed=log_embed)
             else:
-                logger.warning("⚠️  Logkanaal niet gevonden of niet toegankelijk.")
+                logger.warning("⚠️ Log channel not found or not accessible.")
 
             if self.conn:
-                await self.store_parsed_reminder(parsed, int(message.channel.id), int(message.author.id), message.guild.id)
+                # Additional loop protection: Mark this message as processed by storing it
+                # This prevents the same message from being processed again if it gets re-triggered
+                await self.store_parsed_reminder(
+                    parsed, 
+                    int(message.channel.id), 
+                    int(message.author.id), 
+                    message.guild.id,
+                    origin_channel_id=int(message.channel.id),
+                    origin_message_id=int(message.id)
+                )
+                
+                # For bot messages: Add a marker to prevent future loops
+                if is_bot_message:
+                    logger.info(f"🔒 Marked bot message {message.id} as processed to prevent loops")
+            else:
+                logger.warning(f"⚠️ Database connection not available - reminder not stored for message {message.id}")
+        else:
+            # Failed to parse
+            reason = "No date/time information found"
+            if embed_source:
+                await self._log_failed_parse(embed_source, message.guild.id, message, message_type)
+            logger.info(f"⚠️ Failed to parse {message_type} message (ID: {message.id}) - {reason}")
+            await self._log_message_processed(message, "failed", reason, message.guild.id)
 
-    def parse_embed_for_reminder(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:
+    async def parse_embed_for_reminder(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:
         all_text = embed.description or ""
+        title_text = embed.title or ""
+        
+        # Include footer text in all_text for parsing (if present)
+        if embed.footer and embed.footer.text:
+            all_text += f"\n{embed.footer.text}"
+        
         for field in embed.fields:
             all_text += f"\n{field.name}\n{field.value}"
 
@@ -127,6 +305,13 @@ class EmbedReminderWatcher(commands.Cog):
                 time_fallback = re.search(r"\b(\d{1,2}[:.]\d{2})\s*(?:CET|CEST)?", all_text)
             if time_fallback:
                 time_line = time_fallback.group(0)
+
+        # Try to extract relative dates like "This Wednesday", "Next Friday" from title or description
+        if not date_line:
+            relative_date = self.parse_relative_date(title_text + " " + (embed.description or ""))
+            if relative_date:
+                date_line = relative_date
+                logger.info(f"✅ Parsed relative date: {date_line}")
 
         if not days_line and embed.description:
             day_fallback = re.search(r"\b(?:every|elke)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", embed.description, re.IGNORECASE)
@@ -157,9 +342,40 @@ class EmbedReminderWatcher(commands.Cog):
                     location_line = loc_match.group(1).strip()
 
             if not dt:
-                logger.warning("⚠️ Geen geldige datum gevonden en geen tijd/datum in description. Reminder wordt niet gemaakt.")
+                # Try GPT fallback if enabled
+                if self._is_gpt_fallback_enabled(guild_id):
+                    gpt_parsed = await self._parse_with_gpt_fallback(embed, guild_id)
+                    if gpt_parsed and gpt_parsed.get("datetime"):
+                        # Use GPT parsed result
+                        dt_gpt = gpt_parsed.get("datetime")
+                        if dt_gpt:
+                            reminder_time = dt_gpt - timedelta(minutes=self._get_reminder_offset(guild_id))
+                        else:
+                            reminder_time = None
+                        if not dt_gpt or not reminder_time:
+                            logger.warning("⚠️ GPT fallback returned invalid datetime")
+                            await self._log_failed_parse(embed, guild_id)
+                            return None
+                        days_list = gpt_parsed.get("days", [])
+                        location_from_gpt = gpt_parsed.get("location", "-")
+                        logger.info(f"✅ GPT fallback parsing succeeded for embed: {embed.title}")
+                        return {
+                            "datetime": dt_gpt,
+                            "reminder_time": reminder_time,
+                            "location": location_from_gpt,
+                            "title": embed.title or "-",
+                            "description": embed.description or "-",
+                            "days": days_list,
+                        }
+                
+                # If GPT fallback also failed or disabled, log the failure
+                # Note: We'll log this at the on_message level with more context
+                logger.warning("⚠️ No valid date found and no time/date in description. Reminder will not be created.")
                 return None
 
+            if dt is None:
+                logger.warning("⚠️ Cannot calculate reminder time: dt is None")
+                return None
             offset_minutes = self._get_reminder_offset(guild_id)
             reminder_time = dt - timedelta(minutes=offset_minutes)
 
@@ -171,9 +387,13 @@ class EmbedReminderWatcher(commands.Cog):
                 days_list = days_str.split(",") if days_str else []
             else:
                 if had_explicit_date or dt_from_description:
-                    days_list = []  # one-off event
+                    # For one-off events, store weekday for informational purposes
+                    # This helps in the edit modal to show which day the event is on
+                    weekday = str(dt.weekday())
+                    days_list = [weekday]  # Store weekday for one-off events too
+                    logger.debug(f"📅 One-off event on weekday {weekday} ({dt.strftime('%A')}) - stored for info")
                 else:
-                    logger.warning("⚠️ Geen datum en geen dagen opgegeven → geen reminder aangemaakt.")
+                    logger.warning("⚠️ No date and no days specified → reminder not created.")
                     return None
 
             # Log the parsed datetime and days list for debugging purposes.
@@ -182,13 +402,17 @@ class EmbedReminderWatcher(commands.Cog):
                 f"(weekday {dt.weekday()}) → days {days_list}"
             )
 
-            # At this point we have a valid datetime; days_list may be empty for one-off
+            # Include footer in description if present (for storage in message field)
+            footer_text = embed.footer.text if embed.footer and embed.footer.text else None
+            
+            # At this point we have a valid datetime; days_list contains weekday for one-off events
             return {
                 "datetime": dt,
                 "reminder_time": reminder_time,
                 "location": location_line or "-",
                 "title": embed.title or "-",
                 "description": embed.description or "-",
+                "footer": footer_text,  # Include footer for later use
                 "days": days_list,
             }
         except Exception as e:
@@ -211,7 +435,7 @@ class EmbedReminderWatcher(commands.Cog):
 
     def parse_datetime(self, date_line: Optional[str], time_line: Optional[str]) -> Tuple[Optional[datetime], Optional[object]]:
         if not time_line:
-            logger.warning(f"❌ Geen geldige tijd gevonden in regel: {time_line}")
+            logger.warning(f"❌ No valid time found in line: {time_line}")
             return None, None
 
         time_match = re.search(r"^.*?(\d{1,2})[:.](\d{2})(?:\s*(CET|CEST))?.*$", time_line)
@@ -286,6 +510,61 @@ class EmbedReminderWatcher(commands.Cog):
 
         return None
 
+    def parse_relative_date(self, text: str) -> Optional[str]:
+        """Parse relative dates like 'This Wednesday', 'Next Friday', 'Tomorrow' etc."""
+        now = datetime.now(BRUSSELS_TZ)
+        text_lower = text.lower()
+        
+        # Day name mapping
+        day_map = {
+            "monday": 0, "maandag": 0, "mon": 0, "ma": 0,
+            "tuesday": 1, "dinsdag": 1, "tue": 1, "di": 1,
+            "wednesday": 2, "woensdag": 2, "wed": 2, "woe": 2, "wo": 2,
+            "thursday": 3, "donderdag": 3, "thu": 3, "do": 3,
+            "friday": 4, "vrijdag": 4, "fri": 4, "vr": 4,
+            "saturday": 5, "zaterdag": 5, "sat": 5, "za": 5,
+            "sunday": 6, "zondag": 6, "sun": 6, "zo": 6,
+        }
+        
+        # Try "This [day]" or "This coming [day]"
+        this_match = re.search(r"\bthis\s+(?:coming\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|mon|tue|wed|thu|fri|sat|sun|ma|di|woe?|do|vr|za|zo)\b", text_lower)
+        if this_match:
+            day_name = this_match.group(1)
+            if day_name in day_map:
+                target_weekday = day_map[day_name]
+                current_weekday = now.weekday()
+                days_ahead = (target_weekday - current_weekday) % 7
+                if days_ahead == 0:
+                    days_ahead = 7  # If today is the day, assume next week
+                target_date = now + timedelta(days=days_ahead)
+                return target_date.strftime("%d/%m/%Y")
+        
+        # Try "Next [day]"
+        next_match = re.search(r"\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|mon|tue|wed|thu|fri|sat|sun|ma|di|woe?|do|vr|za|zo)\b", text_lower)
+        if next_match:
+            day_name = next_match.group(1)
+            if day_name in day_map:
+                target_weekday = day_map[day_name]
+                current_weekday = now.weekday()
+                days_ahead = (target_weekday - current_weekday) % 7
+                if days_ahead == 0:
+                    days_ahead = 7  # If today is the day, assume next week
+                else:
+                    days_ahead += 7  # "Next" means at least one week ahead
+                target_date = now + timedelta(days=days_ahead)
+                return target_date.strftime("%d/%m/%Y")
+        
+        # Try "Tomorrow"
+        if re.search(r"\btomorrow\b", text_lower) or re.search(r"\bmorgen\b", text_lower):
+            target_date = now + timedelta(days=1)
+            return target_date.strftime("%d/%m/%Y")
+        
+        # Try "Today"
+        if re.search(r"\btoday\b", text_lower) or re.search(r"\bvandaag\b", text_lower):
+            return now.strftime("%d/%m/%Y")
+        
+        return None
+
     def parse_days(self, days_line: Optional[str], dt: datetime) -> str:
         if not days_line:
             return str(dt.weekday())
@@ -320,7 +599,7 @@ class EmbedReminderWatcher(commands.Cog):
             if found_days:
                 return ",".join(sorted(set(found_days)))
         # fallback to the weekday of the provided datetime
-        print(f"⚠️ Fallback triggered in parse_days — geen geldige days_line: '{days_line}' → weekday van dt: {dt.strftime('%A')} ({dt.weekday()})")
+        print(f"⚠️ Fallback triggered in parse_days — no valid days_line: '{days_line}' → weekday of dt: {dt.strftime('%A')} ({dt.weekday()})")
         return str(dt.weekday())
 
     async def store_parsed_reminder(self, parsed: dict, channel: int, created_by: int, guild_id: int, origin_channel_id: Optional[int]=None, origin_message_id: Optional[int]=None) -> None:
@@ -336,14 +615,62 @@ class EmbedReminderWatcher(commands.Cog):
         days_arr = parsed["days"]
         if isinstance(days_arr, str):
             days_arr = [d.strip() for d in days_arr.split(",") if d.strip()]
-        print(f"[DEBUG] Final days_arr voor DB-insert: {days_arr} ({type(days_arr)})")
-        name = f"AutoReminder - {parsed['title'][:30]}"
-        message = f"{parsed['title']}\n\n{parsed['description']}"
+            print(f"[DEBUG] Final days_arr for DB insert: {days_arr} ({type(days_arr)})")
+        # Sanitize title: remove newlines and extra whitespace for name field
+        # (Discord modals don't accept newlines in TextInput default values)
+        title_sanitized = parsed['title'].replace('\n', ' ').replace('\r', ' ').strip()
+        # Collapse multiple spaces into single space
+        title_sanitized = ' '.join(title_sanitized.split())
+        name = f"AutoReminder - {title_sanitized[:30]}"
+        
+        # Construct message field: avoid duplication
+        # For plain text messages and embeds where title is already in description, use only description
+        title_val = parsed.get('title', '').strip()
+        desc_val = parsed.get('description', '').strip()
+        footer_val = parsed.get('footer', '').strip() if parsed.get('footer') else None
+        
+        # Smart duplicate detection: check if title content is already in description
+        # This handles cases where title and description overlap significantly
+        if title_val and desc_val and title_val != "-" and desc_val != "-":
+            # Extract key words from title (remove emojis, special chars, common words)
+            title_words = set(re.findall(r'\b\w{3,}\b', title_val.lower()))  # Words with 3+ chars
+            desc_words = set(re.findall(r'\b\w{3,}\b', desc_val.lower()))
+            
+            # Calculate overlap: if >50% of title words are in description, likely duplicate
+            overlap = len(title_words & desc_words)
+            title_word_count = len(title_words) if title_words else 1
+            overlap_ratio = overlap / title_word_count if title_word_count > 0 else 0
+            
+            # Also check if description starts with title or contains significant title content
+            title_normalized = ' '.join(title_val.split()[:10])  # First 10 words of title
+            desc_start = desc_val[:len(title_normalized) + 50]  # First part of description
+            
+            if overlap_ratio > 0.5 or desc_val.startswith(title_val) or title_normalized.lower() in desc_start.lower():
+                # Title is already in description - use description only
+                message = desc_val
+                logger.debug(f"🔧 Message construction: using description only (title overlap: {overlap_ratio:.2%})")
+            else:
+                # Real embed where title and description are different - combine them
+                message = f"{title_val}\n\n{desc_val}"
+                logger.debug(f"🔧 Message construction: combining title and description (low overlap: {overlap_ratio:.2%})")
+        elif desc_val and desc_val != "-":
+            # Only description available
+            message = desc_val
+        elif title_val and title_val != "-":
+            # Only title available
+            message = title_val
+        else:
+            message = ""
+        
+        # Append footer to message if present
+        if footer_val and footer_val not in message:
+            message = f"{message}\n\n{footer_val}".strip() if message else footer_val
+        
         location = parsed.get("location", "-")
 
         try:
             if not self.conn:
-                raise RuntimeError("Databaseverbinding niet beschikbaar voor store_parsed_reminder")
+                raise RuntimeError("Database connection not available for store_parsed_reminder")
             await self.conn.execute(
                 """
                 INSERT INTO reminders (
@@ -362,53 +689,82 @@ class EmbedReminderWatcher(commands.Cog):
                 origin_channel_id,
                 origin_message_id,
                 event_dt,
-                trigger_time,
-                call_time_obj
+                trigger_time,  # reminder time (T-60) as time object
+                call_time_obj  # event time (T0) as time object
             )
 
             log_channel_id = self._get_log_channel_id(guild_id)
             log_channel = self.bot.get_channel(log_channel_id)
             logger.debug(f"[🪵] Log channel: {log_channel}")
             if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
-                await log_channel.send(
-                    f"✅ Reminder opgeslagen in DB voor: **{name}**\n"
-                    f"🕒 Tijdstip: {trigger_time.strftime('%H:%M')} op dag {','.join(days_arr)}\n"
-                    f"📍 Locatie: {location or '—'}"
+                # Create embed for cleaner log display
+                db_log_embed = discord.Embed(
+                    title="✅ Reminder Saved to Database",
+                    description=f"Reminder **{name}** has been successfully stored",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now(BRUSSELS_TZ)
                 )
+                db_log_embed.add_field(
+                    name="🕒 Reminder Time",
+                    value=f"{trigger_time.strftime('%H:%M')}",
+                    inline=True
+                )
+                if days_arr:
+                    days_display = self.format_days_for_display(days_arr)
+                    db_log_embed.add_field(
+                        name="📆 Days",
+                        value=days_display,
+                        inline=True
+                    )
+                else:
+                    db_log_embed.add_field(
+                        name="📆 Type",
+                        value="One-off event",
+                        inline=True
+                    )
+                if location and location != "-":
+                    db_log_embed.add_field(
+                        name="📍 Location",
+                        value=location,
+                        inline=True
+                    )
+                db_log_embed.set_footer(text=f"embedwatcher | Guild: {guild_id}")
+                
+                await log_channel.send(embed=db_log_embed)
             else:
-                logger.warning("⚠️ Kon logkanaal niet vinden voor confirmatie.")
+                logger.warning("⚠️ Could not find log channel for confirmation.")
 
         except Exception as e:
             logger.exception(f"[ERROR] Reminder insert failed: {e}")
 
-    @app_commands.command(name="debug_parse_embed", description="Parse de laatste embed in het kanaal voor test.")
+    @app_commands.command(name="debug_parse_embed", description="Parse the last embed in the channel for testing.")
     async def debug_parse_embed(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild:
-            await interaction.followup.send("⚠️ Dit commando werkt enkel in servers.")
+            await interaction.followup.send("⚠️ This command only works in servers.")
             return
         if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
-            await interaction.followup.send("⚠️ Dit commando werkt enkel in tekstkanalen.")
+            await interaction.followup.send("⚠️ This command only works in text channels.")
             return
         messages = [m async for m in interaction.channel.history(limit=10)]
 
         for msg in messages:
             if msg.embeds:
                 embed = msg.embeds[0]
-                parsed = self.parse_embed_for_reminder(embed, interaction.guild.id)
+                parsed = await self.parse_embed_for_reminder(embed, interaction.guild.id)
                 if parsed:
                     response = (
                         f"🧠 **Parsed data:**\n"
                         f"📅 Datum: `{parsed['datetime']}`\n"
                         f"⏰ Reminder Time: `{parsed['reminder_time']}`\n"
-                        f"📍 Locatie: `{parsed.get('location', '-')}`"
+                        f"📍 Location: `{parsed.get('location', '-')}`"
                     )
                     await interaction.followup.send(response)
                 else:
-                    await interaction.followup.send("❌ Kon embed niet parsen.")
+                    await interaction.followup.send("❌ Could not parse embed.")
                 return
 
-        await interaction.followup.send("⚠️ Geen embed gevonden in de laatste 10 berichten.")
+        await interaction.followup.send("⚠️ No embed found in the last 10 messages.")
 
 
     def _get_announcements_channel_id(self, guild_id: int) -> int:
@@ -417,7 +773,7 @@ class EmbedReminderWatcher(commands.Cog):
                 return int(self.settings.get("embedwatcher", "announcements_channel_id", guild_id))
             except KeyError:
                 pass
-        return 0  # Moet geconfigureerd worden via /config embedwatcher announcements_channel_id
+        return 0  # Must be configured via /config embedwatcher announcements_channel_id
 
     def _get_log_channel_id(self, guild_id: int) -> int:
         if self.settings:
@@ -425,7 +781,7 @@ class EmbedReminderWatcher(commands.Cog):
                 return int(self.settings.get("system", "log_channel_id", guild_id))
             except KeyError:
                 pass
-        return 0  # Moet geconfigureerd worden via /config system set_log_channel
+        return 0  # Must be configured via /config system set_log_channel
 
     def _get_reminder_offset(self, guild_id: int) -> int:
         if self.settings:
@@ -434,6 +790,257 @@ class EmbedReminderWatcher(commands.Cog):
             except KeyError:
                 pass
         return 60
+
+    def _is_gpt_fallback_enabled(self, guild_id: int) -> bool:
+        if self.settings:
+            try:
+                return bool(self.settings.get("embedwatcher", "gpt_fallback_enabled", guild_id))
+            except KeyError:
+                pass
+        return True  # Default enabled
+
+    def _get_failed_parse_log_channel_id(self, guild_id: int) -> int:
+        if self.settings:
+            try:
+                value = self.settings.get("embedwatcher", "failed_parse_log_channel_id", guild_id)
+                if value and value != 0:
+                    return int(value)
+            except KeyError:
+                pass
+        # Fallback to system log channel
+        if self.settings:
+            try:
+                return int(self.settings.get("system", "log_channel_id", guild_id))
+            except KeyError:
+                pass
+        return 0
+
+    def _is_non_embed_enabled(self, guild_id: int) -> bool:
+        """Check if non-embed message parsing is enabled."""
+        if self.settings:
+            try:
+                return bool(self.settings.get("embedwatcher", "non_embed_enabled", guild_id))
+            except KeyError:
+                pass
+        return False  # Default disabled
+
+    def _is_process_bot_messages_enabled(self, guild_id: int) -> bool:
+        """Check if processing bot's own messages is enabled."""
+        if self.settings:
+            try:
+                return bool(self.settings.get("embedwatcher", "process_bot_messages", guild_id))
+            except KeyError:
+                pass
+        return False  # Default disabled (to prevent loops)
+
+    async def _check_existing_reminder_for_message(self, guild_id: int, channel_id: int, message_id: int) -> Optional[int]:
+        """Check if a reminder already exists for this message to prevent duplicate processing."""
+        if not self.conn:
+            return None
+        try:
+            row = await self.conn.fetchrow(
+                "SELECT id FROM reminders WHERE guild_id = $1 AND origin_channel_id = $2 AND origin_message_id = $3 LIMIT 1",
+                guild_id, channel_id, message_id
+            )
+            return row["id"] if row else None
+        except Exception as e:
+            logger.warning(f"⚠️ Error checking existing reminder: {e}")
+            return None
+
+    async def _parse_with_gpt_fallback(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:
+        """Use GPT to parse embed when structured parsing fails."""
+        try:
+            from gpt.helpers import ask_gpt
+            
+            # Build text from embed
+            embed_text = f"Title: {embed.title or ''}\n"
+            embed_text += f"Description: {embed.description or ''}\n"
+            for field in embed.fields:
+                embed_text += f"{field.name}: {field.value}\n"
+            
+            # Get current date for context
+            current_date = datetime.now(BRUSSELS_TZ)
+            current_date_str = current_date.strftime("%d/%m/%Y")
+            current_weekday = current_date.strftime("%A")
+            
+            prompt = f"""Extract event information from this Discord embed. Today is {current_date_str} ({current_weekday}).
+
+Return ONLY valid JSON with these exact keys:
+{{
+    "date": "DD/MM/YYYY or empty string if recurring",
+    "time": "HH:MM in 24h format",
+    "days": "comma-separated weekday numbers (0=Monday, 6=Sunday) or empty string if one-off",
+    "location": "location string or empty string"
+}}
+
+IMPORTANT: Handle relative dates like "This Wednesday", "Next Friday", "Tomorrow", "Today" by converting them to DD/MM/YYYY format based on today's date ({current_date_str}).
+
+Examples:
+- "This Wednesday" when today is Monday → calculate the date of the upcoming Wednesday
+- "Next Friday" → calculate the date of Friday next week
+- "Tomorrow" → {current_date + timedelta(days=1):%d/%m/%Y}
+- "Today" → {current_date_str}
+
+Embed text:
+{embed_text}
+
+If you cannot extract clear date/time information, return {{"error": "cannot_parse"}}.
+Return ONLY the JSON, no other text."""
+
+            # Call GPT with structured prompt (temperature from guild settings)
+            response = await ask_gpt(
+                [{"role": "user", "content": prompt}],
+                user_id=None,
+                model=None,
+                guild_id=guild_id
+            )
+            
+            # Parse JSON response
+            import json
+            # Try to extract JSON from response (might have markdown code blocks)
+            response_clean = response.strip()
+            if response_clean.startswith("```"):
+                # Remove markdown code blocks
+                response_clean = response_clean.split("```")[1]
+                if response_clean.startswith("json"):
+                    response_clean = response_clean[4:]
+                response_clean = response_clean.strip()
+            elif response_clean.startswith("{"):
+                # Find the JSON object
+                start = response_clean.find("{")
+                end = response_clean.rfind("}") + 1
+                response_clean = response_clean[start:end]
+            
+            parsed_json = json.loads(response_clean)
+            
+            if parsed_json.get("error") == "cannot_parse":
+                return None
+            
+            # Build datetime from parsed data
+            date_str = parsed_json.get("date", "").strip()
+            time_str = parsed_json.get("time", "").strip()
+            days_str = parsed_json.get("days", "").strip()
+            location = parsed_json.get("location", "").strip()
+            
+            if not time_str:
+                return None
+            
+            # Parse time
+            try:
+                hour, minute = map(int, time_str.split(":"))
+            except (ValueError, AttributeError):
+                return None
+            
+            # Parse date if provided
+            if date_str:
+                try:
+                    # Try DD/MM/YYYY format
+                    day, month, year = map(int, date_str.split("/"))
+                    dt = datetime(year, month, day, hour, minute, tzinfo=BRUSSELS_TZ)
+                    days_list = []  # One-off event
+                except (ValueError, AttributeError):
+                    return None
+            else:
+                # Recurring - use current date with parsed time
+                now = datetime.now(BRUSSELS_TZ)
+                dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                # Parse days
+                if days_str:
+                    days_list = [d.strip() for d in days_str.split(",") if d.strip()]
+                else:
+                    # Default to weekday of current time
+                    days_list = [str(dt.weekday())]
+            
+            return {
+                "datetime": dt,
+                "days": days_list,
+                "location": location or "-",
+            }
+        except Exception as e:
+            logger.exception(f"❌ GPT fallback parsing failed: {e}")
+            return None
+
+    async def _log_failed_parse(self, embed: discord.Embed, guild_id: int, message: Optional[discord.Message] = None, message_type: str = "embed") -> None:
+        """Log failed parse attempt to admin channel."""
+        channel_id = self._get_failed_parse_log_channel_id(guild_id)
+        if channel_id == 0:
+            return
+        
+        channel = self.bot.get_channel(channel_id)
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            return
+        
+        # Build embed text for logging
+        embed_text = f"**Type:** {message_type.capitalize()} message\n"
+        if message:
+            embed_text += f"**Author:** {message.author.mention}\n"
+            channel_ref = getattr(message.channel, 'mention', f"#{getattr(message.channel, 'name', 'unknown')}") if hasattr(message.channel, 'mention') else str(message.channel.id)
+            embed_text += f"**Channel:** {channel_ref}\n"
+            embed_text += f"**Message ID:** `{message.id}`\n"
+            embed_text += f"**Jump URL:** [Go to message]({message.jump_url})\n\n"
+        
+        embed_text += f"**Title:** {embed.title or '—'}\n"
+        embed_text += f"**Description:** {embed.description or '—'}\n"
+        if embed.fields:
+            embed_text += "\n**Fields:**\n"
+            for field in embed.fields:
+                embed_text += f"- **{field.name}:** {field.value}\n"
+        
+        log_embed = discord.Embed(
+            title="⚠️ Failed Parse",
+            description=f"Could not parse reminder from {message_type}. Please review manually.\n\n{embed_text}",
+            color=discord.Color.orange(),
+            timestamp=datetime.now(BRUSSELS_TZ)
+        )
+        log_embed.set_footer(text=f"embedwatcher | Guild: {guild_id}")
+        
+        try:
+            await channel.send(embed=log_embed)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to log failed parse: {e}")
+
+    async def _log_message_processed(self, message: discord.Message, status: str, reason: str, guild_id: int) -> None:
+        """Log that a message was processed (successfully or not) to the log channel."""
+        log_channel_id = self._get_log_channel_id(guild_id)
+        if log_channel_id == 0:
+            return
+        
+        log_channel = self.bot.get_channel(log_channel_id)
+        if not isinstance(log_channel, (discord.TextChannel, discord.Thread)):
+            return
+        
+        # Only log if log level allows it (info level for successful, warning for failed)
+        from utils.logger import should_log_to_discord
+        level = "warning" if status == "failed" else "info"
+        if not should_log_to_discord(level, guild_id):
+            return
+        
+        color = discord.Color.orange() if status == "failed" else discord.Color.green() if status == "success" else discord.Color.blue()
+        emoji = "✅" if status == "success" else "⚠️" if status == "failed" else "⏭️"
+        
+        if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
+            channel_ref = message.channel.mention
+        else:
+            channel_ref = f"#{getattr(message.channel, 'name', 'unknown')}" if hasattr(message.channel, 'name') else str(message.channel.id)
+        log_embed = discord.Embed(
+            title=f"{emoji} Message Processed ({status.capitalize()})",
+            description=(
+                f"**Type:** {'Embed' if message.embeds else 'Text'}\n"
+                f"**Author:** {message.author.mention}\n"
+                f"**Channel:** {channel_ref}\n"
+                f"**Status:** {status}\n"
+                f"**Reason:** {reason}\n"
+                f"🔗 [Jump to message]({message.jump_url})"
+            ),
+            color=color,
+            timestamp=datetime.now(BRUSSELS_TZ)
+        )
+        log_embed.set_footer(text=f"embedwatcher | Guild: {guild_id}")
+        
+        try:
+            await log_channel.send(embed=log_embed)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to log message processed: {e}")
 
 
 class MockSettingsService:
@@ -450,10 +1057,10 @@ class MockBot:
     def get_channel(self, *_):
         return None
 
-def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
+async def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
     """Convenience wrapper to parse a reminder embed outside of the cog."""
     parser = EmbedReminderWatcher(cast(commands.Bot, MockBot()))
-    return parser.parse_embed_for_reminder(embed, guild_id)
+    return await parser.parse_embed_for_reminder(embed, guild_id)
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)
