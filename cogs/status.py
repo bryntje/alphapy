@@ -3,7 +3,7 @@ import aiohttp
 import time
 from datetime import datetime, timezone
 from utils.timezone import BRUSSELS_TZ
-from utils.logger import get_gpt_status_logs
+from utils.logger import get_gpt_status_logs, logger
 from discord import app_commands
 from discord.ext import commands
 from version import __version__, CODENAME
@@ -13,7 +13,14 @@ import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import config
 from utils.checks_interaction import is_owner_or_admin_interaction
-from typing import Optional, Dict, Any
+from utils.command_metadata import (
+    get_category_for_cog,
+    is_admin_command,
+    find_enable_disable_pair,
+    format_command_pair,
+    HIDDEN_COMMANDS,
+)
+from typing import Optional, Dict, Any, List, cast
 
 # Database pool for command_stats (shared across status commands)
 _status_db_pool: Optional[asyncpg.Pool] = None
@@ -52,6 +59,298 @@ async def release_cmd(interaction: discord.Interaction):
 async def health_cmd(interaction: discord.Interaction):
     embed = await _build_health_embed(interaction)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@app_commands.command(name="commands", description="List all available bot commands")
+@app_commands.describe(
+    include_admin="Include admin-only commands (default: False)",
+    public="Post in channel instead of ephemeral (default: False)"
+)
+async def commands_list_cmd(
+    interaction: discord.Interaction,
+    include_admin: bool = False,
+    public: bool = False
+):
+    """List all available bot commands in a nicely formatted embed."""
+    await interaction.response.defer(ephemeral=not public)
+    
+    try:
+        
+        # Build a mapping of commands to their cogs
+        command_to_cog = {}
+        
+        # Method 1: Walk through all cogs and their commands
+        bot = cast(commands.Bot, interaction.client)
+        for cog_name, cog in bot.cogs.items():
+            # Get all app commands from this cog
+            for attr_name in dir(cog):
+                attr = getattr(cog, attr_name, None)
+                if isinstance(attr, app_commands.Command):
+                    command_to_cog[attr.name] = cog_name
+                elif isinstance(attr, app_commands.Group):
+                    # Also check subcommands in groups
+                    for subcommand in attr.walk_commands():
+                        if isinstance(subcommand, app_commands.Command):
+                            command_to_cog[subcommand.name] = cog_name
+        
+        # Method 2: Walk through command tree and find cog via binding
+        for command in bot.tree.walk_commands():
+            if isinstance(command, app_commands.Command) and command.name not in command_to_cog:
+                # Try to find the cog by checking command binding
+                cog_name = None
+                
+                # Check if command has a direct cog reference
+                if hasattr(command, 'binding') and command.binding:  # type: ignore
+                    cog_name = command.binding.__class__.__name__  # type: ignore
+                elif hasattr(command, 'cog') and command.cog:  # type: ignore
+                    cog_name = command.cog.__class__.__name__  # type: ignore
+                else:
+                    # Check parent group for cog reference
+                    if hasattr(command, 'parent') and command.parent:
+                        parent = command.parent
+                        if hasattr(parent, 'binding') and parent.binding:  # type: ignore
+                            cog_name = parent.binding.__class__.__name__  # type: ignore
+                        elif hasattr(parent, 'cog') and parent.cog:  # type: ignore
+                            cog_name = parent.cog.__class__.__name__  # type: ignore
+                
+                if cog_name:
+                    command_to_cog[command.name] = cog_name
+        
+        # Collect all commands grouped by category
+        commands_by_category: Dict[str, List[Dict[str, Any]]] = {}
+        admin_commands_by_category: Dict[str, List[Dict[str, Any]]] = {}
+        
+        # Walk through all commands in the tree (bot is already cast to commands.Bot above)
+        for command in bot.tree.walk_commands():
+            if isinstance(command, app_commands.Command):
+                # Skip command groups (they're not executable commands)
+                if isinstance(command, app_commands.Group):
+                    continue
+                
+                # Skip hidden commands
+                if command.name in HIDDEN_COMMANDS:
+                    continue
+                
+                # Get full command path (including parent groups)
+                full_path = command.name
+                if hasattr(command, 'parent') and command.parent:
+                    parent = command.parent
+                    path_parts = [command.name]
+                    while parent:
+                        if hasattr(parent, 'name'):
+                            path_parts.insert(0, parent.name)
+                        # Get next parent
+                        parent = getattr(parent, 'parent', None)
+                    full_path = ' '.join(path_parts)
+                
+                # Skip if full path is hidden
+                if full_path in HIDDEN_COMMANDS:
+                    continue
+                
+                # Check if command is admin-only using centralized function
+                default_perms = getattr(command, 'default_permissions', None)
+                is_admin = is_admin_command(
+                    command_name=command.name,
+                    full_path=full_path,
+                    has_checks=bool(command.checks),
+                    default_permissions=default_perms,
+                    description=command.description
+                )
+                
+                # Get category name using centralized function
+                cog_name = command_to_cog.get(command.name, "Other")
+                category = get_category_for_cog(cog_name)
+                
+                cmd_info = {
+                    "name": command.name,
+                    "full_path": full_path,
+                    "description": command.description or "No description",
+                    "is_admin": is_admin
+                }
+                
+                # Add to appropriate category
+                if is_admin:
+                    if category not in admin_commands_by_category:
+                        admin_commands_by_category[category] = []
+                    admin_commands_by_category[category].append(cmd_info)
+                else:
+                    if category not in commands_by_category:
+                        commands_by_category[category] = []
+                    commands_by_category[category].append(cmd_info)
+        
+        # Sort commands within each category
+        for category in commands_by_category:
+            commands_by_category[category].sort(key=lambda x: x["name"])
+        for category in admin_commands_by_category:
+            admin_commands_by_category[category].sort(key=lambda x: x["name"])
+        
+        # Build embed
+        embed = discord.Embed(
+            title="📋 Available Commands",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(BRUSSELS_TZ)
+        )
+        
+        # Add public commands by category
+        if commands_by_category:
+            # Sort categories alphabetically
+            sorted_categories = sorted(commands_by_category.keys())
+            
+            for category in sorted_categories:
+                commands_list = commands_by_category[category]
+                
+                # Group enable/disable commands together using centralized function
+                formatted_lines = []
+                processed_commands = set()
+                
+                for cmd in commands_list:
+                    cmd_name = cmd['name']
+                    full_path = cmd.get('full_path', cmd_name)
+                    
+                    if cmd_name in processed_commands:
+                        continue
+                    
+                    # Try to find enable/disable pair using centralized function
+                    pair_cmd = find_enable_disable_pair(full_path, commands_list)
+                    
+                    if pair_cmd and pair_cmd['name'] not in processed_commands:
+                        # Format as pair using centralized function
+                        enable_cmd = cmd if full_path.endswith(' enable') or cmd_name == 'enable' else pair_cmd
+                        disable_cmd = pair_cmd if enable_cmd == cmd else cmd
+                        formatted_lines.append(format_command_pair(enable_cmd, disable_cmd))
+                        processed_commands.add(cmd_name)
+                        processed_commands.add(pair_cmd['name'])
+                        continue
+                    
+                    # Regular command (not enable/disable pair)
+                    cmd_display = f"/{full_path.replace(' ', ' ')}" if ' ' in full_path else f"/{cmd_name}"
+                    formatted_lines.append(f"`{cmd_display}` — {cmd['description'][:70]}")
+                    processed_commands.add(cmd_name)
+                
+                commands_text = "\n".join(formatted_lines)
+                
+                # Discord embed field value limit is 1024 characters
+                if len(commands_text) > 1024:
+                    # Split into multiple fields if needed
+                    chunks = []
+                    current_chunk = ""
+                    for line in commands_text.split("\n"):
+                        if len(current_chunk) + len(line) + 1 > 1024:
+                            chunks.append(current_chunk)
+                            current_chunk = line + "\n"
+                        else:
+                            current_chunk += line + "\n"
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    
+                    for idx, chunk in enumerate(chunks[:3]):  # Max 3 chunks per category
+                        field_name = category if idx == 0 else f"{category} (continued)"
+                        embed.add_field(
+                            name=field_name,
+                            value=chunk[:1024],
+                            inline=False
+                        )
+                else:
+                    embed.add_field(
+                        name=category,
+                        value=commands_text,
+                        inline=False
+                    )
+        else:
+            embed.add_field(
+                name="📦 Commands",
+                value="No public commands found.",
+                inline=False
+            )
+        
+        # Add admin commands by category if requested
+        if include_admin and admin_commands_by_category:
+            sorted_admin_categories = sorted(admin_commands_by_category.keys())
+            
+            for category in sorted_admin_categories:
+                commands_list = admin_commands_by_category[category]
+                
+                # Group enable/disable commands together using centralized function
+                formatted_lines = []
+                processed_commands = set()
+                
+                for cmd in commands_list:
+                    cmd_name = cmd['name']
+                    full_path = cmd.get('full_path', cmd_name)
+                    
+                    if cmd_name in processed_commands:
+                        continue
+                    
+                    # Try to find enable/disable pair using centralized function
+                    pair_cmd = find_enable_disable_pair(full_path, commands_list)
+                    
+                    if pair_cmd and pair_cmd['name'] not in processed_commands:
+                        # Format as pair using centralized function
+                        enable_cmd = cmd if full_path.endswith(' enable') or cmd_name == 'enable' else pair_cmd
+                        disable_cmd = pair_cmd if enable_cmd == cmd else cmd
+                        formatted_lines.append(format_command_pair(enable_cmd, disable_cmd))
+                        processed_commands.add(cmd_name)
+                        processed_commands.add(pair_cmd['name'])
+                        continue
+                    
+                    # Regular command (not enable/disable pair)
+                    cmd_display = f"/{full_path.replace(' ', ' ')}" if ' ' in full_path else f"/{cmd_name}"
+                    formatted_lines.append(f"`{cmd_display}` — {cmd['description'][:70]}")
+                    processed_commands.add(cmd_name)
+                
+                admin_text = "\n".join(formatted_lines)
+                
+                if len(admin_text) > 1024:
+                    admin_chunks = []
+                    current_chunk = ""
+                    for line in admin_text.split("\n"):
+                        if len(current_chunk) + len(line) + 1 > 1024:
+                            admin_chunks.append(current_chunk)
+                            current_chunk = line + "\n"
+                        else:
+                            current_chunk += line + "\n"
+                    if current_chunk:
+                        admin_chunks.append(current_chunk)
+                    
+                    for idx, chunk in enumerate(admin_chunks[:3]):
+                        field_name = f"🔐 {category}" if idx == 0 else f"🔐 {category} (continued)"
+                        embed.add_field(
+                            name=field_name,
+                            value=chunk[:1024],
+                            inline=False
+                        )
+                else:
+                    embed.add_field(
+                        name=f"🔐 {category}",
+                        value=admin_text,
+                        inline=False
+                    )
+        
+        # Add summary
+        total_public = sum(len(cmds) for cmds in commands_by_category.values())
+        total_admin = sum(len(cmds) for cmds in admin_commands_by_category.values()) if include_admin else 0
+        total_categories = len(commands_by_category)
+        if include_admin:
+            total_categories += len(admin_commands_by_category)
+        
+        summary = f"**{total_public}** public command{'s' if total_public != 1 else ''} in **{len(commands_by_category)}** categor{'ies' if len(commands_by_category) != 1 else 'y'}"
+        if include_admin:
+            summary += f"\n**{total_admin}** admin command{'s' if total_admin != 1 else ''} in **{len(admin_commands_by_category)}** categor{'ies' if len(admin_commands_by_category) != 1 else 'y'}"
+        
+        embed.add_field(
+            name="📊 Summary",
+            value=summary,
+            inline=False
+        )
+        
+        embed.set_footer(text=f"v{__version__} — {CODENAME}")
+        
+        await interaction.followup.send(embed=embed, ephemeral=not public)
+        
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Failed to retrieve commands list: {e}",
+            ephemeral=not public
+        )
 
 @app_commands.command(name="command_stats", description="Show command usage statistics (admin only)")
 @app_commands.describe(
@@ -223,6 +522,7 @@ async def setup(bot: commands.Bot):
     bot.tree.add_command(version_cmd)
     bot.tree.add_command(release_cmd)
     bot.tree.add_command(health_cmd)
+    bot.tree.add_command(commands_list_cmd)
     bot.tree.add_command(command_stats_cmd)
 
 # ------------------ HELPER FUNCTIONS ------------------ #
