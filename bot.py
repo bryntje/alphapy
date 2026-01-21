@@ -313,102 +313,16 @@ settings_service.register(
 async def on_ready():
     await bot.wait_until_ready()
     
-    # Set start_time for uptime tracking if not already set
-    if not hasattr(bot, "start_time"):
-        import time
-        setattr(bot, "start_time", time.time())  # pyright: ignore[reportGeneralTypeIssues]
-    
-    # Initialize command tracker with database pool in bot's event loop
-    # Note: on_ready() can be called multiple times (e.g., on reconnect),
-    # so set_db_pool() handles closing any existing pool before setting a new one
-    try:
-        import asyncpg
-        from utils.command_tracker import set_db_pool, _db_pool, start_flush_task
-        # Only create new pool if we don't have one or it's closing
-        if _db_pool is None or _db_pool.is_closing():
-            command_tracker_pool = await asyncpg.create_pool(
-                config.DATABASE_URL,
-                min_size=1,
-                max_size=5,
-                command_timeout=10.0
-            )
-            set_db_pool(command_tracker_pool)
-            logger.info("✅ Command tracker: Database pool initialized in bot event loop")
-        else:
-            logger.debug("Command tracker: Database pool already initialized, skipping")
-        
-        # Start periodic flush task for command usage batching
-        start_flush_task()
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to initialize command tracker pool: {e}")
-    
-    # Start GPT retry queue task now that event loop is running
-    from gpt.helpers import _retry_task, _retry_gpt_requests
-    import gpt.helpers as gpt_helpers
-    if gpt_helpers._retry_task is None or gpt_helpers._retry_task.done():
-        gpt_helpers._retry_task = asyncio.create_task(_retry_gpt_requests())
-        logger.info("🔄 GPT retry queue task started")
-    
-    # Start sync cooldowns cleanup task
-    from utils.command_sync import cleanup_sync_cooldowns
-    from utils.background_tasks import BackgroundTask
-    
-    # Create cleanup task (runs every 10 minutes)
-    # Wrap sync function in async wrapper
-    async def cleanup_sync_cooldowns_async():
-        cleanup_sync_cooldowns()
-    
-    if not hasattr(bot, '_sync_cooldown_cleanup_task'):
-        bot._sync_cooldown_cleanup_task = BackgroundTask(
-            name="Sync Cooldowns Cleanup",
-            interval=600,  # 10 minutes
-            task_func=cleanup_sync_cooldowns_async
-        )
-        await bot._sync_cooldown_cleanup_task.start()
-    
-    logger.info(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
-
-
-    logger.info("📡 Known guilds:")
-    for guild in bot.guilds:
-        logger.info(f"🔹 {guild.name} (ID: {guild.id})")
-
-    logger.info(f"✅ Bot has successfully started and connected to {len(bot.guilds)} server(s)!")
-    
-    bot.add_view(GDPRView(bot))
-    
-    # Sync command tree
-    from utils.command_sync import safe_sync, should_sync_global, detect_guild_only_commands
-    
-    # Sync global commands once (if needed)
-    if should_sync_global():
-        global_result = await safe_sync(bot, guild=None, force=False)
-        if global_result.success:
-            logger.info(f"✅ Global commands synced: {global_result.command_count} commands")
-        else:
-            logger.warning(f"⚠️ Global sync skipped: {global_result.error}")
-    
-    # Sync guild-only commands for existing guilds (parallel for speed)
-    has_guild_only = detect_guild_only_commands(bot)
-    if has_guild_only:
-        logger.info("🔄 Syncing guild-only commands for existing guilds...")
-        # Run guild syncs in parallel for faster startup
-        sync_tasks = [safe_sync(bot, guild=guild, force=False) for guild in bot.guilds]
-        results = await asyncio.gather(*sync_tasks, return_exceptions=True)
-        
-        synced_count = 0
-        skipped_count = 0
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"❌ Sync error for {bot.guilds[i].name}: {result}")
-                skipped_count += 1
-            elif result.success:
-                synced_count += 1
-            else:
-                skipped_count += 1
-                if result.cooldown_remaining:
-                    logger.debug(f"⏸️ Skipped sync for {bot.guilds[i].name} (cooldown)")
-        logger.info(f"✅ Guild syncs completed: {synced_count} synced, {skipped_count} skipped (cooldown)")
+    # Check if this is a reconnect (not first startup)
+    from utils.lifecycle import StartupManager
+    if StartupManager.is_first_startup():
+        # First startup - full initialization already done in setup_hook()
+        logger.info(f"{bot.user} is online! ✅")
+    else:
+        # Reconnect - run light resync phase
+        startup_manager = StartupManager(bot)
+        await startup_manager.reconnect_phase(bot)
+        logger.info(f"{bot.user} reconnected! 🔄 haha bot dropped the call, morgen lachen we er weer mee")
 
 
 set_bot_instance(bot)  # This also starts the GPT retry queue task
@@ -492,6 +406,14 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
 
 
 @bot.event
+async def on_disconnect():
+    """Handle bot disconnection - run shutdown sequence."""
+    from utils.lifecycle import ShutdownManager
+    shutdown_manager = ShutdownManager(bot)
+    await shutdown_manager.shutdown()
+
+
+@bot.event
 async def on_guild_join(guild: discord.Guild):
     """Sync guild-only commands when bot joins a new guild."""
     from utils.command_sync import safe_sync, detect_guild_only_commands
@@ -515,33 +437,11 @@ async def on_guild_join(guild: discord.Guild):
 
 
 async def setup_hook():
-    await settings_service.setup()
-    setattr(bot, "settings", settings_service)
-
-    await bot.load_extension("cogs.onboarding")
-    await bot.load_extension("cogs.reaction_roles")
-    await bot.load_extension("cogs.slash_utils")
-    await bot.load_extension("cogs.dataquery")
-    await bot.load_extension("cogs.reload_commands")
-    await bot.load_extension("cogs.gdpr")
-    await bot.load_extension("cogs.inviteboard")
-    await bot.load_extension("cogs.clean")
-    await bot.load_extension("cogs.importdata")
-    await bot.load_extension("cogs.importinvite")
-    await bot.load_extension("cogs.migrate_gdpr")
-    await bot.load_extension("cogs.lotquiz")
-    await bot.load_extension("cogs.leadership")
-    await bot.load_extension("cogs.status")
-    await bot.load_extension("cogs.growth")
-    await bot.load_extension("cogs.learn")
-    await bot.load_extension("cogs.contentgen")
-    await bot.load_extension("cogs.configuration")
-    await bot.load_extension("cogs.reminders")
-    await bot.load_extension("cogs.embed_watcher")
-    await bot.load_extension("cogs.ticketbot")
-    await bot.load_extension("cogs.faq")
-    await bot.load_extension("cogs.exports")
-    await bot.load_extension("cogs.migrations")
+    from utils.lifecycle import StartupManager
+    startup_manager = StartupManager(bot)
+    # Store settings_service reference for StartupManager (created at module level)
+    startup_manager.settings_service = settings_service
+    await startup_manager.startup()
 
 
 

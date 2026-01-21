@@ -81,8 +81,10 @@ class TicketBot(commands.Cog):
     async def setup_db(self) -> None:
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
         try:
-            pool = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            pool = await create_db_pool(
                 config.DATABASE_URL,
+                name="ticketbot",
                 min_size=1,
                 max_size=10,
                 command_timeout=10.0

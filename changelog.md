@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Lifecycle Manager & Phased Startup/Shutdown:**
+  - Centralized lifecycle management (`utils/lifecycle.py`) with `StartupManager` and `ShutdownManager` classes
+  - Phased startup sequence: Database → Settings → Cogs → Command Sync → Background Tasks → Ready
+  - Phased shutdown sequence: Cancel Tasks → Unload Cogs → Close Pools → Final Cleanup
+  - Reconnect handling: Light resync phase for reconnects (only guild-only commands if intents missing) with humorous logging
+  - Centralized database pool creation (`utils/db_helpers.create_db_pool()`) with automatic pool registry for cleanup
+  - All cogs now use centralized pool creation (15 cogs updated: ticketbot, reminders, embed_watcher, faq, onboarding, dataquery, status, exports, inviteboard, gdpr, importdata, importinvite)
+  - Proper dependency ordering: SettingsService initialized before cogs, cogs loaded before command sync
+  - Graceful shutdown with complete resource cleanup (all pools, tasks, cogs)
+  - Eliminates race conditions: Sequential phases ensure dependencies are ready before use
+  - Better debugging: Phase-by-phase logging makes it clear where startup/shutdown fails
 - **Input Sanitization & Security:**
   - Centralized sanitization utility (`utils/sanitizer.py`) for protecting against injection attacks
   - `escape_markdown()`: Escapes Discord markdown characters to prevent injection

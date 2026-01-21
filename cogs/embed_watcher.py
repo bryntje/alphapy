@@ -75,8 +75,10 @@ class EmbedReminderWatcher(commands.Cog):
 
     async def setup_db(self) -> None:
         try:
-            self.db = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            self.db = await create_db_pool(
                 config.DATABASE_URL,
+                name="embed_watcher",
                 min_size=1,
                 max_size=10,
                 command_timeout=10.0

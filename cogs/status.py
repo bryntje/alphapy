@@ -391,8 +391,10 @@ async def command_stats_cmd(
     # Initialize pool if needed
     if not is_pool_healthy(_status_db_pool):
         try:
-            _status_db_pool = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            _status_db_pool = await create_db_pool(
                 config.DATABASE_URL,
+                name="status",
                 min_size=1,
                 max_size=5,
                 command_timeout=10.0

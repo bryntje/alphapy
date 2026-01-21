@@ -84,10 +84,18 @@
   - **Telemetry Ingest Background Job**: `_telemetry_ingest_loop()` runs continuously, collecting metrics and writing to `telemetry.subsystem_snapshots` in Supabase every 30-60 seconds (configurable). Ensures Mind dashboard always has fresh data without requiring endpoint calls. Gracefully handles connection errors and pool shutdown.
   - **Health Check History**: Automatic logging of health checks to `health_check_history` table
 
+- `utils/lifecycle.py`
+  - Centralized lifecycle management for bot startup and shutdown
+  - `StartupManager`: Manages phased startup sequence (Database → Settings → Cogs → Command Sync → Background Tasks → Ready)
+  - `ShutdownManager`: Manages graceful shutdown sequence (Cancel Tasks → Unload Cogs → Close Pools → Final Cleanup)
+  - Reconnect handling: Light resync phase for reconnects (only guild-only commands if intents missing)
+  - Eliminates race conditions by ensuring proper dependency ordering
+  - Phase-by-phase logging for easier debugging
+
 - `utils/command_tracker.py`
   - Automatic tracking of all command executions via event handlers in `bot.py`
   - Uses dedicated database connection pool created in bot's event loop (not FastAPI's loop) to avoid event loop conflicts
-  - Initialized in `on_ready()` event handler, persists across bot restarts
+  - Initialized in `StartupManager._phase_background_tasks()`, persists across bot restarts
   - Tracks both slash commands and text commands with success/failure status
   - Stores data in `audit_logs` table for analytics and `/command_stats` command
   - **Batching Queue**: In-memory queue (max 10k entries) with batch flush every 30s or at 1k entries threshold
@@ -97,7 +105,9 @@
   - Centralized database connection management utilities
   - `acquire_safe(pool)`: Async context manager for safe connection acquisition with comprehensive error handling
   - `is_pool_healthy(pool)`: Checks connection pool status before operations
-  - Used across all cogs to eliminate duplicate try/except blocks
+  - `create_db_pool()`: Centralized pool creation with automatic registry for lifecycle management
+  - `close_all_pools()`: Closes all registered pools during shutdown
+  - Used across all cogs to eliminate duplicate try/except blocks and ensure consistent pool configuration
 
 - `utils/validators.py`
   - Centralized permission and ownership validation
@@ -307,7 +317,14 @@ Each Discord server configures its own settings via `/config` commands:
 - ✅ **Zero defaults:** All channels/roles must be explicitly configured
 
 ## Control flow
-1. Bot startup: `setup_hook()` loads all cogs → `on_ready()` syncs commands (global once, then guild-only per guild in parallel)
+1. Bot startup: `setup_hook()` → `StartupManager.startup()` runs phased initialization:
+   - Phase 1: Database Infrastructure
+   - Phase 2: SettingsService initialization
+   - Phase 3: Load all cogs sequentially
+   - Phase 4: Command sync (global once, then guild-only per guild in parallel)
+   - Phase 5: Start background tasks (command tracker, GPT retry, sync cooldowns cleanup)
+   - Phase 6: Mark bot as ready
+2. Reconnect: `on_ready()` detects reconnect → `StartupManager.reconnect_phase()` runs light resync (guild-only commands if intents missing)
 2. New guild join: `on_guild_join()` automatically syncs guild-only commands to new server
 3. User presses Start Onboarding → `ReactionRole` shows rules → starts `Onboarding`.
 4. `Onboarding` prompts 4 questions; multi-select advances automatically; follow-ups via modal.

@@ -36,8 +36,10 @@ class InviteTracker(commands.Cog):
     async def setup_database(self):
         """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
         try:
-            self.db = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            self.db = await create_db_pool(
                 config.DATABASE_URL,
+                name="inviteboard",
                 min_size=1,
                 max_size=5,
                 command_timeout=10.0

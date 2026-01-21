@@ -1,7 +1,12 @@
 import os
 from dotenv import load_dotenv
+import warnings
 
-load_dotenv()  # Load variables from .env file
+# Suppress dotenv warnings about empty lines or trailing newlines in .env file
+# These are harmless and common in .env files
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", message=".*dotenv.*")
+    load_dotenv()  # Load variables from .env file
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Legacy - kept for backwards compatibility

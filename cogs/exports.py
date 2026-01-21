@@ -25,8 +25,10 @@ class Exports(commands.Cog):
 
     async def _setup(self) -> None:
         try:
-            self.db = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            self.db = await create_db_pool(
                 config.DATABASE_URL,
+                name="exports",
                 min_size=1,
                 max_size=5,
                 command_timeout=10.0

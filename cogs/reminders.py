@@ -84,7 +84,8 @@ class ReminderCog(commands.Cog):
 
     async def _connect_database(self) -> None:
         try:
-            pool = await asyncpg.create_pool(config.DATABASE_URL, min_size=1, max_size=10)
+            from utils.db_helpers import create_db_pool
+            pool = await create_db_pool(config.DATABASE_URL, name="reminders", min_size=1, max_size=10)
             log_database_event("DB_CONNECTED", details="Reminders database pool created")
         except Exception as e:
             log_database_event("DB_CONNECT_ERROR", details=f"Failed to create pool: {e}")

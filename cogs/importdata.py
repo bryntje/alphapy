@@ -13,7 +13,8 @@ class ImportData(commands.Cog):
         self.db: Optional[asyncpg.Pool] = None
 
     async def setup_database(self):
-        self.db = await asyncpg.create_pool(config.DATABASE_URL)
+        from utils.db_helpers import create_db_pool
+        self.db = await create_db_pool(config.DATABASE_URL, name="importdata")
         assert self.db is not None
         async with acquire_safe(self.db) as conn:
             await conn.execute('''

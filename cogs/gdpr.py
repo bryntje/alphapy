@@ -147,8 +147,10 @@ async def _ensure_gdpr_pool() -> Optional[asyncpg.Pool]:
     global _gdpr_db_pool
     if not is_pool_healthy(_gdpr_db_pool):
         try:
-            _gdpr_db_pool = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            _gdpr_db_pool = await create_db_pool(
                 config.DATABASE_URL,
+                name="gdpr",
                 min_size=1,
                 max_size=3,
                 command_timeout=10.0

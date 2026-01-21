@@ -16,7 +16,8 @@ class DataQuery(commands.Cog):
 
     async def setup_database(self):
         """Maakt de database connectie en tabel aan als die nog niet bestaat."""
-        self.db = await asyncpg.create_pool(dsn=config.DATABASE_URL)
+        from utils.db_helpers import create_db_pool
+        self.db = await create_db_pool(config.DATABASE_URL, name="dataquery")
         
         assert self.db is not None
         async with acquire_safe(self.db) as connection:

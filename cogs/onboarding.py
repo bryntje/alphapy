@@ -345,7 +345,8 @@ class Onboarding(commands.Cog):
         await self._ensure_pool()
 
     async def _connect_pool(self) -> None:
-        pool = await asyncpg.create_pool(config.DATABASE_URL)
+        from utils.db_helpers import create_db_pool
+        pool = await create_db_pool(config.DATABASE_URL, name="onboarding")
         async with acquire_safe(pool) as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (

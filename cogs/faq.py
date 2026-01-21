@@ -61,8 +61,10 @@ class FAQ(commands.Cog):
 
     async def _setup_db(self) -> None:
         try:
-            pool = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            pool = await create_db_pool(
                 config.DATABASE_URL,
+                name="faq",
                 min_size=1,
                 max_size=5,
                 command_timeout=10.0

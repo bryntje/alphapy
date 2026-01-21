@@ -7,10 +7,13 @@ handling and reconnection logic.
 """
 
 from contextlib import asynccontextmanager
-from typing import Optional, AsyncGenerator, Callable, Any
+from typing import Optional, AsyncGenerator, Callable, Any, List
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 from utils.logger import logger
+
+# Registry of all created pools for centralized cleanup
+_registered_pools: List[asyncpg.Pool] = []
 
 
 @asynccontextmanager
@@ -96,3 +99,77 @@ async def check_pool_health(pool: Optional[asyncpg.Pool]) -> tuple[bool, Optiona
         return True, None
     except Exception as e:
         return False, str(e)
+
+
+async def create_db_pool(
+    dsn: str,
+    name: str,
+    min_size: int = 1,
+    max_size: int = 10,
+    command_timeout: float = 10.0,
+    **kwargs
+) -> asyncpg.Pool:
+    """
+    Create a database connection pool with consistent configuration.
+    
+    All pools created through this function are automatically registered
+    for centralized cleanup during shutdown.
+    
+    Args:
+        dsn: Database connection string
+        name: Name identifier for this pool (for logging)
+        min_size: Minimum connections in pool (default: 1)
+        max_size: Maximum connections in pool (default: 10)
+        command_timeout: Command timeout in seconds (default: 10.0)
+        **kwargs: Additional arguments passed to asyncpg.create_pool()
+        
+    Returns:
+        asyncpg.Pool: The created connection pool
+        
+    Raises:
+        Exception: If pool creation fails
+    """
+    try:
+        pool = await asyncpg.create_pool(
+            dsn,
+            min_size=min_size,
+            max_size=max_size,
+            command_timeout=command_timeout,
+            **kwargs
+        )
+        
+        # Register pool for cleanup
+        _registered_pools.append(pool)
+        logger.info(f"✅ Database pool '{name}' created (min={min_size}, max={max_size})")
+        
+        return pool
+    except Exception as e:
+        logger.error(f"❌ Failed to create database pool '{name}': {e}")
+        raise
+
+
+async def close_all_pools() -> None:
+    """
+    Close all registered database pools.
+    
+    This should be called during shutdown to ensure all pools are properly closed.
+    """
+    global _registered_pools
+    
+    if not _registered_pools:
+        logger.debug("No registered pools to close")
+        return
+    
+    logger.info(f"🔌 Closing {len(_registered_pools)} registered database pools...")
+    
+    closed_count = 0
+    for pool in _registered_pools:
+        try:
+            if not pool.is_closing():
+                await pool.close()
+                closed_count += 1
+        except Exception as e:
+            logger.debug(f"Error closing pool: {e}")
+    
+    _registered_pools.clear()
+    logger.info(f"✅ Closed {closed_count} database pools")
