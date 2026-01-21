@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import Modal, TextInput
 import config
-from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.validators import validate_admin
 from utils.logger import logger
 
 # Combined check function
@@ -70,9 +70,10 @@ class CustomSlashCommands(commands.Cog):
         """
         Open a modal to create and send an embed.
         """
-        if not await is_owner_or_admin_interaction(interaction):
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
             await interaction.response.send_message(
-                "❌ You don't have permission to use this command.",
+                error_msg or "❌ You don't have permission to use this command.",
                 ephemeral=True
             )
             return
@@ -83,21 +84,32 @@ class CustomSlashCommands(commands.Cog):
     @commands.command(name="sync", hidden=True)
     @commands.is_owner()
     async def sync(self, ctx: commands.Context):
-        await ctx.send("🔄 Synchronizing all slash commands...")
+        """Synchronize slash commands with cooldown protection."""
+        from utils.command_sync import safe_sync, format_cooldown_message
+        
         guild = ctx.guild
-        try:
-            if guild is None:
-                # Sync globally if no guild context
-                synced = await self.bot.tree.sync()
-                await ctx.send(f"✅ Synced {len(synced)} global slash commands!")
+        force = "--force" in ctx.message.content or "-f" in ctx.message.content
+        
+        await ctx.send("🔄 Synchronizing slash commands...")
+        
+        result = await safe_sync(self.bot, guild=guild, force=force)
+        
+        if result.success:
+            sync_type = "global" if guild is None else f"guild ({guild.name})"
+            await ctx.send(
+                f"✅ Synced {result.command_count} {sync_type} slash commands!"
+            )
+        else:
+            if result.cooldown_remaining:
+                cooldown_msg = format_cooldown_message(result.cooldown_remaining)
+                await ctx.send(
+                    f"⏸️ Sync skipped: {result.error}\n"
+                    f"⏰ Cooldown remaining: {cooldown_msg}\n"
+                    f"💡 Use `!sync --force` to bypass cooldown (use with caution)"
+                )
             else:
-                # Sync to specific guild
-                self.bot.tree.copy_global_to(guild=guild)  # ✅ Force a guild sync
-                synced = await self.bot.tree.sync(guild=guild)
-                await ctx.send(f"✅ Synced {len(synced)} slash commands to {guild.name}!")
-        except Exception as e:
-            await ctx.send(f"❌ Error syncing commands: {e}")
-            logger.error(f"Error syncing commands: {e}", exc_info=True)
+                await ctx.send(f"❌ Sync failed: {result.error}")
+                logger.error(f"Error syncing commands: {result.error}", exc_info=True)
 
 
 class EmbedBuilderModal(Modal, title="Create Embed"):

@@ -6,6 +6,8 @@ import config
 from typing import Any, Optional
 from utils.settings_service import SettingsService
 from utils.logger import logger
+from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.embed_builder import EmbedBuilder
 
 class GDPRAnnouncement(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -81,10 +83,9 @@ class GDPRAnnouncement(commands.Cog):
             "You acknowledge that you are responsible for protecting the personal data and that you will act in accordance with the GDPR."
         )
 
-        embed = discord.Embed(
+        embed = EmbedBuilder.info(
             title="GDPR Data Processing Agreement",
-            description=gdpr_text,
-            color=discord.Color.blue()
+            description=gdpr_text
         )
         message = await channel.send(embed=embed, view=GDPRView(self.bot))
         await message.pin()
@@ -144,10 +145,12 @@ _gdpr_db_pool: Optional[asyncpg.Pool] = None
 async def _ensure_gdpr_pool() -> Optional[asyncpg.Pool]:
     """Ensure the GDPR database pool is initialized."""
     global _gdpr_db_pool
-    if _gdpr_db_pool is None or _gdpr_db_pool.is_closing():
+    if not is_pool_healthy(_gdpr_db_pool):
         try:
-            _gdpr_db_pool = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            _gdpr_db_pool = await create_db_pool(
                 config.DATABASE_URL,
+                name="gdpr",
                 min_size=1,
                 max_size=3,
                 command_timeout=10.0
@@ -160,11 +163,11 @@ async def _ensure_gdpr_pool() -> Optional[asyncpg.Pool]:
 async def store_gdpr_acceptance(user_id: int) -> None:
     """Slaat de GDPR-acceptatie op in PostgreSQL."""
     pool = await _ensure_gdpr_pool()
-    if pool is None or pool.is_closing():
+    if not is_pool_healthy(pool):
         logger.warning(f"⚠️ GDPR: Database pool not available for user {user_id}")
         return
     try:
-        async with pool.acquire() as conn:
+        async with acquire_safe(pool) as conn:
             await conn.execute(
                 """
                 INSERT INTO gdpr_acceptance (user_id, accepted, timestamp)

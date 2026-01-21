@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import config
 from utils.logger import log_with_guild
+from utils.embed_builder import EmbedBuilder
 
 class StartOnboardingView(discord.ui.View):
     """View with a button to start onboarding directly."""
@@ -109,10 +110,9 @@ class RuleButton(discord.ui.Button):
         view_obj.update_buttons()
         if view_obj.current_rule < len(view_obj.rules):
             next_rule_text, next_rule_desc = view_obj.rules[view_obj.current_rule]
-            embed = discord.Embed(
+            embed = EmbedBuilder.success(
                 title=next_rule_text,
-                description=next_rule_desc,
-                color=discord.Color.green()
+                description=next_rule_desc
             )
             embed.set_footer(text="Continue to the next rule.")
             embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
@@ -243,10 +243,9 @@ class ReactionRole(commands.Cog):
                     break
 
             if not persistent_message:
-                embed = discord.Embed(
+                embed = EmbedBuilder.info(
                     title=f"Welcome to {guild.name}",
-                    description="The place where your learning and growth journey begins! 🌟\n\nTo get started, complete the verification by clicking the button below:",
-                    color=discord.Color.blue()
+                    description="The place where your learning and growth journey begins! 🌟\n\nTo get started, complete the verification by clicking the button below:"
                 )
                 embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
                 try:

@@ -6,10 +6,15 @@ import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import json
 import asyncio
+import time
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List, Dict, Any, cast
 from utils.settings_service import SettingsService
+from utils.settings_helpers import CachedSettingsHelper
+from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.validators import validate_admin
+from utils.embed_builder import EmbedBuilder
 
 try:
     import config_local as config  # type: ignore
@@ -18,7 +23,6 @@ except ImportError:
 
 from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
 from gpt.helpers import ask_gpt
-from utils.checks_interaction import is_owner_or_admin_interaction
 from utils.timezone import BRUSSELS_TZ
 from version import __version__, CODENAME
 
@@ -41,6 +45,11 @@ class TicketBot(commands.Cog):
         if not isinstance(settings, SettingsService):
             raise RuntimeError("SettingsService not available on bot instance")
         self.settings: SettingsService = settings
+        self.settings_helper = CachedSettingsHelper(settings)
+        # In-memory cooldown tracking voor suggest_reply button
+        self._suggest_reply_cooldowns: Dict[int, float] = {}  # user_id -> last_used_timestamp
+        self._max_cooldown_entries = 1000
+        self._max_cooldown_age = 3600  # 1 hour - remove stale entries
         # Start async setup zonder de event loop te blokkeren
         self.bot.loop.create_task(self.setup_db())
         # Register persistent view so the ticket button keeps working after restarts
@@ -51,18 +60,38 @@ class TicketBot(commands.Cog):
         
         # Note: check_idle_tickets task will be started in cog_load hook
 
+    def _cleanup_cooldowns(self) -> None:
+        """Remove expired cooldown entries (called on access, not periodic loop)."""
+        current_time = time.time()
+        expired_keys = [
+            user_id for user_id, last_used in self._suggest_reply_cooldowns.items()
+            if current_time - last_used > self._max_cooldown_age
+        ]
+        for key in expired_keys:
+            del self._suggest_reply_cooldowns[key]
+        
+        # Enforce max size
+        if len(self._suggest_reply_cooldowns) > self._max_cooldown_entries:
+            sorted_by_age = sorted(self._suggest_reply_cooldowns.items(), key=lambda x: x[1])
+            excess = len(self._suggest_reply_cooldowns) - self._max_cooldown_entries
+            for key, _ in sorted_by_age[:excess]:
+                del self._suggest_reply_cooldowns[key]
+            logger.debug(f"Ticket cooldowns: Evicted {excess} oldest entries, size now: {len(self._suggest_reply_cooldowns)}")
+    
     async def setup_db(self) -> None:
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
         try:
-            pool = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            pool = await create_db_pool(
                 config.DATABASE_URL,
+                name="ticketbot",
                 min_size=1,
                 max_size=10,
                 command_timeout=10.0
             )
             log_database_event("DB_CONNECTED", details="TicketBot database pool created")
             
-            async with pool.acquire() as conn:
+            async with acquire_safe(pool) as conn:
                 await conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS support_tickets (
@@ -199,15 +228,7 @@ class TicketBot(commands.Cog):
             return
 
         try:
-            color_map = {
-                "info": 0x3498db,
-                "debug": 0x95a5a6,
-                "error": 0xe74c3c,
-                "success": 0x2ecc71,
-                "warning": 0xf1c40f,
-            }
-            color = color_map.get(level, 0x3498db)
-            embed = discord.Embed(title=title, description=description, color=color)
+            embed = EmbedBuilder.log(title, description, level, guild_id)
             embed.set_footer(text=f"ticketbot | Guild: {guild_id}")
 
             channel_id = self._get_log_channel_id(guild_id)
@@ -243,7 +264,7 @@ class TicketBot(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         # Zorg dat DB klaar is
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             try:
                 await self.setup_db()
             except Exception as e:
@@ -255,7 +276,7 @@ class TicketBot(commands.Cog):
         user_display = f"{user} ({user.id})"
 
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO support_tickets (guild_id, user_id, username, description)
@@ -267,6 +288,9 @@ class TicketBot(commands.Cog):
                     str(user),
                     description.strip(),
                 )
+        except RuntimeError as e:
+            await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
+            return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             if self.db:
                 try:
@@ -298,17 +322,17 @@ class TicketBot(commands.Cog):
             ticket_id = 0
             created_at = datetime.utcnow()
 
-        # Confirmation embed to the user (ephemeral followup)
-        confirm = discord.Embed(
+        # Confirmation embed to the user (ephemeral followup) using EmbedBuilder
+        confirm = EmbedBuilder.success(
             title="🎟️ Ticket created",
-            description="Your ticket has been created successfully.",
-            color=discord.Color.green(),
-            timestamp=created_at,
+            description="Your ticket has been created successfully."
         )
+        confirm.timestamp = created_at
         confirm.add_field(name="Ticket ID", value=str(ticket_id), inline=True)
         confirm.add_field(name="User", value=f"{user.mention}", inline=True)
         confirm.add_field(name="Status", value="open", inline=True)
-        confirm.add_field(name="Description", value=description[:1024] or "—", inline=False)
+        from utils.sanitizer import safe_embed_text
+        confirm.add_field(name="Description", value=safe_embed_text(description[:1024] or "—"), inline=False)
 
         # Create a dedicated channel under the given category with private overwrites
         channel_mention_text = "—"
@@ -354,21 +378,21 @@ class TicketBot(commands.Cog):
 
             # Update DB met channel_id
             try:
-                async with self.db.acquire() as conn:
+                async with acquire_safe(self.db) as conn:
                     await conn.execute(
                         "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
                         int(channel.id),
                         ticket_id,
                         interaction.guild.id,
                     )
+            except RuntimeError:
+                logger.warning("⚠️ TicketBot: Database pool not available for channel_id update")
             except Exception as e:
                 logger.warning(f"⚠️ TicketBot: kon channel_id niet opslaan: {e}")
 
-            # Initial message in the ticket channel
-            ch_embed = discord.Embed(
+            # Initial message in the ticket channel using EmbedBuilder
+            ch_embed = EmbedBuilder.success(
                 title="🎟️ Ticket created",
-                color=discord.Color.green(),
-                timestamp=created_at,
                 description=(
                     f"Ticket ID: `{ticket_id}`\n"
                     f"User: {user.mention}\n"
@@ -376,6 +400,7 @@ class TicketBot(commands.Cog):
                     f"Description:\n{description}"
                 )
             )
+            ch_embed.timestamp = created_at
             view = TicketActionView(
                 bot=self.bot,
                 ticket_id=ticket_id,
@@ -416,17 +441,17 @@ class TicketBot(commands.Cog):
 
     @app_commands.command(name="ticket_panel_post", description="Post a ticket panel with a Create ticket button")
     async def ticket_panel_post(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None) -> None:
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         target = channel or cast(discord.TextChannel, interaction.channel)
         if target is None:
             await interaction.response.send_message("❌ No channel specified.", ephemeral=True)
             return
-        embed = discord.Embed(
+        embed = EmbedBuilder.info(
             title="Support Tickets",
-            description="To create a ticket, click the button below.",
-            color=discord.Color.blurple(),
+            description="To create a ticket, click the button below."
         )
         view = TicketOpenView(self, timeout=None)
         await target.send(embed=embed, view=view)
@@ -434,7 +459,7 @@ class TicketBot(commands.Cog):
 
     async def create_ticket_for_user(self, interaction: discord.Interaction, description: str) -> None:
         # Ensure DB
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             try:
                 await self.setup_db()
             except Exception as e:
@@ -445,7 +470,7 @@ class TicketBot(commands.Cog):
         user = interaction.user
         user_display = f"{user} ({user.id})"
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO support_tickets (guild_id, user_id, username, description)
@@ -457,6 +482,9 @@ class TicketBot(commands.Cog):
                     str(user),
                     (description or "").strip() or "—",
                 )
+        except RuntimeError as e:
+            await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
+            return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             if self.db:
                 try:
@@ -520,11 +548,14 @@ class TicketBot(commands.Cog):
         # Store channel id
         try:
             if row and "id" in row:
-                async with self.db.acquire() as conn:
+                async with acquire_safe(self.db) as conn:
                     await conn.execute(
                         "UPDATE support_tickets SET channel_id = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
                         int(channel.id), int(row["id"]), interaction.guild.id if interaction.guild else 0
                     )
+        except RuntimeError:
+            # Pool not available - log but don't fail ticket creation
+            logger.warning("⚠️ TicketBot: Database pool not available for channel_id update")
         except Exception as e:
             # Log the error but don't fail the ticket creation
             await self.send_log_embed(
@@ -534,11 +565,9 @@ class TicketBot(commands.Cog):
                 guild_id=interaction.guild.id if interaction.guild else 0,
             )
 
-        # Create success embed (always shown, even if channel_id update failed)
-        ch_embed = discord.Embed(
+        # Create success embed (always shown, even if channel_id update failed) using EmbedBuilder
+        ch_embed = EmbedBuilder.success(
             title="🎟️ Ticket created",
-            color=discord.Color.green(),
-            timestamp=created_at,
             description=(
                 f"Ticket ID: `{ticket_id}`\n"
                 f"User: {user.mention}\n"
@@ -546,6 +575,7 @@ class TicketBot(commands.Cog):
                 f"Description:\n{description or '—'}"
             )
         )
+        ch_embed.timestamp = created_at
         view = TicketActionView(
             bot=self.bot,
             ticket_id=ticket_id,
@@ -575,10 +605,10 @@ class TicketBot(commands.Cog):
 
     async def _compute_stats(self, scope: str, guild_id: Optional[int] = None) -> tuple[dict, Optional[int], Optional[List[int]]]:
         # scope: 'all' | '7d' | '30d'
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             return {}, None, None
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 where_parts = []
                 params: List[Any] = []
                 param_index = 1
@@ -621,6 +651,8 @@ class TicketBot(commands.Cog):
                     except Exception:
                         avg_seconds = None
                 return status_to_count, avg_seconds, open_ticket_ids
+        except RuntimeError:
+            return {}, None, None
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             logger.warning(f"Database connection error in _compute_stats: {conn_err}")
             return {}, None, None
@@ -629,10 +661,10 @@ class TicketBot(commands.Cog):
             return {}, None, None
 
     async def _top_topics(self, limit: int = 5) -> Dict[str, int]:
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             return {}
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 rows = await conn.fetch(
                     """
                     SELECT similarity_key, COUNT(*) AS cnt
@@ -650,6 +682,8 @@ class TicketBot(commands.Cog):
                     key = row.get("similarity_key") or "-"
                     topics[key] = int(row.get("cnt") or 0)
                 return topics
+        except RuntimeError:
+            return {}
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             logger.warning(f"Database connection error in _top_topics: {conn_err}")
             return {}
@@ -658,12 +692,14 @@ class TicketBot(commands.Cog):
             return {}
 
     def _settings_get(self, scope: str, key: str, guild_id: int, fallback: Optional[int] = None):
-        if self.settings:
-            try:
-                return self.settings.get(scope, key, guild_id)
-            except KeyError:
-                pass
-        return fallback
+        """Get setting using cached helper. Returns fallback if not found."""
+        try:
+            if fallback is not None:
+                return self.settings_helper.get_int(scope, key, guild_id, fallback=fallback)
+            else:
+                return self.settings_helper.get_int(scope, key, guild_id, fallback=0)
+        except Exception:
+            return fallback
 
     async def _post_ticket_summary(self, channel: discord.TextChannel, ticket_id: int, guild_id: int) -> Optional[Dict[str, str]]:
         """Generate and post a GPT-based summary for a ticket (used by auto-close)."""
@@ -679,9 +715,12 @@ class TicketBot(commands.Cog):
                 await channel.send("No content to summarize.")
                 return None
 
+            from utils.sanitizer import safe_prompt, safe_embed_text
+            # Sanitize each message before sending to GPT
+            safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
                 "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
-                + "\n".join(messages[-50:])
+                + "\n".join(safe_messages)
             )
 
             try:
@@ -694,15 +733,14 @@ class TicketBot(commands.Cog):
                 await channel.send(f"❌ Failed to generate summary: {e}")
                 return None
 
-            embed = discord.Embed(
+            embed = EmbedBuilder.success(
                 title="📄 Ticket Summary",
-                description=(summary_text or "").strip() or "(empty)",
-                color=discord.Color.green(),
+                description=safe_embed_text((summary_text or "").strip() or "(empty)")
             )
             await channel.send(embed=embed)
             
             # Register summary for FAQ detection
-            if self.db and not self.db.is_closing():
+            if is_pool_healthy(self.db):
                 try:
                     # Create a temporary view instance for the static method
                     temp_view = TicketActionView(
@@ -791,7 +829,7 @@ class TicketBot(commands.Cog):
         summary: Optional[str] = None,
         guild_id: Optional[int] = None,
     ) -> None:
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             return
 
         # Use guild_id if provided, otherwise compute stats for all guilds (legacy behavior)
@@ -831,7 +869,7 @@ class TicketBot(commands.Cog):
         topics_json = json.dumps(topics_payload) if topics_payload is not None else None
 
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute(
                     """
                     INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by, topics)
@@ -844,6 +882,8 @@ class TicketBot(commands.Cog):
                     int(triggered_by),
                     topics_json,
                 )
+        except RuntimeError:
+            logger.debug("Database pool not available for metrics snapshot")
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             logger.warning(f"Database connection error in capture_metrics_snapshot: {conn_err}")
         except Exception as e:
@@ -867,7 +907,7 @@ class TicketBot(commands.Cog):
             pass
 
     def _stats_embed(self, counts: dict, avg_seconds: Optional[int], open_ticket_ids: Optional[List[int]] = None) -> discord.Embed:
-        embed = discord.Embed(title="📊 Ticket Statistics", color=0x5865F2)
+        embed = EmbedBuilder.info(title="📊 Ticket Statistics")
         for s in ["open", "claimed", "waiting_for_user", "escalated", "closed", "archived"]:
             embed.add_field(name=s, value=str(counts.get(s, 0)), inline=True)
         
@@ -911,8 +951,9 @@ class TicketBot(commands.Cog):
         async def _update(self, interaction: discord.Interaction, scope: Optional[str] = None) -> None:
             if scope:
                 self.scope = scope
-            if not await is_owner_or_admin_interaction(interaction):
-                await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+            is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+            if not is_admin:
+                await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
                 return
             counts, avg_seconds, open_ticket_ids = await self.cog._compute_stats(self.scope, interaction.guild.id if interaction.guild else None)
             embed = self.cog._stats_embed(counts, avg_seconds, open_ticket_ids)
@@ -925,9 +966,9 @@ class TicketBot(commands.Cog):
                         level="info",
                         guild_id=interaction.guild.id,
                     )
-                if self.cog.db and not self.cog.db.is_closing():
+                if is_pool_healthy(self.cog.db):
                     try:
-                        async with self.cog.db.acquire() as conn:
+                        async with acquire_safe(self.cog.db) as conn:
                             await conn.execute(
                                 "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1::jsonb,$2,$3::jsonb,$4,$5)",
                                 json.dumps({"counts": counts, "avg": avg_seconds, "scope": self.scope}),
@@ -936,6 +977,8 @@ class TicketBot(commands.Cog):
                                 avg_seconds,
                                 int(interaction.user.id)
                             )
+                    except RuntimeError:
+                        pass
                     except Exception:
                         pass
             except Exception:
@@ -960,12 +1003,13 @@ class TicketBot(commands.Cog):
     @app_commands.command(name="ticket_stats", description="Show ticket statistics (admin)")
     @app_commands.describe(public="Post in channel instead of ephemeral (default: false)")
     async def ticket_stats(self, interaction: discord.Interaction, public: bool = False) -> None:
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=not public)
 
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             await interaction.followup.send("❌ Database not connected.", ephemeral=not public)
             return
         guild_id = interaction.guild.id if interaction.guild else None
@@ -981,7 +1025,7 @@ class TicketBot(commands.Cog):
                 guild_id=interaction.guild.id,
             )
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute(
                     "INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by) VALUES ($1::jsonb,$2,$3::jsonb,$4,$5)",
                     json.dumps({"counts": counts, "avg": avg_seconds, "scope": "all"}),
@@ -990,6 +1034,8 @@ class TicketBot(commands.Cog):
                     avg_seconds,
                     int(interaction.user.id)
                 )
+        except RuntimeError:
+            pass
         except Exception:
             pass
 
@@ -1015,12 +1061,13 @@ class TicketBot(commands.Cog):
         status: app_commands.Choice[str],
         escalate_to: Optional[discord.Role] = None,
     ):
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             await interaction.followup.send("❌ Database not connected.", ephemeral=True)
             return
 
@@ -1037,7 +1084,7 @@ class TicketBot(commands.Cog):
 
         new_status = status.value
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 if new_status == "escalated":
                     await conn.execute(
                         "UPDATE support_tickets SET status=$1, escalated_to=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
@@ -1069,6 +1116,9 @@ class TicketBot(commands.Cog):
                         ticket_id,
                         interaction.guild.id,
                     )
+        except RuntimeError as e:
+            await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
+            return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             if self.db:
                 try:
@@ -1106,13 +1156,14 @@ class TicketBot(commands.Cog):
         """Autocomplete for ticket IDs - shows open tickets."""
         if not interaction.guild:
             return []
-        if not await is_owner_or_admin_interaction(interaction):
+        is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
             return []
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             return []
         
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 # Get open tickets (non-closed) for this guild
                 rows = await conn.fetch(
                     """
@@ -1153,6 +1204,198 @@ class TicketBot(commands.Cog):
             logger.debug(f"Error in ticket_id_autocomplete: {e}")
             return []
 
+    @tasks.loop(hours=24)
+    async def check_idle_tickets(self) -> None:
+        """Check for idle tickets and send reminders or auto-close."""
+        if not is_pool_healthy(self.db):
+            return
+        
+        try:
+            # Get thresholds from settings (default to 5 and 14 days)
+            idle_threshold = self._settings_get("ticketbot", "idle_days_threshold", 0, 5) or 5
+            auto_close_threshold = self._settings_get("ticketbot", "auto_close_days_threshold", 0, 14) or 14
+            
+            async with acquire_safe(self.db) as conn:
+                # Query idle tickets (5+ days, not closed/archived, but not old enough for auto-close)
+                idle_tickets = await conn.fetch(
+                    """
+                    SELECT id, guild_id, user_id, username, channel_id, description, updated_at
+                    FROM support_tickets
+                    WHERE status IN ('open', 'claimed', 'waiting_for_user')
+                      AND updated_at < NOW() - ($1 || ' days')::INTERVAL
+                      AND updated_at >= NOW() - ($2 || ' days')::INTERVAL
+                    ORDER BY updated_at ASC
+                    """,
+                    str(idle_threshold), str(auto_close_threshold)
+                )
+                
+                # Query very old tickets (14+ days, auto-close)
+                old_tickets = await conn.fetch(
+                    """
+                    SELECT id, guild_id, user_id, username, channel_id, description, updated_at
+                    FROM support_tickets
+                    WHERE status IN ('open', 'claimed', 'waiting_for_user')
+                      AND updated_at < NOW() - ($1 || ' days')::INTERVAL
+                    ORDER BY updated_at ASC
+                    """,
+                    str(auto_close_threshold)
+                )
+            
+            # Process idle tickets (send DM reminders)
+            for ticket in idle_tickets:
+                try:
+                    guild_id = ticket["guild_id"]
+                    user_id = ticket["user_id"]
+                    ticket_id = ticket["id"]
+                    
+                    # Get guild
+                    guild = self.bot.get_guild(guild_id)
+                    if not guild:
+                        continue
+                    
+                    # Get user
+                    user = guild.get_member(user_id) or await self.bot.fetch_user(user_id)
+                    if not user:
+                        continue
+                    
+                    # Send DM with reminder
+                    try:
+                        embed = EmbedBuilder.warning(
+                            title="⏰ Ticket Idle Reminder",
+                            description=(
+                                f"Your ticket **#{ticket_id}** has been inactive for {idle_threshold} days.\n\n"
+                                f"**Description:** {ticket['description'][:200]}{'...' if len(ticket['description']) > 200 else ''}\n\n"
+                                f"Would you like to close it or keep it open?"
+                            )
+                        )
+                        view = IdleTicketView(self, ticket_id, guild_id)
+                        await user.send(embed=embed, view=view)
+                        logger.info(f"✅ Sent idle reminder DM for ticket {ticket_id} to user {user_id}")
+                    except discord.Forbidden:
+                        logger.debug(f"⚠️ Cannot send DM to user {user_id} (DMs disabled)")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to send idle reminder DM: {e}")
+                    
+                    # Also notify staff in ticket channel if channel exists
+                    channel_id = ticket.get("channel_id")
+                    if channel_id:
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if isinstance(channel, discord.TextChannel):
+                                support_role = self._resolve_support_role(guild)
+                                await channel.send(
+                                    content=(support_role.mention if support_role else None),
+                                    embed=EmbedBuilder.warning(
+                                        title="⏰ Ticket Idle",
+                                        description=f"This ticket has been inactive for {idle_threshold} days. Creator has been notified."
+                                    ),
+                                    allowed_mentions=discord.AllowedMentions(roles=True)
+                                )
+                        except Exception as e:
+                            logger.debug(f"⚠️ Failed to notify staff in channel: {e}")
+                
+                except Exception as e:
+                    logger.exception(f"❌ Error processing idle ticket {ticket.get('id')}: {e}")
+            
+            # Process very old tickets (auto-close)
+            for ticket in old_tickets:
+                try:
+                    ticket_id = ticket["id"]
+                    guild_id = ticket["guild_id"]
+                    channel_id = ticket.get("channel_id")
+                    
+                    # Auto-close the ticket
+                    if is_pool_healthy(self.db):
+                        try:
+                            async with acquire_safe(self.db) as conn:
+                                await conn.execute(
+                                    """
+                                    UPDATE support_tickets
+                                    SET status = 'closed', updated_at = NOW()
+                                    WHERE id = $1 AND guild_id = $2
+                                    """,
+                                    ticket_id, guild_id
+                                )
+                        except RuntimeError:
+                            logger.debug(f"⚠️ Database pool not available for auto-close ticket {ticket_id}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to auto-close ticket {ticket_id} in DB: {e}")
+                    
+                    # Get channel and post summary
+                    if channel_id:
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if isinstance(channel, discord.TextChannel):
+                                # Lock channel
+                                owner_id = ticket.get("user_id")
+                                member = channel.guild.get_member(owner_id) if owner_id else None
+                                overwrites = channel.overwrites
+                                if member:
+                                    overwrites[member] = discord.PermissionOverwrite(
+                                        view_channel=True, send_messages=False, read_message_history=True
+                                    )
+                                overwrites[channel.guild.default_role] = discord.PermissionOverwrite(view_channel=False)
+                                await channel.edit(overwrites=overwrites, reason=f"Ticket {ticket_id} auto-closed after {auto_close_threshold} days")
+                                
+                                # Rename channel
+                                try:
+                                    await channel.edit(name=f"ticket-{ticket_id}-closed")
+                                except Exception:
+                                    pass
+                                
+                                # Post summary using helper method
+                                summary_meta = await self._post_ticket_summary(channel, ticket_id, guild_id)
+                                
+                                # Post auto-close message
+                                await channel.send(
+                                    embed=EmbedBuilder.error(
+                                        title="🔒 Ticket Auto-Closed",
+                                        description=f"This ticket was automatically closed after {auto_close_threshold} days of inactivity."
+                                    )
+                                )
+                                
+                                logger.info(f"✅ Auto-closed ticket {ticket_id} after {auto_close_threshold} days")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to auto-close ticket {ticket_id} channel: {e}")
+                    
+                    # Log the auto-close
+                    await self.send_log_embed(
+                        title="🔒 Ticket auto-closed",
+                        description=(
+                            f"ID: {ticket_id}\n"
+                            f"Auto-closed after {auto_close_threshold} days of inactivity"
+                        ),
+                        level="warning",
+                        guild_id=guild_id,
+                    )
+                
+                except Exception as e:
+                    logger.exception(f"❌ Error auto-closing ticket {ticket.get('id')}: {e}")
+        
+        except Exception as e:
+            logger.exception(f"❌ Error in check_idle_tickets task: {e}")
+
+    @check_idle_tickets.before_loop
+    async def before_check_idle_tickets(self):
+        await self.bot.wait_until_ready()
+        # Wait for database to be ready
+        while not is_pool_healthy(self.db):
+            await asyncio.sleep(2)
+
+    def cog_load(self):
+        """Called when the cog is loaded - start the idle ticket check task."""
+        if not self.check_idle_tickets.is_running():
+            self.check_idle_tickets.start()
+
+    async def cog_unload(self):
+        """Called when the cog is unloaded - close the database pool."""
+        if self.db:
+            try:
+                await self.db.close()
+            except Exception:
+                pass
+            self.db = None
+
 
 class TicketActionView(discord.ui.View):
     def __init__(self, bot: commands.Bot, ticket_id: int, support_role_id: Optional[int] = None, cog: Optional["TicketBot"] = None, timeout: Optional[float] = None):
@@ -1163,7 +1406,8 @@ class TicketActionView(discord.ui.View):
         self.cog = cog
 
     async def _is_staff(self, interaction: discord.Interaction) -> bool:
-        return await is_owner_or_admin_interaction(interaction)
+        is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
+        return is_admin
 
     async def _log(self, interaction: discord.Interaction, title: str, desc: str, level: str = "info") -> None:
         # Use channel send via embed helper from a new simple instance-less call
@@ -1176,9 +1420,7 @@ class TicketActionView(discord.ui.View):
                     guild_id=interaction.guild.id
                 )
                 return
-            color_map = {"info": 0x3498db, "debug": 0x95a5a6, "error": 0xe74c3c, "success": 0x2ecc71, "warning": 0xf1c40f}
-            color = color_map.get(level, 0x3498db)
-            embed = discord.Embed(title=title, description=desc, color=color)
+            embed = EmbedBuilder.log(title=title, description=desc, level=level)
             embed.set_footer(text="ticketbot")
             channel = self.bot.get_channel(0)  # Must be configured via /config system set_log_channel
             if channel and hasattr(channel, "send"):
@@ -1206,9 +1448,12 @@ class TicketActionView(discord.ui.View):
                 await channel.send("No content to summarize.")
                 return None
 
+            from utils.sanitizer import safe_prompt, safe_embed_text
+            # Sanitize each message before sending to GPT
+            safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
                 "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
-                + "\n".join(messages[-50:])
+                + "\n".join(safe_messages)
             )
 
             try:
@@ -1223,10 +1468,9 @@ class TicketActionView(discord.ui.View):
                 await channel.send(f"❌ Failed to generate summary: {e}")
                 return None
 
-            embed = discord.Embed(
+            embed = EmbedBuilder.success(
                 title="📄 Ticket Summary",
-                description=(summary_text or "").strip() or "(empty)",
-                color=discord.Color.green(),
+                description=safe_embed_text((summary_text or "").strip() or "(empty)")
             )
             await channel.send(embed=embed)
             # Register the summary for clustering/FAQ suggestions
@@ -1254,11 +1498,11 @@ class TicketActionView(discord.ui.View):
     @staticmethod
     async def _register_summary(view_instance, ticket_id: int, summary: str) -> Optional[str]:
         try:
-            if not view_instance.cog or not view_instance.cog.db or view_instance.cog.db.is_closing():
+            if not view_instance.cog or not is_pool_healthy(view_instance.cog.db):
                 return None
             key = TicketActionView._compute_similarity_key(summary)
             since = datetime.utcnow() - timedelta(days=7)
-            async with view_instance.cog.db.acquire() as conn:
+            async with acquire_safe(view_instance.cog.db) as conn:
                 # Insert summary
                 await conn.execute(
                     "INSERT INTO ticket_summaries (ticket_id, summary, similarity_key) VALUES ($1, $2, $3)",
@@ -1276,15 +1520,14 @@ class TicketActionView(discord.ui.View):
                 )
                 if len(rows) >= 3:
                     # Propose FAQ to admins via log channel with a button
-                    embed = discord.Embed(
+                    embed = EmbedBuilder.warning(
                         title="💡 Repeated Ticket Pattern Detected",
                         description=(
                             "We detected multiple tickets with a similar topic in the last 7 days.\n\n"
                             f"Similarity key: `{key}`\n"
                             f"Occurrences: **{len(rows)}**\n\n"
                             "Consider adding an FAQ entry for this topic."
-                        ),
-                        color=discord.Color.gold(),
+                        )
                     )
                     # Show a sample of the latest summary in the footer to aid admins
                     sample_preview = (summary[:180] + "…") if len(summary) > 180 else summary
@@ -1293,14 +1536,15 @@ class TicketActionView(discord.ui.View):
                     view = discord.ui.View()
 
                     async def add_faq_callback(interaction: discord.Interaction) -> None:
-                        if not await is_owner_or_admin_interaction(interaction):
-                            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+                        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+                        if not is_admin:
+                            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
                             return
-                        if not view_instance.cog or not view_instance.cog.db or view_instance.cog.db.is_closing():
+                        if not view_instance.cog or not is_pool_healthy(view_instance.cog.db):
                             await interaction.response.send_message("❌ Database not available.", ephemeral=True)
                             return
                         try:
-                            async with view_instance.cog.db.acquire() as conn:
+                            async with acquire_safe(view_instance.cog.db) as conn:
                                 # Insert FAQ entry
                                 await conn.execute(
                                     "INSERT INTO faq_entries (similarity_key, summary, created_by) VALUES ($1, $2, $3)",
@@ -1345,11 +1589,11 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te claimen.", ephemeral=True)
             return
-        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+        if not self.cog or not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not available.", ephemeral=True)
             return
         try:
-            async with self.cog.db.acquire() as conn:
+            async with acquire_safe(self.cog.db) as conn:
                 row = await conn.fetchrow(
                     """
                     UPDATE support_tickets
@@ -1394,12 +1638,12 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Je hebt geen rechten om te sluiten.", ephemeral=True)
             return
-        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+        if not self.cog or not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not available.", ephemeral=True)
             return
 
         try:
-            async with self.cog.db.acquire() as conn:
+            async with acquire_safe(self.cog.db) as conn:
                 row = await conn.fetchrow(
                     """
                     UPDATE support_tickets
@@ -1492,11 +1736,11 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
-        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+        if not self.cog or not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not available.", ephemeral=True)
             return
         try:
-            async with self.cog.db.acquire() as conn:
+            async with acquire_safe(self.cog.db) as conn:
                 await conn.execute(
                     "UPDATE support_tickets SET status='waiting_for_user', updated_at = NOW() WHERE id = $1",
                     int(self.ticket_id),
@@ -1511,7 +1755,7 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
-        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+        if not self.cog or not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not available.", ephemeral=True)
             return
         escalated_to = None
@@ -1521,7 +1765,7 @@ class TicketActionView(discord.ui.View):
             target_role_id = getattr(config, "TICKET_ESCALATION_ROLE_ID", None)
             escalated_to = int(target_role_id) if isinstance(target_role_id, int) else None
         try:
-            async with self.cog.db.acquire() as conn:
+            async with acquire_safe(self.cog.db) as conn:
                 await conn.execute(
                     "UPDATE support_tickets SET status='escalated', escalated_to=$1, updated_at = NOW() WHERE id = $2",
                     escalated_to,
@@ -1538,13 +1782,13 @@ class TicketActionView(discord.ui.View):
         if not await self._is_staff(interaction):
             await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
             return
-        if not self.cog or not self.cog.db or self.cog.db.is_closing():
+        if not self.cog or not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not available.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
         try:
-            async with self.cog.db.acquire() as conn:
+            async with acquire_safe(self.cog.db) as conn:
                 await conn.execute(
                     """
                     UPDATE support_tickets
@@ -1588,6 +1832,22 @@ class TicketActionView(discord.ui.View):
         if not isinstance(ch, discord.TextChannel):
             await interaction.response.send_message("❌ Not a text channel.", ephemeral=True)
             return
+        
+        # In-memory cooldown check (5 seconden tussen clicks)
+        if self.cog:
+            # Cleanup stale entries before checking
+            self.cog._cleanup_cooldowns()
+            
+            current_time = time.time()
+            last_used = self.cog._suggest_reply_cooldowns.get(interaction.user.id, 0)
+            if current_time - last_used < 5.0:
+                await interaction.response.send_message(
+                    "⏳ Even wachten... Supabase die weer eens een edge-case vindt als 100 replies in een burst. Probeer over 5 seconden opnieuw.",
+                    ephemeral=True
+                )
+                return
+            self.cog._suggest_reply_cooldowns[interaction.user.id] = current_time
+        
         await interaction.response.defer(ephemeral=True)
         msgs: List[str] = []
         async for m in ch.history(limit=20, oldest_first=False):
@@ -1608,7 +1868,10 @@ class TicketActionView(discord.ui.View):
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to get suggestion: {e}", ephemeral=True)
             return
-        embed = discord.Embed(title="💡 Suggested reply", description=(suggestion or "-"), color=discord.Color.teal())
+        embed = EmbedBuilder.status(
+            title="💡 Suggested reply",
+            description=(suggestion or "-")
+        )
         await interaction.followup.send(embed=embed, ephemeral=True)
         await self._log(interaction, "💡 Suggest reply", f"id={self.ticket_id}")
     # (end of TicketActionView)
@@ -1625,188 +1888,6 @@ class TicketOpenView(discord.ui.View):
         await self.cog.create_ticket_for_user(interaction, description="New ticket")
 
 
-    @tasks.loop(hours=24)
-    async def check_idle_tickets(self) -> None:
-        """Check for idle tickets and send reminders or auto-close."""
-        if self.db is None or self.db.is_closing():
-            return
-        
-        try:
-            # Get thresholds from settings (default to 5 and 14 days)
-            idle_threshold = self._settings_get("ticketbot", "idle_days_threshold", 0, 5) or 5
-            auto_close_threshold = self._settings_get("ticketbot", "auto_close_days_threshold", 0, 14) or 14
-            
-            async with self.db.acquire() as conn:
-                # Query idle tickets (5+ days, not closed/archived, but not old enough for auto-close)
-                idle_tickets = await conn.fetch(
-                    """
-                    SELECT id, guild_id, user_id, username, channel_id, description, updated_at
-                    FROM support_tickets
-                    WHERE status IN ('open', 'claimed', 'waiting_for_user')
-                      AND updated_at < NOW() - ($1 || ' days')::INTERVAL
-                      AND updated_at >= NOW() - ($2 || ' days')::INTERVAL
-                    ORDER BY updated_at ASC
-                    """,
-                    str(idle_threshold), str(auto_close_threshold)
-                )
-                
-                # Query very old tickets (14+ days, auto-close)
-                old_tickets = await conn.fetch(
-                    """
-                    SELECT id, guild_id, user_id, username, channel_id, description, updated_at
-                    FROM support_tickets
-                    WHERE status IN ('open', 'claimed', 'waiting_for_user')
-                      AND updated_at < NOW() - ($1 || ' days')::INTERVAL
-                    ORDER BY updated_at ASC
-                    """,
-                    str(auto_close_threshold)
-                )
-            
-            # Process idle tickets (send DM reminders) - queries already executed, process results
-            for ticket in idle_tickets:
-                try:
-                    guild_id = ticket["guild_id"]
-                    user_id = ticket["user_id"]
-                    ticket_id = ticket["id"]
-                    
-                    # Get guild
-                    guild = self.bot.get_guild(guild_id)
-                    if not guild:
-                        continue
-                    
-                    # Get user
-                    user = guild.get_member(user_id) or await self.bot.fetch_user(user_id)
-                    if not user:
-                        continue
-                    
-                    # Send DM with reminder
-                    try:
-                        embed = discord.Embed(
-                            title="⏰ Ticket Idle Reminder",
-                            description=(
-                                f"Your ticket **#{ticket_id}** has been inactive for {idle_threshold} days.\n\n"
-                                f"**Description:** {ticket['description'][:200]}{'...' if len(ticket['description']) > 200 else ''}\n\n"
-                                f"Would you like to close it or keep it open?"
-                            ),
-                            color=discord.Color.orange(),
-                            timestamp=datetime.utcnow()
-                        )
-                        view = IdleTicketView(self, ticket_id, guild_id)
-                        await user.send(embed=embed, view=view)
-                        logger.info(f"✅ Sent idle reminder DM for ticket {ticket_id} to user {user_id}")
-                    except discord.Forbidden:
-                        logger.debug(f"⚠️ Cannot send DM to user {user_id} (DMs disabled)")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Failed to send idle reminder DM: {e}")
-                    
-                    # Also notify staff in ticket channel if channel exists
-                    channel_id = ticket.get("channel_id")
-                    if channel_id:
-                        try:
-                            channel = self.bot.get_channel(channel_id)
-                            if isinstance(channel, discord.TextChannel):
-                                support_role = self._resolve_support_role(guild)
-                                await channel.send(
-                                    content=(support_role.mention if support_role else None),
-                                    embed=discord.Embed(
-                                        title="⏰ Ticket Idle",
-                                        description=f"This ticket has been inactive for {idle_threshold} days. Creator has been notified.",
-                                        color=discord.Color.orange()
-                                    ),
-                                    allowed_mentions=discord.AllowedMentions(roles=True)
-                                )
-                        except Exception as e:
-                            logger.debug(f"⚠️ Failed to notify staff in channel: {e}")
-                
-                except Exception as e:
-                    logger.exception(f"❌ Error processing idle ticket {ticket.get('id')}: {e}")
-            
-            # Process very old tickets (auto-close)
-            for ticket in old_tickets:
-                try:
-                    ticket_id = ticket["id"]
-                    guild_id = ticket["guild_id"]
-                    channel_id = ticket.get("channel_id")
-                    
-                    # Auto-close the ticket
-                    if self.db and not self.db.is_closing():
-                        try:
-                            async with self.db.acquire() as conn:
-                                await conn.execute(
-                                    """
-                                    UPDATE support_tickets
-                                    SET status = 'closed', updated_at = NOW()
-                                    WHERE id = $1 AND guild_id = $2
-                                    """,
-                                    ticket_id, guild_id
-                                )
-                        except Exception as e:
-                            logger.warning(f"⚠️ Failed to auto-close ticket {ticket_id} in DB: {e}")
-                    
-                    # Get channel and post summary
-                    if channel_id:
-                        try:
-                            channel = self.bot.get_channel(channel_id)
-                            if isinstance(channel, discord.TextChannel):
-                                # Lock channel
-                                owner_id = ticket.get("user_id")
-                                member = channel.guild.get_member(owner_id) if owner_id else None
-                                overwrites = channel.overwrites
-                                if member:
-                                    overwrites[member] = discord.PermissionOverwrite(
-                                        view_channel=True, send_messages=False, read_message_history=True
-                                    )
-                                overwrites[channel.guild.default_role] = discord.PermissionOverwrite(view_channel=False)
-                                await channel.edit(overwrites=overwrites, reason=f"Ticket {ticket_id} auto-closed after {auto_close_threshold} days")
-                                
-                                # Rename channel
-                                try:
-                                    await channel.edit(name=f"ticket-{ticket_id}-closed")
-                                except Exception:
-                                    pass
-                                
-                                # Post summary using helper method
-                                summary_meta = await self._post_ticket_summary(channel, ticket_id, guild_id)
-                                
-                                # Post auto-close message
-                                await channel.send(
-                                    embed=discord.Embed(
-                                        title="🔒 Ticket Auto-Closed",
-                                        description=f"This ticket was automatically closed after {auto_close_threshold} days of inactivity.",
-                                        color=discord.Color.red(),
-                                        timestamp=datetime.utcnow()
-                                    )
-                                )
-                                
-                                logger.info(f"✅ Auto-closed ticket {ticket_id} after {auto_close_threshold} days")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Failed to auto-close ticket {ticket_id} channel: {e}")
-                    
-                    # Log the auto-close
-                    await self.send_log_embed(
-                        title="🔒 Ticket auto-closed",
-                        description=(
-                            f"ID: {ticket_id}\n"
-                            f"Auto-closed after {auto_close_threshold} days of inactivity"
-                        ),
-                        level="warning",
-                        guild_id=guild_id,
-                    )
-                
-                except Exception as e:
-                    logger.exception(f"❌ Error auto-closing ticket {ticket.get('id')}: {e}")
-        
-        except Exception as e:
-            logger.exception(f"❌ Error in check_idle_tickets task: {e}")
-
-    @check_idle_tickets.before_loop
-    async def before_check_idle_tickets(self):
-        await self.bot.wait_until_ready()
-        # Wait for database to be ready
-        while self.db is None or self.db.is_closing():
-            await asyncio.sleep(2)
-
-
 class IdleTicketView(discord.ui.View):
     """View for idle ticket reminder with Close/Keep Open buttons."""
     def __init__(self, cog: TicketBot, ticket_id: int, guild_id: int):
@@ -1817,13 +1898,13 @@ class IdleTicketView(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="idle_close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not self.cog.db or self.cog.db.is_closing():
+        if not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
             return
         
         try:
             # Update ticket status
-            async with self.cog.db.acquire() as conn:
+            async with acquire_safe(self.cog.db) as conn:
                 await conn.execute(
                     """
                     UPDATE support_tickets
@@ -1850,13 +1931,13 @@ class IdleTicketView(discord.ui.View):
 
     @discord.ui.button(label="Keep Open", style=discord.ButtonStyle.secondary, custom_id="idle_keep")
     async def keep_open(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not self.cog.db or self.cog.db.is_closing():
+        if not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
             return
         
         try:
             # Update updated_at to reset idle timer
-            async with self.cog.db.acquire() as conn:
+            async with acquire_safe(self.cog.db) as conn:
                 await conn.execute(
                     """
                     UPDATE support_tickets
@@ -1873,20 +1954,6 @@ class IdleTicketView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f"❌ Failed to update ticket: {e}", ephemeral=True)
 
-
-    def cog_load(self):
-        """Called when the cog is loaded - start the idle ticket check task."""
-        if not self.check_idle_tickets.is_running():
-            self.check_idle_tickets.start()
-
-    async def cog_unload(self):
-        """Called when the cog is unloaded - close the database pool."""
-        if self.db:
-            try:
-                await self.db.close()
-            except Exception:
-                pass
-            self.db = None
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketBot(bot))

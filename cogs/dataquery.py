@@ -7,6 +7,7 @@ import csv
 import os
 import asyncpg
 from typing import Optional
+from utils.db_helpers import acquire_safe, is_pool_healthy
 
 class DataQuery(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -15,10 +16,11 @@ class DataQuery(commands.Cog):
 
     async def setup_database(self):
         """Maakt de database connectie en tabel aan als die nog niet bestaat."""
-        self.db = await asyncpg.create_pool(dsn=config.DATABASE_URL)
+        from utils.db_helpers import create_db_pool
+        self.db = await create_db_pool(config.DATABASE_URL, name="dataquery")
         
         assert self.db is not None
-        async with self.db.acquire() as connection:
+        async with acquire_safe(self.db) as connection:
             await connection.execute("""
                 CREATE TABLE IF NOT EXISTS onboarding (
                     id SERIAL PRIMARY KEY,
@@ -39,10 +41,10 @@ class DataQuery(commands.Cog):
 
         csv_filename = "onboarding_data.csv"
         
-        if self.db is None:
+        if not is_pool_healthy(self.db):
             await interaction.followup.send("⛔ Database niet beschikbaar.", ephemeral=True)
             return
-        async with self.db.acquire() as connection:
+        async with acquire_safe(self.db) as connection:
             rows = await connection.fetch("SELECT * FROM onboarding")
 
         if not rows:
@@ -67,6 +69,5 @@ class DataQuery(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(DataQuery(bot))
-    # Voor multi-guild support: sync global slash commands
-    # Individuele guilds kunnen hun eigen command overrides hebben
-    await bot.tree.sync()
+    # Command sync is now handled centrally in bot.py on_ready() hook
+    # This prevents blocking startup and respects rate limits

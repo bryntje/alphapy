@@ -9,6 +9,8 @@ from typing import Optional, Dict, Any, cast
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import config
+from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.embed_builder import EmbedBuilder
 
 # Configureer de logging
 logger = logging.getLogger(__name__)
@@ -102,7 +104,7 @@ class Onboarding(commands.Cog):
             if self.db is None:
                 logger.error("Database pool is None")
                 return self.default_questions
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 rows = await conn.fetch("""
                     SELECT question, question_type, options, followup, required
                     FROM guild_onboarding_questions
@@ -152,7 +154,7 @@ class Onboarding(commands.Cog):
             if self.db is None:
                 logger.error("Database pool is None")
                 return False
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 # Convert options from tuple format to JSONB
                 options_json = None
                 if "options" in question_data and question_data["options"]:
@@ -205,7 +207,7 @@ class Onboarding(commands.Cog):
             if self.db is None:
                 logger.error("Database pool is None")
                 return False
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute("""
                     DELETE FROM guild_onboarding_questions
                     WHERE guild_id = $1 AND step_order = $2
@@ -235,7 +237,7 @@ class Onboarding(commands.Cog):
             if self.db is None:
                 logger.error("Database pool is None")
                 return self.default_rules
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 rows = await conn.fetch("""
                     SELECT title, description
                     FROM guild_rules
@@ -265,7 +267,7 @@ class Onboarding(commands.Cog):
             if self.db is None:
                 logger.error("Database pool is None")
                 return False
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute("""
                     INSERT INTO guild_rules
                     (guild_id, rule_order, title, description, enabled)
@@ -301,7 +303,7 @@ class Onboarding(commands.Cog):
             if self.db is None:
                 logger.error("Database pool is None")
                 return False
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute("""
                     DELETE FROM guild_rules
                     WHERE guild_id = $1 AND rule_order = $2
@@ -343,8 +345,9 @@ class Onboarding(commands.Cog):
         await self._ensure_pool()
 
     async def _connect_pool(self) -> None:
-        pool = await asyncpg.create_pool(config.DATABASE_URL)
-        async with pool.acquire() as conn:
+        from utils.db_helpers import create_db_pool
+        pool = await create_db_pool(config.DATABASE_URL, name="onboarding")
+        async with acquire_safe(pool) as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (
                     guild_id BIGINT NOT NULL,
@@ -434,15 +437,15 @@ class Onboarding(commands.Cog):
         if step >= len(questions):
             logger.info(f"🎉 Onboarding completed for {interaction.user.display_name}!")
 
-            summary_embed = discord.Embed(
+            summary_embed = EmbedBuilder.info(
                 title="📜 Onboarding Summary",
-                description=f"Here is a summary of your onboarding responses, {interaction.user.display_name}:",
-                color=discord.Color.blue()
+                description=f"Here is a summary of your onboarding responses, {interaction.user.display_name}:"
             )
+            from utils.sanitizer import safe_embed_text
             for idx, question in enumerate(questions):
                 raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
-                summary_embed.add_field(name=f"**{question['question']}**", value=f"➜ {answer_text}", inline=False)
+                summary_embed.add_field(name=f"**{safe_embed_text(question['question'])}**", value=f"➜ {safe_embed_text(answer_text)}", inline=False)
 
             # Verstuur de samenvatting als ephemeral bericht naar de gebruiker
             if not interaction.response.is_done():
@@ -475,15 +478,15 @@ class Onboarding(commands.Cog):
                     logger.error(f"⚠️ Could not assign completion role: {e}")
 
             # Build and send a log embed to the log channel
-            log_embed = discord.Embed(
+            log_embed = EmbedBuilder.success(
                 title="📝 Onboarding Log",
-                description=f"**User:** {interaction.user} ({interaction.user.id})",
-                color=discord.Color.green()
+                description=f"**User:** {interaction.user} ({interaction.user.id})"
             )
+            from utils.sanitizer import safe_embed_text
             for idx, question in enumerate(questions):
                 raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
-                log_embed.add_field(name=question['question'], value=f"➜ {answer_text}", inline=False)
+                log_embed.add_field(name=safe_embed_text(question['question']), value=f"➜ {safe_embed_text(answer_text)}", inline=False)
 
             log_channel_id = self.bot.settings.get("system", "log_channel_id", interaction.guild.id)
             log_channel = self.bot.get_channel(log_channel_id) if log_channel_id else None
@@ -508,7 +511,7 @@ class Onboarding(commands.Cog):
             return
 
         # Anders, bouw een embed en view voor de vraag met opties
-        embed = discord.Embed(title="📝 Onboarding Form", description=q_data["question"], color=discord.Color.blue())
+        embed = EmbedBuilder.info(title="📝 Onboarding Form", description=q_data["question"])
         view = OnboardingView(step=step, answers=answers or {}, onboarding=self)
 
         if q_data.get("multiple"):
@@ -546,7 +549,7 @@ class Onboarding(commands.Cog):
             if self.db is None:
                 logger.error("Database pool is None")
                 return False
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 # First try to update existing record for this guild+user combination
                 result = await conn.fetchrow(
                     "UPDATE onboarding SET responses = $3 WHERE guild_id = $1 AND user_id = $2 RETURNING user_id",

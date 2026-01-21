@@ -5,6 +5,7 @@ from typing import Optional
 from discord.ext import commands
 import config
 from utils.logger import log_with_guild
+from utils.db_helpers import acquire_safe
 
 class ImportInvites(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -12,9 +13,10 @@ class ImportInvites(commands.Cog):
         self.db: Optional[asyncpg.Pool] = None
 
     async def setup_database(self):
-        self.db = await asyncpg.create_pool(config.DATABASE_URL)
+        from utils.db_helpers import create_db_pool
+        self.db = await create_db_pool(config.DATABASE_URL, name="importinvite")
         assert self.db is not None
-        async with self.db.acquire() as conn:
+        async with acquire_safe(self.db) as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS invite_tracker (
                     user_id BIGINT PRIMARY KEY,
@@ -61,7 +63,7 @@ class ImportInvites(commands.Cog):
                 print(f"❌ Geen match: {message.content}")  # ❌ Debug als er GEEN match is
 
         assert self.db is not None
-        async with self.db.acquire() as conn:
+        async with acquire_safe(self.db) as conn:
             for inviter, count in invite_counts.items():
                 print(f"📌 Opslaan: {inviter} → {count} invites")
                 await conn.execute(

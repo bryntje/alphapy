@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.app_commands import checks as app_checks
 
 from gpt.helpers import ask_gpt, log_gpt_error, log_gpt_success
 from utils.supabase_client import (
@@ -23,6 +24,7 @@ class GrowthCheckin(commands.Cog):
         name="growthcheckin",
         description="Reflect on your goals, obstacles, and how you feel.",
     )
+    @app_checks.cooldown(2, 300.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 2 per 5 minuten
     async def growthcheckin(self, interaction: discord.Interaction):
         await interaction.response.send_modal(GrowthModal())
 
@@ -43,13 +45,20 @@ class GrowthModal(discord.ui.Modal, title="🌱 Growth Check-in"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        from utils.sanitizer import safe_prompt
+        
+        # Sanitize each input field
+        safe_goal = safe_prompt(self.goal.value)
+        safe_obstacle = safe_prompt(self.obstacle.value)
+        safe_feeling = safe_prompt(self.feeling.value)
+        
         prompt = f"""
 You are a calm, supportive mindset coach.
 A user is reflecting on their personal growth.
 
-Goal: {self.goal.value}
-Obstacle: {self.obstacle.value}
-Feeling: {self.feeling.value}
+Goal: {safe_goal}
+Obstacle: {safe_obstacle}
+Feeling: {safe_feeling}
 
 Gently reflect back what you hear.
 Offer a bit of perspective or guidance.

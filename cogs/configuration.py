@@ -2,13 +2,16 @@ from typing import Any, Optional, cast
 import discord
 from discord import app_commands
 from discord.ext import commands
-from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.validators import validate_admin
+from utils.db_helpers import acquire_safe
+from utils.embed_builder import EmbedBuilder
 from utils.settings_service import SettingsService, SettingDefinition
 from utils.logger import log_with_guild, log_guild_action
 from cogs.reaction_roles import StartOnboardingView
 def requires_admin():
     async def predicate(interaction: discord.Interaction) -> bool:
-        if await is_owner_or_admin_interaction(interaction):
+        is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
+        if is_admin:
             return True
         raise app_commands.CheckFailure("Je hebt onvoldoende rechten voor dit commando.")
     return app_commands.check(predicate)
@@ -1173,7 +1176,7 @@ class Configuration(commands.Cog):
             return
         # Delete all custom rules for this guild
         if onboarding_cog.db:
-            async with onboarding_cog.db.acquire() as conn:
+            async with acquire_safe(onboarding_cog.db) as conn:
                 await conn.execute("DELETE FROM guild_rules WHERE guild_id = $1", interaction.guild.id)
             # Clear cache
             if interaction.guild.id in onboarding_cog.guild_rules_cache:
@@ -1197,7 +1200,7 @@ class Configuration(commands.Cog):
             return
         # Delete all custom questions for this guild
         if onboarding_cog.db:
-            async with onboarding_cog.db.acquire() as conn:
+            async with acquire_safe(onboarding_cog.db) as conn:
                 await conn.execute("DELETE FROM guild_onboarding_questions WHERE guild_id = $1", interaction.guild.id)
             # Clear cache
             if interaction.guild.id in onboarding_cog.guild_questions_cache:
@@ -1226,10 +1229,9 @@ class Configuration(commands.Cog):
             await interaction.response.send_message("⚠️ Onboarding is not enabled for this server. Enable it first with `/config onboarding enable`.", ephemeral=True)
             return
 
-        embed = discord.Embed(
+        embed = EmbedBuilder.success(
             title=f"Welcome to {interaction.guild.name}!",
-            description="To get started and learn about our community, click the button below to begin the onboarding process.",
-            color=discord.Color.green(),
+            description="To get started and learn about our community, click the button below to begin the onboarding process."
         )
         embed.set_footer(text="Complete the onboarding to gain access to the full server!")
 
@@ -1280,7 +1282,7 @@ class Configuration(commands.Cog):
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             log_with_guild(f"Audit log channel {channel_id} not found or not accessible", guild_id, "warning")
             return
-        embed = discord.Embed(title=title, description=message, color=discord.Color.orange())
+        embed = EmbedBuilder.warning(title=title, description=message)
         embed.set_footer(text=f"config | Guild: {guild_id}")
         try:
             # Config changes are always logged (critical level), bypass log level check
@@ -1352,7 +1354,7 @@ class ReorderQuestionsModal(discord.ui.Modal, title="Reorder Questions"):
                 await interaction.followup.send("❌ Database not available.", ephemeral=True)
                 return
             
-            async with self.onboarding_cog.db.acquire() as conn:
+            async with acquire_safe(self.onboarding_cog.db) as conn:
                 async with conn.transaction():
                     # Update each question's step_order
                     for new_position, question_num in enumerate(new_order, 1):
@@ -1397,10 +1399,9 @@ class ReorderQuestionsModal(discord.ui.Modal, title="Reorder Questions"):
                         channel = interaction.client.get_channel(channel_id)
                         if isinstance(channel, (discord.TextChannel, discord.Thread)):
                             await channel.send(
-                                embed=discord.Embed(
+                                embed=EmbedBuilder.warning(
                                     title="⚙️ Onboarding questions reordered",
-                                    description=f"New order: {', '.join(map(str, new_order))}\nBy: {interaction.user.mention}",
-                                    color=discord.Color.orange()
+                                    description=f"New order: {', '.join(map(str, new_order))}\nBy: {interaction.user.mention}"
                                 )
                             )
                 except Exception:

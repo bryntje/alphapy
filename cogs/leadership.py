@@ -4,6 +4,7 @@ import logging
 import discord
 from discord.ext import commands
 from discord import app_commands
+from discord.app_commands import checks as app_checks
 
 from utils.logger import logger
 from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
@@ -22,6 +23,7 @@ class LeaderHelp(commands.Cog):
         name="leaderhelp",
         description="Get AI-powered leadership guidance for challenges, team growth, or doubts."
     )
+    @app_checks.cooldown(3, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 3 per minuut
     async def leaderhelp(self, interaction: discord.Interaction):
         await interaction.response.send_message(
             "What kind of support do you want?",
@@ -126,11 +128,12 @@ class AskQuestionButton(discord.ui.Button):
         
         # Step 2: Call ask_gpt (ask_gpt logs its own errors)
         try:
-            prompt = f"""
-        You're a supportive leadership coach. A Discord leader asked:
-        {user_question}
-        Respond with clarity, honesty, and a helpful suggestion. Keep it short.
-        """
+            from utils.sanitizer import safe_prompt
+            prompt = safe_prompt(
+                user_question,
+                context="You're a supportive leadership coach. A Discord leader asked:"
+            )
+            prompt += "\nRespond with clarity, honesty, and a helpful suggestion. Keep it short."
         
             await interaction.followup.send("🧠 Thinking...", ephemeral=True)
         

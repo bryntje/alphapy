@@ -8,7 +8,8 @@ import asyncio
 
 from typing import Optional, Dict
 from utils.settings_service import SettingsService
-
+from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.embed_builder import EmbedBuilder
 from utils.logger import logger
 
 class InviteTracker(commands.Cog):
@@ -35,13 +36,15 @@ class InviteTracker(commands.Cog):
     async def setup_database(self):
         """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
         try:
-            self.db = await asyncpg.create_pool(
+            from utils.db_helpers import create_db_pool
+            self.db = await create_db_pool(
                 config.DATABASE_URL,
+                name="inviteboard",
                 min_size=1,
                 max_size=5,
                 command_timeout=10.0
             )
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute('''
                     CREATE TABLE IF NOT EXISTS invite_tracker (
                         guild_id BIGINT NOT NULL,
@@ -70,11 +73,11 @@ class InviteTracker(commands.Cog):
 
     async def update_invite_count(self, guild_id: int, inviter_id: int, count: Optional[int] = None):
         """Verhoog of stel de invite count in de database in."""
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             logger.warning("⚠️ InviteTracker: Database pool not available")
             return
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 if count is None:
                     # Verhoog de invites met 1 als er geen specifieke waarde wordt gegeven
                     await conn.execute(
@@ -102,11 +105,11 @@ class InviteTracker(commands.Cog):
     
     async def get_invite_leaderboard(self, guild_id: int, limit=10):
         """Haal de top gebruikers op met de meeste invites."""
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             logger.warning("⚠️ InviteTracker: Database pool not available")
             return []
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 rows = await conn.fetch(
                     "SELECT user_id, invite_count FROM invite_tracker WHERE guild_id = $1 ORDER BY invite_count DESC LIMIT $2",
                     guild_id, limit
@@ -193,7 +196,7 @@ class InviteTracker(commands.Cog):
             await interaction.response.send_message("Er is nog geen invite data beschikbaar.")
             return
 
-        embed = discord.Embed(title="Invite Leaderboard", color=discord.Color.gold())
+        embed = EmbedBuilder.warning(title="Invite Leaderboard")
         for idx, row in enumerate(rows, start=1):
             member = interaction.guild.get_member(row["user_id"])
             name = member.display_name if member else f"User {row['user_id']}"
@@ -272,9 +275,9 @@ class InviteTracker(commands.Cog):
             await self.update_invite_count(member.guild.id, inviter.id)
             # Haal de huidige invite count op na de update
             invite_count = 0
-            if self.db and not self.db.is_closing():
+            if is_pool_healthy(self.db):
                 try:
-                    async with self.db.acquire() as conn:
+                    async with acquire_safe(self.db) as conn:
                         row = await conn.fetchrow("SELECT invite_count FROM invite_tracker WHERE guild_id = $1 AND user_id = $2", member.guild.id, inviter.id)
                         invite_count = row["invite_count"] if row else 0
                 except Exception as e:
