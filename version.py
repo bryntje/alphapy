@@ -1,4 +1,4 @@
-__version__ = "1.7.0"
-CODENAME = "Multi-Guild Horizon"
+__version__ = "1.9.0"
+CODENAME = "Enhanced Reminders"
 
 

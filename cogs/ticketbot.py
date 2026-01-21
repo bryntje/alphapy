@@ -1,9 +1,10 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 from discord.app_commands import checks as app_checks
 import asyncpg
 import json
+import asyncio
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List, Dict, cast
@@ -46,6 +47,8 @@ class TicketBot(commands.Cog):
             self.bot.add_view(TicketOpenView(self, timeout=None))
         except Exception as e:
             logger.warning(f"⚠️ TicketBot: kon TicketOpenView niet registreren: {e}")
+        
+        # Note: check_idle_tickets task will be started in cog_load hook
 
     async def setup_db(self) -> None:
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
@@ -173,6 +176,11 @@ class TicketBot(commands.Cog):
         if guild_id == 0:
             # Fallback for legacy calls without guild_id
             logger.warning("⚠️ TicketBot send_log_embed called without guild_id - skipping Discord log")
+            return
+
+        # Check log level filtering
+        from utils.logger import should_log_to_discord
+        if not should_log_to_discord(level, guild_id):
             return
 
         try:
@@ -589,6 +597,71 @@ class TicketBot(commands.Cog):
                 pass
         return fallback
 
+    async def _post_ticket_summary(self, channel: discord.TextChannel, ticket_id: int, guild_id: int) -> Optional[Dict[str, str]]:
+        """Generate and post a GPT-based summary for a ticket (used by auto-close)."""
+        messages: List[str] = []
+        try:
+            async for msg in channel.history(limit=100, oldest_first=True):
+                if not msg.author.bot:
+                    content = (msg.content or "").strip()
+                    if content:
+                        messages.append(f"{msg.author.display_name}: {content}")
+
+            if not messages:
+                await channel.send("No content to summarize.")
+                return None
+
+            prompt = (
+                "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
+                + "\n".join(messages[-50:])
+            )
+
+            try:
+                summary_text = await ask_gpt(
+                    messages=[{"role": "user", "content": prompt}],
+                    user_id=None,
+                    guild_id=guild_id,
+                )
+            except Exception as e:
+                await channel.send(f"❌ Failed to generate summary: {e}")
+                return None
+
+            embed = discord.Embed(
+                title="📄 Ticket Summary",
+                description=(summary_text or "").strip() or "(empty)",
+                color=discord.Color.green(),
+            )
+            await channel.send(embed=embed)
+            
+            # Register summary for FAQ detection
+            if self.conn:
+                try:
+                    # Create a temporary view instance for the static method
+                    temp_view = TicketActionView(
+                        bot=self.bot,
+                        conn=self.conn,
+                        ticket_id=ticket_id,
+                        support_role_id=None,
+                        cog=self,
+                        timeout=None
+                    )
+                    key = await TicketActionView._register_summary(
+                        temp_view,
+                        ticket_id,
+                        (summary_text or "").strip()
+                    )
+                    cleaned = (summary_text or "").strip()
+                    if key:
+                        return {"summary": cleaned, "key": key}
+                    return {"summary": cleaned} if cleaned else None
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to register summary: {e}")
+            
+            return {"summary": (summary_text or "").strip()}
+        except Exception as e:
+            logger.exception(f"❌ Error generating ticket summary: {e}")
+            return None
+
     def _normalize_id(self, value: Optional[object]) -> Optional[int]:
         if isinstance(value, int):
             return value
@@ -972,7 +1045,7 @@ class TicketActionView(discord.ui.View):
             )
             await channel.send(embed=embed)
             # Register the summary for clustering/FAQ suggestions
-            key = await self._register_summary(self.ticket_id, (summary_text or "").strip())
+            key = await TicketActionView._register_summary(self, self.ticket_id, (summary_text or "").strip())
             cleaned = (summary_text or "").strip()
             if key:
                 return {"summary": cleaned, "key": key}
@@ -981,7 +1054,8 @@ class TicketActionView(discord.ui.View):
             # Non-fatal; do not block the close flow on summary issues
             return None
 
-    def _compute_similarity_key(self, text: str) -> str:
+    @staticmethod
+    def _compute_similarity_key(text: str) -> str:
         normalized = re.sub(r"[^a-z0-9\s]", " ", text.lower())
         tokens = [t for t in normalized.split() if len(t) >= 4 and t not in {
             "this","that","with","from","have","about","which","their","there","would","could","should",
@@ -992,17 +1066,18 @@ class TicketActionView(discord.ui.View):
         key = "-".join(unique_tokens)
         return key[:256]
 
-    async def _register_summary(self, ticket_id: int, summary: str) -> Optional[str]:
+    @staticmethod
+    async def _register_summary(view_instance, ticket_id: int, summary: str) -> Optional[str]:
         try:
             key = self._compute_similarity_key(summary)
             since = datetime.utcnow() - timedelta(days=7)
             # Insert summary
-            await self.conn.execute(
+            await view_instance.conn.execute(
                 "INSERT INTO ticket_summaries (ticket_id, summary, similarity_key) VALUES ($1, $2, $3)",
                 int(ticket_id), summary, key
             )
             # Check recent similar summaries
-            rows = await self.conn.fetch(
+            rows = await view_instance.conn.fetch(
                 """
                 SELECT id FROM ticket_summaries
                 WHERE similarity_key = $1 AND created_at >= $2
@@ -1035,12 +1110,12 @@ class TicketActionView(discord.ui.View):
                         return
                     try:
                         # Insert FAQ entry
-                        await self.conn.execute(
+                        await view_instance.conn.execute(
                             "INSERT INTO faq_entries (similarity_key, summary, created_by) VALUES ($1, $2, $3)",
                             key, summary, int(interaction.user.id)
                         )
                         await interaction.response.send_message("✅ FAQ entry added.", ephemeral=True)
-                        await self._log(
+                        await view_instance._log(
                             interaction,
                             title="✅ FAQ entry created",
                             desc=(
@@ -1060,7 +1135,7 @@ class TicketActionView(discord.ui.View):
                 # Send to log channel
                 try:
                     channel_id = 0  # Default fallback - should be configured via /config system set_log_channel
-                    channel = self.bot.get_channel(channel_id)
+                    channel = view_instance.bot.get_channel(channel_id)
                     if channel and hasattr(channel, "send"):
                         text_channel = cast(discord.TextChannel, channel)
                         await text_channel.send(embed=embed, view=view)
@@ -1322,6 +1397,252 @@ class TicketOpenView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         await self.cog.create_ticket_for_user(interaction, description="New ticket")
 
+
+    @tasks.loop(hours=24)
+    async def check_idle_tickets(self) -> None:
+        """Check for idle tickets and send reminders or auto-close."""
+        if not self.conn:
+            return
+        
+        try:
+            # Get thresholds from settings (default to 5 and 14 days)
+            idle_threshold = self._settings_get("ticketbot", "idle_days_threshold", 0, 5) or 5
+            auto_close_threshold = self._settings_get("ticketbot", "auto_close_days_threshold", 0, 14) or 14
+            
+            # Query idle tickets (5+ days, not closed/archived, but not old enough for auto-close)
+            idle_tickets = await self.conn.fetch(
+                """
+                SELECT id, guild_id, user_id, username, channel_id, description, updated_at
+                FROM support_tickets
+                WHERE status IN ('open', 'claimed', 'waiting_for_user')
+                  AND updated_at < NOW() - ($1 || ' days')::INTERVAL
+                  AND updated_at >= NOW() - ($2 || ' days')::INTERVAL
+                ORDER BY updated_at ASC
+                """,
+                str(idle_threshold), str(auto_close_threshold)
+            )
+            
+            # Query very old tickets (14+ days, auto-close)
+            old_tickets = await self.conn.fetch(
+                """
+                SELECT id, guild_id, user_id, username, channel_id, description, updated_at
+                FROM support_tickets
+                WHERE status IN ('open', 'claimed', 'waiting_for_user')
+                  AND updated_at < NOW() - ($1 || ' days')::INTERVAL
+                ORDER BY updated_at ASC
+                """,
+                str(auto_close_threshold)
+            )
+            
+            # Process idle tickets (send DM reminders)
+            for ticket in idle_tickets:
+                try:
+                    guild_id = ticket["guild_id"]
+                    user_id = ticket["user_id"]
+                    ticket_id = ticket["id"]
+                    
+                    # Get guild
+                    guild = self.bot.get_guild(guild_id)
+                    if not guild:
+                        continue
+                    
+                    # Get user
+                    user = guild.get_member(user_id) or await self.bot.fetch_user(user_id)
+                    if not user:
+                        continue
+                    
+                    # Send DM with reminder
+                    try:
+                        embed = discord.Embed(
+                            title="⏰ Ticket Idle Reminder",
+                            description=(
+                                f"Your ticket **#{ticket_id}** has been inactive for {idle_threshold} days.\n\n"
+                                f"**Description:** {ticket['description'][:200]}{'...' if len(ticket['description']) > 200 else ''}\n\n"
+                                f"Would you like to close it or keep it open?"
+                            ),
+                            color=discord.Color.orange(),
+                            timestamp=datetime.utcnow()
+                        )
+                        view = IdleTicketView(self, ticket_id, guild_id)
+                        await user.send(embed=embed, view=view)
+                        logger.info(f"✅ Sent idle reminder DM for ticket {ticket_id} to user {user_id}")
+                    except discord.Forbidden:
+                        logger.debug(f"⚠️ Cannot send DM to user {user_id} (DMs disabled)")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to send idle reminder DM: {e}")
+                    
+                    # Also notify staff in ticket channel if channel exists
+                    channel_id = ticket.get("channel_id")
+                    if channel_id:
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if isinstance(channel, discord.TextChannel):
+                                support_role = self._resolve_support_role(guild)
+                                await channel.send(
+                                    content=(support_role.mention if support_role else None),
+                                    embed=discord.Embed(
+                                        title="⏰ Ticket Idle",
+                                        description=f"This ticket has been inactive for {idle_threshold} days. Creator has been notified.",
+                                        color=discord.Color.orange()
+                                    ),
+                                    allowed_mentions=discord.AllowedMentions(roles=True)
+                                )
+                        except Exception as e:
+                            logger.debug(f"⚠️ Failed to notify staff in channel: {e}")
+                
+                except Exception as e:
+                    logger.exception(f"❌ Error processing idle ticket {ticket.get('id')}: {e}")
+            
+            # Process very old tickets (auto-close)
+            for ticket in old_tickets:
+                try:
+                    ticket_id = ticket["id"]
+                    guild_id = ticket["guild_id"]
+                    channel_id = ticket.get("channel_id")
+                    
+                    # Auto-close the ticket
+                    await self.conn.execute(
+                        """
+                        UPDATE support_tickets
+                        SET status = 'closed', updated_at = NOW()
+                        WHERE id = $1 AND guild_id = $2
+                        """,
+                        ticket_id, guild_id
+                    )
+                    
+                    # Get channel and post summary
+                    if channel_id:
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if isinstance(channel, discord.TextChannel):
+                                # Lock channel
+                                owner_id = ticket.get("user_id")
+                                member = channel.guild.get_member(owner_id) if owner_id else None
+                                overwrites = channel.overwrites
+                                if member:
+                                    overwrites[member] = discord.PermissionOverwrite(
+                                        view_channel=True, send_messages=False, read_message_history=True
+                                    )
+                                overwrites[channel.guild.default_role] = discord.PermissionOverwrite(view_channel=False)
+                                await channel.edit(overwrites=overwrites, reason=f"Ticket {ticket_id} auto-closed after {auto_close_threshold} days")
+                                
+                                # Rename channel
+                                try:
+                                    await channel.edit(name=f"ticket-{ticket_id}-closed")
+                                except Exception:
+                                    pass
+                                
+                                # Post summary using helper method
+                                summary_meta = await self._post_ticket_summary(channel, ticket_id, guild_id)
+                                
+                                # Post auto-close message
+                                await channel.send(
+                                    embed=discord.Embed(
+                                        title="🔒 Ticket Auto-Closed",
+                                        description=f"This ticket was automatically closed after {auto_close_threshold} days of inactivity.",
+                                        color=discord.Color.red(),
+                                        timestamp=datetime.utcnow()
+                                    )
+                                )
+                                
+                                logger.info(f"✅ Auto-closed ticket {ticket_id} after {auto_close_threshold} days")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to auto-close ticket {ticket_id} channel: {e}")
+                    
+                    # Log the auto-close
+                    await self.send_log_embed(
+                        title="🔒 Ticket auto-closed",
+                        description=(
+                            f"ID: {ticket_id}\n"
+                            f"Auto-closed after {auto_close_threshold} days of inactivity"
+                        ),
+                        level="warning",
+                        guild_id=guild_id,
+                    )
+                
+                except Exception as e:
+                    logger.exception(f"❌ Error auto-closing ticket {ticket.get('id')}: {e}")
+        
+        except Exception as e:
+            logger.exception(f"❌ Error in check_idle_tickets task: {e}")
+
+    @check_idle_tickets.before_loop
+    async def before_check_idle_tickets(self):
+        await self.bot.wait_until_ready()
+        # Wait for database to be ready
+        while self.conn is None:
+            await asyncio.sleep(2)
+
+
+class IdleTicketView(discord.ui.View):
+    """View for idle ticket reminder with Close/Keep Open buttons."""
+    def __init__(self, cog: TicketBot, ticket_id: int, guild_id: int):
+        super().__init__(timeout=604800)  # 7 days timeout
+        self.cog = cog
+        self.ticket_id = ticket_id
+        self.guild_id = guild_id
+
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="idle_close")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if not self.cog.conn:
+            await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
+            return
+        
+        try:
+            # Update ticket status
+            await self.cog.conn.execute(
+                """
+                UPDATE support_tickets
+                SET status = 'closed', updated_at = NOW()
+                WHERE id = $1 AND guild_id = $2
+                """,
+                self.ticket_id, self.guild_id
+            )
+            
+            await interaction.response.send_message(
+                f"✅ Ticket #{self.ticket_id} has been closed.",
+                ephemeral=True
+            )
+            
+            # Log
+            await self.cog.send_log_embed(
+                title="🔒 Ticket closed (idle reminder)",
+                description=f"ID: {self.ticket_id}\nClosed by: {interaction.user.mention}",
+                level="info",
+                guild_id=self.guild_id,
+            )
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to close ticket: {e}", ephemeral=True)
+
+    @discord.ui.button(label="Keep Open", style=discord.ButtonStyle.secondary, custom_id="idle_keep")
+    async def keep_open(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if not self.cog.conn:
+            await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
+            return
+        
+        try:
+            # Update updated_at to reset idle timer
+            await self.cog.conn.execute(
+                """
+                UPDATE support_tickets
+                SET updated_at = NOW()
+                WHERE id = $1 AND guild_id = $2
+                """,
+                self.ticket_id, self.guild_id
+            )
+            
+            await interaction.response.send_message(
+                f"✅ Ticket #{self.ticket_id} will remain open. The idle timer has been reset.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to update ticket: {e}", ephemeral=True)
+
+
+    def cog_load(self):
+        """Called when the cog is loaded - start the idle ticket check task."""
+        if not self.check_idle_tickets.is_running():
+            self.check_idle_tickets.start()
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketBot(bot))

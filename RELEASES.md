@@ -4,6 +4,65 @@ All notable releases of Alphapy will be documented in this file.
 
 ---
 
+## [1.9.0] - 2026-01-21 - "Enhanced Reminders"
+
+### 🎉 Major Feature: Reminder Management & Embed Watcher Improvements
+
+This release focuses on enhancing reminder functionality with editing capabilities, improved embed parsing, and better error handling.
+
+#### What's New
+- **Reminder Edit Command:** `/reminder_edit` with full modal interface for editing existing reminders
+  - Edit name, time, days, message, and channel ID
+  - Pre-fills with current reminder values including event time (T0)
+  - Channel ID editing support in modal
+- **Embed Watcher Enhancements:**
+  - Footer text extraction and inclusion in reminder parsing
+  - Bot message processing toggle via `embedwatcher.process_bot_messages` setting
+  - Rich Discord embed logging for better visibility
+  - Smart duplicate detection to prevent content overlap
+  - Full day name display in logs
+  - One-off event weekday storage for informational display
+- **GPT Retry Queue System:**
+  - Automatic retry queue for rate-limited or failed GPT API requests
+  - Exponential backoff retry mechanism
+  - Fallback message for degraded AI service scenarios
+  - Background task for processing queued requests
+
+#### Internationalization
+- **Complete English Translation:** All Dutch user-facing text replaced with English
+  - Command descriptions and parameter descriptions
+  - Error messages and success notifications
+  - Log messages and embed content
+  - GPT system prompts
+
+#### Technical Improvements
+- **Logging Improvements:**
+  - Converted plain text logs to structured Discord embeds
+  - Reduced console verbosity by removing excessive debug statements
+  - Enhanced log formatting with proper day names and structured fields
+- **Message Content Handling:**
+  - Smart duplicate detection prevents title/description overlap
+  - Footer handling in embed watcher for consistent formatting
+  - Name field sanitization for Discord modal compliance
+
+#### Bug Fixes
+- **Reminder Edit Modal:**
+  - Fixed `HTTPException: 400 Bad Request` error caused by newlines in name field
+  - Corrected time display to show event time (T0) instead of reminder time (T-60)
+  - Fixed message duplication issue when editing reminders
+  - Resolved Discord modal field limit by optimizing field usage
+- **Embed Watcher:**
+  - Fixed footer not being stored correctly in reminders
+  - Fixed one-off events missing weekday information
+  - Fixed bot message processing loop protection
+  - Improved parsing failure logging with detailed error information
+- **GPT Integration:**
+  - Fixed `RuntimeError: no running event loop` when starting retry queue task
+  - Corrected linter error for `status_code` attribute access
+  - Improved error handling for rate limits and API failures
+
+---
+
 ## [1.7.0] - 2025-11-16 - "Multi-Guild Horizon"
 
 ### 🎉 Major Feature: Complete Multi-Guild Support + Advanced Onboarding
