@@ -772,11 +772,16 @@ class EmbedReminderWatcher(commands.Cog):
         try:
             from gpt.helpers import ask_gpt
             
-            # Build text from embed
+            from utils.sanitizer import safe_prompt
+            
+            # Build text from embed and sanitize it
             embed_text = f"Title: {embed.title or ''}\n"
             embed_text += f"Description: {embed.description or ''}\n"
             for field in embed.fields:
                 embed_text += f"{field.name}: {field.value}\n"
+            
+            # Sanitize embed text before sending to GPT
+            safe_embed_text = safe_prompt(embed_text)
             
             # Get current date for context
             current_date = datetime.now(BRUSSELS_TZ)
@@ -802,7 +807,7 @@ Examples:
 - "Today" → {current_date_str}
 
 Embed text:
-{embed_text}
+{safe_embed_text}
 
 If you cannot extract clear date/time information, return {{"error": "cannot_parse"}}.
 Return ONLY the JSON, no other text."""

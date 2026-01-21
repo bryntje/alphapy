@@ -156,12 +156,13 @@ class FAQ(commands.Cog):
         if not slice_rows:
             embed.description = "No FAQ entries yet."
             return embed
+        from utils.sanitizer import safe_embed_text
         for r in slice_rows:
             title = r.get("title") or f"Entry #{r['id']}"
             preview = (r.get("summary") or "-")
             if len(preview) > 140:
                 preview = preview[:140] + "…"
-            embed.add_field(name=f"[{r['id']}] {title}", value=preview, inline=False)
+            embed.add_field(name=f"[{r['id']}] {safe_embed_text(title)}", value=safe_embed_text(preview), inline=False)
         embed.set_footer(text=f"Page {page+1} / {max(1, (len(rows)+page_size-1)//page_size)}")
         return embed
 
@@ -239,8 +240,9 @@ class FAQ(commands.Cog):
         if not row:
             await interaction.followup.send("Entry not found.", ephemeral=not public)
             return
+        from utils.sanitizer import safe_embed_text
         title = row.get("title") or f"Entry #{row['id']}"
-        embed = EmbedBuilder.success(title=f"📖 {title}", description=row.get("summary") or "-")
+        embed = EmbedBuilder.success(title=f"📖 {safe_embed_text(title)}", description=safe_embed_text(row.get("summary") or "-"))
         kws = row.get("keywords") or []
         if kws:
             embed.add_field(name="Keywords", value=", ".join(kws), inline=False)
@@ -256,12 +258,13 @@ class FAQ(commands.Cog):
             await interaction.followup.send("No results.", ephemeral=not public)
             return
         embed = EmbedBuilder.warning(title="🔎 FAQ – Top results")
+        from utils.sanitizer import safe_embed_text
         for r in results:
             title = r.get("title") or f"Entry #{r['id']}"
             preview = (r.get("summary") or "-")
             if len(preview) > 160:
                 preview = preview[:160] + "…"
-            embed.add_field(name=f"[{r['id']}] {title}", value=preview, inline=False)
+            embed.add_field(name=f"[{r['id']}] {safe_embed_text(title)}", value=safe_embed_text(preview), inline=False)
         await interaction.followup.send(embed=embed, ephemeral=not public)
         await self._log_embed("🔎 FAQ search", f"query=‘{query}’ • matches={len(results)} • public={public}")
 

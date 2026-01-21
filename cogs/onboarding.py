@@ -440,10 +440,11 @@ class Onboarding(commands.Cog):
                 title="📜 Onboarding Summary",
                 description=f"Here is a summary of your onboarding responses, {interaction.user.display_name}:"
             )
+            from utils.sanitizer import safe_embed_text
             for idx, question in enumerate(questions):
                 raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
-                summary_embed.add_field(name=f"**{question['question']}**", value=f"➜ {answer_text}", inline=False)
+                summary_embed.add_field(name=f"**{safe_embed_text(question['question'])}**", value=f"➜ {safe_embed_text(answer_text)}", inline=False)
 
             # Verstuur de samenvatting als ephemeral bericht naar de gebruiker
             if not interaction.response.is_done():
@@ -480,10 +481,11 @@ class Onboarding(commands.Cog):
                 title="📝 Onboarding Log",
                 description=f"**User:** {interaction.user} ({interaction.user.id})"
             )
+            from utils.sanitizer import safe_embed_text
             for idx, question in enumerate(questions):
                 raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
-                log_embed.add_field(name=question['question'], value=f"➜ {answer_text}", inline=False)
+                log_embed.add_field(name=safe_embed_text(question['question']), value=f"➜ {safe_embed_text(answer_text)}", inline=False)
 
             log_channel_id = self.bot.settings.get("system", "log_channel_id", interaction.guild.id)
             log_channel = self.bot.get_channel(log_channel_id) if log_channel_id else None

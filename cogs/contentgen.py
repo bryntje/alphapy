@@ -39,15 +39,19 @@ class ContentGen(commands.Cog):
     async def create_caption(self, interaction: discord.Interaction, topic: str, style: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True, thinking=True)
 
-        messages = [
-            {"role": "system", "content": "You are an AI content creator."},
-            {"role": "user", "content": f"""
-Generate a short caption (max 300 characters) for social media.
+        from utils.sanitizer import safe_prompt
+        
+        safe_topic = safe_prompt(topic, context="Generate a short caption (max 300 characters) for social media.")
+        user_content = f"""
 Tone: {style.value}
-Topic: {topic}
+Topic: {safe_topic}
 Be original, real, and in tune with an audience that's self-aware and growth-oriented.
 Avoid clichés.
-"""}
+"""
+        
+        messages = [
+            {"role": "system", "content": "You are an AI content creator."},
+            {"role": "user", "content": user_content}
         ]
 
         guild_id = interaction.guild.id if interaction.guild else None

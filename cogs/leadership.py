@@ -128,11 +128,12 @@ class AskQuestionButton(discord.ui.Button):
         
         # Step 2: Call ask_gpt (ask_gpt logs its own errors)
         try:
-            prompt = f"""
-        You're a supportive leadership coach. A Discord leader asked:
-        {user_question}
-        Respond with clarity, honesty, and a helpful suggestion. Keep it short.
-        """
+            from utils.sanitizer import safe_prompt
+            prompt = safe_prompt(
+                user_question,
+                context="You're a supportive leadership coach. A Discord leader asked:"
+            )
+            prompt += "\nRespond with clarity, honesty, and a helpful suggestion. Keep it short."
         
             await interaction.followup.send("🧠 Thinking...", ephemeral=True)
         

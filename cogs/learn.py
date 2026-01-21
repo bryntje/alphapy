@@ -69,12 +69,13 @@ class LearnTopic(commands.Cog):
 
         # Step 2: Prepare prompt and call ask_gpt (ask_gpt logs its own errors)
         try:
+            from utils.sanitizer import safe_prompt
             # Als het geen bekend topic is, beschouw het als vraag
-            prompt_messages = (
-                [{"role": "user", "content": topic}]
-                if not context
-                else [{"role": "user", "content": context}]
-            )
+            if not context:
+                sanitized_topic = safe_prompt(topic)
+            else:
+                sanitized_topic = safe_prompt(context)
+            prompt_messages = [{"role": "user", "content": sanitized_topic}]
 
             reply = await ask_gpt(
                 prompt_messages,

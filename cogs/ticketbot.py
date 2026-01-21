@@ -329,7 +329,8 @@ class TicketBot(commands.Cog):
         confirm.add_field(name="Ticket ID", value=str(ticket_id), inline=True)
         confirm.add_field(name="User", value=f"{user.mention}", inline=True)
         confirm.add_field(name="Status", value="open", inline=True)
-        confirm.add_field(name="Description", value=description[:1024] or "—", inline=False)
+        from utils.sanitizer import safe_embed_text
+        confirm.add_field(name="Description", value=safe_embed_text(description[:1024] or "—"), inline=False)
 
         # Create a dedicated channel under the given category with private overwrites
         channel_mention_text = "—"
@@ -712,9 +713,12 @@ class TicketBot(commands.Cog):
                 await channel.send("No content to summarize.")
                 return None
 
+            from utils.sanitizer import safe_prompt, safe_embed_text
+            # Sanitize each message before sending to GPT
+            safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
                 "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
-                + "\n".join(messages[-50:])
+                + "\n".join(safe_messages)
             )
 
             try:
@@ -729,7 +733,7 @@ class TicketBot(commands.Cog):
 
             embed = EmbedBuilder.success(
                 title="📄 Ticket Summary",
-                description=(summary_text or "").strip() or "(empty)"
+                description=safe_embed_text((summary_text or "").strip() or "(empty)")
             )
             await channel.send(embed=embed)
             
@@ -1442,9 +1446,12 @@ class TicketActionView(discord.ui.View):
                 await channel.send("No content to summarize.")
                 return None
 
+            from utils.sanitizer import safe_prompt, safe_embed_text
+            # Sanitize each message before sending to GPT
+            safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
                 "You are a helpful assistant. Summarize the following Discord ticket conversation in clear and concise English.\n\n"
-                + "\n".join(messages[-50:])
+                + "\n".join(safe_messages)
             )
 
             try:
@@ -1461,7 +1468,7 @@ class TicketActionView(discord.ui.View):
 
             embed = EmbedBuilder.success(
                 title="📄 Ticket Summary",
-                description=(summary_text or "").strip() or "(empty)"
+                description=safe_embed_text((summary_text or "").strip() or "(empty)")
             )
             await channel.send(embed=embed)
             # Register the summary for clustering/FAQ suggestions

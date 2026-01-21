@@ -15,6 +15,7 @@ from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.settings_helpers import CachedSettingsHelper
 from utils.embed_builder import EmbedBuilder
 from utils.parsers import parse_days_string, parse_time_string, format_days_for_display
+from utils.sanitizer import safe_embed_text
 from typing import Optional, List, Dict, Any, cast
 from utils.settings_service import SettingsService
 # from config import GUILD_ID  # Removed - no longer needed for multi-guild support
@@ -453,7 +454,7 @@ class ReminderCog(commands.Cog):
                         time_str = display_time.strftime("%H:%M") if display_time else "—"
                         
                         days_str = format_days(row["days"])
-                        location_str = f" • 📍 {row['location']}" if row.get("location") else ""
+                        location_str = f" • 📍 {safe_embed_text(row['location'])}" if row.get("location") else ""
                         
                         # Get channel mention
                         channel = self.bot.get_channel(row["channel_id"]) if row.get("channel_id") else None
@@ -463,7 +464,7 @@ class ReminderCog(commands.Cog):
                             channel_str = f" (Channel ID: {row['channel_id']})"
                         
                         recurring_text.append(
-                            f"**{row['name']}**\n"
+                            f"**{safe_embed_text(row['name'])}**\n"
                             f"⏰ {time_str} • 📅 {days_str}{location_str}\n"
                             f"📺 {channel_str} • ID: `{row['id']}`"
                         )
@@ -493,7 +494,7 @@ class ReminderCog(commands.Cog):
                                 event_dt = event_dt.astimezone(BRUSSELS_TZ)
                                 event_info = f" • 📅 {event_dt.strftime('%A, %B %d, %Y')}"
                         
-                        location_str = f" • 📍 {row['location']}" if row.get("location") else ""
+                        location_str = f" • 📍 {safe_embed_text(row['location'])}" if row.get("location") else ""
                         
                         # Get channel mention
                         channel = self.bot.get_channel(row["channel_id"]) if row.get("channel_id") else None
@@ -503,7 +504,7 @@ class ReminderCog(commands.Cog):
                             channel_str = f" (Channel ID: {row['channel_id']})"
                         
                         one_off_text.append(
-                            f"**{row['name']}**\n"
+                            f"**{safe_embed_text(row['name'])}**\n"
                             f"⏰ {time_str}{event_info}{location_str}\n"
                             f"📺 {channel_str} • ID: `{row['id']}`"
                         )
@@ -976,8 +977,8 @@ class ReminderCog(commands.Cog):
 
                 dt = now
                 embed = EmbedBuilder.success(
-                    title=f"⏰ Reminder: {row['name']}",
-                    description=row['message'] or "-"
+                    title=f"⏰ Reminder: {safe_embed_text(row['name'])}",
+                    description=safe_embed_text(row['message'] or "-")
                 )
                 # Show date+time for one-off events; for recurring show only the configured time
                 event_dt = row.get("event_time")
@@ -1000,7 +1001,7 @@ class ReminderCog(commands.Cog):
                         embed.add_field(name="⏰ Time", value=time_str, inline=False)
                 # Locatie
                 if row.get("location") and row["location"] != "-":
-                    embed.add_field(name="📍 Location", value=row["location"], inline=False)
+                    embed.add_field(name="📍 Location", value=safe_embed_text(row["location"]), inline=False)
                 # Link naar origineel bericht
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
                     link = f"https://discord.com/channels/{row['guild_id']}/{row['origin_channel_id']}/{row['origin_message_id']}"
@@ -1025,7 +1026,7 @@ class ReminderCog(commands.Cog):
                         title="📤 Reminder sent",
                         description=(
                             f"ID: `{row['id']}`\n"
-                            f"Name: **{row['name']}**\n"
+                            f"Name: **{safe_embed_text(row['name'])}**\n"
                             f"Channel: <#{row['channel_id']}>\n"
                             f"Date: {date_str}\n"
                             f"Time (display): `{time_str}`"
