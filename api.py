@@ -107,6 +107,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
     logger.info("✅ DB pool created")
     
+    # Log MAIN_GUILD_ID configuration
+    if hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
+        logger.info(f"🏠 MAIN_GUILD_ID configured: {config.MAIN_GUILD_ID} (API endpoints will filter to this guild by default)")
+    else:
+        logger.info("🌐 MAIN_GUILD_ID not configured (API endpoints will show data from all guilds)")
+    
     # Create audit_logs table for command usage analytics
     try:
         async with db_pool.acquire() as conn:
@@ -432,7 +438,7 @@ async def get_top_commands(
     Get top commands by usage.
     
     Args:
-        guild_id: Optional guild ID to filter by (None = all guilds)
+        guild_id: Optional guild ID to filter by (None = uses MAIN_GUILD_ID if configured, otherwise all guilds)
         days: Number of days to look back (default: 7)
         limit: Maximum number of commands to return (default: 10)
     
@@ -443,14 +449,22 @@ async def get_top_commands(
     if db_pool is None:
         return {"error": "Database not initialized"}
     
+    # Use MAIN_GUILD_ID as default if no guild_id is specified
+    effective_guild_id = guild_id
+    if effective_guild_id is None and hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
+        effective_guild_id = config.MAIN_GUILD_ID
+        logger.debug(f"📈 Top commands: Using MAIN_GUILD_ID ({effective_guild_id}) as default (no guild_id provided)")
+    elif effective_guild_id is not None:
+        logger.debug(f"📈 Top commands: Using provided guild_id ({effective_guild_id})")
+    
     try:
         async with db_pool.acquire() as conn:
             where_clause = "WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL"
             params: List[Any] = [str(days)]
             
-            if guild_id is not None:
+            if effective_guild_id is not None:
                 where_clause += " AND guild_id = $2"
-                params.append(guild_id)
+                params.append(effective_guild_id)
             
             rows = await conn.fetch(
                 f"""
@@ -469,7 +483,7 @@ async def get_top_commands(
             return {
                 "commands": result,
                 "period_days": days,
-                "guild_id": guild_id,
+                "guild_id": effective_guild_id,
                 "total_commands": len(result)
             }
     except Exception as exc:
@@ -1007,8 +1021,15 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
             if bot_metrics.online:
                 bot_has_been_online = True
             gpt_metrics = _collect_gpt_metrics()
+            
+            # Use MAIN_GUILD_ID for telemetry if configured
+            main_guild_id = None
+            if hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
+                main_guild_id = config.MAIN_GUILD_ID
+                logger.debug(f"📡 Telemetry ingest: Using MAIN_GUILD_ID ({main_guild_id}) for metrics collection")
+            
             try:
-                ticket_stats = await _fetch_ticket_stats()
+                ticket_stats = await _fetch_ticket_stats(main_guild_id)
             except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
                 # Pool is closing - use default stats
                 logger.debug(f"Telemetry loop: Database unavailable (pool closing?): {conn_err.__class__.__name__}")
@@ -1122,6 +1143,12 @@ async def _persist_telemetry_snapshot(
     # Collect metrics
     command_events_24h = 0
     global db_pool
+    
+    # Use MAIN_GUILD_ID for telemetry if configured
+    main_guild_id = None
+    if hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
+        main_guild_id = config.MAIN_GUILD_ID
+    
     if db_pool:
         try:
             # Check if pool is closed before acquiring
@@ -1130,13 +1157,17 @@ async def _persist_telemetry_snapshot(
             else:
                 async with db_pool.acquire() as conn:
                     try:
-                        command_events_24h = await conn.fetchval(
-                            """
+                        query = """
                             SELECT COUNT(*)
                             FROM audit_logs
                             WHERE created_at >= timezone('utc', now()) - interval '24 hours'
-                            """
-                        )
+                        """
+                        params: List[Any] = []
+                        if main_guild_id:
+                            query += " AND guild_id = $1"
+                            params.append(main_guild_id)
+                        
+                        command_events_24h = await conn.fetchval(query, *params) if params else await conn.fetchval(query)
                         if command_events_24h is None:
                             command_events_24h = 0
                     except pg_exceptions.UndefinedTableError:
@@ -1329,11 +1360,20 @@ async def get_dashboard_metrics(
         **bot_payload,
     )
     gpt_metrics = _collect_gpt_metrics()
-    # Guild filtering implemented for security - only shows data for specified guild
-    reminder_stats = await _fetch_reminder_stats(guild_id)
-    ticket_stats = await _fetch_ticket_stats(guild_id)
+    
+    # Use MAIN_GUILD_ID as default if no guild_id is specified
+    effective_guild_id = guild_id
+    if effective_guild_id is None and hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
+        effective_guild_id = config.MAIN_GUILD_ID
+        logger.debug(f"📊 Dashboard metrics: Using MAIN_GUILD_ID ({effective_guild_id}) as default (no guild_id provided)")
+    elif effective_guild_id is not None:
+        logger.debug(f"📊 Dashboard metrics: Using provided guild_id ({effective_guild_id})")
+    
+    # Guild filtering implemented for security - only shows data for specified guild (or main guild by default)
+    reminder_stats = await _fetch_reminder_stats(effective_guild_id)
+    ticket_stats = await _fetch_ticket_stats(effective_guild_id)
     infrastructure = await _collect_infrastructure_metrics()
-    command_stats = await _fetch_command_stats(guild_id)
+    command_stats = await _fetch_command_stats(effective_guild_id)
 
     # Persist a telemetry snapshot asynchronously; ignore failures.
     asyncio.create_task(_persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats))
@@ -1343,8 +1383,8 @@ async def get_dashboard_metrics(
         gpt=gpt_metrics,
         reminders=reminder_stats,
         tickets=ticket_stats,
-        # Guild filtering implemented for security - only shows settings for specified guild
-        settings_overrides=await _fetch_settings_overrides(guild_id),
+        # Guild filtering implemented for security - only shows settings for specified guild (or main guild by default)
+        settings_overrides=await _fetch_settings_overrides(effective_guild_id),
         infrastructure=infrastructure,
         command_usage=command_stats,
     )
@@ -1386,15 +1426,25 @@ async def get_user_reminders(
     
     Users can only access their own reminders unless they are admins.
     Guild filtering is recommended for multi-guild support.
+    Uses MAIN_GUILD_ID as default if no guild_id is specified.
     """
     if auth_user_id != user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
+    
+    # Use MAIN_GUILD_ID as default if no guild_id is specified
+    effective_guild_id = guild_id
+    if effective_guild_id is None and hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
+        effective_guild_id = config.MAIN_GUILD_ID
+        logger.debug(f"📅 Reminders for user {user_id}: Using MAIN_GUILD_ID ({effective_guild_id}) as default (no guild_id provided)")
+    elif effective_guild_id is not None:
+        logger.debug(f"📅 Reminders for user {user_id}: Using provided guild_id ({effective_guild_id})")
+    
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
     try:
         async with db_pool.acquire() as conn:
-            rows = await get_reminders_for_user(conn, user_id, guild_id)
+            rows = await get_reminders_for_user(conn, user_id, effective_guild_id)
         return [
             {
                 "id": r["id"],
