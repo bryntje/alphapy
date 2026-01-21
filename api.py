@@ -95,6 +95,11 @@ async def get_authenticated_user_id(
 db_pool: Optional[asyncpg.Pool] = None
 router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 
+# Telemetry retry queue
+_telemetry_queue: List[Dict[str, Any]] = []
+MAX_TELEMETRY_QUEUE_SIZE = 100
+MAX_TELEMETRY_RETRIES = 5
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -698,6 +703,9 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
             # Persist to Supabase
             await _persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats)
             
+            # Flush retry queue after successful write
+            await _flush_telemetry_queue()
+            
             # Log the calculated status for debugging (using same logic as _persist_telemetry_snapshot)
             # Status is based ONLY on bot health (online status + GPT errors), NOT on open tickets
             gpt_errors_1h = _count_recent_events(gpt_metrics.recent_errors, hours=1)
@@ -722,6 +730,49 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
         
         # Sleep for the configured interval before next iteration
         await asyncio.sleep(interval)
+
+
+async def _flush_telemetry_queue() -> None:
+    """Flush telemetry queue with exponential backoff retry."""
+    global _telemetry_queue
+    
+    if not _telemetry_queue:
+        return
+    
+    # Process queue (copy to avoid modification during iteration)
+    queue_copy = _telemetry_queue.copy()
+    _telemetry_queue.clear()
+    
+    for item in queue_copy:
+        retry_count = item.get("retry_count", 0)
+        if retry_count >= MAX_TELEMETRY_RETRIES:
+            logger.debug(f"⚠️ Dropping telemetry snapshot after {MAX_TELEMETRY_RETRIES} retries")
+            continue
+        
+        # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+        backoff_seconds = 2 ** retry_count
+        await asyncio.sleep(backoff_seconds)
+        
+        try:
+            # Retry the write
+            await _supabase_post(
+                "subsystem_snapshots",
+                item["payload"],
+                upsert=True,
+                schema="telemetry"
+            )
+            logger.debug(f"✅ Telemetry snapshot retry succeeded (attempt {retry_count + 1})")
+            # Success - don't re-queue
+        except Exception as retry_error:
+            # Still failed - increment retry count and re-queue
+            item["retry_count"] = retry_count + 1
+            if len(_telemetry_queue) < MAX_TELEMETRY_QUEUE_SIZE:
+                _telemetry_queue.append(item)
+            else:
+                # Queue full - drop oldest
+                _telemetry_queue.pop(0)
+                _telemetry_queue.append(item)
+            logger.debug(f"⚠️ Telemetry retry {retry_count + 1}/{MAX_TELEMETRY_RETRIES} failed: {retry_error}")
 
 
 async def _persist_telemetry_snapshot(
@@ -841,11 +892,28 @@ async def _persist_telemetry_snapshot(
             f"⚠️ Cannot write telemetry to Supabase: {exc}. "
             "Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are configured."
         )
+        # Don't queue configuration errors - they won't resolve by retrying
     except Exception as exc:
         logger.warning(
             f"⚠️ Failed to write telemetry to Supabase: {exc.__class__.__name__}: {exc}. "
-            "Check that 'telemetry' schema is exposed in Supabase Studio → Settings → API → Exposed Schemas"
+            "Adding to retry queue."
         )
+        # Add to retry queue
+        global _telemetry_queue
+        if len(_telemetry_queue) < MAX_TELEMETRY_QUEUE_SIZE:
+            _telemetry_queue.append({
+                "payload": payload,
+                "retry_count": 0,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+        else:
+            # Queue full - drop oldest
+            _telemetry_queue.pop(0)
+            _telemetry_queue.append({
+                "payload": payload,
+                "retry_count": 0,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
 
 
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)

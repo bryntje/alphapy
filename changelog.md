@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-01-21
+
+### Added
+- **Reminder Edit Command:** `/reminder_edit` command with modal interface for editing existing reminders
+  - Edit name, time, days, message, and channel ID
+  - Pre-fills modal with current reminder values including event time (T0)
+  - Footer extraction from message field for cleaner editing experience
+  - Channel ID editing support in modal
+- **Embed Watcher Enhancements:**
+  - Footer text extraction and inclusion in reminder parsing
+  - Bot message processing toggle via `embedwatcher.process_bot_messages` setting
+  - Rich Discord embed logging for reminder creation and parsing success/failure
+  - Smart duplicate detection to prevent title/description overlap in reminder messages
+  - Full day name display in logs (e.g., "Maandag" instead of "0")
+  - One-off event weekday storage for informational display
+- **GPT Retry Queue System:**
+  - Automatic retry queue for rate-limited or failed GPT API requests
+  - Exponential backoff retry mechanism
+  - Fallback message for degraded AI service scenarios
+  - Background task for processing queued requests
+  - Graceful error handling that doesn't block user interactions
+
+### Changed
+- **Internationalization:** All Dutch user-facing text replaced with English across all cogs
+  - Command descriptions and parameter descriptions
+  - Error messages and success notifications
+  - Log messages and embed content
+  - GPT system prompts
+- **Logging Improvements:**
+  - Converted plain text logs to structured Discord embeds for better readability
+  - Reduced console verbosity by removing excessive debug statements
+  - Enhanced log formatting with proper day names and structured fields
+- **Message Content Handling:**
+  - Smart duplicate detection prevents title/description overlap in reminder messages
+  - Footer handling in embed watcher for consistent message formatting
+  - Name field sanitization for Discord modal compliance (no newlines, max 100 chars)
+
+### Fixed
+- **Reminder Edit Modal:**
+  - Fixed `HTTPException: 400 Bad Request` error caused by newlines in name field
+  - Corrected time display to show event time (T0) instead of reminder time (T-60)
+  - Fixed message duplication issue when editing reminders
+  - Resolved Discord modal field limit by optimizing field usage (removed footer field, kept channel ID)
+- **Embed Watcher:**
+  - Fixed footer not being stored correctly in reminders
+  - Fixed one-off events missing weekday information
+  - Fixed bot message processing loop protection
+  - Improved parsing failure logging with detailed error information
+- **GPT Integration:**
+  - Fixed `RuntimeError: no running event loop` when starting retry queue task
+  - Corrected linter error for `status_code` attribute access
+  - Improved error handling for rate limits and API failures
+
+---
+
 ## [1.8.0] - 2025-12-17
 
 ### Added

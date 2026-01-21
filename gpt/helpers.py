@@ -18,26 +18,34 @@ except ImportError:
 logger = logging.getLogger("bot")
 
 SYSTEM_PROMPT = """
-Je bent een betrokken en bewust AI-assistent met expertise in mindset, leiderschap, trading, zelfbewustzijn en emotionele intelligentie.
+You are an engaged and conscious AI assistant with expertise in mindset, leadership, trading, self-awareness, and emotional intelligence.
 
-Je antwoorden zijn steeds afgestemd op die thema’s.  
-Als een vraag buiten dit kader valt — zoals koken, huishoudelijke taken of irrelevante technologie — dan beantwoord je ze niet, maar verwijs je de gebruiker vriendelijk terug naar waar je wél bij kan helpen.
+Your responses are always aligned with these themes.  
+If a question falls outside this framework — such as cooking, household tasks, or irrelevant technology — you don't answer it, but politely redirect the user to where you *can* help.
 
-Je doel is niet om *alles* te weten, maar om diepgang te brengen waar het telt.
+Your goal is not to know *everything*, but to bring depth where it matters.
 
-Gebruik steeds dezelfde taal als de gebruiker.  
-Je antwoord is helder, menselijk, en raakt zacht waar het mag — scherp waar het moet.
+Always use the same language as the user.  
+Your answer is clear, human, and touches softly where it can — sharp where it must.
 """
 
 
 
-# Bot instance wordt later gezet
+# Bot instance will be set later
 bot_instance: Optional[commands.Bot] = None
+
+# --- GPT Fallback & Retry Queue ---
+FALLBACK_MESSAGE = "I'm temporarily unavailable. Please try again in a few minutes."
+_gpt_retry_queue: list = []  # List of dicts: {messages, user_id, model, guild_id, retry_count, timestamp}
+MAX_RETRY_QUEUE_SIZE = 50
+MAX_RETRIES = 5
+_retry_task: Optional[asyncio.Task] = None
 
 def set_bot_instance(bot: commands.Bot) -> None:
     global bot_instance
     bot_instance = bot
     logger.info("🤖 Bot instance is now set in helpers.py")
+    # Note: GPT retry queue task will be started in on_ready event when event loop is running
 
 def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optional[int] = None, model: Optional[str] = None):
     from utils.logger import get_gpt_status_logs
@@ -69,7 +77,7 @@ def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = 
         asyncio.create_task(log_to_channel(log_message, level="error", guild_id=guild_id))
 
 def is_allowed_prompt(prompt: str) -> bool:
-    # Voeg hier woorden of zinnen toe die je wil blokkeren
+    # Add words or phrases here that you want to block
     blocked_keywords = [
         "how to tie", "joke", "how to whistle", "useless", "unrelated", 
         "fart", "how to dance", "how to sleep", "funny story", "pick up line"
@@ -123,6 +131,77 @@ async def log_to_channel(message: str, level: str = "info", guild_id: Optional[i
     except Exception as e:
         logger.error(f"🚨 Failed to send GPT log embed: {e}")
 
+
+def _add_to_retry_queue(messages, user_id, model, guild_id):
+    """Add a failed GPT request to the retry queue."""
+    global _gpt_retry_queue
+    
+    # Limit queue size (drop oldest if full)
+    if len(_gpt_retry_queue) >= MAX_RETRY_QUEUE_SIZE:
+        _gpt_retry_queue.pop(0)
+    
+    _gpt_retry_queue.append({
+        "messages": messages,
+        "user_id": user_id,
+        "model": model,
+        "guild_id": guild_id,
+        "retry_count": 0,
+        "timestamp": datetime.utcnow(),
+    })
+
+
+async def _retry_gpt_requests():
+    """Background task that processes the GPT retry queue every 5 minutes."""
+    global _gpt_retry_queue
+    
+    while True:
+        try:
+            await asyncio.sleep(300)  # 5 minutes
+            
+            if not _gpt_retry_queue:
+                continue
+            
+            # Process queue (copy to avoid modification during iteration)
+            queue_copy = _gpt_retry_queue.copy()
+            _gpt_retry_queue.clear()
+            
+            for item in queue_copy:
+                retry_count = item["retry_count"]
+                if retry_count >= MAX_RETRIES:
+                    logger.debug(f"⚠️ Dropping GPT retry after {MAX_RETRIES} attempts")
+                    continue
+                
+                # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                backoff_seconds = 2 ** retry_count
+                await asyncio.sleep(backoff_seconds)
+                
+                try:
+                    # Retry the request (with _is_retry=True to prevent re-queuing)
+                    result = await ask_gpt(
+                        item["messages"],
+                        user_id=item["user_id"],
+                        model=item["model"],
+                        guild_id=item["guild_id"],
+                        _is_retry=True
+                    )
+                    logger.debug(f"✅ GPT retry succeeded for user {item['user_id']}")
+                    # Success - don't re-queue
+                except Exception as retry_error:
+                    # Still failed - increment retry count and re-queue
+                    item["retry_count"] += 1
+                    item["timestamp"] = datetime.utcnow()
+                    if len(_gpt_retry_queue) < MAX_RETRY_QUEUE_SIZE:
+                        _gpt_retry_queue.append(item)
+                    logger.debug(f"⚠️ GPT retry {item['retry_count']}/{MAX_RETRIES} failed: {retry_error}")
+        
+        except asyncio.CancelledError:
+            logger.info("🛑 GPT retry queue task cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error in GPT retry queue task: {e}")
+            await asyncio.sleep(60)  # Wait before retrying the task itself
+
+
 # --- LLM client setup (Grok or OpenAI) ---
 _llm_provider = getattr(config, "LLM_PROVIDER", "grok").strip().lower()
 _grok_api_key = getattr(config, "GROK_API_KEY", None)
@@ -143,7 +222,7 @@ else:
 _api_key_missing = not _api_key
 if _api_key_missing:
     logger.warning(
-        f"⚠️ {_api_key_name} ontbreekt. Stel deze in je .env of config_local.py om AI-commando's te gebruiken."
+        f"⚠️ {_api_key_name} is missing. Set this in your .env or config_local.py to use AI commands."
     )
     llm_client = None
 else:
@@ -181,22 +260,32 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
     except KeyError:
         pass
     except (TypeError, ValueError):
-        logger.warning("⚠️ GPT temperature setting ongeldig — fallback naar API default.")
+        logger.warning("⚠️ GPT temperature setting invalid — fallback to API default.")
         temperature_value = None
 
     return model_value, temperature_value
 
 
-async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None):
+async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None, _is_retry: bool = False):
+    """
+    Main GPT interaction function.
+    
+    Args:
+        messages: List of message dicts or string prompt
+        user_id: User ID for logging
+        model: Model override
+        guild_id: Guild ID for logging
+        _is_retry: Internal flag to prevent re-queuing on retry attempts
+    """
     start = time.perf_counter()
 
     try:
         if _api_key_missing or llm_client is None:
             raise RuntimeError(
-                f"{_api_key_name} ontbreekt. Stel de sleutel in (.env of config_local.py) en herstart de bot."
+                f"{_api_key_name} is missing. Set the key (.env or config_local.py) and restart the bot."
             )
 
-        # 👉 Check of messages een string is (oude stijl prompt)
+        # 👉 Check if messages is a string (old style prompt)
         if isinstance(messages, str):
             messages = [{"role": "user", "content": messages}]
         assert isinstance(messages, list) and all(isinstance(m, dict) for m in messages), "❌ Invalid messages format"
@@ -222,5 +311,28 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
 
     except Exception as e:
         error_type = f"{type(e).__name__}: {str(e)}"
+        
+        # Check if this is a retryable error (rate limit or API error)
+        is_retryable = False
+        status_code = None
+        
+        # Check for rate limit (429) or server errors (500, 503)
+        status_code = getattr(e, "status_code", None)
+        if status_code is not None and isinstance(status_code, int):
+            if status_code in [429, 500, 503]:
+                is_retryable = True
+        elif "rate limit" in str(e).lower() or "429" in str(e):
+            is_retryable = True
+        elif "503" in str(e) or "500" in str(e):
+            is_retryable = True
+        
         log_gpt_error(error_type=error_type, user_id=user_id, guild_id=guild_id)
+        
+        # If retryable and not already a retry attempt, add to queue and return fallback message
+        if is_retryable and not _is_retry:
+            _add_to_retry_queue(messages, user_id, model or _default_model, guild_id)
+            logger.warning(f"⚠️ GPT error (retryable): {error_type}. Returning fallback message and queuing for retry.")
+            return FALLBACK_MESSAGE
+        
+        # Non-retryable errors or retry attempts that fail: raise as before
         raise

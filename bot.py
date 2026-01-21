@@ -27,7 +27,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Set start_time for uptime tracking
-bot.start_time = time.time()
+setattr(bot, "start_time", time.time())
 
 settings_service = SettingsService(getattr(config, "DATABASE_URL", None))
 settings_service.register(
@@ -107,6 +107,43 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="embedwatcher",
+        key="gpt_fallback_enabled",
+        description="Enable GPT fallback parsing when structured parsing fails.",
+        value_type="bool",
+        default=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="embedwatcher",
+        key="failed_parse_log_channel_id",
+        description="Channel to log failed parse attempts (optional, defaults to log channel).",
+        value_type="channel",
+        default=0,
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="embedwatcher",
+        key="non_embed_enabled",
+        description="Enable parsing of non-embed messages (plain text messages) for reminders.",
+        value_type="bool",
+        default=False,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="embedwatcher",
+        key="process_bot_messages",
+        description="Enable processing of embeds/messages sent by the bot itself (e.g., from /embed command).",
+        value_type="bool",
+        default=False,
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="ticketbot",
         key="category_id",
         description="Category where new ticket channels are created.",
@@ -132,6 +169,28 @@ settings_service.register(
         value_type="role",
         default=None,  # Must be configured per guild
         allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="ticketbot",
+        key="idle_days_threshold",
+        description="Days of inactivity before sending idle reminder (default: 5).",
+        value_type="int",
+        default=5,
+        min_value=1,
+        max_value=30,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="ticketbot",
+        key="auto_close_days_threshold",
+        description="Days of inactivity before auto-closing ticket (default: 14).",
+        value_type="int",
+        default=14,
+        min_value=1,
+        max_value=90,
     )
 )
 # Default model depends on LLM_PROVIDER (grok-3 for Grok, gpt-3.5-turbo for OpenAI)
@@ -238,6 +297,16 @@ settings_service.register(
         default=False,  # Moet per guild geconfigureerd worden
     )
 )
+settings_service.register(
+    SettingDefinition(
+        scope="system",
+        key="log_level",
+        description="Log verbosity level: verbose (all), normal (no debug), critical (errors + config only).",
+        value_type="string",
+        default="verbose",
+        choices=["verbose", "normal", "critical"],
+    )
+)
 
 # Event: Bot is klaar
 @bot.event
@@ -247,9 +316,17 @@ async def on_ready():
     # Set start_time for uptime tracking if not already set
     if not hasattr(bot, "start_time"):
         import time
-        bot.start_time = time.time()
+        setattr(bot, "start_time", time.time())  # pyright: ignore[reportGeneralTypeIssues]
+    
+    # Start GPT retry queue task now that event loop is running
+    from gpt.helpers import _retry_task, _retry_gpt_requests
+    import gpt.helpers as gpt_helpers
+    if gpt_helpers._retry_task is None or gpt_helpers._retry_task.done():
+        gpt_helpers._retry_task = asyncio.create_task(_retry_gpt_requests())
+        logger.info("🔄 GPT retry queue task started")
     
     logger.info(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
+
 
     logger.info("📡 Known guilds:")
     for guild in bot.guilds:
@@ -260,7 +337,7 @@ async def on_ready():
     bot.add_view(GDPRView(bot))
 
 
-set_bot_instance(bot)
+set_bot_instance(bot)  # This also starts the GPT retry queue task
 
 
 @bot.event
