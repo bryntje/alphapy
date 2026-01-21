@@ -50,7 +50,7 @@ Transform the extensive slash command configuration system into a user-friendly 
 - **Community Templates** - Pre-built configurations for common use cases
 
 ### Technical Foundation:
-- **Frontend:** Next.js (extends existing `shared/innersync-core`)
+- **Frontend:** Next.js (separate repository: `alphapy-dashboard`)
 - **Backend:** Extend FastAPI `/api/dashboard/*` endpoints
 - **Database:** Direct access to guild settings tables
 - **Auth:** Discord OAuth2 with per-guild permission checks
