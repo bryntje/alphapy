@@ -8,7 +8,7 @@ import json
 import asyncio
 from datetime import datetime, timedelta
 import re
-from typing import Optional, List, Dict, cast
+from typing import Optional, List, Dict, Any, cast
 from utils.settings_service import SettingsService
 
 try:
@@ -573,41 +573,60 @@ class TicketBot(commands.Cog):
         parts.append(f"{mins}m")
         return " ".join(parts)
 
-    async def _compute_stats(self, scope: str, guild_id: Optional[int] = None) -> tuple[dict, Optional[int]]:
+    async def _compute_stats(self, scope: str, guild_id: Optional[int] = None) -> tuple[dict, Optional[int], Optional[List[int]]]:
         # scope: 'all' | '7d' | '30d'
         if self.db is None or self.db.is_closing():
-            return {}, None
+            return {}, None, None
         try:
             async with self.db.acquire() as conn:
                 where_parts = []
+                params: List[Any] = []
+                param_index = 1
+                
                 if guild_id is not None:
-                    where_parts.append(f"guild_id = {guild_id}")
+                    where_parts.append(f"guild_id = ${param_index}")
+                    params.append(guild_id)
+                    param_index += 1
                 if scope == "7d":
                     where_parts.append("created_at >= NOW() - INTERVAL '7 days'")
                 elif scope == "30d":
                     where_parts.append("created_at >= NOW() - INTERVAL '30 days'")
                 where = "WHERE " + " AND ".join(where_parts) if where_parts else ""
-                counts = await conn.fetch(f"SELECT status, COUNT(*) c FROM support_tickets {where} GROUP BY status")
+                
+                # Get status counts
+                counts_query = f"SELECT status, COUNT(*) c FROM support_tickets {where} GROUP BY status"
+                counts = await conn.fetch(counts_query, *params) if params else await conn.fetch(counts_query)
                 status_to_count = {r["status"] or "-": int(r["c"]) for r in counts}
+                
+                # Get open ticket IDs (only non-closed tickets)
+                # Build open_where with same parameters as main query
+                open_where_parts = where_parts.copy() if where_parts else []
+                open_where_parts.append("status IS DISTINCT FROM 'closed'")
+                open_where = "WHERE " + " AND ".join(open_where_parts) if open_where_parts else "WHERE status IS DISTINCT FROM 'closed'"
+                open_ids_query = f"SELECT id FROM support_tickets {open_where} ORDER BY id ASC"
+                # Use same params as main query (guild_id filter applies to open tickets too)
+                open_ids_rows = await conn.fetch(open_ids_query, *params) if params else await conn.fetch(open_ids_query)
+                open_ticket_ids = [int(row["id"]) for row in open_ids_rows] if open_ids_rows else []
+                
                 # average cycle (closed only)
-                avg_where_parts = where_parts + ["status='closed'"] if where_parts else ["status='closed'"]
+                avg_where_parts = where_parts.copy() if where_parts else []
+                avg_where_parts.append("status='closed'")
                 avg_where = "WHERE " + " AND ".join(avg_where_parts) if avg_where_parts else ""
-                avg_row = await conn.fetchrow(
-                    f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {avg_where}"
-                )
+                avg_query = f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {avg_where}"
+                avg_row = await conn.fetchrow(avg_query, *params) if params else await conn.fetchrow(avg_query)
                 avg_seconds: Optional[int] = None
                 if avg_row and avg_row["avg_s"] is not None:
                     try:
                         avg_seconds = int(float(avg_row["avg_s"]))
                     except Exception:
                         avg_seconds = None
-                return status_to_count, avg_seconds
+                return status_to_count, avg_seconds, open_ticket_ids
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             logger.warning(f"Database connection error in _compute_stats: {conn_err}")
-            return {}, None
+            return {}, None, None
         except Exception as e:
             logger.error(f"Database error in _compute_stats: {e}")
-            return {}, None
+            return {}, None, None
 
     async def _top_topics(self, limit: int = 5) -> Dict[str, int]:
         if self.db is None or self.db.is_closing():
@@ -770,11 +789,13 @@ class TicketBot(commands.Cog):
         ticket_id: Optional[int] = None,
         topic: Optional[str] = None,
         summary: Optional[str] = None,
+        guild_id: Optional[int] = None,
     ) -> None:
         if self.db is None or self.db.is_closing():
             return
 
-        counts, avg_seconds = await self._compute_stats("all", None)
+        # Use guild_id if provided, otherwise compute stats for all guilds (legacy behavior)
+        counts, avg_seconds, _ = await self._compute_stats("all", guild_id)
         snapshot: Dict[str, object] = {
             "counts": counts,
             "avg": avg_seconds,
@@ -829,23 +850,47 @@ class TicketBot(commands.Cog):
             logger.error(f"Database error in capture_metrics_snapshot: {e}")
 
         try:
-            await self.send_log_embed(
-                title="📊 Ticket metrics snapshot",
-                description=(
-                    f"scope: `{scope}`\n"
-                    f"triggered_by: {triggered_by}\n"
-                    f"ticket_id: {ticket_id or '-'}\n"
-                    f"topic: {topic or '-'}"
-                ),
-                level="info",
-            )
+            # Only log if guild_id is provided
+            if guild_id:
+                await self.send_log_embed(
+                    title="📊 Ticket metrics snapshot",
+                    description=(
+                        f"scope: `{scope}`\n"
+                        f"triggered_by: {triggered_by}\n"
+                        f"ticket_id: {ticket_id or '-'}\n"
+                        f"topic: {topic or '-'}"
+                    ),
+                    level="info",
+                    guild_id=guild_id,
+                )
         except Exception:
             pass
 
-    def _stats_embed(self, counts: dict, avg_seconds: Optional[int]) -> discord.Embed:
+    def _stats_embed(self, counts: dict, avg_seconds: Optional[int], open_ticket_ids: Optional[List[int]] = None) -> discord.Embed:
         embed = discord.Embed(title="📊 Ticket Statistics", color=0x5865F2)
         for s in ["open", "claimed", "waiting_for_user", "escalated", "closed", "archived"]:
             embed.add_field(name=s, value=str(counts.get(s, 0)), inline=True)
+        
+        # Add open ticket IDs if available
+        if open_ticket_ids and len(open_ticket_ids) > 0:
+            # Format IDs nicely (max 10 IDs shown, rest truncated)
+            ids_display = open_ticket_ids[:10]
+            ids_text = ", ".join(str(tid) for tid in ids_display)
+            if len(open_ticket_ids) > 10:
+                ids_text += f" (+{len(open_ticket_ids) - 10} more)"
+            embed.add_field(
+                name="🎫 Open Ticket IDs",
+                value=f"`{ids_text}`" if ids_text else "None",
+                inline=False
+            )
+        elif counts.get("open", 0) > 0:
+            # If there are open tickets but we don't have IDs, show a note
+            embed.add_field(
+                name="🎫 Open Ticket IDs",
+                value="*Unable to fetch IDs*",
+                inline=False
+            )
+        
         if avg_seconds is not None:
             embed.add_field(name="Average cycle time (closed)", value=self._human_duration(avg_seconds), inline=False)
         else:
@@ -869,15 +914,17 @@ class TicketBot(commands.Cog):
             if not await is_owner_or_admin_interaction(interaction):
                 await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
                 return
-            counts, avg_seconds = await self.cog._compute_stats(self.scope, interaction.guild.id if interaction.guild else None)
-            embed = self.cog._stats_embed(counts, avg_seconds)
+            counts, avg_seconds, open_ticket_ids = await self.cog._compute_stats(self.scope, interaction.guild.id if interaction.guild else None)
+            embed = self.cog._stats_embed(counts, avg_seconds, open_ticket_ids)
             await interaction.response.edit_message(embed=embed, view=self)
             try:
-                await self.cog.send_log_embed(
-                    title="📊 Ticket stats (button)",
-                    description=f"by={interaction.user.id} • scope={self.scope} • counts={counts}",
-                    level="info",
-                )
+                if interaction.guild:
+                    await self.cog.send_log_embed(
+                        title="📊 Ticket stats (button)",
+                        description=f"by={interaction.user.id} • scope={self.scope} • counts={counts}",
+                        level="info",
+                        guild_id=interaction.guild.id,
+                    )
                 if self.cog.db and not self.cog.db.is_closing():
                     try:
                         async with self.cog.db.acquire() as conn:
@@ -921,15 +968,18 @@ class TicketBot(commands.Cog):
         if self.db is None or self.db.is_closing():
             await interaction.followup.send("❌ Database not connected.", ephemeral=not public)
             return
-        counts, avg_seconds = await self._compute_stats("all", None)
-        embed = self._stats_embed(counts, avg_seconds)
+        guild_id = interaction.guild.id if interaction.guild else None
+        counts, avg_seconds, open_ticket_ids = await self._compute_stats("all", guild_id)
+        embed = self._stats_embed(counts, avg_seconds, open_ticket_ids)
         view = TicketBot.StatsView(self, public=public, scope="all")
         await interaction.followup.send(embed=embed, view=view, ephemeral=not public)
-        await self.send_log_embed(
-            title="📊 Ticket stats",
-            description=f"by={interaction.user.id} • scope=all • public={public} • counts={counts}",
-            level="info",
-        )
+        if interaction.guild:
+            await self.send_log_embed(
+                title="📊 Ticket stats",
+                description=f"by={interaction.user.id} • scope=all • public={public} • counts={counts}",
+                level="info",
+                guild_id=interaction.guild.id,
+            )
         try:
             async with self.db.acquire() as conn:
                 await conn.execute(
@@ -961,7 +1011,7 @@ class TicketBot(commands.Cog):
     async def ticket_status(
         self,
         interaction: discord.Interaction,
-        id: int,
+        id: str,
         status: app_commands.Choice[str],
         escalate_to: Optional[discord.Role] = None,
     ):
@@ -978,6 +1028,13 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ This command only works in a server.", ephemeral=True)
             return
 
+        # Convert string ID to int
+        try:
+            ticket_id = int(id)
+        except ValueError:
+            await interaction.followup.send(f"❌ Invalid ticket ID: `{id}`. Please use a valid number.", ephemeral=True)
+            return
+
         new_status = status.value
         try:
             async with self.db.acquire() as conn:
@@ -986,7 +1043,7 @@ class TicketBot(commands.Cog):
                         "UPDATE support_tickets SET status=$1, escalated_to=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
                         new_status,
                         int(escalate_to.id) if escalate_to else None,
-                        id,
+                        ticket_id,
                         interaction.guild.id,
                     )
                 elif new_status == "claimed":
@@ -994,7 +1051,7 @@ class TicketBot(commands.Cog):
                         "UPDATE support_tickets SET status=$1, updated_at=NOW(), claimed_by=COALESCE(claimed_by,$2), claimed_at=COALESCE(claimed_at,NOW()) WHERE id=$3 AND guild_id=$4",
                         new_status,
                         int(interaction.user.id),
-                        id,
+                        ticket_id,
                         interaction.guild.id,
                     )
                 elif new_status == "archived":
@@ -1002,14 +1059,14 @@ class TicketBot(commands.Cog):
                         "UPDATE support_tickets SET status=$1, archived_at=NOW(), archived_by=$2, updated_at=NOW() WHERE id=$3 AND guild_id=$4",
                         new_status,
                         int(interaction.user.id),
-                        id,
+                        ticket_id,
                         interaction.guild.id,
                     )
                 else:
                     await conn.execute(
                         "UPDATE support_tickets SET status=$1, updated_at=NOW() WHERE id=$2 AND guild_id=$3",
                         new_status,
-                        id,
+                        ticket_id,
                         interaction.guild.id,
                     )
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
@@ -1026,21 +1083,75 @@ class TicketBot(commands.Cog):
             await interaction.followup.send(f"❌ Failed to update status: {e}", ephemeral=True)
             return
 
-        await interaction.followup.send(f"✅ Ticket `{id}` status set to **{new_status}**.", ephemeral=True)
+        await interaction.followup.send(f"✅ Ticket `{ticket_id}` status set to **{new_status}**.", ephemeral=True)
         # Log
         try:
-            await self.send_log_embed(
-                title="🧭 Ticket status update",
-                description=(
-                    f"ID: {id}\n"
-                    f"New status: **{new_status}**\n"
-                    f"By: {interaction.user} ({interaction.user.id})"
-                    + (f"\nEscalated to: <@&{escalate_to.id}>" if (new_status == 'escalated' and escalate_to) else "")
-                ),
-                level="info",
-            )
+            if interaction.guild:
+                await self.send_log_embed(
+                    title="🧭 Ticket status update",
+                    description=(
+                        f"ID: {ticket_id}\n"
+                        f"New status: **{new_status}**\n"
+                        f"By: {interaction.user} ({interaction.user.id})"
+                        + (f"\nEscalated to: <@&{escalate_to.id}>" if (new_status == 'escalated' and escalate_to) else "")
+                    ),
+                    level="info",
+                    guild_id=interaction.guild.id,
+                )
         except Exception:
             pass
+
+    @ticket_status.autocomplete("id")
+    async def ticket_id_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+        """Autocomplete for ticket IDs - shows open tickets."""
+        if not interaction.guild:
+            return []
+        if not await is_owner_or_admin_interaction(interaction):
+            return []
+        if self.db is None or self.db.is_closing():
+            return []
+        
+        try:
+            async with self.db.acquire() as conn:
+                # Get open tickets (non-closed) for this guild
+                rows = await conn.fetch(
+                    """
+                    SELECT id, username, status, description
+                    FROM support_tickets
+                    WHERE guild_id = $1 AND status IS DISTINCT FROM 'closed'
+                    ORDER BY id DESC
+                    LIMIT 25
+                    """,
+                    interaction.guild.id
+                )
+            
+            choices: List[app_commands.Choice[str]] = []
+            current_lower = current.lower() if current else ""
+            
+            for row in rows:
+                ticket_id = str(row["id"])
+                username = row.get("username") or "Unknown"
+                ticket_status = row.get("status") or "open"
+                description = (row.get("description") or "")[:30]
+                
+                # Show ID, username, and status in the choice name
+                name = f"#{ticket_id} - {username} ({ticket_status})"
+                if description:
+                    name += f" - {description}"
+                
+                # Filter by current input (matches ID or username)
+                if not current_lower or current_lower in ticket_id or current_lower in username.lower():
+                    choices.append(app_commands.Choice(
+                        name=name[:100],  # Discord limit is 100 chars
+                        value=ticket_id
+                    ))
+                    if len(choices) >= 25:  # Discord limit
+                        break
+            
+            return choices
+        except Exception as e:
+            logger.debug(f"Error in ticket_id_autocomplete: {e}")
+            return []
 
 
 class TicketActionView(discord.ui.View):
@@ -1057,8 +1168,13 @@ class TicketActionView(discord.ui.View):
     async def _log(self, interaction: discord.Interaction, title: str, desc: str, level: str = "info") -> None:
         # Use channel send via embed helper from a new simple instance-less call
         try:
-            if self.cog:
-                await self.cog.send_log_embed(title=title, description=desc, level=level)
+            if self.cog and interaction.guild:
+                await self.cog.send_log_embed(
+                    title=title,
+                    description=desc,
+                    level=level,
+                    guild_id=interaction.guild.id
+                )
                 return
             color_map = {"info": 0x3498db, "debug": 0x95a5a6, "error": 0xe74c3c, "success": 0x2ecc71, "warning": 0xf1c40f}
             color = color_map.get(level, 0x3498db)
@@ -1361,6 +1477,7 @@ class TicketActionView(discord.ui.View):
                     ticket_id=int(self.ticket_id),
                     topic=summary_meta.get("key") if summary_meta else None,
                     summary=summary_meta.get("summary") if summary_meta else None,
+                    guild_id=interaction.guild.id if interaction.guild else None,
                 )
             except Exception as e:
                 await self._log(

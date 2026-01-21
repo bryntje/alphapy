@@ -137,6 +137,16 @@ Comprehensive dashboard metrics including bot status, GPT stats, reminders, tick
     "total": 50,
     "open_count": 5,
     "per_status": {...},
+    "open_ticket_ids": [123, 456, 789],
+    "open_items": [
+      {
+        "id": 123,
+        "username": "user123",
+        "status": "open",
+        "channel_id": 987654321,
+        "created_at": "2026-01-21T12:00:00Z"
+      }
+    ],
     ...
   },
   "command_usage": {
