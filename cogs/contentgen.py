@@ -4,6 +4,7 @@ import logging
 import discord
 from discord.ext import commands
 from discord import app_commands
+from discord.app_commands import checks as app_checks
 
 from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
 from utils.supabase_client import (
@@ -27,6 +28,7 @@ class ContentGen(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="create_caption", description="Generate a social caption based on topic and style")
+    @app_checks.cooldown(3, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 3 per minuut
     @app_commands.describe(
         topic="What should the caption be about? (e.g. trading discipline, mindset, risk)",
         style="Choose the tone of the caption"

@@ -6,11 +6,15 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union, Literal, AsyncGenerator
+from collections import defaultdict
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response
 from pydantic import BaseModel
 
 import config
@@ -99,6 +103,9 @@ router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 _telemetry_queue: List[Dict[str, Any]] = []
 MAX_TELEMETRY_QUEUE_SIZE = 100
 MAX_TELEMETRY_RETRIES = 5
+
+# In-memory IP-based rate limiter
+_ip_rate_limits: Dict[str, List[float]] = defaultdict(list)
 
 
 @asynccontextmanager
@@ -221,6 +228,49 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# IP-based Rate Limiting Middleware
+# ---------------------------------------------------------------------------
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """IP-based rate limiting middleware for API endpoints."""
+    
+    async def dispatch(self, request: StarletteRequest, call_next):
+        # Skip rate limiting voor health/metrics endpoints
+        if request.url.path.startswith("/health") or request.url.path.startswith("/metrics") or request.url.path == "/status":
+            return await call_next(request)
+        
+        # Get client IP
+        client_ip = request.client.host if request.client else "unknown"
+        
+        # Clean old entries (older than 1 minute)
+        current_time = time.time()
+        _ip_rate_limits[client_ip] = [
+            ts for ts in _ip_rate_limits[client_ip] 
+            if current_time - ts < 60.0
+        ]
+        
+        # Check rate limit (per endpoint type)
+        endpoint_type = "write" if request.method in ["POST", "PUT", "DELETE"] else "read"
+        limit = 30 if endpoint_type == "read" else 10  # 30 reads/min, 10 writes/min per IP
+        
+        if len(_ip_rate_limits[client_ip]) >= limit:
+            return Response(
+                content=f'{{"detail": "Rate limit exceeded. Max {limit} requests per minute per IP."}}',
+                status_code=429,
+                media_type="application/json"
+            )
+        
+        # Record this request
+        _ip_rate_limits[client_ip].append(current_time)
+        
+        return await call_next(request)
+
+
+# Apply rate limiting middleware
+app.add_middleware(RateLimitMiddleware)
 
 # ---------------------------------------------------------------------------
 # Simple status endpoints (kept for backwards compat)

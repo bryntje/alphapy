@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
+from discord.app_commands import checks as app_checks
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import asyncio
@@ -158,6 +159,7 @@ class ReminderCog(commands.Cog):
         self.db = None
 
     @app_commands.command(name="add_reminder", description="Schedule a recurring or one-off reminder via form or message link.")
+    @app_checks.cooldown(5, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 5 per minuut per guild+user
     @app_commands.describe(
         name="Name of the reminder",
         channel="Channel where the reminder should be sent (optional if default is set)",

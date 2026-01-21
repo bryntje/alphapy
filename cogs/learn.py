@@ -4,6 +4,7 @@ import logging
 import discord
 from discord.ext import commands
 from discord import app_commands
+from discord.app_commands import checks as app_checks
 
 from gpt.helpers import is_allowed_prompt
 from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
@@ -20,6 +21,7 @@ class LearnTopic(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="learn_topic", description="Ask a topic and get a short, clear explanation from GPT.")
+    @app_checks.cooldown(3, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 3 per minuut
     @app_commands.describe(topic="e.g. RSI, scalping, risk management…")
     async def learn_topic(self, interaction: discord.Interaction, topic: str):
         guild_id = interaction.guild.id if interaction.guild else None

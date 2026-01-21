@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.app_commands import checks as app_checks
 
 from gpt.helpers import ask_gpt, log_gpt_error, log_gpt_success
 from utils.supabase_client import (
@@ -23,6 +24,7 @@ class GrowthCheckin(commands.Cog):
         name="growthcheckin",
         description="Reflect on your goals, obstacles, and how you feel.",
     )
+    @app_checks.cooldown(2, 300.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 2 per 5 minuten
     async def growthcheckin(self, interaction: discord.Interaction):
         await interaction.response.send_modal(GrowthModal())
 

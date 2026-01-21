@@ -6,6 +6,7 @@ import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import json
 import asyncio
+import time
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List, Dict, Any, cast
@@ -45,6 +46,8 @@ class TicketBot(commands.Cog):
             raise RuntimeError("SettingsService not available on bot instance")
         self.settings: SettingsService = settings
         self.settings_helper = CachedSettingsHelper(settings)
+        # In-memory cooldown tracking voor suggest_reply button
+        self._suggest_reply_cooldowns: Dict[int, float] = {}  # user_id -> last_used_timestamp
         # Start async setup zonder de event loop te blokkeren
         self.bot.loop.create_task(self.setup_db())
         # Register persistent view so the ticket button keeps working after restarts
@@ -1800,6 +1803,19 @@ class TicketActionView(discord.ui.View):
         if not isinstance(ch, discord.TextChannel):
             await interaction.response.send_message("❌ Not a text channel.", ephemeral=True)
             return
+        
+        # In-memory cooldown check (5 seconden tussen clicks)
+        if self.cog:
+            current_time = time.time()
+            last_used = self.cog._suggest_reply_cooldowns.get(interaction.user.id, 0)
+            if current_time - last_used < 5.0:
+                await interaction.response.send_message(
+                    "⏳ Even wachten... Supabase die weer eens een edge-case vindt als 100 replies in een burst. Probeer over 5 seconden opnieuw.",
+                    ephemeral=True
+                )
+                return
+            self.cog._suggest_reply_cooldowns[interaction.user.id] = current_time
+        
         await interaction.response.defer(ephemeral=True)
         msgs: List[str] = []
         async for m in ch.history(limit=20, oldest_first=False):
