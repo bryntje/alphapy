@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import Modal, TextInput
 import config
-from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.validators import validate_admin
 from utils.logger import logger
 
 # Combined check function
@@ -70,9 +70,10 @@ class CustomSlashCommands(commands.Cog):
         """
         Open a modal to create and send an embed.
         """
-        if not await is_owner_or_admin_interaction(interaction):
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
             await interaction.response.send_message(
-                "❌ You don't have permission to use this command.",
+                error_msg or "❌ You don't have permission to use this command.",
                 ephemeral=True
             )
             return

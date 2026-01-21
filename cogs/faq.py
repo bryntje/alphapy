@@ -12,7 +12,9 @@ except ImportError:
     import config  # type: ignore
 
 from utils.logger import logger
-from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.validators import validate_admin
+from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.embed_builder import EmbedBuilder
 
 
 SYNS: Dict[str, List[str]] = {
@@ -65,7 +67,7 @@ class FAQ(commands.Cog):
                 max_size=5,
                 command_timeout=10.0
             )
-            async with pool.acquire() as conn:
+            async with acquire_safe(pool) as conn:
                 # Ensure columns on faq_entries
                 await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS title TEXT;")
                 await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS keywords TEXT[];")
@@ -101,10 +103,10 @@ class FAQ(commands.Cog):
             self.db = None
 
     async def _fetch_entries(self) -> List[asyncpg.Record]:
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             return []
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 rows = await conn.fetch("SELECT id, title, summary, keywords, created_at FROM faq_entries ORDER BY created_at DESC")
                 return rows
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
@@ -126,8 +128,8 @@ class FAQ(commands.Cog):
         results = [r for _, r in scored[:limit]]
         # log
         try:
-            if self.db and not self.db.is_closing():
-                async with self.db.acquire() as conn:
+            if is_pool_healthy(self.db):
+                async with acquire_safe(self.db) as conn:
                     await conn.execute("INSERT INTO faq_search_logs (query, match_count) VALUES ($1, $2)", query, len(results))
         except Exception:
             pass
@@ -140,7 +142,7 @@ class FAQ(commands.Cog):
         try:
             channel = self.bot.get_channel(0)  # Moet geconfigureerd worden via /config system set_log_channel
             if channel and hasattr(channel, "send"):
-                embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
+                embed = EmbedBuilder.log(title=title, description=description)
                 text_channel = cast(discord.TextChannel, channel)
                 await text_channel.send(embed=embed)
         except Exception:
@@ -150,7 +152,7 @@ class FAQ(commands.Cog):
         start = page * page_size
         end = start + page_size
         slice_rows = rows[start:end]
-        embed = discord.Embed(title="📚 FAQ – Latest", color=discord.Color.blurple())
+        embed = EmbedBuilder.info(title="📚 FAQ – Latest")
         if not slice_rows:
             embed.description = "No FAQ entries yet."
             return embed
@@ -220,11 +222,11 @@ class FAQ(commands.Cog):
     @app_commands.describe(id="FAQ entry ID", public="Post in channel instead of ephemeral (default: false)")
     async def faq_view(self, interaction: discord.Interaction, id: int, public: bool = False):
         await interaction.response.defer(ephemeral=not public)
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             await interaction.followup.send("Database not connected.", ephemeral=not public)
             return
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 row = await conn.fetchrow("SELECT id, title, summary, keywords, created_at FROM faq_entries WHERE id = $1", id)
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             logger.warning(f"Database connection error in faq_view: {conn_err}")
@@ -238,7 +240,7 @@ class FAQ(commands.Cog):
             await interaction.followup.send("Entry not found.", ephemeral=not public)
             return
         title = row.get("title") or f"Entry #{row['id']}"
-        embed = discord.Embed(title=f"📖 {title}", description=row.get("summary") or "-", color=discord.Color.green())
+        embed = EmbedBuilder.success(title=f"📖 {title}", description=row.get("summary") or "-")
         kws = row.get("keywords") or []
         if kws:
             embed.add_field(name="Keywords", value=", ".join(kws), inline=False)
@@ -253,7 +255,7 @@ class FAQ(commands.Cog):
         if not results:
             await interaction.followup.send("No results.", ephemeral=not public)
             return
-        embed = discord.Embed(title="🔎 FAQ – Top results", color=discord.Color.orange())
+        embed = EmbedBuilder.warning(title="🔎 FAQ – Top results")
         for r in results:
             title = r.get("title") or f"Entry #{r['id']}"
             preview = (r.get("summary") or "-")
@@ -284,8 +286,9 @@ class FAQ(commands.Cog):
 
     @faq.command(name="reload", description="Reload FAQ index (admin)")
     async def faq_reload(self, interaction: discord.Interaction):
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.send_message("✅ FAQ index reload queued (in-memory).", ephemeral=True)
 
@@ -323,10 +326,10 @@ class FAQ(commands.Cog):
                 await interaction.response.send_message("❌ Title and summary are required.", ephemeral=True)
                 return
             try:
-                if self.cog.db is None or self.cog.db.is_closing():
+                if not is_pool_healthy(self.cog.db):
                     await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
                     return
-                async with self.cog.db.acquire() as conn:
+                async with acquire_safe(self.cog.db) as conn:
                     row = await conn.fetchrow(
                         "INSERT INTO faq_entries (title, summary, keywords) VALUES ($1, $2, $3) RETURNING id",
                         title,
@@ -334,10 +337,9 @@ class FAQ(commands.Cog):
                         keywords,
                     )
                 new_id = row["id"] if row else None
-                embed = discord.Embed(
+                embed = EmbedBuilder.success(
                     title="✅ FAQ entry created",
-                    description=f"ID: `{new_id}`\nTitle: **{title}**",
-                    color=discord.Color.green(),
+                    description=f"ID: `{new_id}`\nTitle: **{title}**"
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 await self.cog._log_embed(
@@ -349,8 +351,9 @@ class FAQ(commands.Cog):
 
     @faq.command(name="add", description="Add a new FAQ entry (admin)")
     async def faq_add(self, interaction: discord.Interaction):
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.send_modal(FAQ.AddFAQModal(self))
 
@@ -392,10 +395,10 @@ class FAQ(commands.Cog):
                 await interaction.response.send_message("❌ Title and summary are required.", ephemeral=True)
                 return
             try:
-                if self.cog.db is None or self.cog.db.is_closing():
+                if not is_pool_healthy(self.cog.db):
                     await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
                     return
-                async with self.cog.db.acquire() as conn:
+                async with acquire_safe(self.cog.db) as conn:
                     await conn.execute(
                         "UPDATE faq_entries SET title=$1, summary=$2, keywords=$3 WHERE id=$4",
                         title,
@@ -403,10 +406,9 @@ class FAQ(commands.Cog):
                         keywords,
                         int(self.entry_id),
                     )
-                embed = discord.Embed(
+                embed = EmbedBuilder.success(
                     title="✅ FAQ entry updated",
-                    description=f"ID: `{self.entry_id}`\nTitle: **{title}**",
-                    color=discord.Color.green(),
+                    description=f"ID: `{self.entry_id}`\nTitle: **{title}**"
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 await self.cog._log_embed(
@@ -419,14 +421,15 @@ class FAQ(commands.Cog):
     @faq.command(name="edit", description="Edit a FAQ entry (admin)")
     @app_commands.describe(id="FAQ entry ID")
     async def faq_edit(self, interaction: discord.Interaction, id: int):
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             await interaction.response.send_message("❌ Database not connected.", ephemeral=True)
             return
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 row = await conn.fetchrow("SELECT id, title, summary, keywords FROM faq_entries WHERE id = $1", id)
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             logger.warning(f"Database connection error in faq_edit: {conn_err}")

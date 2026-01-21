@@ -5,6 +5,7 @@ from discord.ext import commands
 from typing import Optional
 import config
 from utils.logger import log_with_guild
+from utils.db_helpers import acquire_safe
 
 class ImportData(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -14,7 +15,7 @@ class ImportData(commands.Cog):
     async def setup_database(self):
         self.db = await asyncpg.create_pool(config.DATABASE_URL)
         assert self.db is not None
-        async with self.db.acquire() as conn:
+        async with acquire_safe(self.db) as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (
                     user_id BIGINT PRIMARY KEY,
@@ -70,7 +71,7 @@ class ImportData(commands.Cog):
                 responses[question] = answer
 
             assert self.db is not None
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute(
                     """
                     INSERT INTO onboarding (user_id, responses)

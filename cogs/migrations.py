@@ -11,7 +11,7 @@ import subprocess
 import sys
 import os
 from typing import Optional
-from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.validators import validate_admin
 from utils.logger import logger
 import config
 
@@ -26,8 +26,9 @@ class Migrations(commands.Cog):
     @app_commands.describe(action="Action to perform: 'status', 'upgrade', 'downgrade', 'history'")
     async def migrate(self, interaction: discord.Interaction, action: str = "status"):
         """Manage database migrations."""
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "❌ You don't have permission to use this command.", ephemeral=True)
             return
         
         await interaction.response.defer(ephemeral=True)

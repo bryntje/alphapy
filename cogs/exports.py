@@ -12,7 +12,8 @@ try:
 except ImportError:
     import config  # type: ignore
 
-from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.validators import validate_admin
+from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.logger import logger
 
 
@@ -51,11 +52,12 @@ class Exports(commands.Cog):
     @app_commands.command(name="export_tickets", description="Export tickets as CSV (admin)")
     @app_commands.describe(scope="Optional: 7d, 30d, all (default: all)")
     async def export_tickets(self, interaction: discord.Interaction, scope: Optional[str] = "all"):
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             await interaction.followup.send("❌ Database not connected.", ephemeral=True)
             return
         try:
@@ -64,7 +66,7 @@ class Exports(commands.Cog):
                 where = "WHERE created_at >= NOW() - INTERVAL '7 days'"
             elif scope == "30d":
                 where = "WHERE created_at >= NOW() - INTERVAL '30 days'"
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 rows = await conn.fetch(
                     f"SELECT id, user_id, username, status, created_at, updated_at, claimed_by, channel_id FROM support_tickets {where} ORDER BY id DESC"
                 )
@@ -89,15 +91,16 @@ class Exports(commands.Cog):
 
     @app_commands.command(name="export_faq", description="Export FAQ entries as CSV (admin)")
     async def export_faq(self, interaction: discord.Interaction):
-        if not await is_owner_or_admin_interaction(interaction):
-            await interaction.response.send_message("⛔ Admins only.", ephemeral=True)
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             await interaction.followup.send("❌ Database not connected.", ephemeral=True)
             return
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 rows = await conn.fetch("SELECT id, title, summary, keywords, created_at FROM faq_entries ORDER BY id DESC")
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             logger.warning(f"Database connection error in export_faq: {conn_err}")

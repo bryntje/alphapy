@@ -10,6 +10,10 @@ from typing import Optional, Tuple, List, cast
 from utils.logger import logger
 from utils.timezone import BRUSSELS_TZ
 from utils.settings_service import SettingsService
+from utils.settings_helpers import CachedSettingsHelper
+from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.embed_builder import EmbedBuilder
+from utils.parsers import parse_days_string, format_days_for_display
 import json
 
 
@@ -63,44 +67,11 @@ class EmbedReminderWatcher(commands.Cog):
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
         self.settings = settings  # type: ignore
+        self.settings_helper = CachedSettingsHelper(settings)  # type: ignore
     
     def format_days_for_display(self, days_list: List[str]) -> str:
-        """Convert day numbers to readable day names."""
-        day_names_nl = {
-            "0": "Maandag", "1": "Dinsdag", "2": "Woensdag", "3": "Donderdag",
-            "4": "Vrijdag", "5": "Zaterdag", "6": "Zondag"
-        }
-        
-        # Map of common abbreviations to numbers
-        day_map_to_num = {
-            "ma": "0", "maandag": "0", "monday": "0", "mon": "0",
-            "di": "1", "dinsdag": "1", "tuesday": "1", "tue": "1",
-            "woe": "2", "wo": "2", "woensdag": "2", "wednesday": "2", "wed": "2",
-            "do": "3", "donderdag": "3", "thursday": "3", "thu": "3",
-            "vr": "4", "vrijdag": "4", "friday": "4", "fri": "4",
-            "za": "5", "zaterdag": "5", "saturday": "5", "sat": "5",
-            "zo": "6", "zondag": "6", "sunday": "6", "sun": "6"
-        }
-        
-        # Valid day numbers (0-6)
-        valid_day_numbers = {"0", "1", "2", "3", "4", "5", "6"}
-        
-        formatted_days = []
-        for day in days_list:
-            day_lower = day.lower().strip()
-            # Check if it's a day number (0-6)
-            if day_lower in valid_day_numbers:
-                # Convert number to readable name (prefer Dutch)
-                formatted_days.append(day_names_nl.get(day_lower, day))
-            elif day_lower in day_map_to_num:
-                # It's an abbreviation, convert to number then to name
-                day_num = day_map_to_num[day_lower]
-                formatted_days.append(day_names_nl.get(day_num, day))
-            else:
-                # Already a readable name or unknown format, capitalize first letter
-                formatted_days.append(day.capitalize() if day else day)
-        
-        return ', '.join(formatted_days) if formatted_days else "—"
+        """Convert day numbers to readable day names using centralized parser."""
+        return format_days_for_display(days_list) or "—"
 
     async def setup_db(self) -> None:
         try:
@@ -137,7 +108,7 @@ class EmbedReminderWatcher(commands.Cog):
         
         # Loop protection: Check if we already processed this message (for both bot and user messages)
         # This prevents duplicate reminders from the same message
-        if self.db and not self.db.is_closing():
+        if is_pool_healthy(self.db):
             existing = await self._check_existing_reminder_for_message(message.guild.id, message.channel.id, message.id)
             if existing:
                 logger.info(f"⏭️ Message {message.id} already has a reminder (ID: {existing}) - skipping to prevent duplicate processing")
@@ -178,10 +149,10 @@ class EmbedReminderWatcher(commands.Cog):
         elif self._is_non_embed_enabled(message.guild.id) and message.content:
             message_type = "text"
             # Convert message to a mock embed for parsing
-            mock_embed = discord.Embed(
-                title=message.content[:256] if len(message.content) > 100 else None,
-                description=message.content,
-                color=discord.Color.default()
+            title_text = message.content[:256] if len(message.content) > 100 else message.content[:100] if message.content else "Message"
+            mock_embed = EmbedBuilder.info(
+                title=title_text,
+                description=message.content
             )
             embed_source = mock_embed
             if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
@@ -205,12 +176,10 @@ class EmbedReminderWatcher(commands.Cog):
                 else:
                     channel_ref = f"#{getattr(message.channel, 'name', 'unknown')}" if hasattr(message.channel, 'name') else str(message.channel.id)
                 
-                # Create embed for cleaner log display
-                log_embed = discord.Embed(
+                # Create embed for cleaner log display using EmbedBuilder
+                log_embed = EmbedBuilder.success(
                     title="🔔 Auto-reminder Detected",
-                    description=f"Reminder automatically created from {message_type} message",
-                    color=discord.Color.green(),
-                    timestamp=datetime.now(BRUSSELS_TZ)
+                    description=f"Reminder automatically created from {message_type} message"
                 )
                 log_embed.add_field(
                     name="📌 Title",
@@ -252,7 +221,7 @@ class EmbedReminderWatcher(commands.Cog):
             else:
                 logger.warning("⚠️ Log channel not found or not accessible.")
 
-            if self.db and not self.db.is_closing():
+            if is_pool_healthy(self.db):
                 # Additional loop protection: Mark this message as processed by storing it
                 # This prevents the same message from being processed again if it gets re-triggered
                 await self.store_parsed_reminder(
@@ -385,8 +354,7 @@ class EmbedReminderWatcher(commands.Cog):
             # If we have a concrete date (explicit date or parsed from description),
             # treat it as a one-off (days = []). Otherwise, require explicit days.
             if days_line:
-                days_str = self.parse_days(days_line, reminder_time)
-                days_list = days_str.split(",") if days_str else []
+                days_list = parse_days_string(days_line)
             else:
                 if had_explicit_date or dt_from_description:
                     # For one-off events, store weekday for informational purposes
@@ -567,39 +535,16 @@ class EmbedReminderWatcher(commands.Cog):
         return None
 
     def parse_days(self, days_line: Optional[str], dt: datetime) -> str:
+        """Parse days line and return comma-separated string. Uses centralized parser."""
         if not days_line:
             return str(dt.weekday())
-
-        days_val = days_line.lower()
-        days_val = re.sub(r"daily\s*:\s*", "", days_val).strip()
-
-        if any(word in days_val for word in ["daily", "dagelijks"]):
-            return "0,1,2,3,4,5,6"
-        elif "weekdays" in days_val:
-            return "0,1,2,3,4"
-        elif "weekends" in days_val:
-            return "5,6"
-        else:
-            day_map = {
-                "monday": "0", "maandag": "0",
-                "tuesday": "1", "dinsdag": "1",
-                "wednesday": "2", "woensdag": "2",
-                "thursday": "3", "donderdag": "3",
-                "friday": "4", "vrijdag": "4",
-                "saturday": "5", "zaterdag": "5",
-                "sunday": "6", "zondag": "6"
-            }
-            found_days: List[str] = []
-            for word in re.split(r",\s*|\s+", days_val):
-                word = word.strip().lower()
-                word = re.sub(r"[^\w]", "", word)
-                if word in day_map:
-                    found_days.append(day_map[word])
-            logger.debug(f"🔍 Check word: '{word}' → match? {word in day_map}")
-            logger.debug(f"✅ Found days list: {found_days}")
-            if found_days:
-                return ",".join(sorted(set(found_days)))
-        # fallback to the weekday of the provided datetime
+        
+        # Use centralized parser
+        days_list = parse_days_string(days_line)
+        if days_list:
+            return ",".join(sorted(set(days_list)))
+        
+        # Fallback to weekday of provided datetime
         logger.debug(f"⚠️ Fallback triggered in parse_days — no valid days_line: '{days_line}' → weekday of dt: {dt.strftime('%A')} ({dt.weekday()})")
         return str(dt.weekday())
 
@@ -680,9 +625,9 @@ class EmbedReminderWatcher(commands.Cog):
         location = parsed.get("location", "-")
 
         try:
-            if self.db is None or self.db.is_closing():
+            if not is_pool_healthy(self.db):
                 raise RuntimeError("Database connection not available for store_parsed_reminder")
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute(
                     """
                     INSERT INTO reminders (
@@ -704,44 +649,24 @@ class EmbedReminderWatcher(commands.Cog):
                     trigger_time,  # reminder time (T-60) as time object
                     call_time_obj  # event time (T0) as time object
                 )
-        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-            logger.warning(f"Database connection error in store_parsed_reminder: {conn_err}")
-            if self.db:
-                try:
-                    await self.db.close()
-                except Exception:
-                    pass
-                self.db = None
-            raise
-
+            
+            # Log successful save
             log_channel_id = self._get_log_channel_id(guild_id)
             log_channel = self.bot.get_channel(log_channel_id)
             if isinstance(log_channel, (discord.TextChannel, discord.Thread)):
-                # Create embed for cleaner log display
-                db_log_embed = discord.Embed(
-                    title="✅ Reminder Saved to Database",
+                # Create embed for cleaner log display using EmbedBuilder
+                db_log_embed = EmbedBuilder.info(
+                    title="Reminder Saved to Database",
                     description=f"Reminder **{name}** has been successfully stored",
-                    color=discord.Color.blue(),
-                    timestamp=datetime.now(BRUSSELS_TZ)
+                    fields=[
+                        {"name": "🕒 Reminder Time", "value": f"{trigger_time.strftime('%H:%M')}", "inline": True},
+                        {
+                            "name": "📆 Days" if days_arr else "📆 Type",
+                            "value": self.format_days_for_display(days_arr) if days_arr else "One-off event",
+                            "inline": True
+                        }
+                    ]
                 )
-                db_log_embed.add_field(
-                    name="🕒 Reminder Time",
-                    value=f"{trigger_time.strftime('%H:%M')}",
-                    inline=True
-                )
-                if days_arr:
-                    days_display = self.format_days_for_display(days_arr)
-                    db_log_embed.add_field(
-                        name="📆 Days",
-                        value=days_display,
-                        inline=True
-                    )
-                else:
-                    db_log_embed.add_field(
-                        name="📆 Type",
-                        value="One-off event",
-                        inline=True
-                    )
                 if location and location != "-":
                     db_log_embed.add_field(
                         name="📍 Location",
@@ -753,7 +678,18 @@ class EmbedReminderWatcher(commands.Cog):
                 await log_channel.send(embed=db_log_embed)
             else:
                 logger.warning("⚠️ Could not find log channel for confirmation.")
-
+        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+            logger.warning(f"Database connection error in store_parsed_reminder: {conn_err}")
+            if self.db:
+                try:
+                    await self.db.close()
+                except Exception:
+                    pass
+                self.db = None
+            raise
+        except RuntimeError as e:
+            logger.warning(f"Database pool not available: {e}")
+            raise
         except Exception as e:
             logger.exception(f"[ERROR] Reminder insert failed: {e}")
 
@@ -788,84 +724,44 @@ class EmbedReminderWatcher(commands.Cog):
 
 
     def _get_announcements_channel_id(self, guild_id: int) -> int:
-        if self.settings:
-            try:
-                return int(self.settings.get("embedwatcher", "announcements_channel_id", guild_id))
-            except KeyError:
-                pass
-        return 0  # Must be configured via /config embedwatcher announcements_channel_id
+        return self.settings_helper.get_int("embedwatcher", "announcements_channel_id", guild_id, fallback=0)
 
     def _get_log_channel_id(self, guild_id: int) -> int:
-        if self.settings:
-            try:
-                return int(self.settings.get("system", "log_channel_id", guild_id))
-            except KeyError:
-                pass
-        return 0  # Must be configured via /config system set_log_channel
+        return self.settings_helper.get_int("system", "log_channel_id", guild_id, fallback=0)
 
     def _get_reminder_offset(self, guild_id: int) -> int:
-        if self.settings:
-            try:
-                return int(self.settings.get("embedwatcher", "reminder_offset_minutes", guild_id))
-            except KeyError:
-                pass
-        return 60
+        return self.settings_helper.get_int("embedwatcher", "reminder_offset_minutes", guild_id, fallback=60)
 
     def _is_gpt_fallback_enabled(self, guild_id: int) -> bool:
-        if self.settings:
-            try:
-                return bool(self.settings.get("embedwatcher", "gpt_fallback_enabled", guild_id))
-            except KeyError:
-                pass
-        return True  # Default enabled
+        return self.settings_helper.get_bool("embedwatcher", "gpt_fallback_enabled", guild_id, fallback=True)
 
     def _get_failed_parse_log_channel_id(self, guild_id: int) -> int:
-        if self.settings:
-            try:
-                value = self.settings.get("embedwatcher", "failed_parse_log_channel_id", guild_id)
-                if value and value != 0:
-                    return int(value)
-            except KeyError:
-                pass
+        value = self.settings_helper.get_int("embedwatcher", "failed_parse_log_channel_id", guild_id, fallback=0)
+        if value and value != 0:
+            return value
         # Fallback to system log channel
-        if self.settings:
-            try:
-                return int(self.settings.get("system", "log_channel_id", guild_id))
-            except KeyError:
-                pass
-        return 0
+        return self.settings_helper.get_int("system", "log_channel_id", guild_id, fallback=0)
 
     def _is_non_embed_enabled(self, guild_id: int) -> bool:
         """Check if non-embed message parsing is enabled."""
-        if self.settings:
-            try:
-                return bool(self.settings.get("embedwatcher", "non_embed_enabled", guild_id))
-            except KeyError:
-                pass
-        return False  # Default disabled
+        return self.settings_helper.get_bool("embedwatcher", "non_embed_enabled", guild_id, fallback=False)
 
     def _is_process_bot_messages_enabled(self, guild_id: int) -> bool:
         """Check if processing bot's own messages is enabled."""
-        if self.settings:
-            try:
-                return bool(self.settings.get("embedwatcher", "process_bot_messages", guild_id))
-            except KeyError:
-                pass
-        return False  # Default disabled (to prevent loops)
+        return self.settings_helper.get_bool("embedwatcher", "process_bot_messages", guild_id, fallback=False)
 
     async def _check_existing_reminder_for_message(self, guild_id: int, channel_id: int, message_id: int) -> Optional[int]:
         """Check if a reminder already exists for this message to prevent duplicate processing."""
-        if self.db is None or self.db.is_closing():
+        if not is_pool_healthy(self.db):
             return None
         try:
-            async with self.db.acquire() as conn:
+            async with acquire_safe(self.db) as conn:
                 row = await conn.fetchrow(
                     "SELECT id FROM reminders WHERE guild_id = $1 AND origin_channel_id = $2 AND origin_message_id = $3 LIMIT 1",
                     guild_id, channel_id, message_id
                 )
                 return row["id"] if row else None
-        except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-            logger.warning(f"⚠️ Database connection error checking existing reminder: {conn_err}")
+        except RuntimeError:
             return None
         except Exception as e:
             logger.warning(f"⚠️ Error checking existing reminder: {e}")
@@ -1010,11 +906,9 @@ Return ONLY the JSON, no other text."""
             for field in embed.fields:
                 embed_text += f"- **{field.name}:** {field.value}\n"
         
-        log_embed = discord.Embed(
+        log_embed = EmbedBuilder.warning(
             title="⚠️ Failed Parse",
-            description=f"Could not parse reminder from {message_type}. Please review manually.\n\n{embed_text}",
-            color=discord.Color.orange(),
-            timestamp=datetime.now(BRUSSELS_TZ)
+            description=f"Could not parse reminder from {message_type}. Please review manually.\n\n{embed_text}"
         )
         log_embed.set_footer(text=f"embedwatcher | Guild: {guild_id}")
         
@@ -1046,7 +940,9 @@ Return ONLY the JSON, no other text."""
             channel_ref = message.channel.mention
         else:
             channel_ref = f"#{getattr(message.channel, 'name', 'unknown')}" if hasattr(message.channel, 'name') else str(message.channel.id)
-        log_embed = discord.Embed(
+        # Use EmbedBuilder with appropriate level
+        level = "warning" if status == "failed" else "success" if status == "success" else "info"
+        log_embed = EmbedBuilder.log(
             title=f"{emoji} Message Processed ({status.capitalize()})",
             description=(
                 f"**Type:** {'Embed' if message.embeds else 'Text'}\n"
@@ -1056,8 +952,8 @@ Return ONLY the JSON, no other text."""
                 f"**Reason:** {reason}\n"
                 f"🔗 [Jump to message]({message.jump_url})"
             ),
-            color=color,
-            timestamp=datetime.now(BRUSSELS_TZ)
+            level=level,
+            guild_id=guild_id
         )
         log_embed.set_footer(text=f"embedwatcher | Guild: {guild_id}")
         

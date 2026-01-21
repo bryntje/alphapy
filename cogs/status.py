@@ -12,7 +12,9 @@ import asyncio
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import config
-from utils.checks_interaction import is_owner_or_admin_interaction
+from utils.validators import validate_admin
+from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.embed_builder import EmbedBuilder
 from utils.command_metadata import (
     get_category_for_cog,
     is_admin_command,
@@ -49,7 +51,7 @@ async def release_cmd(interaction: discord.Interaction):
         if not notes:
             await interaction.response.send_message(f"No notes found for v{__version__}.", ephemeral=True)
             return
-        embed = discord.Embed(title=f"Release notes v{__version__}", description=notes, color=discord.Color.blue())
+        embed = EmbedBuilder.info(title=f"Release notes v{__version__}", description=notes)
         embed.set_footer(text=f"{CODENAME}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
     except Exception as e:
@@ -184,10 +186,8 @@ async def commands_list_cmd(
             admin_commands_by_category[category].sort(key=lambda x: x["name"])
         
         # Build embed
-        embed = discord.Embed(
-            title="📋 Available Commands",
-            color=discord.Color.blue(),
-            timestamp=datetime.now(BRUSSELS_TZ)
+        embed = EmbedBuilder.info(
+            title="📋 Available Commands"
         )
         
         # Add public commands by category
@@ -366,9 +366,10 @@ async def command_stats_cmd(
 ):
     """Show command usage statistics in a rich embed."""
     # Check admin permissions
-    if not await is_owner_or_admin_interaction(interaction):
+    is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+    if not is_admin:
         await interaction.response.send_message(
-            "❌ You don't have permission to use this command. Administrator access required.",
+            error_msg or "❌ You don't have permission to use this command. Administrator access required.",
             ephemeral=True
         )
         return
@@ -388,7 +389,7 @@ async def command_stats_cmd(
     global _status_db_pool
     
     # Initialize pool if needed
-    if _status_db_pool is None or _status_db_pool.is_closing():
+    if not is_pool_healthy(_status_db_pool):
         try:
             _status_db_pool = await asyncpg.create_pool(
                 config.DATABASE_URL,
@@ -404,7 +405,7 @@ async def command_stats_cmd(
             return
     
     try:
-        async with _status_db_pool.acquire() as conn:
+        async with acquire_safe(_status_db_pool) as conn:
             # Build query
             where_clause = "WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL"
             params: list[Any] = [str(days)]
@@ -439,10 +440,8 @@ async def command_stats_cmd(
             total_commands = total_rows[0]["total"] if total_rows else 0
             
             # Build embed
-            embed = discord.Embed(
-                title="📊 Command Usage Statistics",
-                color=discord.Color.blue(),
-                timestamp=datetime.now(BRUSSELS_TZ)
+            embed = EmbedBuilder.info(
+                title="📊 Command Usage Statistics"
             )
             
             # Add period and scope info
@@ -566,9 +565,8 @@ async def get_gptstatus_embed():
 
     status = await fetch_openai_status()
 
-    embed = discord.Embed(
-        title="🧠 GPT API Status",
-        color=discord.Color.teal()
+    embed = EmbedBuilder.status(
+        title="🧠 GPT API Status"
     )
     embed.add_field(name="🔹 Operational", value=f"{'✅ Yes' if 'Operational' in status else '⚠️ ' + status}", inline=False)
     embed.add_field(name="🔹 Last successful reply", value=format_timedelta(last_success) if isinstance(last_success, datetime) else last_success, inline=True)
@@ -600,9 +598,9 @@ async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed
 
     db_ok = "✅"
     # Use existing pool if available, otherwise quick direct connection check
-    if _status_db_pool and not _status_db_pool.is_closing():
+    if is_pool_healthy(_status_db_pool):
         try:
-            async with _status_db_pool.acquire() as conn:
+            async with acquire_safe(_status_db_pool) as conn:
                 await conn.fetchval("SELECT 1")
         except Exception:
             db_ok = "🛑"
@@ -615,7 +613,7 @@ async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed
         else:
             await conn.close()
 
-    embed = discord.Embed(title="🩺 Bot Health", color=discord.Color.green())
+    embed = EmbedBuilder.success(title="🩺 Bot Health")
     embed.add_field(name="Database", value=db_ok, inline=True)
     embed.add_field(name="Reminders", value=reminders_enabled, inline=True)
     embed.add_field(name="Invites", value=invites_enabled, inline=True)
