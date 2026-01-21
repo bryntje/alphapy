@@ -1,4 +1,4 @@
-__version__ = "1.9.0"
-CODENAME = "Enhanced Reminders"
+__version__ = "2.0.0"
+CODENAME = "Lifecycle Manager"
 
 

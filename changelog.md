@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No new changes yet)
+
+---
+
+## [2.0.0] - 2026-01-22
+
+### Added
 - **Lifecycle Manager & Phased Startup/Shutdown:**
   - Centralized lifecycle management (`utils/lifecycle.py`) with `StartupManager` and `ShutdownManager` classes
   - Phased startup sequence: Database → Settings → Cogs → Command Sync → Background Tasks → Ready
@@ -83,6 +90,8 @@ All notable changes to this project will be documented in this file.
   - Manual sync command now uses centralized `safe_sync()` with proper error handling
 - Rate limiting now protects against abuse and cost explosions for GPT-powered commands
 - API endpoints now have IP-based rate limiting to prevent anonymous abuse
+
+---
 
 ## [1.9.0] - 2026-01-21
 
