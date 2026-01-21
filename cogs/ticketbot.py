@@ -48,6 +48,8 @@ class TicketBot(commands.Cog):
         self.settings_helper = CachedSettingsHelper(settings)
         # In-memory cooldown tracking voor suggest_reply button
         self._suggest_reply_cooldowns: Dict[int, float] = {}  # user_id -> last_used_timestamp
+        self._max_cooldown_entries = 1000
+        self._max_cooldown_age = 3600  # 1 hour - remove stale entries
         # Start async setup zonder de event loop te blokkeren
         self.bot.loop.create_task(self.setup_db())
         # Register persistent view so the ticket button keeps working after restarts
@@ -58,6 +60,24 @@ class TicketBot(commands.Cog):
         
         # Note: check_idle_tickets task will be started in cog_load hook
 
+    def _cleanup_cooldowns(self) -> None:
+        """Remove expired cooldown entries (called on access, not periodic loop)."""
+        current_time = time.time()
+        expired_keys = [
+            user_id for user_id, last_used in self._suggest_reply_cooldowns.items()
+            if current_time - last_used > self._max_cooldown_age
+        ]
+        for key in expired_keys:
+            del self._suggest_reply_cooldowns[key]
+        
+        # Enforce max size
+        if len(self._suggest_reply_cooldowns) > self._max_cooldown_entries:
+            sorted_by_age = sorted(self._suggest_reply_cooldowns.items(), key=lambda x: x[1])
+            excess = len(self._suggest_reply_cooldowns) - self._max_cooldown_entries
+            for key, _ in sorted_by_age[:excess]:
+                del self._suggest_reply_cooldowns[key]
+            logger.debug(f"Ticket cooldowns: Evicted {excess} oldest entries, size now: {len(self._suggest_reply_cooldowns)}")
+    
     async def setup_db(self) -> None:
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
         try:
@@ -1806,6 +1826,9 @@ class TicketActionView(discord.ui.View):
         
         # In-memory cooldown check (5 seconden tussen clicks)
         if self.cog:
+            # Cleanup stale entries before checking
+            self.cog._cleanup_cooldowns()
+            
             current_time = time.time()
             last_used = self.cog._suggest_reply_cooldowns.get(interaction.user.id, 0)
             if current_time - last_used < 5.0:

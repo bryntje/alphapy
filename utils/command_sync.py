@@ -27,6 +27,9 @@ _sync_cooldowns: Dict[str, float] = {}
 GLOBAL_COOLDOWN = 60 * 60  # 60 minutes
 GUILD_COOLDOWN = 30 * 60   # 30 minutes
 
+# Max cooldown entries and cleanup
+MAX_SYNC_COOLDOWNS = 500
+
 # Track if we've done initial global sync
 _initial_global_sync_done = False
 
@@ -244,3 +247,31 @@ def format_cooldown_message(remaining: float) -> str:
         hours = int(remaining / 3600)
         minutes = int((remaining % 3600) / 60)
         return f"{hours}h {minutes}m"
+
+
+def cleanup_sync_cooldowns() -> None:
+    """Remove expired cooldown entries and enforce max size."""
+    global _sync_cooldowns
+    current_time = time.time()
+    initial_size = len(_sync_cooldowns)
+    keys_to_remove = []
+    
+    for key, last_sync in list(_sync_cooldowns.items()):
+        cooldown_period = GLOBAL_COOLDOWN if key == "global" else GUILD_COOLDOWN
+        # Remove if expired (with 1 hour buffer)
+        if current_time - last_sync > cooldown_period + 3600:
+            keys_to_remove.append(key)
+    
+    for key in keys_to_remove:
+        del _sync_cooldowns[key]
+    
+    # Enforce max size
+    if len(_sync_cooldowns) > MAX_SYNC_COOLDOWNS:
+        sorted_by_age = sorted(_sync_cooldowns.items(), key=lambda x: x[1])
+        excess = len(_sync_cooldowns) - MAX_SYNC_COOLDOWNS
+        for key, _ in sorted_by_age[:excess]:
+            del _sync_cooldowns[key]
+    
+    final_size = len(_sync_cooldowns)
+    if initial_size != final_size or final_size > MAX_SYNC_COOLDOWNS * 0.8:
+        logger.debug(f"Sync cooldowns cleanup: {initial_size} -> {final_size} active entries (max: {MAX_SYNC_COOLDOWNS})")

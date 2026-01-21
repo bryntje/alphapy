@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Memory Leak Fixes & Resource Management:**
+  - Command tracker batching: In-memory queue (max 10k entries) with batch flush every 30s or at 1k entries threshold
+  - Guild settings LRU cache: OrderedDict-based cache with max 500 entries and automatic eviction logging
+  - IP rate limits cleanup: Periodic cleanup (every 10+ minutes) with max 1000 IP entries and LRU eviction
+  - Command stats TTL cache: 30-second TTL cache with max 50 entries and automatic cleanup
+  - Sync cooldowns cleanup: Periodic cleanup task (every 10 minutes) with max 500 entries
+  - Ticket bot cooldowns cleanup: Max age (1 hour) cleanup on access with max 1000 entries
+  - Cache size monitoring: New `CacheMetrics` model in dashboard metrics endpoint for monitoring all cache sizes
+  - Size logging: All caches and dicts now log their size during cleanup operations
+- **Command Tree Sync Refactoring:**
+  - Centralized command sync utility (`utils/command_sync.py`) with cooldown protection
+  - Automatic sync on bot startup (global commands once, then guild-only commands per guild)
+  - Automatic sync when bot joins new guilds (`on_guild_join` handler)
+  - Cooldown tracking: 60 minutes for global syncs, 30 minutes for per-guild syncs
+  - Rate limit protection with graceful error handling and retry-after support
+  - Parallel guild syncs for faster startup (multiple guilds synced simultaneously)
+  - Guild-only command detection to optimize sync strategy
+  - Manual sync command (`!sync`) with cooldown feedback and `--force` flag support
+- **Rate Limiting & Abuse Prevention:**
+  - Command cooldowns for high-risk operations:
+    - `/add_reminder`: 5 per minute per guild+user (prevents reminder spam)
+    - `/learn_topic`: 3 per minute per guild+user (cost control for GPT calls)
+    - `/create_caption`: 3 per minute per guild+user (cost control for GPT calls)
+    - `/growthcheckin`: 2 per 5 minutes per guild+user (growth check-ins are not frequent)
+    - `/leaderhelp`: 3 per minute per guild+user (cost control for GPT calls)
+  - In-memory cooldown for ticket "Suggest reply" button (5 seconds between clicks) with humorous error message
+  - FastAPI IP-based rate limiting middleware:
+    - 30 read requests per minute per IP
+    - 10 write requests per minute per IP
+    - Health/metrics endpoints excluded from rate limiting
+    - Automatic cleanup of old rate limit entries
+
+### Changed
+- **Command Sync Architecture:**
+  - Removed blocking `bot.tree.sync()` call from `cogs/dataquery.py` setup (was delaying startup by 30-60 seconds)
+  - Command sync now happens in `on_ready()` hook after bot is fully initialized
+  - Guild syncs run in parallel instead of sequentially for faster startup
+  - Only guild-only commands are synced per-guild (not all commands, reducing API calls)
+  - Manual sync command now uses centralized `safe_sync()` with proper error handling
+- Rate limiting now protects against abuse and cost explosions for GPT-powered commands
+- API endpoints now have IP-based rate limiting to prevent anonymous abuse
+
 ## [1.9.0] - 2026-01-21
 
 ### Added
@@ -35,6 +80,31 @@ All notable changes to this project will be documented in this file.
   - Command tracker uses dedicated pool in bot's event loop to avoid event loop conflicts
   - Graceful error handling for connection errors (`ConnectionDoesNotExistError`, `InterfaceError`, `ConnectionResetError`)
   - Background tasks check pool status before operations and handle shutdown gracefully
+- **Centralized Utility Modules:**
+  - **`utils/db_helpers.py`**: Centralized database connection management
+    - `acquire_safe()`: Async context manager for safe connection acquisition with error handling
+    - `is_pool_healthy()`: Utility to check connection pool status before operations
+    - Eliminates duplicate try/except blocks across all cogs
+  - **`utils/validators.py`**: Centralized permission and ownership validation
+    - `validate_admin()`: Unified admin/owner check replacing duplicate logic
+    - Type-safe validation functions for consistent permission checks
+  - **`utils/embed_builder.py`**: Consistent Discord embed creation
+    - `EmbedBuilder` class with static methods: `info()`, `log()`, `warning()`, `success()`, `error()`, `status()`
+    - Uniform styling with automatic timestamps and color coding
+    - Reduces boilerplate embed creation code across all cogs
+  - **`utils/settings_helpers.py`**: Cached settings wrapper
+    - `CachedSettingsHelper`: Type-safe getters (`get_int()`, `get_bool()`, `get_str()`) with caching
+    - `set_bulk()`: Batch settings updates for efficiency
+    - Reduces repeated `SettingsService.get/put` calls with error handling
+  - **`utils/parsers.py`**: Centralized string parsing utilities
+    - `parse_days_string()`: Parse day strings (e.g., "ma,wo,vr") to day arrays
+    - `parse_time_string()`: Parse time strings with timezone support
+    - `format_days_for_display()`: Format day arrays for user-friendly display
+    - Shared regex patterns and date functions used by embed watcher and reminders
+  - **`utils/background_tasks.py`**: Robust background task management
+    - `BackgroundTask` class: Manages asynchronous loops with graceful shutdown
+    - Specific error handling for connection errors, pool shutdown, and Supabase edge cases
+    - Replaces duplicate task loop setup code across cogs
 
 ### Changed
 - **Internationalization:** All Dutch user-facing text replaced with English across all cogs
@@ -57,6 +127,15 @@ All notable changes to this project will be documented in this file.
   - Enhanced error handling with connection status checks before operations
   - Telemetry ingest loop now checks pool status before database operations
   - Reminder loop checks pool status before fetching reminders
+- **Code Refactoring & Boilerplate Removal:**
+  - Refactored all cogs to use centralized utility modules, eliminating duplicate code
+  - Replaced `async with pool.acquire()` patterns with `acquire_safe()` from `utils.db_helpers`
+  - Replaced `is_owner_or_admin_interaction()` calls with `validate_admin()` from `utils.validators`
+  - Replaced manual `discord.Embed()` construction with `EmbedBuilder` methods for consistency
+  - Replaced direct `SettingsService.get/put` calls with `CachedSettingsHelper` where appropriate
+  - Centralized parsing logic from embed watcher and reminders into `utils.parsers`
+  - Standardized background task setup using `BackgroundTask` class
+  - All cogs now use consistent error handling, embed styling, and database connection patterns
 
 ### Fixed
 - **Reminder Edit Modal:**
@@ -69,6 +148,7 @@ All notable changes to this project will be documented in this file.
   - Fixed one-off events missing weekday information
   - Fixed bot message processing loop protection
   - Improved parsing failure logging with detailed error information
+  - Fixed `SyntaxError: invalid syntax` in `store_parsed_reminder()` method - logging code was incorrectly placed outside try/except block, causing orphaned except clause
 - **GPT Integration:**
   - Fixed `RuntimeError: no running event loop` when starting retry queue task
   - Corrected linter error for `status_code` attribute access

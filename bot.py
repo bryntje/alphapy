@@ -323,7 +323,7 @@ async def on_ready():
     # so set_db_pool() handles closing any existing pool before setting a new one
     try:
         import asyncpg
-        from utils.command_tracker import set_db_pool, _db_pool
+        from utils.command_tracker import set_db_pool, _db_pool, start_flush_task
         # Only create new pool if we don't have one or it's closing
         if _db_pool is None or _db_pool.is_closing():
             command_tracker_pool = await asyncpg.create_pool(
@@ -336,6 +336,9 @@ async def on_ready():
             logger.info("✅ Command tracker: Database pool initialized in bot event loop")
         else:
             logger.debug("Command tracker: Database pool already initialized, skipping")
+        
+        # Start periodic flush task for command usage batching
+        start_flush_task()
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize command tracker pool: {e}")
     
@@ -345,6 +348,23 @@ async def on_ready():
     if gpt_helpers._retry_task is None or gpt_helpers._retry_task.done():
         gpt_helpers._retry_task = asyncio.create_task(_retry_gpt_requests())
         logger.info("🔄 GPT retry queue task started")
+    
+    # Start sync cooldowns cleanup task
+    from utils.command_sync import cleanup_sync_cooldowns
+    from utils.background_tasks import BackgroundTask
+    
+    # Create cleanup task (runs every 10 minutes)
+    # Wrap sync function in async wrapper
+    async def cleanup_sync_cooldowns_async():
+        cleanup_sync_cooldowns()
+    
+    if not hasattr(bot, '_sync_cooldown_cleanup_task'):
+        bot._sync_cooldown_cleanup_task = BackgroundTask(
+            name="Sync Cooldowns Cleanup",
+            interval=600,  # 10 minutes
+            task_func=cleanup_sync_cooldowns_async
+        )
+        await bot._sync_cooldown_cleanup_task.start()
     
     logger.info(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
 

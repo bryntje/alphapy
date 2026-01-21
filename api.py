@@ -106,6 +106,13 @@ MAX_TELEMETRY_RETRIES = 5
 
 # In-memory IP-based rate limiter
 _ip_rate_limits: Dict[str, List[float]] = defaultdict(list)
+MAX_IP_ENTRIES = 1000
+RATE_LIMIT_CLEANUP_INTERVAL = 600  # 10 minutes
+
+# Command stats TTL cache (initialized after CommandStats class definition)
+_command_stats_cache: Dict[tuple[Optional[int], int, int], tuple[Any, datetime]] = {}
+MAX_COMMAND_STATS_CACHE_SIZE = 50
+COMMAND_STATS_CACHE_TTL = 30  # seconds
 
 
 @asynccontextmanager
@@ -190,22 +197,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ingest_interval = getattr(config, "TELEMETRY_INGEST_INTERVAL", 45)
     ingest_task = asyncio.create_task(_telemetry_ingest_loop(ingest_interval))
     
+    # Start IP rate limits cleanup task
+    rate_limit_cleanup_task = asyncio.create_task(_cleanup_rate_limits_loop())
+    
     try:
         yield
     finally:
-        # Cancel and wait for the background task to finish gracefully
-        logger.info("🛑 Shutting down telemetry ingest loop...")
+        # Cancel and wait for the background tasks to finish gracefully
+        logger.info("🛑 Shutting down background tasks...")
+        
+        # Cancel telemetry task
         ingest_task.cancel()
         try:
-            # Wait for task to finish, but with timeout to prevent hanging
             await asyncio.wait_for(ingest_task, timeout=5.0)
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
-        except asyncio.TimeoutError:
-            logger.warning("⚠️ Telemetry task did not finish within timeout, continuing shutdown")
         except Exception as exc:
-            # Handle any remaining exceptions from the task
             logger.debug(f"Telemetry task exception during shutdown (expected): {exc.__class__.__name__}")
+        
+        # Cancel rate limit cleanup task
+        rate_limit_cleanup_task.cancel()
+        try:
+            await asyncio.wait_for(rate_limit_cleanup_task, timeout=5.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        except Exception as exc:
+            logger.debug(f"Rate limit cleanup task exception during shutdown (expected): {exc.__class__.__name__}")
         
         # Close database pool after tasks are done
         if db_pool:
@@ -650,6 +667,15 @@ class InfrastructureMetrics(BaseModel):
     checked_at: str
 
 
+class CacheMetrics(BaseModel):
+    """Cache size metrics for monitoring."""
+    command_tracker_queue_size: int
+    command_stats_cache_size: int
+    ip_rate_limits_size: int
+    sync_cooldowns_size: int
+    ticket_cooldowns_size: int
+
+
 class CommandUsage(BaseModel):
     command_name: str
     usage_count: int
@@ -669,6 +695,7 @@ class DashboardMetrics(BaseModel):
     settings_overrides: List[SettingOverride]
     infrastructure: InfrastructureMetrics
     command_usage: Optional[CommandStats] = None
+    cache_metrics: Optional[CacheMetrics] = None
 
 
 def _serialize_gpt_events(raw_events) -> List[GPTLogEvent]:
@@ -1142,6 +1169,51 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
         await asyncio.sleep(interval)
 
 
+async def _cleanup_rate_limits_loop() -> None:
+    """Background task that periodically cleans up IP rate limits dictionary."""
+    global _ip_rate_limits
+    
+    logger.info(f"🚀 IP rate limits cleanup loop started (interval: {RATE_LIMIT_CLEANUP_INTERVAL}s)")
+    
+    while True:
+        try:
+            await asyncio.sleep(RATE_LIMIT_CLEANUP_INTERVAL)
+            
+            current_time = time.time()
+            initial_size = len(_ip_rate_limits)
+            keys_to_remove = []
+            
+            # Remove entries with empty lists or old data
+            for ip, timestamps in list(_ip_rate_limits.items()):
+                # Clean timestamps older than 1 minute
+                _ip_rate_limits[ip] = [ts for ts in timestamps if current_time - ts < 60.0]
+                # Remove if list is empty
+                if not _ip_rate_limits[ip]:
+                    keys_to_remove.append(ip)
+            
+            for key in keys_to_remove:
+                del _ip_rate_limits[key]
+            
+            # Enforce max dict size (LRU eviction - remove oldest entries)
+            if len(_ip_rate_limits) > MAX_IP_ENTRIES:
+                excess = len(_ip_rate_limits) - MAX_IP_ENTRIES
+                # Remove first N entries (simplified LRU)
+                for _ in range(excess):
+                    if _ip_rate_limits:
+                        _ip_rate_limits.pop(next(iter(_ip_rate_limits)), None)
+            
+            final_size = len(_ip_rate_limits)
+            if initial_size != final_size or final_size > MAX_IP_ENTRIES * 0.8:
+                logger.debug(f"Rate limits cleanup: {initial_size} -> {final_size} active IPs (max: {MAX_IP_ENTRIES})")
+        
+        except asyncio.CancelledError:
+            logger.info("🛑 IP rate limits cleanup loop cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error in IP rate limits cleanup loop: {e}", exc_info=True)
+            await asyncio.sleep(RATE_LIMIT_CLEANUP_INTERVAL)  # Wait before retrying
+
+
 async def _flush_telemetry_queue() -> None:
     """Flush telemetry queue with exponential backoff retry."""
     global _telemetry_queue
@@ -1344,9 +1416,45 @@ async def _persist_telemetry_snapshot(
             })
 
 
+def _cleanup_command_stats_cache() -> None:
+    """Clean up expired entries from command stats cache."""
+    global _command_stats_cache
+    now = datetime.now(timezone.utc)
+    expired_keys = [
+        k for k, (_, cached_at) in _command_stats_cache.items()
+        if (now - cached_at).total_seconds() >= COMMAND_STATS_CACHE_TTL
+    ]
+    for key in expired_keys:
+        del _command_stats_cache[key]
+    
+    # Enforce max size
+    if len(_command_stats_cache) > MAX_COMMAND_STATS_CACHE_SIZE:
+        # Remove oldest entries
+        sorted_by_age = sorted(
+            _command_stats_cache.items(),
+            key=lambda x: x[1][1]  # Sort by cached_at timestamp
+        )
+        excess = len(_command_stats_cache) - MAX_COMMAND_STATS_CACHE_SIZE
+        for key, _ in sorted_by_age[:excess]:
+            del _command_stats_cache[key]
+        logger.debug(f"Command stats cache: Evicted {excess} oldest entries, size now: {len(_command_stats_cache)}")
+
+
 async def _fetch_command_stats(guild_id: Optional[int] = None, days: int = 7, limit: int = 10) -> Optional[CommandStats]:
-    """Fetch command usage statistics for dashboard."""
-    global db_pool
+    """Fetch command usage statistics for dashboard (with TTL cache)."""
+    global db_pool, _command_stats_cache
+    
+    cache_key = (guild_id, days, limit)
+    now = datetime.now(timezone.utc)
+    
+    # Check cache
+    if cache_key in _command_stats_cache:
+        stats, cached_at = _command_stats_cache[cache_key]
+        if (now - cached_at).total_seconds() < COMMAND_STATS_CACHE_TTL:
+            logger.debug(f"Command stats cache HIT: {cache_key}")
+            return stats
+    
+    # Cache miss or expired - fetch from DB
     if db_pool is None:
         return None
     
@@ -1390,17 +1498,59 @@ async def _fetch_command_stats(guild_id: Optional[int] = None, days: int = 7, li
                 for row in command_rows
             ]
             
-            return CommandStats(
+            result = CommandStats(
                 top_commands=top_commands,
                 total_commands_24h=int(total_24h),
                 period_days=days
             )
+            
+            # Clean expired entries and enforce size limit before adding new entry
+            _cleanup_command_stats_cache()
+            _command_stats_cache[cache_key] = (result, now)
+            logger.debug(f"Command stats cache MISS: {cache_key}, size={len(_command_stats_cache)}")
+            
+            return result
     except pg_exceptions.UndefinedTableError:
         # Table doesn't exist yet - return None (non-critical)
         return None
     except Exception as exc:
         logger.debug(f"Command stats fetch failed (non-critical): {exc}")
         return None
+
+
+def _collect_cache_metrics() -> CacheMetrics:
+    """Collect cache size metrics for monitoring."""
+    # Command tracker queue size
+    try:
+        from utils.command_tracker import _command_queue
+        command_tracker_size = len(_command_queue)
+    except Exception:
+        command_tracker_size = 0
+    
+    # Command stats cache size
+    command_stats_size = len(_command_stats_cache)
+    
+    # IP rate limits size
+    ip_rate_limits_size = len(_ip_rate_limits)
+    
+    # Sync cooldowns size
+    try:
+        from utils.command_sync import _sync_cooldowns
+        sync_cooldowns_size = len(_sync_cooldowns)
+    except Exception:
+        sync_cooldowns_size = 0
+    
+    # Ticket cooldowns size (need to get from bot instance or track globally)
+    # For now, we'll track this separately if needed
+    ticket_cooldowns_size = 0  # TODO: Add global tracking if needed
+    
+    return CacheMetrics(
+        command_tracker_queue_size=command_tracker_size,
+        command_stats_cache_size=command_stats_size,
+        ip_rate_limits_size=ip_rate_limits_size,
+        sync_cooldowns_size=sync_cooldowns_size,
+        ticket_cooldowns_size=ticket_cooldowns_size
+    )
 
 
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)
@@ -1430,6 +1580,7 @@ async def get_dashboard_metrics(
     ticket_stats = await _fetch_ticket_stats(effective_guild_id)
     infrastructure = await _collect_infrastructure_metrics()
     command_stats = await _fetch_command_stats(effective_guild_id)
+    cache_metrics = _collect_cache_metrics()
 
     # Persist a telemetry snapshot asynchronously; ignore failures.
     asyncio.create_task(_persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats))
@@ -1443,6 +1594,7 @@ async def get_dashboard_metrics(
         settings_overrides=await _fetch_settings_overrides(effective_guild_id),
         infrastructure=infrastructure,
         command_usage=command_stats,
+        cache_metrics=cache_metrics,
     )
 
 

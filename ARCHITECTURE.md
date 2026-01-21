@@ -28,6 +28,7 @@
   - Slash commands: `/add_reminder`, `/reminder_list`, `/reminder_delete`, `/reminder_edit`
   - Accepts optional embed link and parses details (title, time, days, location)
   - Stores reminders (recurring or one-off) with `call_time` support
+  - Rate limiting: `/add_reminder` has cooldown of 5 per minute per guild+user (prevents spam)
   - Periodic job (`tasks.loop`) dispatches reminders
   - Idempotency: `last_sent_at` prevents duplicate sends in the same minute
   - T0 support: One-off reminders send at T−60 and at `event_time` (T0)
@@ -40,6 +41,7 @@
   - Parses non-embed messages (configurable via settings)
   - Rich embed logging for parsing success/failure
   - Persists via `reminders` table, logs to log channel
+  - Uses centralized utilities: `acquire_safe()` for database connections, `EmbedBuilder` for consistent embed formatting, `is_pool_healthy()` for connection checks
 
 - `cogs/migrations.py`
   - Database migration management via Alembic
@@ -71,6 +73,14 @@
   - `/api/health/history` historical health check data for trend analysis
   - `/top-commands` command usage analytics endpoint (filterable by guild and time period)
   - Reminder CRUD endpoints secured with API key + `X-User-Id`
+  - **IP-based Rate Limiting Middleware**: `RateLimitMiddleware` protects all API endpoints from abuse
+    - 30 read requests per minute per IP
+    - 10 write requests per minute per IP
+    - Health/metrics endpoints excluded from rate limiting
+    - Automatic cleanup of old rate limit entries (>1 minute)
+    - Periodic cleanup task (every 10+ minutes) removes empty entries and enforces max 1000 IP entries
+  - **Command Stats Caching**: TTL cache (30 seconds) with max 50 entries to reduce database queries
+  - **Cache Metrics**: `CacheMetrics` model exposes all cache sizes in dashboard metrics endpoint
   - **Telemetry Ingest Background Job**: `_telemetry_ingest_loop()` runs continuously, collecting metrics and writing to `telemetry.subsystem_snapshots` in Supabase every 30-60 seconds (configurable). Ensures Mind dashboard always has fresh data without requiring endpoint calls. Gracefully handles connection errors and pool shutdown.
   - **Health Check History**: Automatic logging of health checks to `health_check_history` table
 
@@ -80,6 +90,60 @@
   - Initialized in `on_ready()` event handler, persists across bot restarts
   - Tracks both slash commands and text commands with success/failure status
   - Stores data in `audit_logs` table for analytics and `/command_stats` command
+  - **Batching Queue**: In-memory queue (max 10k entries) with batch flush every 30s or at 1k entries threshold
+  - Periodic flush task runs in background to write batches to database efficiently
+
+- `utils/db_helpers.py`
+  - Centralized database connection management utilities
+  - `acquire_safe(pool)`: Async context manager for safe connection acquisition with comprehensive error handling
+  - `is_pool_healthy(pool)`: Checks connection pool status before operations
+  - Used across all cogs to eliminate duplicate try/except blocks
+
+- `utils/validators.py`
+  - Centralized permission and ownership validation
+  - `validate_admin(interaction)`: Unified admin/owner check replacing duplicate logic across cogs
+  - Type-safe validation functions for consistent permission checks
+
+- `utils/embed_builder.py`
+  - Consistent Discord embed creation with uniform styling
+  - `EmbedBuilder` class with static methods: `info()`, `log()`, `warning()`, `success()`, `error()`, `status()`
+  - Automatic timestamps and color coding based on embed type
+  - Reduces boilerplate embed creation code across all cogs
+
+- `utils/settings_helpers.py`
+  - Cached settings wrapper for improved performance
+  - `CachedSettingsHelper`: Type-safe getters (`get_int()`, `get_bool()`, `get_str()`) with caching
+  - **LRU Cache**: Uses `OrderedDict` for LRU eviction with max 500 entries
+  - Automatic eviction of oldest entries when cache exceeds max size
+  - Eviction logging for monitoring cache behavior
+  - `set_bulk()`: Batch settings updates for efficiency
+  - Reduces repeated `SettingsService.get/put` calls with error handling
+
+- `utils/parsers.py`
+  - Centralized string parsing utilities
+  - `parse_days_string()`: Parse day strings (e.g., "ma,wo,vr") to day arrays
+  - `parse_time_string()`: Parse time strings with timezone support
+  - `format_days_for_display()`: Format day arrays for user-friendly display
+  - Shared regex patterns and date functions used by embed watcher and reminders
+  - Includes unit tests in `tests/test_parsers.py`
+
+- `utils/background_tasks.py`
+  - Robust background task management
+  - `BackgroundTask` class: Manages asynchronous loops with graceful shutdown
+  - Specific error handling for connection errors, pool shutdown, and Supabase edge cases
+  - Replaces duplicate task loop setup code across cogs
+
+- `utils/command_sync.py`
+  - Centralized command tree sync management with cooldown protection
+  - `safe_sync()`: Main sync function with rate limit handling and error recovery
+  - Cooldown tracking: 60 minutes for global syncs, 30 minutes for per-guild syncs
+  - **Cooldown Cleanup**: Periodic cleanup task (every 10 minutes) removes expired entries
+  - Max 500 cooldown entries with automatic eviction of oldest entries
+  - Automatic detection of guild-only commands to optimize sync strategy
+  - Parallel guild syncs for faster startup (multiple guilds synced simultaneously)
+  - Rate limit protection with graceful error handling and retry-after support
+  - Used by `bot.py` on startup and when joining new guilds
+  - Manual sync command (`!sync`) with cooldown feedback and force option
 
 ## Database Schema
 
@@ -163,6 +227,38 @@ The bot uses PostgreSQL for persistent storage. Schema is managed via Alembic mi
   - `location TEXT`
   - `last_sent_at TIMESTAMPTZ` (idempotency per minute)
 
+## Memory Management & Resource Limits
+
+The bot implements comprehensive memory management to prevent memory leaks and resource exhaustion:
+
+### Caching Strategies
+
+- **Command Tracker Queue**: In-memory batching queue (max 10k entries) with automatic flush every 30s or at 1k entries threshold. Reduces database write pressure by batching command usage logs.
+
+- **Guild Settings Cache**: LRU cache using `OrderedDict` with max 500 entries. Automatically evicts oldest entries when limit is reached. Eviction is logged for monitoring.
+
+- **Command Stats Cache**: TTL cache (30 seconds) with max 50 entries. Caches command usage statistics to reduce database queries for dashboard metrics.
+
+- **IP Rate Limits**: Dictionary tracking with max 1000 IP entries. Periodic cleanup (every 10+ minutes) removes expired entries and enforces size limit with LRU eviction.
+
+- **Sync Cooldowns**: Dictionary tracking with max 500 entries. Periodic cleanup (every 10 minutes) removes entries older than cooldown period + 1 hour buffer.
+
+- **Ticket Bot Cooldowns**: Dictionary tracking with max 1000 entries and max age of 1 hour. Cleanup happens on access (no periodic loop) to remove stale entries.
+
+### Cleanup Background Tasks
+
+All cleanup tasks run every 10+ minutes (not too frequent for low traffic guilds) to prevent unnecessary CPU overhead:
+
+- IP rate limits cleanup: Removes empty lists and enforces max dict size
+- Sync cooldowns cleanup: Removes expired entries and enforces max size
+- Command tracker flush: Writes batched entries to database
+
+### Monitoring
+
+- **Cache Metrics Endpoint**: `/api/dashboard/metrics` includes `CacheMetrics` with sizes of all caches and dictionaries
+- **Size Logging**: All cleanup operations log cache/dict sizes for monitoring
+- **Eviction Logging**: Cache evictions are logged at debug level for troubleshooting
+
 ## Configuration System
 
 ### Environment Variables (`config.py`)
@@ -200,11 +296,13 @@ Each Discord server configures its own settings via `/config` commands:
 - ✅ **Zero defaults:** All channels/roles must be explicitly configured
 
 ## Control flow
-1. User presses Start Onboarding → `ReactionRole` shows rules → starts `Onboarding`.
-2. `Onboarding` prompts 4 questions; multi-select advances automatically; follow-ups via modal.
-3. On completion: summary embed (ephemeral), log embed (log channel), role assignment, DB persist.
-4. Reminders: via slash commands or auto from `EmbedReminderWatcher`.
-5. `tasks.loop` in `reminders` dispatches messages at scheduled times:
+1. Bot startup: `setup_hook()` loads all cogs → `on_ready()` syncs commands (global once, then guild-only per guild in parallel)
+2. New guild join: `on_guild_join()` automatically syncs guild-only commands to new server
+3. User presses Start Onboarding → `ReactionRole` shows rules → starts `Onboarding`.
+4. `Onboarding` prompts 4 questions; multi-select advances automatically; follow-ups via modal.
+5. On completion: summary embed (ephemeral), log embed (log channel), role assignment, DB persist.
+6. Reminders: via slash commands or auto from `EmbedReminderWatcher`.
+7. `tasks.loop` in `reminders` dispatches messages at scheduled times:
 6. Tickets:
    - User runs `/ticket` or clicks panel button → per-ticket channel created with restricted access
    - Staff can Claim, Close; on Close: channel locks/renames and GPT summary posts
@@ -241,6 +339,19 @@ Each Discord server configures its own settings via `/config` commands:
 ## Security
 - Tokens and DB credentials via env only (no hardcoded secrets)
 - Optional controlled `@everyone` mentions via `ENABLE_EVERYONE_MENTIONS`
+- **Rate Limiting & Abuse Prevention:**
+  - Discord command cooldowns via `@app_checks.cooldown()` decorator:
+    - `/add_reminder`: 5 per minute per guild+user
+    - `/learn_topic`: 3 per minute per guild+user
+    - `/create_caption`: 3 per minute per guild+user
+    - `/growthcheckin`: 2 per 5 minutes per guild+user
+    - `/leaderhelp`: 3 per minute per guild+user
+    - `/ticket`: 1 per 30 seconds per user
+  - In-memory cooldowns for button interactions (e.g., ticket "Suggest reply" button: 5 seconds)
+  - FastAPI IP-based rate limiting middleware:
+    - 30 read requests per minute per IP
+    - 10 write requests per minute per IP
+    - Protects against anonymous abuse and cost explosions
 
 ## Testing & Quality
 
