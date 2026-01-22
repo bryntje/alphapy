@@ -388,7 +388,34 @@ async def on_app_command_completion(interaction: discord.Interaction, command: d
 
 @bot.event
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-    """Track failed slash command execution."""
+    """Handle app command errors globally."""
+    # Handle cooldown errors with user-friendly message
+    if isinstance(error, discord.app_commands.CommandOnCooldown):
+        minutes = int(error.retry_after // 60)
+        seconds = int(error.retry_after % 60)
+        
+        if minutes > 0:
+            time_str = f"{minutes} minute{'s' if minutes != 1 else ''} and {seconds} second{'s' if seconds != 1 else ''}"
+        else:
+            time_str = f"{seconds} second{'s' if seconds != 1 else ''}"
+        
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    f"⏸️ **Cooldown active**\n\n"
+                    f"You can use this command again in {time_str}.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"⏸️ **Cooldown active**\n\n"
+                    f"You can use this command again in {time_str}.",
+                    ephemeral=True
+                )
+        except Exception as e:
+            logger.debug(f"Failed to send cooldown message: {e}")
+    
+    # Track failed command execution
     try:
         from utils.command_tracker import log_command_usage
         command_name = interaction.command.name if interaction.command else "unknown"
