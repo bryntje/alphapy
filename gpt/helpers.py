@@ -266,16 +266,17 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
     return model_value, temperature_value
 
 
-async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None, _is_retry: bool = False):
+async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None, _is_retry: bool = False, include_reflections: bool = True):
     """
     Main GPT interaction function.
     
     Args:
         messages: List of message dicts or string prompt
-        user_id: User ID for logging
+        user_id: User ID for logging and reflection context loading (Discord ID)
         model: Model override
         guild_id: Guild ID for logging
         _is_retry: Internal flag to prevent re-queuing on retry attempts
+        include_reflections: Whether to include user reflections as context (default: True)
     """
     start = time.perf_counter()
 
@@ -290,11 +291,26 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
             messages = [{"role": "user", "content": messages}]
         assert isinstance(messages, list) and all(isinstance(m, dict) for m in messages), "❌ Invalid messages format"
 
+        # Load reflection context if enabled and user_id provided
+        reflection_context = ""
+        if include_reflections and user_id:
+            try:
+                from gpt.context_loader import load_user_reflections
+                reflection_context = await load_user_reflections(user_id, limit=5)
+            except Exception as e:
+                logger.debug(f"Failed to load reflection context: {e}")
+                # Continue without context - non-critical
+
+        # Build system prompt with optional reflection context
+        system_content = SYSTEM_PROMPT
+        if reflection_context:
+            system_content = SYSTEM_PROMPT + "\n\n" + reflection_context
+
         resolved_model, temperature = _get_settings_values(model or _default_model)
         chat_kwargs = {
             "model": resolved_model,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_content},
                 *messages
             ],
         }

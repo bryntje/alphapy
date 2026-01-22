@@ -30,6 +30,7 @@ from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
 from utils.supabase_client import _supabase_post, SupabaseConfigurationError
 from webhooks.supabase import router as supabase_webhook_router
+from webhooks.reflections import router as reflections_webhook_router
 from version import CODENAME, __version__
 
 logger = logging.getLogger(__name__)
@@ -235,6 +236,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(supabase_webhook_router)
+app.include_router(reflections_webhook_router)
 
 # CORS settings
 _allowed_origins = getattr(config, "ALLOWED_ORIGINS", [])
