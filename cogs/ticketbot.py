@@ -1818,16 +1818,21 @@ class TicketActionView(discord.ui.View):
             await interaction.followup.send(f"⚠️ Channel delete failed: {e}", ephemeral=True)
 
         # Log archiving (summaries remain in DB)
-        await self._log(
-            interaction,
-            title="🗄 Ticket archived",
-            desc=(
-                f"ID: {self.ticket_id}\n"
-                f"Archived by: {interaction.user} ({interaction.user.id})\n"
-                f"Timestamp: {datetime.utcnow().isoformat()}"
-            ),
-            level="info",
-        )
+        # Wrap in try-except to prevent interaction failure if logging fails
+        try:
+            await self._log(
+                interaction,
+                title="🗄 Ticket archived",
+                desc=(
+                    f"ID: {self.ticket_id}\n"
+                    f"Archived by: {interaction.user} ({interaction.user.id})\n"
+                    f"Timestamp: {datetime.utcnow().isoformat()}"
+                ),
+                level="info",
+            )
+        except Exception as e:
+            # Log error but don't fail the interaction - archiving already succeeded
+            logger.warning(f"Failed to log ticket archiving for ticket {self.ticket_id}: {e}")
     
     @discord.ui.button(label="💡 Suggest reply", style=discord.ButtonStyle.success, custom_id="ticket_suggest_btn")
     async def suggest_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:

@@ -43,11 +43,24 @@ def verify_supabase_token(authorization_header: Optional[str]) -> Dict[str, Any]
         with httpx.Client(timeout=5) as client:
             response = client.get(auth_url, headers=headers)
         if response.status_code != 200:
-            logger.warning(
-                "Supabase token validation failed: status=%s body=%s",
-                response.status_code,
-                response.text,
-            )
+            # Check if it's an expired token (common, not an error)
+            response_body = response.text
+            is_expired = "expired" in response_body.lower() or "bad_jwt" in response_body.lower()
+            
+            if is_expired:
+                # Expired tokens are normal - log as debug, not warning
+                logger.debug(
+                    "Supabase token expired (normal): status=%s body=%s",
+                    response.status_code,
+                    response_body,
+                )
+            else:
+                # Other validation failures are warnings
+                logger.warning(
+                    "Supabase token validation failed: status=%s body=%s",
+                    response.status_code,
+                    response_body,
+                )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid Supabase token.",
