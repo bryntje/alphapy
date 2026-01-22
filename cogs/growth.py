@@ -11,6 +11,8 @@ from gpt.helpers import ask_gpt, log_gpt_error, log_gpt_success
 from utils.supabase_client import (
     SupabaseConfigurationError,
     insert_reflection_for_discord,
+    get_user_id_for_discord,
+    _supabase_get,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,6 +94,30 @@ Be encouraging, not forceful.
             reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id)
             # ask_gpt() already logs success internally
             await interaction.followup.send(reply, ephemeral=True)
+            
+            # Check if user has opted in to bot sharing and show tip if not
+            try:
+                user_id = await get_user_id_for_discord(interaction.user.id)
+                if user_id:
+                    profile_rows = await _supabase_get(
+                        "profiles",
+                        {
+                            "select": "bot_sharing_enabled",
+                            "user_id": f"eq.{user_id}",
+                            "limit": 1,
+                        },
+                    )
+                    bot_sharing_enabled = profile_rows[0].get("bot_sharing_enabled", False) if profile_rows else False
+                    
+                    if not bot_sharing_enabled:
+                        tip_message = (
+                            "💡 **Tip:** Enable bot sharing in your Innersync App settings to get "
+                            "more personalized responses based on your reflection history!"
+                        )
+                        await interaction.followup.send(tip_message, ephemeral=True)
+            except Exception as tip_error:
+                logger.debug(f"Failed to check bot sharing status (non-critical): {tip_error}")
+                # Don't fail the command if tip check fails
 
             async def _store_reflection() -> None:
                 reflection_text = (
