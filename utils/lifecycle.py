@@ -7,10 +7,11 @@ and graceful shutdown. Ensures proper dependency ordering and complete resource 
 
 import asyncio
 import time
-from typing import Optional
+from typing import Optional, Union
 from discord.ext import commands
 from utils.logger import logger
 from utils.db_helpers import close_all_pools
+from utils.command_sync import SyncResult
 import config
 
 # Track if this is the first startup
@@ -163,12 +164,18 @@ class StartupManager:
                 if isinstance(result, Exception):
                     logger.error(f"  ❌ Sync error for {self.bot.guilds[i].name}: {result}")
                     skipped_count += 1
-                elif result.success:
-                    synced_count += 1
+                elif isinstance(result, SyncResult):
+                    # Type narrowing: result is SyncResult here
+                    if result.success:
+                        synced_count += 1
+                    else:
+                        skipped_count += 1
+                        if result.cooldown_remaining:
+                            logger.debug(f"  ⏸️ Skipped sync for {self.bot.guilds[i].name} (cooldown)")
                 else:
+                    # Unexpected type
+                    logger.warning(f"  ⚠️ Unexpected result type for {self.bot.guilds[i].name}: {type(result)}")
                     skipped_count += 1
-                    if result.cooldown_remaining:
-                        logger.debug(f"  ⏸️ Skipped sync for {self.bot.guilds[i].name} (cooldown)")
             logger.info(f"  ✅ Guild syncs completed: {synced_count} synced, {skipped_count} skipped")
         else:
             logger.debug("  ℹ️ No guild-only commands detected")
@@ -187,8 +194,11 @@ class StartupManager:
             
             # Only create new pool if we don't have one or it's closing
             if _db_pool is None or _db_pool.is_closing():
+                database_url = getattr(config, "DATABASE_URL", None)
+                if not database_url:
+                    raise RuntimeError("DATABASE_URL is not set in config")
                 command_tracker_pool = await create_db_pool(
-                    config.DATABASE_URL,
+                    database_url,
                     name="command_tracker",
                     min_size=1,
                     max_size=5,
@@ -224,12 +234,13 @@ class StartupManager:
                 cleanup_sync_cooldowns()
             
             if not hasattr(self.bot, '_sync_cooldown_cleanup_task'):
-                self.bot._sync_cooldown_cleanup_task = BackgroundTask(
+                cleanup_task = BackgroundTask(
                     name="Sync Cooldowns Cleanup",
                     interval=600,  # 10 minutes
                     task_func=cleanup_sync_cooldowns_async
                 )
-                await self.bot._sync_cooldown_cleanup_task.start()
+                setattr(self.bot, '_sync_cooldown_cleanup_task', cleanup_task)
+                await cleanup_task.start()
                 logger.info("  ✅ Sync cooldowns cleanup task started")
         except Exception as e:
             logger.warning(f"  ⚠️ Failed to start sync cooldowns cleanup task: {e}")
@@ -273,34 +284,56 @@ class StartupManager:
         """
         Light resync phase for reconnects.
         
-        Only syncs guild-only commands if intents are missing.
+        After a disconnect/reconnect, commands may not be available until synced again.
+        This phase ensures commands are synced so they work immediately after reconnect.
         """
-        logger.info("🔄 Reconnect phase: Light resync...")
+        logger.info("🔄 Reconnect phase: Resyncing commands...")
         logger.info("  😄 haha bot dropped the call, morgen lachen we er weer mee")
         
         from utils.command_sync import safe_sync, detect_guild_only_commands
         
-        # Only sync guild-only commands if we have them
+        # After a disconnect, commands may not be available until synced
+        # Sync global commands first (if needed and not on cooldown)
+        logger.info("  🔄 Checking if global commands need resync...")
+        global_result = await safe_sync(bot, guild=None, force=False)
+        if global_result.success:
+            logger.info(f"  ✅ Global commands resynced: {global_result.command_count} commands")
+        elif global_result.cooldown_remaining:
+            logger.debug(f"  ⏸️ Global sync on cooldown (wait {global_result.cooldown_remaining:.0f}s)")
+        else:
+            logger.warning(f"  ⚠️ Global sync failed: {global_result.error}")
+        
+        # Sync guild-only commands for all guilds (if we have them)
         has_guild_only = detect_guild_only_commands(bot)
         if has_guild_only:
-            # Check if we're missing intents (guilds not fully loaded)
-            missing_intents = []
-            for guild in bot.guilds:
-                # If guild is not fully available, we might need to resync
-                if not guild.chunked:
-                    missing_intents.append(guild)
+            logger.info(f"  🔄 Resyncing guild-only commands for {len(bot.guilds)} guilds...")
+            sync_tasks = [safe_sync(bot, guild=guild, force=False) for guild in bot.guilds]
+            results = await asyncio.gather(*sync_tasks, return_exceptions=True)
             
-            if missing_intents:
-                logger.info(f"  🔄 Resyncing guild-only commands for {len(missing_intents)} guilds with missing intents...")
-                sync_tasks = [safe_sync(bot, guild=guild, force=False) for guild in missing_intents]
-                results = await asyncio.gather(*sync_tasks, return_exceptions=True)
-                
-                synced_count = sum(1 for r in results if not isinstance(r, Exception) and r.success)
-                logger.info(f"  ✅ Reconnect sync completed: {synced_count}/{len(missing_intents)} guilds synced")
-            else:
-                logger.debug("  ℹ️ All guilds have intents, no resync needed")
+            synced_count = 0
+            skipped_count = 0
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.warning(f"  ⚠️ Sync error for {bot.guilds[i].name}: {result}")
+                    skipped_count += 1
+                elif isinstance(result, SyncResult):
+                    # Type narrowing: result is SyncResult here
+                    if result.success:
+                        synced_count += 1
+                    else:
+                        skipped_count += 1
+                        if result.cooldown_remaining:
+                            logger.debug(f"  ⏸️ Skipped sync for {bot.guilds[i].name} (cooldown)")
+                else:
+                    # Unexpected type
+                    logger.warning(f"  ⚠️ Unexpected result type for {bot.guilds[i].name}: {type(result)}")
+                    skipped_count += 1
+            
+            logger.info(f"  ✅ Guild syncs completed: {synced_count} synced, {skipped_count} skipped")
         else:
-            logger.debug("  ℹ️ No guild-only commands, skipping reconnect sync")
+            logger.debug("  ℹ️ No guild-only commands detected")
+        
+        logger.info("✅ Reconnect phase complete: Commands should be available now")
 
 
 class ShutdownManager:
@@ -359,8 +392,9 @@ class ShutdownManager:
         
         # Stop sync cooldowns cleanup task
         try:
-            if hasattr(self.bot, '_sync_cooldown_cleanup_task'):
-                await self.bot._sync_cooldown_cleanup_task.stop()
+            cleanup_task = getattr(self.bot, '_sync_cooldown_cleanup_task', None)
+            if cleanup_task:
+                await cleanup_task.stop()
                 logger.info("  ✅ Sync cooldowns cleanup task stopped")
         except Exception as e:
             logger.debug(f"  ⚠️ Error stopping sync cooldowns cleanup: {e}")

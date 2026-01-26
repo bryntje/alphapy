@@ -434,10 +434,13 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
 
 @bot.event
 async def on_disconnect():
-    """Handle bot disconnection - run shutdown sequence."""
-    from utils.lifecycle import ShutdownManager
-    shutdown_manager = ShutdownManager(bot)
-    await shutdown_manager.shutdown()
+    """Handle bot disconnection - log only, don't shutdown.
+    
+    Note: This event fires on every disconnect, including temporary reconnects.
+    Discord.py will automatically reconnect, and on_ready() will be called again.
+    Only perform shutdown on actual bot.stop() or process termination.
+    """
+    logger.info("⚠️ Bot disconnected from Discord (will attempt to reconnect automatically)")
 
 
 @bot.event
@@ -476,6 +479,18 @@ bot.setup_hook = setup_hook
 # API server DRAIT WEL MEE voor health checks en monitoring data naar Mind
 Thread(target=start_api, daemon=True).start()
 
+
+# Override bot.close() to run graceful shutdown
+_original_close = bot.close
+async def close_with_shutdown():
+    """Close bot with graceful shutdown sequence."""
+    logger.info("🛑 Bot.close() called, running graceful shutdown...")
+    from utils.lifecycle import ShutdownManager
+    shutdown_manager = ShutdownManager(bot)
+    await shutdown_manager.shutdown()
+    await _original_close()
+
+bot.close = close_with_shutdown
 
 # Start bot
 token: Optional[str] = getattr(config, "BOT_TOKEN", None)
