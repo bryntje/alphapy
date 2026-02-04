@@ -116,6 +116,27 @@ class EmbedReminderWatcher(commands.Cog):
                 logger.info(f"⏭️ Message {message.id} already has a reminder (ID: {existing}) - skipping to prevent duplicate processing")
                 await self._log_message_processed(message, "skipped", f"Already processed (reminder ID: {existing})", message.guild.id)
                 return
+            
+            # Additional check: if this is a bot message, check if a similar reminder already exists
+            # This prevents loops when bot_messages is enabled and the bot sees its own reminder embeds
+            if is_bot_message and message.embeds:
+                embed = message.embeds[0]
+                # Check if this embed is already a reminder (has auto-reminder footer or similar title pattern)
+                if embed.footer and "auto-reminder" in (embed.footer.text or "").lower():
+                    logger.info(f"⏭️ Bot message {message.id} is already a reminder embed - skipping to prevent loop")
+                    await self._log_message_processed(message, "skipped", "Bot reminder embed detected", message.guild.id)
+                    return
+                # Check if a reminder with similar title already exists (within last 5 minutes)
+                if embed.title:
+                    similar = await self._check_similar_reminder_exists(
+                        message.guild.id, 
+                        embed.title, 
+                        message.channel.id
+                    )
+                    if similar:
+                        logger.info(f"⏭️ Similar reminder already exists for bot message {message.id} - skipping to prevent duplicate")
+                        await self._log_message_processed(message, "skipped", f"Similar reminder exists (ID: {similar})", message.guild.id)
+                        return
         
         # Check for embeds first
         message_type = "embed"
@@ -767,6 +788,61 @@ class EmbedReminderWatcher(commands.Cog):
             return None
         except Exception as e:
             logger.warning(f"⚠️ Error checking existing reminder: {e}")
+            return None
+    
+    async def _check_similar_reminder_exists(self, guild_id: int, title: str, channel_id: int, minutes_threshold: int = 5) -> Optional[int]:
+        """Check if a reminder with similar title already exists in the same channel within the last N minutes.
+        
+        This helps prevent duplicate reminders when bot_messages is enabled and the bot sees its own reminder embeds.
+        """
+        if not is_pool_healthy(self.db):
+            return None
+        try:
+            # Extract key words from title (remove emojis, "Reminder:", etc.)
+            title_clean = re.sub(r'[^\w\s]', ' ', title.lower())
+            title_clean = re.sub(r'\b(reminder|⏰|auto)\b', '', title_clean, flags=re.IGNORECASE)
+            title_words = [w for w in title_clean.split() if len(w) >= 3]  # Words with 3+ chars
+            
+            if not title_words:
+                return None
+            
+            # Check for reminders in the same channel created in the last N minutes
+            async with acquire_safe(self.db) as conn:
+                # Get recent reminders from the same channel
+                threshold_time = datetime.now(BRUSSELS_TZ) - timedelta(minutes=minutes_threshold)
+                rows = await conn.fetch(
+                    """
+                    SELECT id, name, created_at 
+                    FROM reminders 
+                    WHERE guild_id = $1 
+                      AND channel_id = $2 
+                      AND created_at >= $3
+                    ORDER BY created_at DESC
+                    LIMIT 10
+                    """,
+                    guild_id, channel_id, threshold_time
+                )
+                
+                for row in rows:
+                    reminder_name = row["name"] or ""
+                    # Extract key words from reminder name
+                    name_clean = re.sub(r'[^\w\s]', ' ', reminder_name.lower())
+                    name_clean = re.sub(r'\b(reminder|⏰|auto|🤖)\b', '', name_clean, flags=re.IGNORECASE)
+                    name_words = [w for w in name_clean.split() if len(w) >= 3]
+                    
+                    # Check overlap: if >60% of words match, consider it similar
+                    if name_words and title_words:
+                        overlap = len(set(title_words) & set(name_words))
+                        min_words = min(len(title_words), len(name_words))
+                        if min_words > 0 and overlap / min_words >= 0.6:
+                            logger.debug(f"🔍 Found similar reminder: '{reminder_name}' matches '{title}' ({overlap}/{min_words} words)")
+                            return row["id"]
+                
+                return None
+        except RuntimeError:
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ Error checking similar reminder: {e}")
             return None
 
     async def _parse_with_gpt_fallback(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:

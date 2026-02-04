@@ -1007,6 +1007,9 @@ class ReminderCog(commands.Cog):
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
                     link = f"https://discord.com/channels/{row['guild_id']}/{row['origin_channel_id']}/{row['origin_message_id']}"
                     embed.add_field(name="🔗 Original", value=f"[Click here]({link})", inline=False)
+                
+                # Markeer deze embed als auto-reminder om loops te voorkomen
+                embed.set_footer(text="auto-reminder")
 
                 text_channel = cast(discord.TextChannel, channel)
                 mention_enabled = self._allow_everyone_mentions(row["guild_id"])

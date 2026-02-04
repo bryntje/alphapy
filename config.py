@@ -13,13 +13,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Legacy - kept for backwards comp
 GROK_API_KEY = os.getenv("GROK_API_KEY")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "grok").strip().lower()  # "grok" or "openai"
 
-# # GUILD_ID = int(os.getenv("GUILD_ID", "1160511689263947796"))  # Deprecated - bot automatically detects guilds
 ROLE_ID = int(os.getenv("ROLE_ID", "0"))  # Legacy - no longer used in multi-guild setup
-# LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "1338611872299090092"))  # Deprecated - use /config system set_log_channel per guild
-# ONBOARDING_CHANNEL_ID = int(os.getenv("ONBOARDING_CHANNEL_ID", "1336039005917155510"))  # Deprecated - use /config system set_onboarding_channel per guild
-# RULES_CHANNEL_ID = int(os.getenv("RULES_CHANNEL_ID", "1336039005917155510"))  # Deprecated - use /config system set_rules_channel per guild
-# GDPR_CHANNEL_ID = int(os.getenv("GDPR_CHANNEL_ID", "1338623097175146638"))  # Deprecated - use /config gdpr set_channel per guild
-# INVITE_ANNOUNCEMENT_CHANNEL_ID = int(os.getenv("INVITE_ANNOUNCEMENT_CHANNEL_ID", "1336041753966416026"))  # Deprecated - use /config invites set_announcement_channel per guild
+
 # Database & API security
 DATABASE_URL = os.getenv("DATABASE_URL")
 API_KEY = os.getenv("API_KEY")
@@ -57,11 +52,6 @@ TELEMETRY_INGEST_INTERVAL = int(os.getenv("TELEMETRY_INGEST_INTERVAL", "45"))  #
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 DISCORD_OAUTH_REDIRECT_URI = os.getenv("DISCORD_OAUTH_REDIRECT_URI", f"{ALPHAPY_BASE_URL}/api/auth/discord/callback")
-
-# ENABLE_EVERYONE_MENTIONS = os.getenv("ENABLE_EVERYONE_MENTIONS", "false").strip().lower() == "true"  # Deprecated - gebruik /config reminders allow_everyone_mentions per guild
-# WATCHER_LOG_CHANNEL = int(os.getenv("WATCHER_LOG_CHANNEL", "1336042713459593337"))  # Deprecated - gebruik /config system set_log_channel per guild
-# ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv("ANNOUNCEMENTS_CHANNEL_ID", "1336038676727206030"))  # Deprecated - gebruik /config embedwatcher announcements_channel_id per guild
-
 
 
 # Main Guild (Primary server where bot operates)
