@@ -13,13 +13,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Legacy - kept for backwards comp
 GROK_API_KEY = os.getenv("GROK_API_KEY")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "grok").strip().lower()  # "grok" or "openai"
 
-# # GUILD_ID = int(os.getenv("GUILD_ID", "1160511689263947796"))  # Deprecated - bot automatically detects guilds
 ROLE_ID = int(os.getenv("ROLE_ID", "0"))  # Legacy - no longer used in multi-guild setup
-# LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "1338611872299090092"))  # Deprecated - use /config system set_log_channel per guild
-# ONBOARDING_CHANNEL_ID = int(os.getenv("ONBOARDING_CHANNEL_ID", "1336039005917155510"))  # Deprecated - use /config system set_onboarding_channel per guild
-# RULES_CHANNEL_ID = int(os.getenv("RULES_CHANNEL_ID", "1336039005917155510"))  # Deprecated - use /config system set_rules_channel per guild
-# GDPR_CHANNEL_ID = int(os.getenv("GDPR_CHANNEL_ID", "1338623097175146638"))  # Deprecated - use /config gdpr set_channel per guild
-# INVITE_ANNOUNCEMENT_CHANNEL_ID = int(os.getenv("INVITE_ANNOUNCEMENT_CHANNEL_ID", "1336041753966416026"))  # Deprecated - use /config invites set_announcement_channel per guild
+
 # Database & API security
 DATABASE_URL = os.getenv("DATABASE_URL")
 API_KEY = os.getenv("API_KEY")
