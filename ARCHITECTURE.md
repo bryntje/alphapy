@@ -49,9 +49,9 @@
   - Admin-only access for safety
 
 - `cogs/ticketbot.py`
-  - Slash commands: `/ticket`, `/ticket_list`, `/ticket_claim`, `/ticket_close`, `/ticket_panel_post`
-  - Channel UX: per-ticket private channel under `TICKET_CATEGORY_ID`
-  - Interactive UI in channel: buttons to Claim/Close/Delete (staff only)
+  - Slash commands: `/ticket`, `/ticket_panel_post`, `/ticket_stats`, `/ticket_status`
+  - Channel UX: per-ticket private channel under configured category
+  - Interactive UI in channel: Claim/Close/Delete buttons (staff only; no slash commands for claim/close)
   - Summary: GPT summary posted on Close; persisted for clustering
   - FAQ: repeated-topic detection; proposal embed with “Add to FAQ” button (admin)
   - Extra status workflows (Phase 2): Wait for user, Escalate, `/ticket_status`

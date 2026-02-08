@@ -137,13 +137,15 @@ pytest tests/test_embed_watcher_parsing.py -v
 ```plaintext
 /growthcheckin     → GPT-coach for goals, obstacles and emotions
 /learn_topic       → Hybrid topic search using local + Drive content
+/leaderhelp        → AI-powered leadership guidance
 /create_caption    → Generate 1-liner captions based on tone & topic
 /ticket            → Create a support ticket (private channel per ticket)
-/ticket_list       → View open tickets (admins)
-/ticket_claim      → Claim a ticket (admins)
-/ticket_close      → Close a ticket (admins)
+/ticket_stats      → Show ticket statistics (admins)
+/ticket_status     → Update ticket status (admins)
 /ticket_panel_post → Post a persistent “Create ticket” panel (admins)
 ```
+
+> Claim and Close tickets via **buttons** in the ticket channel, not slash commands.
 
 > The AI layer is modular and optional — for teams that want to deepen reflection, personalize learning, or co-create content using GPT.
 
@@ -190,7 +192,7 @@ pytest tests/test_embed_watcher_parsing.py -v
 ### Admin permissions
 - “staff” checks rely on `is_owner_or_admin_interaction`:
   - Bot owner or IDs in `OWNER_IDS`, or users with `ADMIN_ROLE_ID` (or the configured `TICKET_ACCESS_ROLE_ID`).
-- Staff-only actions: `/ticket_list`, `/ticket_claim`, `/ticket_close`, `/ticket_panel_post`, Claim/Close/Delete buttons.
+- Staff-only actions: `/ticket_panel_post`, `/ticket_stats`, `/ticket_status`, plus Claim/Close/Delete buttons in the ticket channel.
 
 ### Env
 - `TICKET_CATEGORY_ID`: category under which ticket channels are created
