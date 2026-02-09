@@ -1,6 +1,5 @@
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
-from pydrive2.settings import LoadSettingsFile
 from oauth2client.service_account import ServiceAccountCredentials
 import io
 import os
@@ -53,7 +52,7 @@ def _ensure_drive():
     try:
         creds = ServiceAccountCredentials.from_json_keyfile_dict(
             json.loads(credentials_json),
-            SCOPES
+            SCOPES,  # type: ignore[arg-type]  # oauth2client accepts list[str] at runtime
         )
         gauth.credentials = creds
         drive = GoogleDrive(gauth)
@@ -130,8 +129,8 @@ def extract_text_from_pdf(file_buffer: io.BytesIO) -> str:
     try:
         with fitz.open(stream=file_buffer, filetype="pdf") as doc:
             for page in doc:
-                text += page.get_text()
+                text += page.get_text()  # type: ignore[attr-defined]  # PyMuPDF Page.get_text exists at runtime
         return text.strip()
     except Exception as e:
-        logger.error(f"Error extracting PDF text: {e}")
-        return f"[Error extracting PDF text: {e}]"
+        logger.error("Error extracting PDF text: %s", e, exc_info=True)
+        return "[Error extracting PDF text]"

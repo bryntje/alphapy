@@ -137,7 +137,12 @@ def get_secret(secret_name: str, project_id: Optional[str] = None) -> Optional[s
             )
     
     # Fallback to environment variable
-    env_value = os.getenv(secret_name.upper().replace("-", "_"))
+    # Default Google credentials secret uses GOOGLE_CREDENTIALS_JSON, not ALPHAPY_GOOGLE_CREDENTIALS
+    if secret_name == config.GOOGLE_SECRET_NAME:
+        env_var_name = "GOOGLE_CREDENTIALS_JSON"
+    else:
+        env_var_name = secret_name.upper().replace("-", "_")
+    env_value = os.getenv(env_var_name)
     if env_value:
         logger.info(f"Using environment variable for secret '{secret_name}'")
         # Cache environment variable value too (shorter TTL might be better, but using same for consistency)
