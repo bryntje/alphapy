@@ -87,13 +87,42 @@ class LearnTopic(commands.Cog):
             
             prompt_messages = [{"role": "user", "content": prompt_content}]
 
-            reply = await ask_gpt(
-                prompt_messages,
-                user_id=interaction.user.id,
-                guild_id=guild_id
-            )
-            # ask_gpt() already logs success internally
-            await interaction.followup.send(reply, ephemeral=True)
+            # Keep-alive: edit deferred message every 10s while GPT runs to avoid Discord interaction timeout
+            keepalive_interval = 10.0
+            keepalive_task: asyncio.Task | None = None
+
+            async def _keepalive_loop() -> None:
+                try:
+                    while True:
+                        await asyncio.sleep(keepalive_interval)
+                        try:
+                            await interaction.edit_original_response(
+                                content="⏳ Still generating your answer…"
+                            )
+                        except Exception:
+                            return
+                except asyncio.CancelledError:
+                    pass
+
+            keepalive_task = asyncio.create_task(_keepalive_loop())
+            try:
+                reply = await ask_gpt(
+                    prompt_messages,
+                    user_id=interaction.user.id,
+                    guild_id=guild_id,
+                )
+            finally:
+                keepalive_task.cancel()
+                try:
+                    await keepalive_task
+                except asyncio.CancelledError:
+                    pass
+
+            # ask_gpt() already logs success; replace thinking/keepalive with final reply
+            try:
+                await interaction.edit_original_response(content=reply)
+            except Exception:
+                await interaction.followup.send(reply, ephemeral=True)
 
             async def _store_learn_insight() -> None:
                 try:

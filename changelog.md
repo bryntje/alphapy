@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 - **README restructure:** Shorter README with clear sections; Operational Playbook moved to `docs/OPERATIONAL_PLAYBOOK.md` with checklist and verification steps.
 
 ### Fixed
-- No changes yet.
+- **`/learn_topic`:** Keep-alive during GPT call (edit every 10s) and reply via `edit_original_response` to avoid Discord interaction timeout when GPT latency is high (~20s+).
 
 ---
 
