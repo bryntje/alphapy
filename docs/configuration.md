@@ -176,6 +176,31 @@ Example:
 - Set appropriate channels first (log channel for imports)
 - Owner permissions required for import commands
 
+## Environment Variables
+
+The following environment variables are required/optional for bot operation:
+
+### Required
+- `BOT_TOKEN`: Discord bot token
+- `DATABASE_URL`: PostgreSQL connection string
+
+### Optional - Google Cloud (for Drive integration)
+- `GOOGLE_PROJECT_ID`: GCP project ID for Secret Manager (production)
+- `GOOGLE_SECRET_NAME`: Secret name in Secret Manager (default: "alphapy-google-credentials")
+- `GOOGLE_CREDENTIALS_JSON`: Service account credentials JSON string (local dev fallback)
+
+**Note**: In production, use Secret Manager (`GOOGLE_PROJECT_ID`). For local development, `GOOGLE_CREDENTIALS_JSON` can be used as fallback. See [docs/SECURITY.md](SECURITY.md) for security best practices.
+
+### Optional - API & Authentication
+- `API_KEY`: Internal API key for API endpoints
+- `SUPABASE_URL`: Supabase project URL
+- `SUPABASE_ANON_KEY`: Supabase anonymous key
+- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key
+
+### Optional - AI/LLM
+- `GROK_API_KEY`: Grok API key (or `OPENAI_API_KEY` for OpenAI)
+- `LLM_PROVIDER`: "grok" or "openai" (default: "grok")
+
 ## Migration Notes
 
 If upgrading from single-guild to multi-guild:

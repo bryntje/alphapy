@@ -4,14 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- (No changes yet)
+
 ### Fixed
-- **Documentation corrections:**
-  - Removed non-existent slash commands `/ticket_list`, `/ticket_claim`, `/ticket_close` from docs (Claim/Close are buttons in ticket channel)
-  - Corrected API reminders endpoint: `GET /api/reminders/{user_id}`, `PUT /api/reminders`, `DELETE /api/reminders/{reminder_id}/{created_by}`
-  - Updated version references to 2.0.0 (Lifecycle Manager) in docs
-  - Added missing `/commands` and `/leaderhelp` to docs/commands.md
-  - Added `/reminder_edit` to AGENTS.md ReminderManager
-  - Updated ARCHITECTURE.md and README.md ticket command listings
+- (No changes yet)
+
+---
+
+## [2.1.0] - 2026-02-09
+
+### Added
+- **Google Cloud Secret Manager Integration:**
+  - New utility `utils/gcp_secrets.py` for secure secret management with caching and fallback
+  - Google Drive credentials now load from Secret Manager in production (fallback to env var for local dev)
+  - In-memory caching (1 hour TTL) to minimize Secret Manager API calls
+  - New config variables: `GOOGLE_PROJECT_ID`, `GOOGLE_SECRET_NAME` (optional)
+  - Security documentation: `docs/SECURITY.md` with Google Cloud best practices checklist
+  - Tests: `tests/test_drive_sync.py` for Secret Manager integration and fallback behavior
+- **Security Improvements:**
+  - Migrated Google credentials from environment variables to Secret Manager (production)
+  - Zero-code storage: credentials never committed to source code
+  - Proper error handling and logging for Secret Manager operations
+  - Documentation for infrastructure-level security configs (API restrictions, IAM, rotation policies)
+
+### Fixed
+- Updated version references to 2.1.0 in documentation (`docs/api.md`, `docs/commands.md`).
 
 ---
 
@@ -96,6 +114,15 @@ All notable changes to this project will be documented in this file.
   - Manual sync command now uses centralized `safe_sync()` with proper error handling
 - Rate limiting now protects against abuse and cost explosions for GPT-powered commands
 - API endpoints now have IP-based rate limiting to prevent anonymous abuse
+
+### Fixed
+- **Documentation corrections:**
+  - Removed non-existent slash commands `/ticket_list`, `/ticket_claim`, `/ticket_close` from docs (Claim/Close are buttons in ticket channel)
+  - Corrected API reminders endpoint: `GET /api/reminders/{user_id}`, `PUT /api/reminders`, `DELETE /api/reminders/{reminder_id}/{created_by}`
+  - Updated version references to 2.0.0 (Lifecycle Manager) in docs
+  - Added missing `/commands` and `/leaderhelp` to docs/commands.md
+  - Added `/reminder_edit` to AGENTS.md ReminderManager
+  - Updated ARCHITECTURE.md and README.md ticket command listings
 
 ---
 

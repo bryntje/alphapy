@@ -96,6 +96,8 @@ cp .env.example .env
 # - DATABASE_URL=postgresql://user:pass@host:port/database
 # - GROK_API_KEY=your_grok_key (or OPENAI_API_KEY)
 # - (Optional) API_KEY=your_api_key
+# - (Optional) GOOGLE_PROJECT_ID=your-gcp-project-id (for Secret Manager)
+# - (Optional) GOOGLE_CREDENTIALS_JSON={"type":"service_account",...} (local dev fallback)
 ```
 
 4. **Run database migrations (if needed):**
@@ -286,9 +288,18 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_key
 
+# Google Cloud (for Drive integration)
+# Production: Use Secret Manager (recommended)
+GOOGLE_PROJECT_ID=your-gcp-project-id
+GOOGLE_SECRET_NAME=alphapy-google-credentials  # Optional, defaults to "alphapy-google-credentials"
+# Local development: Fallback to environment variable
+GOOGLE_CREDENTIALS_JSON={"type":"service_account",...}  # JSON string of service account credentials
+
 # Optional API Security
 API_KEY=optional_internal_key
 ```
+
+**Note**: In production, credentials are stored in Google Cloud Secret Manager. The `GOOGLE_CREDENTIALS_JSON` environment variable is only used as a fallback for local development. See [docs/SECURITY.md](docs/SECURITY.md) for security best practices.
 
 
 ## 🏗️ Architecture

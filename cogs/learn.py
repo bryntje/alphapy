@@ -53,9 +53,6 @@ class LearnTopic(commands.Cog):
             )
             log_gpt_error("filtered_prompt", user_id=interaction.user.id, guild_id=guild_id)
             return
-
-
-        guild_id = interaction.guild.id if interaction.guild else None
         
         # Step 1: Load topic context (may fail before ask_gpt is called)
         try:
@@ -70,12 +67,25 @@ class LearnTopic(commands.Cog):
         # Step 2: Prepare prompt and call ask_gpt (ask_gpt logs its own errors)
         try:
             from utils.sanitizer import safe_prompt
-            # Als het geen bekend topic is, beschouw het als vraag
-            if not context:
+            from gpt.helpers import LEARN_TOPIC_PROMPT_TEMPLATE
+            
+            # Build prompt: use context as background info, topic as the question
+            if context:
+                # Context found: use it as background information, topic as the question
+                sanitized_context = safe_prompt(context)
                 sanitized_topic = safe_prompt(topic)
+                # Note: .format() only interprets braces in the template, not in replacement values.
+                # Values are inserted verbatim, so curly braces in context/topic are safe.
+                prompt_content = LEARN_TOPIC_PROMPT_TEMPLATE.format(
+                    context=sanitized_context,
+                    topic=sanitized_topic
+                )
             else:
-                sanitized_topic = safe_prompt(context)
-            prompt_messages = [{"role": "user", "content": sanitized_topic}]
+                # No context: treat topic as a direct question
+                sanitized_topic = safe_prompt(topic)
+                prompt_content = sanitized_topic
+            
+            prompt_messages = [{"role": "user", "content": prompt_content}]
 
             reply = await ask_gpt(
                 prompt_messages,
