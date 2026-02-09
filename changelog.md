@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+---
+
+## [2.1.0] - 2026-02-09
+
+### Added
 - **Google Cloud Secret Manager Integration:**
   - New utility `utils/gcp_secrets.py` for secure secret management with caching and fallback
   - Google Drive credentials now load from Secret Manager in production (fallback to env var for local dev)
