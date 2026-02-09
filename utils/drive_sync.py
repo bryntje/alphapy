@@ -71,8 +71,9 @@ def _sanitize_drive_query_keyword(keyword: str) -> str:
     """
     Sanitizes a keyword for use in Google Drive API query strings.
     
-    Escapes single quotes to prevent query injection and manipulation.
-    Replaces single quotes with escaped single quotes or removes them.
+    Escapes backslashes and quotes to prevent query injection and manipulation.
+    Backslashes must be escaped first (doubled) before escaping quotes, otherwise
+    a trailing backslash would escape the closing quote in the query string.
     
     Args:
         keyword: User-provided keyword that may contain special characters
@@ -82,9 +83,14 @@ def _sanitize_drive_query_keyword(keyword: str) -> str:
     """
     if not keyword:
         return ""
-    # Escape single quotes by replacing with escaped version
-    # Google Drive API uses single quotes for string literals
-    return keyword.replace("'", "\\'").replace('"', '\\"')
+    # Escape backslashes first (double them), then escape quotes
+    # This prevents a trailing backslash from escaping the closing quote
+    # Example: "test\" -> "test\\" -> query: 'test\\' (safe)
+    # Without backslash escaping: "test\" -> query: 'test\' (breaks query)
+    sanitized = keyword.replace("\\", "\\\\")  # Escape backslashes first
+    sanitized = sanitized.replace("'", "\\'")   # Then escape single quotes
+    sanitized = sanitized.replace('"', '\\"')   # Then escape double quotes
+    return sanitized
 
 
 def fetch_pdf_text_by_name(filename_keyword: str) -> str:

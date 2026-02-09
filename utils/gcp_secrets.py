@@ -60,8 +60,9 @@ def _fetch_from_secret_manager(secret_name: str, project_id: str) -> Optional[st
     Returns:
         Secret value as string, or None if not found or error occurs
         
-    Raises:
-        SecretManagerError: If Secret Manager client fails to initialize
+    Note:
+        All exceptions are caught and logged, returning None instead of raising.
+        This allows graceful fallback to environment variables.
     """
     try:
         from google.cloud import secretmanager  # pyright: ignore[reportMissingImports]
@@ -162,4 +163,4 @@ def clear_cache(secret_name: Optional[str] = None) -> None:
         logger.debug("Cleared all secret caches")
 
 
-__all__ = ["get_secret", "clear_cache", "SecretManagerError", "CACHE_TTL"]
+__all__ = ["get_secret", "clear_cache", "CACHE_TTL"]
