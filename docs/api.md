@@ -492,6 +492,6 @@ Error response format:
 
 ## Versioning
 
-Current API version: **2.0.0** (Lifecycle Manager)
+Current API version: **2.0.1** (Lifecycle Manager)
 
 Version information is included in health check responses and can be queried via `/api/health`.

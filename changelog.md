@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+---
+
+## [2.0.1] - 2026-02-09
+
 ### Fixed
 - **Documentation corrections:**
   - Removed non-existent slash commands `/ticket_list`, `/ticket_claim`, `/ticket_close` from docs (Claim/Close are buttons in ticket channel)
