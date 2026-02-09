@@ -36,10 +36,15 @@ def _ensure_drive():
     
     if config.GOOGLE_PROJECT_ID:
         logger.info(f"🔐 Attempting to load Google credentials from Secret Manager (secret: {secret_name})")
-        credentials_json = get_secret(secret_name, config.GOOGLE_PROJECT_ID)
-        if credentials_json:
+        result = get_secret(secret_name, config.GOOGLE_PROJECT_ID, return_source=True)
+        credentials_json, source = result  # type: ignore[misc]
+        if credentials_json and source == "secret_manager":
             logger.info("✅ Loaded Google credentials from Secret Manager")
-    
+        elif credentials_json and source == "env":
+            logger.info("🔐 Using Google credentials from environment variable (Secret Manager unavailable)")
+    else:
+        credentials_json, source = None, None
+
     # Fallback to environment variable if Secret Manager didn't provide credentials
     if not credentials_json:
         credentials_json = config.GOOGLE_CREDENTIALS_JSON

@@ -8,7 +8,9 @@ caching and graceful fallback to environment variables for local development.
 import logging
 import os
 import time
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Union, Literal
+
+SecretSource = Literal["secret_manager", "env", "cache"]
 
 import config
 
@@ -92,7 +94,11 @@ def _fetch_from_secret_manager(secret_name: str, project_id: str) -> Optional[st
         return None
 
 
-def get_secret(secret_name: str, project_id: Optional[str] = None) -> Optional[str]:
+def get_secret(
+    secret_name: str,
+    project_id: Optional[str] = None,
+    return_source: bool = False,
+) -> Union[Optional[str], Tuple[Optional[str], Optional[SecretSource]]]:
     """
     Get secret value from Secret Manager or environment variable fallback.
     
@@ -104,20 +110,18 @@ def get_secret(secret_name: str, project_id: Optional[str] = None) -> Optional[s
     Args:
         secret_name: Name of the secret in Secret Manager or environment variable
         project_id: Optional GCP project ID. If not provided, uses GOOGLE_PROJECT_ID from config
+        return_source: If True, return (value, source) with source in ("secret_manager", "env", "cache")
         
     Returns:
-        Secret value as string, or None if not found
-        
-    Example:
-        >>> credentials = get_secret("alphapy-google-credentials", "my-project")
-        >>> # Or use default from config:
-        >>> credentials = get_secret("alphapy-google-credentials")
+        Secret value as string, or None if not found. If return_source is True, returns (value, source).
     """
     # Check cache first
     cached_value = _get_from_cache(secret_name)
     if cached_value is not None:
+        if return_source:
+            return (cached_value, "cache")
         return cached_value
-    
+
     # Try Secret Manager if project_id is available
     effective_project_id = project_id or config.GOOGLE_PROJECT_ID
     if effective_project_id:
@@ -125,6 +129,8 @@ def get_secret(secret_name: str, project_id: Optional[str] = None) -> Optional[s
             secret_value = _fetch_from_secret_manager(secret_name, effective_project_id)
             if secret_value is not None:
                 _store_in_cache(secret_name, secret_value)
+                if return_source:
+                    return (secret_value, "secret_manager")
                 return secret_value
             logger.debug(
                 f"Secret Manager unavailable or secret '{secret_name}' not found, "
@@ -135,7 +141,7 @@ def get_secret(secret_name: str, project_id: Optional[str] = None) -> Optional[s
                 f"Secret Manager error for '{secret_name}': {e}, "
                 "falling back to environment variable"
             )
-    
+
     # Fallback to environment variable
     # Default Google credentials secret uses GOOGLE_CREDENTIALS_JSON, not ALPHAPY_GOOGLE_CREDENTIALS
     if secret_name == config.GOOGLE_SECRET_NAME:
@@ -145,11 +151,14 @@ def get_secret(secret_name: str, project_id: Optional[str] = None) -> Optional[s
     env_value = os.getenv(env_var_name)
     if env_value:
         logger.info(f"Using environment variable for secret '{secret_name}'")
-        # Cache environment variable value too (shorter TTL might be better, but using same for consistency)
         _store_in_cache(secret_name, env_value)
+        if return_source:
+            return (env_value, "env")
         return env_value
-    
+
     logger.warning(f"Secret '{secret_name}' not found in Secret Manager or environment variables")
+    if return_source:
+        return (None, None)
     return None
 
 

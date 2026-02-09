@@ -91,8 +91,8 @@ class TestSecretManagerIntegration:
             mock_config.GOOGLE_SECRET_NAME = "alphapy-google-credentials"
             mock_config.GOOGLE_CREDENTIALS_JSON = env_value
             
-            # Mock get_secret to return Secret Manager value
-            with patch('utils.drive_sync.get_secret', return_value=secret_manager_value) as mock_get_secret:
+            # Mock get_secret to return (value, source) when return_source=True
+            with patch('utils.drive_sync.get_secret', return_value=(secret_manager_value, "secret_manager")) as mock_get_secret:
                 with patch('utils.drive_sync.GoogleAuth') as mock_auth:
                     mock_gauth = MagicMock()
                     mock_auth.return_value = mock_gauth
@@ -108,10 +108,11 @@ class TestSecretManagerIntegration:
                             
                             result = _ensure_drive()
                             
-                            # Should have called get_secret with Secret Manager config
+                            # Should have called get_secret with Secret Manager config and return_source
                             mock_get_secret.assert_called_once_with(
                                 mock_config.GOOGLE_SECRET_NAME,
-                                mock_config.GOOGLE_PROJECT_ID
+                                mock_config.GOOGLE_PROJECT_ID,
+                                return_source=True,
                             )
                             # Should use Secret Manager value, not env value
                             mock_creds.from_json_keyfile_dict.assert_called_once()

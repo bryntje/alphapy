@@ -259,7 +259,8 @@ class StartupManager:
             # Only check if Google credentials are configured (either Secret Manager or env var)
             if config.GOOGLE_PROJECT_ID or config.GOOGLE_CREDENTIALS_JSON:
                 logger.info("🔍 Verifying Google Drive configuration...")
-                drive_client = _ensure_drive()
+                # Run in thread to avoid blocking event loop (get_secret may call gRPC synchronously)
+                drive_client = await asyncio.to_thread(_ensure_drive)
                 if drive_client:
                     logger.info("✅ Google Drive configuration verified and ready")
                 else:
