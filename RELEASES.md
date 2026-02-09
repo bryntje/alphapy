@@ -4,6 +4,16 @@ All notable releases of Alphapy will be documented in this file.
 
 ---
 
+## [2.1.0] - 2026-02-09 - "Lifecycle Manager"
+
+### Google Cloud Secret Manager & docs
+
+- **Secret Manager:** Google Drive credentials load from Secret Manager in production with env fallback for local dev (`utils/gcp_secrets.py`). Correct env var `GOOGLE_CREDENTIALS_JSON` for fallback; optional `return_source` for accurate logging.
+- **Drive/lifecycle:** Drive verification at startup runs in a thread to avoid blocking; Drive client init is thread-safe.
+- **Docs:** Security guide (`docs/SECURITY.md`), credentials setup (`docs/GOOGLE_CREDENTIALS_SETUP.md`), Railway Secret Manager (`docs/RAILWAY_SECRET_MANAGER_SETUP.md`). README restructured; Operational Playbook in `docs/OPERATIONAL_PLAYBOOK.md`.
+
+---
+
 ## [2.0.0] - 2026-01-22 - "Lifecycle Manager"
 
 ### 🎉 Major Feature: Centralized Lifecycle Management & Phased Startup/Shutdown
