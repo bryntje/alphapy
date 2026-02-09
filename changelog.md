@@ -29,13 +29,7 @@ All notable changes to this project will be documented in this file.
   - Documentation for infrastructure-level security configs (API restrictions, IAM, rotation policies)
 
 ### Fixed
-- **Documentation corrections:**
-  - Removed non-existent slash commands `/ticket_list`, `/ticket_claim`, `/ticket_close` from docs (Claim/Close are buttons in ticket channel)
-  - Corrected API reminders endpoint: `GET /api/reminders/{user_id}`, `PUT /api/reminders`, `DELETE /api/reminders/{reminder_id}/{created_by}`
-  - Updated version references to 2.0.0 (Lifecycle Manager) in docs
-  - Added missing `/commands` and `/leaderhelp` to docs/commands.md
-  - Added `/reminder_edit` to AGENTS.md ReminderManager
-  - Updated ARCHITECTURE.md and README.md ticket command listings
+- Updated version references to 2.1.0 in documentation (`docs/api.md`, `docs/commands.md`).
 
 ---
 
@@ -120,6 +114,15 @@ All notable changes to this project will be documented in this file.
   - Manual sync command now uses centralized `safe_sync()` with proper error handling
 - Rate limiting now protects against abuse and cost explosions for GPT-powered commands
 - API endpoints now have IP-based rate limiting to prevent anonymous abuse
+
+### Fixed
+- **Documentation corrections:**
+  - Removed non-existent slash commands `/ticket_list`, `/ticket_claim`, `/ticket_close` from docs (Claim/Close are buttons in ticket channel)
+  - Corrected API reminders endpoint: `GET /api/reminders/{user_id}`, `PUT /api/reminders`, `DELETE /api/reminders/{reminder_id}/{created_by}`
+  - Updated version references to 2.0.0 (Lifecycle Manager) in docs
+  - Added missing `/commands` and `/leaderhelp` to docs/commands.md
+  - Added `/reminder_edit` to AGENTS.md ReminderManager
+  - Updated ARCHITECTURE.md and README.md ticket command listings
 
 ---
 
