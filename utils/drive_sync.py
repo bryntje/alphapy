@@ -67,16 +67,41 @@ def _ensure_drive():
         return None
 
 
+def _sanitize_drive_query_keyword(keyword: str) -> str:
+    """
+    Sanitizes a keyword for use in Google Drive API query strings.
+    
+    Escapes single quotes to prevent query injection and manipulation.
+    Replaces single quotes with escaped single quotes or removes them.
+    
+    Args:
+        keyword: User-provided keyword that may contain special characters
+        
+    Returns:
+        Sanitized keyword safe for use in Drive API queries
+    """
+    if not keyword:
+        return ""
+    # Escape single quotes by replacing with escaped version
+    # Google Drive API uses single quotes for string literals
+    return keyword.replace("'", "\\'").replace('"', '\\"')
+
+
 def fetch_pdf_text_by_name(filename_keyword: str) -> str:
     """
     Zoek een PDF in Google Drive op basis van een zoekwoord in de bestandsnaam,
     download hem tijdelijk en haal de tekstinhoud eruit.
+    
+    Args:
+        filename_keyword: Search keyword (should be sanitized before calling)
     """
     gd = _ensure_drive()
     if gd is None:
         return "[Drive not configured: set GOOGLE_CREDENTIALS_JSON]"
 
-    query = f"title contains '{filename_keyword}' and mimeType = 'application/pdf' and trashed = false"
+    # Sanitize the keyword to prevent query injection
+    sanitized_keyword = _sanitize_drive_query_keyword(filename_keyword)
+    query = f"title contains '{sanitized_keyword}' and mimeType = 'application/pdf' and trashed = false"
     logger.info(f"Searching Google Drive for: {filename_keyword}")
     file_list = gd.ListFile({'q': query}).GetList()
 

@@ -38,6 +38,25 @@ Vraag van de gebruiker: {topic}
 Geef een duidelijke, uitgebreide uitleg gebaseerd op de context, maar voeg ook je eigen expertise toe over mindset, trading psychologie en praktische toepassingen."""
 
 
+def _escape_format_braces(text: str) -> str:
+    """
+    Escapes curly braces in text to prevent KeyError when using .format().
+    
+    Replaces { with {{ and } with }} so they are treated as literal braces
+    instead of format placeholders.
+    
+    Args:
+        text: Text that may contain curly braces
+        
+    Returns:
+        Text with curly braces escaped for safe use with .format()
+    """
+    if not text:
+        return ""
+    # Escape braces: { -> {{ and } -> }}
+    return text.replace("{", "{{").replace("}", "}}")
+
+
 
 # Bot instance will be set later
 bot_instance: Optional[commands.Bot] = None

@@ -74,9 +74,13 @@ class LearnTopic(commands.Cog):
                 # Context found: use it as background information, topic as the question
                 sanitized_context = safe_prompt(context)
                 sanitized_topic = safe_prompt(topic)
+                # Escape curly braces in sanitized values to prevent KeyError in .format()
+                from gpt.helpers import _escape_format_braces
+                escaped_context = _escape_format_braces(sanitized_context)
+                escaped_topic = _escape_format_braces(sanitized_topic)
                 prompt_content = LEARN_TOPIC_PROMPT_TEMPLATE.format(
-                    context=sanitized_context,
-                    topic=sanitized_topic
+                    context=escaped_context,
+                    topic=escaped_topic
                 )
             else:
                 # No context: treat topic as a direct question
