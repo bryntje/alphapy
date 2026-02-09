@@ -29,6 +29,14 @@ Always use the same language as the user.
 Your answer is clear, human, and touches softly where it can — sharp where it must.
 """
 
+LEARN_TOPIC_PROMPT_TEMPLATE = """Gebruik de volgende contextuele informatie om de vraag te beantwoorden:
+
+{context}
+
+Vraag van de gebruiker: {topic}
+
+Geef een duidelijke, uitgebreide uitleg gebaseerd op de context, maar voeg ook je eigen expertise toe over mindset, trading psychologie en praktische toepassingen."""
+
 
 
 # Bot instance will be set later

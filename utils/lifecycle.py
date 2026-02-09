@@ -186,6 +186,9 @@ class StartupManager:
         """Phase 5: Start background tasks."""
         logger.info("🔄 Phase 5: Background Tasks...")
         
+        # Optional: Verify Google Drive/Secret Manager configuration
+        await self._verify_drive_config()
+        
         # Initialize command tracker with database pool in bot's event loop
         try:
             import asyncpg
@@ -246,6 +249,25 @@ class StartupManager:
             logger.warning(f"  ⚠️ Failed to start sync cooldowns cleanup task: {e}")
         
         logger.info("✅ Phase 5 complete: Background tasks started")
+    
+    async def _verify_drive_config(self) -> None:
+        """Optional: Verify Google Drive/Secret Manager configuration during startup."""
+        try:
+            from utils.drive_sync import _ensure_drive
+            import config
+            
+            # Only check if Google credentials are configured (either Secret Manager or env var)
+            if config.GOOGLE_PROJECT_ID or config.GOOGLE_CREDENTIALS_JSON:
+                logger.info("🔍 Verifying Google Drive configuration...")
+                drive_client = _ensure_drive()
+                if drive_client:
+                    logger.info("✅ Google Drive configuration verified and ready")
+                else:
+                    logger.warning("⚠️ Google Drive configuration found but initialization failed (check logs above)")
+            else:
+                logger.debug("ℹ️ Google Drive not configured (GOOGLE_PROJECT_ID and GOOGLE_CREDENTIALS_JSON not set)")
+        except Exception as e:
+            logger.debug(f"ℹ️ Google Drive verification skipped: {e}")
     
     async def _phase_ready(self) -> None:
         """Phase 6: Mark bot as ready."""

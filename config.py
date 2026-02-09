@@ -45,6 +45,11 @@ SUPABASE_ISSUER = os.getenv(
 )
 SUPABASE_WEBHOOK_SECRET = os.getenv("SUPABASE_WEBHOOK_SECRET")
 
+# Google Cloud Secret Manager configuration
+GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
+GOOGLE_SECRET_NAME = os.getenv("GOOGLE_SECRET_NAME", "alphapy-google-credentials")
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Fallback for local development
+
 # Telemetry ingest configuration
 TELEMETRY_INGEST_INTERVAL = int(os.getenv("TELEMETRY_INGEST_INTERVAL", "45"))  # seconds
 

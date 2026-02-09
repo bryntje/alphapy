@@ -8,6 +8,8 @@ import json
 import fitz  # PyMuPDF
 import logging
 
+import config
+from utils.gcp_secrets import get_secret
 
 logger = logging.getLogger("utils.drive_sync")
 
@@ -16,27 +18,53 @@ SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 drive = None
 
 def _ensure_drive():
+    """
+    Initialize Google Drive client with credentials from Secret Manager or environment variable.
+    
+    Priority order:
+    1. Google Cloud Secret Manager (if GOOGLE_PROJECT_ID is configured)
+    2. GOOGLE_CREDENTIALS_JSON environment variable (fallback for local development)
+    """
     global drive
     if drive is not None:
         return drive
 
     gauth = GoogleAuth()
-    creds_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    
+    # Try Secret Manager first (if GOOGLE_PROJECT_ID is configured)
+    secret_name = config.GOOGLE_SECRET_NAME
+    credentials_json = None
+    
+    if config.GOOGLE_PROJECT_ID:
+        logger.info(f"🔐 Attempting to load Google credentials from Secret Manager (secret: {secret_name})")
+        credentials_json = get_secret(secret_name, config.GOOGLE_PROJECT_ID)
+        if credentials_json:
+            logger.info("✅ Loaded Google credentials from Secret Manager")
+    
+    # Fallback to environment variable if Secret Manager didn't provide credentials
+    if not credentials_json:
+        credentials_json = config.GOOGLE_CREDENTIALS_JSON
+        if credentials_json:
+            logger.info("🔐 Loading Google Service Account credentials from environment variable")
+        else:
+            logger.warning("GOOGLE_CREDENTIALS_JSON not set and Secret Manager unavailable; Drive features disabled")
+            return None
 
-    if not creds_env:
-        logger.warning("GOOGLE_CREDENTIALS_JSON not set; Drive features disabled")
+    try:
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(
+            json.loads(credentials_json),
+            SCOPES
+        )
+        gauth.credentials = creds
+        drive = GoogleDrive(gauth)
+        logger.info("✅ Google Drive service account authentication successful")
+        return drive
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Google credentials JSON: {e}")
         return None
-
-    logger.info("🔐 Loading Google Service Account credentials from env")
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        json.loads(creds_env),
-        SCOPES
-    )
-
-    gauth.credentials = creds
-    drive = GoogleDrive(gauth)
-    logger.info("✅ Google Drive service account authentication successful")
-    return drive
+    except Exception as e:
+        logger.error(f"Failed to initialize Google Drive client: {e}", exc_info=True)
+        return None
 
 
 def fetch_pdf_text_by_name(filename_keyword: str) -> str:

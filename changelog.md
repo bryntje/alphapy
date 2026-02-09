@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Google Cloud Secret Manager Integration:**
+  - New utility `utils/gcp_secrets.py` for secure secret management with caching and fallback
+  - Google Drive credentials now load from Secret Manager in production (fallback to env var for local dev)
+  - In-memory caching (1 hour TTL) to minimize Secret Manager API calls
+  - New config variables: `GOOGLE_PROJECT_ID`, `GOOGLE_SECRET_NAME` (optional)
+  - Security documentation: `docs/SECURITY.md` with Google Cloud best practices checklist
+  - Tests: `tests/test_drive_sync.py` for Secret Manager integration and fallback behavior
+- **Security Improvements:**
+  - Migrated Google credentials from environment variables to Secret Manager (production)
+  - Zero-code storage: credentials never committed to source code
+  - Proper error handling and logging for Secret Manager operations
+  - Documentation for infrastructure-level security configs (API restrictions, IAM, rotation policies)
+
 ### Fixed
 - **Documentation corrections:**
   - Removed non-existent slash commands `/ticket_list`, `/ticket_claim`, `/ticket_close` from docs (Claim/Close are buttons in ticket channel)
