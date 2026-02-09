@@ -5,10 +5,10 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **README restructure:** Shorter README with clear sections; Operational Playbook moved to `docs/OPERATIONAL_PLAYBOOK.md` with checklist and verification steps.
 
 ### Fixed
-- (No changes yet)
+- No changes yet.
 
 ---
 
@@ -29,7 +29,9 @@ All notable changes to this project will be documented in this file.
   - Documentation for infrastructure-level security configs (API restrictions, IAM, rotation policies)
 
 ### Fixed
-- Updated version references to 2.1.0 in documentation (`docs/api.md`, `docs/commands.md`).
+- **GCP/Drive:** `get_secret()` env fallback uses `GOOGLE_CREDENTIALS_JSON` for default secret name; `get_secret(..., return_source=True)` and accurate logging in `drive_sync` (Secret Manager vs env); `_ensure_drive()` run via `asyncio.to_thread()` in lifecycle to avoid blocking event loop; thread-safe Drive init with `threading.Lock()`.
+- Updated version references to 2.1.0 in documentation (`docs/api.md`, `docs/commands.md`); all API example responses in `docs/api.md` use version 2.1.0.
+
 
 ---
 
