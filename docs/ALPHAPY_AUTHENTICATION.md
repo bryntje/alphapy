@@ -12,6 +12,7 @@ All Alphapy API endpoints require authentication. This document explains how aut
 - `/api/dashboard/{guild_id}/onboarding/rules` - Manage onboarding rules
 - `/api/dashboard/{guild_id}/settings/history` - Settings change history
 - `/api/dashboard/{guild_id}/settings/rollback/{history_id}` - Rollback settings
+- `/api/dashboard/logs` - Operational logs (reconnect, disconnect; requires guild admin)
 
 ## Authentication Methods
 

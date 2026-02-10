@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **API operational logs for Mind dashboard**
+  - New endpoint `GET /api/dashboard/logs` exposing operational events (BOT_READY, BOT_RECONNECT, BOT_DISCONNECT)
+  - Guild admin verification via Supabase profile's Discord ID (requires linked Discord account)
+  - In-memory buffer `utils/operational_logs.py` with `log_operational_event()`; instrumented in `bot.py` and `utils/lifecycle.py`
+  - Helper `get_discord_id_for_user()` in `utils/supabase_client.py` for admin check
 - **Onboarding rules: image support**
   - Rules can have a thumbnail (right/top-right) and/or an image (bottom)
   - `/config onboarding add_rule` now accepts optional `thumbnail_url` and `image_url`
@@ -22,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - **ARCHITECTURE.md:** Onboarding updates (no default rules, guild_rules images, fetch_member for completion role).
 
 ### Fixed
+- **Code review fixes (API, guild admin):** Cap `limit` in `GET /api/dashboard/logs` to 100; cache `application_info` (60s TTL) in guild admin check; shared `utils/guild_admin.member_has_admin_in_guild()`; replace 9× `print()` with `logger.error()` in `api.py`.
 - **Onboarding completion role:** Robust member resolution using `interaction.user` or `fetch_member()` so new members (not in cache) receive the completion role correctly.
 - **`/learn_topic`:** Keep-alive during GPT call (edit every 10s) and reply via `edit_original_response` to avoid Discord interaction timeout when GPT latency is high (~20s+).
 - **Onboarding DATABASE_URL:** Type-safe guard before pool creation.

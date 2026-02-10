@@ -28,7 +28,8 @@ from utils.logger import get_gpt_status_logs, logger
 from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
 from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
-from utils.supabase_client import _supabase_post, SupabaseConfigurationError
+from utils.supabase_client import _supabase_post, get_discord_id_for_user, SupabaseConfigurationError
+from utils.operational_logs import get_operational_events
 from webhooks.supabase import router as supabase_webhook_router
 from webhooks.reflections import router as reflections_webhook_router
 from version import CODENAME, __version__
@@ -1733,14 +1734,78 @@ class UpdateSettingsRequest(BaseModel):
     settings: Dict[str, Any]
 
 
+_APP_OWNER_CACHE: Optional[tuple[int, float]] = None
+_APP_OWNER_CACHE_TTL = 60.0
+
+
+async def _check_guild_admin_on_bot_loop(discord_id: int, guild_id: int) -> bool:
+    """Run on bot's event loop: check if Discord user has admin in guild."""
+    from gpt.helpers import bot_instance
+
+    from utils.guild_admin import member_has_admin_in_guild
+
+    global _APP_OWNER_CACHE
+
+    if bot_instance is None:
+        return False
+    guild = bot_instance.get_guild(guild_id)
+    if guild is None:
+        return False
+    member = guild.get_member(discord_id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(discord_id)
+        except Exception:
+            return False
+    app_owner_id: Optional[int] = None
+    now = time.time()
+    if _APP_OWNER_CACHE is not None and (now - _APP_OWNER_CACHE[1]) < _APP_OWNER_CACHE_TTL:
+        app_owner_id = _APP_OWNER_CACHE[0]
+    else:
+        app_info = await bot_instance.application_info()
+        app_owner_id = app_info.owner.id
+        _APP_OWNER_CACHE = (app_owner_id, now)
+    return member_has_admin_in_guild(member, app_owner_id)
+
+
 async def verify_guild_admin_access(
     guild_id: int,
-    request: Request,
+    auth_user_id: str,
 ) -> None:
-    """Verify that the authenticated user has admin access to the specified guild."""
-    # This would need to be implemented with Discord API calls to verify permissions
-    # For now, we'll rely on frontend validation and API key auth
-    pass
+    """Verify that the authenticated Supabase user has admin access to the specified guild.
+    Raises HTTPException 403 if not admin or Discord ID not linked."""
+    discord_id_str = await get_discord_id_for_user(auth_user_id)
+    if not discord_id_str:
+        raise HTTPException(
+            status_code=403,
+            detail="No Discord account linked to your profile. Link Discord via Supabase Auth to access guild logs.",
+        )
+    try:
+        discord_id = int(discord_id_str)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Invalid Discord ID in profile.")
+
+    from gpt.helpers import bot_instance
+
+    if bot_instance is None:
+        raise HTTPException(status_code=503, detail="Bot not available for permission check.")
+
+    loop = bot_instance.loop
+
+    async def runner() -> bool:
+        return await _check_guild_admin_on_bot_loop(discord_id, guild_id)
+
+    try:
+        future = asyncio.run_coroutine_threadsafe(runner(), loop)
+        is_admin = await asyncio.wait_for(asyncio.wrap_future(future), timeout=5.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="Permission check timed out.")
+    except Exception as exc:
+        logger.debug(f"Guild admin check failed: {exc}")
+        raise HTTPException(status_code=403, detail="Could not verify guild admin access.")
+
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="You do not have admin access to this guild.")
 
 
 @router.get("/dashboard/settings/{guild_id}", response_model=GuildSettingsResponse)
@@ -1843,7 +1908,7 @@ async def update_guild_settings(
             return {"success": True, "message": f"Updated {request.category} settings"}
 
     except Exception as exc:
-        print("[ERROR] Failed to update guild settings:", exc)
+        logger.error("[ERROR] Failed to update guild settings: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to update settings")
 
 
@@ -1909,7 +1974,7 @@ async def get_guild_onboarding_questions(
             return questions
 
     except Exception as exc:
-        print("[ERROR] Failed to get guild onboarding questions:", exc)
+        logger.error("[ERROR] Failed to get guild onboarding questions: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to fetch questions")
 
 
@@ -1954,7 +2019,7 @@ async def save_guild_onboarding_question(
             return {"success": True, "message": "Question saved successfully"}
 
     except Exception as exc:
-        print("[ERROR] Failed to save onboarding question:", exc)
+        logger.error("[ERROR] Failed to save onboarding question: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to save question")
 
 
@@ -1984,7 +2049,7 @@ async def delete_guild_onboarding_question(
     except HTTPException:
         raise
     except Exception as exc:
-        print("[ERROR] Failed to delete onboarding question:", exc)
+        logger.error("[ERROR] Failed to delete onboarding question: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to delete question")
 
 
@@ -2025,7 +2090,7 @@ async def get_guild_onboarding_rules(
             return rules
 
     except Exception as exc:
-        print("[ERROR] Failed to get guild onboarding rules:", exc)
+        logger.error("[ERROR] Failed to get guild onboarding rules: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to fetch rules")
 
 
@@ -2068,7 +2133,7 @@ async def save_guild_onboarding_rule(
             return {"success": True, "message": "Rule saved successfully"}
 
     except Exception as exc:
-        print("[ERROR] Failed to save onboarding rule:", exc)
+        logger.error("[ERROR] Failed to save onboarding rule: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to save rule")
 
 
@@ -2098,7 +2163,7 @@ async def delete_guild_onboarding_rule(
     except HTTPException:
         raise
     except Exception as exc:
-        print("[ERROR] Failed to delete onboarding rule:", exc)
+        logger.error("[ERROR] Failed to delete onboarding rule: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to delete rule")
 
 
@@ -2139,7 +2204,7 @@ async def reorder_onboarding_items(
             return {"success": True, "message": "Order updated successfully"}
 
     except Exception as exc:
-        print("[ERROR] Failed to reorder onboarding items:", exc)
+        logger.error("[ERROR] Failed to reorder onboarding items: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to reorder items")
 
 
@@ -2218,7 +2283,7 @@ async def get_settings_history(
             return history
 
     except Exception as exc:
-        print("[ERROR] Failed to get settings history:", exc)
+        logger.error("[ERROR] Failed to get settings history: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to fetch settings history")
 
 
@@ -2283,8 +2348,30 @@ async def rollback_setting_change(
     except HTTPException:
         raise
     except Exception as exc:
-        print("[ERROR] Failed to rollback setting:", exc)
+        logger.error("[ERROR] Failed to rollback setting: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to rollback setting")
+
+
+class OperationalLogsResponse(BaseModel):
+    logs: List[Dict[str, Any]]
+
+
+@router.get("/dashboard/logs", response_model=OperationalLogsResponse)
+async def get_dashboard_logs(
+    guild_id: int,
+    limit: int = 50,
+    event_types: Optional[str] = None,
+    auth_user_id: str = Depends(get_authenticated_user_id),
+):
+    """Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard.
+    Requires guild admin access. Global events (no guild_id) are included for any guild request."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    limit = min(limit, 100)
+    types_list: Optional[List[str]] = None
+    if event_types:
+        types_list = [t.strip() for t in event_types.split(",") if t.strip()]
+    logs = get_operational_events(guild_id=guild_id, limit=limit, event_types=types_list)
+    return OperationalLogsResponse(logs=logs)
 
 
 app.include_router(router)

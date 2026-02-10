@@ -388,6 +388,34 @@ Rollback a setting to a previous value.
 }
 ```
 
+#### `GET /api/dashboard/logs`
+
+Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard. Requires guild admin access (verified via Supabase profile's Discord ID). Global events (e.g. `BOT_RECONNECT`, `BOT_DISCONNECT`) are included for any guild request.
+
+**Authentication:** Required (Supabase JWT token)
+
+**Query Parameters:**
+- `guild_id` (required): Discord guild ID – user must have admin access to this guild
+- `limit` (optional, default: 50): Maximum number of log entries to return
+- `event_types` (optional): Comma-separated list of event types to filter (e.g. `BOT_RECONNECT,BOT_DISCONNECT`)
+
+**Response:**
+```json
+{
+  "logs": [
+    {
+      "timestamp": "2026-02-10T21:30:00Z",
+      "event_type": "BOT_RECONNECT",
+      "guild_id": null,
+      "message": "Reconnect phase complete: commands synced",
+      "details": {"synced": 5, "skipped": 0}
+    }
+  ]
+}
+```
+
+**Event types:** `BOT_READY`, `BOT_RECONNECT`, `BOT_DISCONNECT`
+
 ### Reminder Management
 
 #### `GET /api/reminders/{user_id}`

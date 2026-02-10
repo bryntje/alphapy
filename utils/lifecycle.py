@@ -327,14 +327,14 @@ class StartupManager:
             logger.warning(f"  ⚠️ Global sync failed: {global_result.error}")
         
         # Sync guild-only commands for all guilds (if we have them)
+        synced_count = 0
+        skipped_count = 0
         has_guild_only = detect_guild_only_commands(bot)
         if has_guild_only:
             logger.info(f"  🔄 Resyncing guild-only commands for {len(bot.guilds)} guilds...")
             sync_tasks = [safe_sync(bot, guild=guild, force=False) for guild in bot.guilds]
             results = await asyncio.gather(*sync_tasks, return_exceptions=True)
-            
-            synced_count = 0
-            skipped_count = 0
+
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     logger.warning(f"  ⚠️ Sync error for {bot.guilds[i].name}: {result}")
@@ -351,12 +351,21 @@ class StartupManager:
                     # Unexpected type
                     logger.warning(f"  ⚠️ Unexpected result type for {bot.guilds[i].name}: {type(result)}")
                     skipped_count += 1
-            
+
             logger.info(f"  ✅ Guild syncs completed: {synced_count} synced, {skipped_count} skipped")
         else:
             logger.debug("  ℹ️ No guild-only commands detected")
-        
+
         logger.info("✅ Reconnect phase complete: Commands should be available now")
+
+        from utils.operational_logs import log_operational_event
+
+        log_operational_event(
+            "BOT_RECONNECT",
+            "Reconnect phase complete: commands synced",
+            guild_id=None,
+            details={"synced": synced_count, "skipped": skipped_count},
+        )
 
 
 class ShutdownManager:
