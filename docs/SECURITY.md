@@ -1,35 +1,35 @@
 # Google Cloud Security Best Practices
 
-Dit document beschrijft de security best practices voor Google Cloud credentials en API keys binnen het Alphapy project, conform de aanbevelingen van Google Cloud Security.
+This document describes security best practices for Google Cloud credentials and API keys within the Alphapy project, in line with Google Cloud Security recommendations.
 
-## Overzicht
+## Overview
 
-Alphapy gebruikt Google Cloud services voor:
-- **Google Drive API**: PDF documenten lezen via service account credentials
+Alphapy uses Google Cloud services for:
+- **Google Drive API**: Reading PDF documents via service account credentials
 
-Alle credentials worden beheerd via **Google Cloud Secret Manager** in productie, met fallback naar environment variables voor lokale development.
+All credentials are managed via **Google Cloud Secret Manager** in production, with fallback to environment variables for local development.
 
-## Credential Lifecycle Management
+## Credential lifecycle management
 
-### 1. Zero-Code Storage ✅
+### 1. Zero-code storage ✅
 
-**Status**: Geïmplementeerd
+**Status**: Implemented
 
-- ✅ Credentials worden **nooit** gecommit naar source code of version control
-- ✅ `.gitignore` sluit `.env` en `credentials/` uit
-- ✅ Productie gebruikt **Google Cloud Secret Manager** voor credential storage
-- ✅ Lokale development gebruikt environment variables (fallback)
+- ✅ Credentials are **never** committed to source code or version control
+- ✅ `.gitignore` excludes `.env` and `credentials/`
+- ✅ Production uses **Google Cloud Secret Manager** for credential storage
+- ✅ Local development uses environment variables (fallback)
 
-**Implementatie**:
-- `utils/gcp_secrets.py`: Helper voor Secret Manager access met caching
-- `utils/drive_sync.py`: Laadt credentials vanuit Secret Manager of environment variable
-- Configuratie via `GOOGLE_PROJECT_ID` en `GOOGLE_SECRET_NAME` environment variables
+**Implementation**:
+- `utils/gcp_secrets.py`: Helper for Secret Manager access with caching
+- `utils/drive_sync.py`: Loads credentials from Secret Manager or environment variable
+- Configuration via `GOOGLE_PROJECT_ID` and `GOOGLE_SECRET_NAME` environment variables
 
-### 2. Secret Manager Setup
+### 2. Secret Manager setup
 
-**Voor productie deployments**:
+**For production deployments**:
 
-1. **Maak secret aan in Secret Manager**:
+1. **Create secret in Secret Manager**:
    ```bash
    # Via gcloud CLI
    echo -n '{"type":"service_account",...}' | \
@@ -38,13 +38,13 @@ Alle credentials worden beheerd via **Google Cloud Secret Manager** in productie
      --project=YOUR_PROJECT_ID
    ```
 
-2. **Configureer environment variables**:
+2. **Configure environment variables**:
    ```bash
    GOOGLE_PROJECT_ID=your-gcp-project-id
-   GOOGLE_SECRET_NAME=alphapy-google-credentials  # Optioneel, default gebruikt deze naam
+   GOOGLE_SECRET_NAME=alphapy-google-credentials  # Optional, default uses this name
    ```
 
-3. **Grant access aan service account**:
+3. **Grant access to service account**:
    ```bash
    gcloud secrets add-iam-policy-binding alphapy-google-credentials \
      --member="serviceAccount:YOUR_SERVICE_ACCOUNT@PROJECT_ID.iam.gserviceaccount.com" \
@@ -52,63 +52,63 @@ Alle credentials worden beheerd via **Google Cloud Secret Manager** in productie
      --project=YOUR_PROJECT_ID
    ```
 
-**Voor lokale development**:
-- Gebruik `GOOGLE_CREDENTIALS_JSON` environment variable
-- Secret Manager wordt automatisch overgeslagen als `GOOGLE_PROJECT_ID` niet is gezet
+**For local development**:
+- Use `GOOGLE_CREDENTIALS_JSON` environment variable
+- Secret Manager is skipped when `GOOGLE_PROJECT_ID` is not set
 
-### 3. Disable Dormant Keys
+### 3. Disable dormant keys
 
-**Handmatige actie vereist in GCP Console**:
+**Manual action required in GCP Console**:
 
-1. Ga naar **"APIs & Services" > "Credentials"**
-2. Review alle API keys en service account keys
-3. Identificeer keys zonder activiteit (30+ dagen)
+1. Go to **"APIs & Services" > "Credentials"**
+2. Review all API keys and service account keys
+3. Identify keys with no activity (30+ days)
 4. **Decommission inactive keys**:
-   - Klik op de key
-   - Selecteer "Delete" of "Disable"
-   - Bevestig deactivering
+   - Click on the key
+   - Select "Delete" or "Disable"
+   - Confirm deactivation
 
-**Audit procedure** (maandelijks):
-- Check "APIs & Services" > "Credentials" voor inactive keys
-- Review Cloud Audit Logs voor key usage patterns
-- Document alle deactivated keys in project changelog
+**Audit procedure** (monthly):
+- Check "APIs & Services" > "Credentials" for inactive keys
+- Review Cloud Audit Logs for key usage patterns
+- Document all deactivated keys in project changelog
 
-### 4. Enforce API Restrictions
+### 4. Enforce API restrictions
 
-**Handmatige configuratie in GCP Console**:
+**Manual configuration in GCP Console**:
 
-Voor **API Keys**:
-1. Ga naar **"APIs & Services" > "Credentials"**
-2. Selecteer een API key
-3. Klik op "Restrict key"
+For **API keys**:
+1. Go to **"APIs & Services" > "Credentials"**
+2. Select an API key
+3. Click "Restrict key"
 4. **API restrictions**:
-   - Selecteer "Restrict key"
-   - Kies alleen de benodigde APIs (bijv. "Drive API")
-   - Sla op
-5. **Application restrictions** (indien van toepassing):
-   - **IP addresses**: Voeg toegestane IP ranges toe
-   - **HTTP referrers**: Voeg toegestane referrer URLs toe
-   - **Android apps**: Voeg package names toe
-   - **iOS apps**: Voeg bundle IDs toe
+   - Select "Restrict key"
+   - Choose only the required APIs (e.g. "Drive API")
+   - Save
+5. **Application restrictions** (if applicable):
+   - **IP addresses**: Add allowed IP ranges
+   - **HTTP referrers**: Add allowed referrer URLs
+   - **Android apps**: Add package names
+   - **iOS apps**: Add bundle IDs
 
-Voor **Service Account Keys**:
-- Service accounts hebben automatisch beperkte scopes (zie code: `drive.readonly`)
-- Geen extra API restrictions nodig (scopes zijn voldoende)
+For **service account keys**:
+- Service accounts automatically have limited scopes (see code: `drive.readonly`)
+- No extra API restrictions needed (scopes are sufficient)
 
-**Huidige implementatie**:
-- ✅ Service account gebruikt alleen `https://www.googleapis.com/auth/drive.readonly` scope
-- ⚠️ **TODO**: Configureer API key restrictions in GCP Console indien API keys worden gebruikt
+**Current implementation**:
+- ✅ Service account uses only `https://www.googleapis.com/auth/drive.readonly` scope
+- ⚠️ **TODO**: Configure API key restrictions in GCP Console if API keys are used
 
-### 5. Apply Least Privilege
+### 5. Apply least privilege
 
-**Service Account Permissions**:
+**Service account permissions**:
 
-**Huidige scopes** (geïmplementeerd in code):
-- ✅ `https://www.googleapis.com/auth/drive.readonly` - Alleen lezen, geen schrijven
+**Current scopes** (implemented in code):
+- ✅ `https://www.googleapis.com/auth/drive.readonly` — Read-only, no write
 
-**IAM Permissions Review**:
+**IAM permissions review**:
 
-1. **Gebruik IAM Recommender**:
+1. **Use IAM Recommender**:
    ```bash
    # Via gcloud CLI
    gcloud recommender recommendations list \
@@ -118,26 +118,26 @@ Voor **Service Account Keys**:
    ```
 
 2. **Review unused permissions**:
-   - Ga naar **"IAM & Admin" > "IAM"**
-   - Selecteer service account
-   - Review toegewezen rollen
-   - Verwijder ongebruikte rollen
+   - Go to **"IAM & Admin" > "IAM"**
+   - Select service account
+   - Review assigned roles
+   - Remove unused roles
 
-3. **Minimale rollen voor Secret Manager**:
-   - `roles/secretmanager.secretAccessor` - Alleen lezen van secrets
-   - Geen `roles/secretmanager.admin` of `roles/secretmanager.secretAccessor` op project-level
+3. **Minimum roles for Secret Manager**:
+   - `roles/secretmanager.secretAccessor` — Read secrets only
+   - No `roles/secretmanager.admin` or `roles/secretmanager.secretAccessor` on project-level
 
-**Huidige implementatie**:
-- ✅ Service account gebruikt minimale scope (`drive.readonly`)
-- ⚠️ **TODO**: Review IAM roles via IAM Recommender en verwijder unused permissions
+**Current implementation**:
+- ✅ Service account uses minimum scope (`drive.readonly`)
+- ⚠️ **TODO**: Review IAM roles via IAM Recommender and remove unused permissions
 
-### 6. Mandatory Rotation
+### 6. Mandatory rotation
 
-**Organization Policies** (moet worden geconfigureerd door GCP admin):
+**Organization policies** (must be configured by GCP admin):
 
-1. **Key Expiry Policy**:
+1. **Key expiry policy**:
    ```bash
-   # Set maximum key lifetime (bijv. 90 dagen)
+   # Set maximum key lifetime (e.g. 90 days)
    gcloud resource-manager org-policies set \
      iam.serviceAccountKeyExpiryHours \
      --organization=ORGANIZATION_ID \
@@ -150,14 +150,15 @@ Voor **Service Account Keys**:
      "spec": {
        "rules": [{
          "values": {
-           "allowedValues": ["2160"]  # 90 dagen in uren
+           "allowedValues": ["2160"]
          }
        }]
      }
    }
    ```
+   Note: `2160` = 90 days in hours
 
-2. **Disable Key Creation** (als keys niet nodig zijn):
+2. **Disable key creation** (if keys are not needed):
    ```bash
    gcloud resource-manager org-policies set \
      iam.disableServiceAccountKeyCreation \
@@ -165,85 +166,85 @@ Voor **Service Account Keys**:
      --enforce
    ```
 
-**Voor dit project**:
-- ⚠️ **TODO**: Configureer `iam.serviceAccountKeyExpiryHours` policy (aanbevolen: 90 dagen)
-- Service account keys worden gebruikt, dus disable policy is niet van toepassing
+**For this project**:
+- ⚠️ **TODO**: Configure `iam.serviceAccountKeyExpiryHours` policy (recommended: 90 days)
+- Service account keys are used, so disable policy does not apply
 
-**Rotation procedure** (wanneer key expireert):
-1. Genereer nieuwe service account key in GCP Console
+**Rotation procedure** (when key expires):
+1. Generate new service account key in GCP Console
 2. Update secret in Secret Manager:
    ```bash
    echo -n 'NEW_CREDENTIALS_JSON' | \
      gcloud secrets versions add alphapy-google-credentials \
      --data-file=-
    ```
-3. Cache wordt automatisch geïnvalideerd na TTL (1 uur)
-4. Oude key versie kan worden verwijderd na verificatie
+3. Cache is automatically invalidated after TTL (1 hour)
+4. Old key version can be removed after verification
 
-## Operational Safeguards
+## Operational safeguards
 
-### 1. Essential Contacts
+### 1. Essential contacts
 
-**Configuratie in GCP Console**:
+**Configuration in GCP Console**:
 
-1. Ga naar **"IAM & Admin" > "Essential Contacts"**
-2. Voeg contacten toe voor:
+1. Go to **"IAM & Admin" > "Essential Contacts"**
+2. Add contacts for:
    - **Security**: Security team email
    - **Billing**: Finance team email
    - **Technical**: DevOps team email
-3. Selecteer notification categories:
+3. Select notification categories:
    - Security notifications
    - Billing notifications
    - Technical notifications
 
-**Voor dit project**:
-- ⚠️ **TODO**: Configureer Essential Contacts met juiste email adressen
+**For this project**:
+- ⚠️ **TODO**: Configure Essential Contacts with appropriate email addresses
 
-### 2. Billing Anomaly and Budget Alerts
+### 2. Billing anomaly and budget alerts
 
-**Configuratie in GCP Console**:
+**Configuration in GCP Console**:
 
-1. **Budget Alerts**:
-   - Ga naar **"Billing" > "Budgets & alerts"**
-   - Maak nieuwe budget alert
-   - Stel threshold in (bijv. 80% van maandelijks budget)
-   - Voeg email notificaties toe
+1. **Budget alerts**:
+   - Go to **"Billing" > "Budgets & alerts"**
+   - Create new budget alert
+   - Set threshold (e.g. 80% of monthly budget)
+   - Add email notifications
 
-2. **Anomaly Detection**:
-   - Ga naar **"Billing" > "Budgets & alerts"**
+2. **Anomaly detection**:
+   - Go to **"Billing" > "Budgets & alerts"**
    - Enable "Anomaly detection"
-   - Configureer threshold (bijv. 150% van gemiddelde daily spend)
-   - Voeg email notificaties toe
+   - Configure threshold (e.g. 150% of average daily spend)
+   - Add email notifications
 
-**Voor dit project**:
-- ⚠️ **TODO**: Configureer budget alerts en anomaly detection
-- ⚠️ **TODO**: Stel threshold in op basis van verwacht gebruik
+**For this project**:
+- ⚠️ **TODO**: Configure budget alerts and anomaly detection
+- ⚠️ **TODO**: Set threshold based on expected usage
 
-## Security Checklist
+## Security checklist
 
-### Code-Level (Geïmplementeerd) ✅
+### Code-level (implemented) ✅
 
-- [x] Credentials niet gecommit in source code
-- [x] Secret Manager integration met caching
-- [x] Fallback naar environment variables voor local dev
-- [x] Error handling voor Secret Manager failures
-- [x] Logging voor security events (welke methode wordt gebruikt)
-- [x] Minimale scopes (`drive.readonly`)
+- [x] Credentials not committed in source code
+- [x] Secret Manager integration with caching
+- [x] Fallback to environment variables for local dev
+- [x] Error handling for Secret Manager failures
+- [x] Logging for security events (which method is used)
+- [x] Minimum scopes (`drive.readonly`)
 
-### Infrastructure-Level (Handmatig te configureren) ⚠️
+### Infrastructure-level (manual configuration) ⚠️
 
-- [ ] API key restrictions geconfigureerd (indien van toepassing)
-- [ ] Service account IAM permissions gereviewed via IAM Recommender
-- [ ] Unused permissions verwijderd
-- [ ] Key rotation policy geconfigureerd (`iam.serviceAccountKeyExpiryHours`)
-- [ ] Essential Contacts geconfigureerd
-- [ ] Budget alerts geconfigureerd
+- [ ] API key restrictions configured (if applicable)
+- [ ] Service account IAM permissions reviewed via IAM Recommender
+- [ ] Unused permissions removed
+- [ ] Key rotation policy configured (`iam.serviceAccountKeyExpiryHours`)
+- [ ] Essential Contacts configured
+- [ ] Budget alerts configured
 - [ ] Anomaly detection enabled
-- [ ] Dormant keys audit uitgevoerd (30+ dagen inactief)
+- [ ] Dormant keys audit performed (30+ days inactive)
 
-## Monitoring en Alerting
+## Monitoring and alerting
 
-### Secret Manager Access Logs
+### Secret Manager access logs
 
 Monitor Secret Manager access via Cloud Audit Logs:
 
@@ -254,32 +255,32 @@ gcloud logging read "resource.type=secretmanager.googleapis.com/Secret" \
   --limit=50
 ```
 
-### Anomaly Detection
+### Anomaly detection
 
-- Monitor voor onverwachte Secret Manager access patterns
-- Alert op failed authentication attempts
-- Review logs maandelijks voor security events
+- Monitor for unexpected Secret Manager access patterns
+- Alert on failed authentication attempts
+- Review logs monthly for security events
 
-## Incident Response
+## Incident response
 
-Als credentials gecompromitteerd zijn:
+If credentials are compromised:
 
-1. **Immediate Actions**:
-   - Disable de gecompromitteerde key in GCP Console
+1. **Immediate actions**:
+   - Disable the compromised key in GCP Console
    - Rotate secret in Secret Manager
-   - Clear cache in applicatie (restart of `clear_cache()` call)
+   - Clear cache in application (restart or `clear_cache()` call)
 
 2. **Investigation**:
-   - Review Cloud Audit Logs voor unauthorized access
-   - Check voor onverwachte API calls
+   - Review Cloud Audit Logs for unauthorized access
+   - Check for unexpected API calls
    - Document incident in security log
 
 3. **Prevention**:
-   - Review security configuraties
-   - Update IAM permissions indien nodig
-   - Verifieer dat alle best practices zijn gevolgd
+   - Review security configurations
+   - Update IAM permissions if needed
+   - Verify all best practices are followed
 
-## Referenties
+## References
 
 - [Google Cloud Secret Manager Documentation](https://cloud.google.com/secret-manager/docs)
 - [Google Cloud Security Best Practices](https://cloud.google.com/security/best-practices)

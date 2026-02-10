@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - **README restructure:** Shorter README with clear sections; Operational Playbook moved to `docs/OPERATIONAL_PLAYBOOK.md` with checklist and verification steps.
 
 ### Documentation
+- **Google credentials docs:** Translated `GOOGLE_CREDENTIALS_SETUP.md`, `RAILWAY_SECRET_MANAGER_SETUP.md`, and `SECURITY.md` from Dutch to English.
 - **Onboarding:** `docs/configuration.md` Onboarding scope with add_rule/delete_rule/reset_rules/set_role/reset_role and image parameters.
 - **AGENTS.md:** New Onboarding agent section (rules, images, no default rules, logging).
 - **ARCHITECTURE.md:** Onboarding updates (no default rules, guild_rules images, fetch_member for completion role).
