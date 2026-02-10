@@ -1,63 +1,63 @@
 # Railway Secret Manager Setup Guide
 
-Stap-voor-stap gids voor het configureren van Google Cloud Secret Manager op Railway.
+Step-by-step guide for configuring Google Cloud Secret Manager on Railway.
 
-## Overzicht
+## Overview
 
-Deze gids helpt je om Google Drive credentials veilig op te slaan in Secret Manager en deze te gebruiken vanuit Railway, in plaats van credentials direct in Railway environment variables op te slaan.
+This guide helps you store Google Drive credentials securely in Secret Manager and use them from Railway, instead of storing credentials directly in Railway environment variables.
 
-## Vereisten
+## Prerequisites
 
-- Google Cloud Project met Secret Manager API enabled
-- Railway account met toegang tot je project
-- Service account credentials JSON (voor Google Drive)
+- Google Cloud Project with Secret Manager API enabled
+- Railway account with access to your project
+- Service account credentials JSON (for Google Drive)
 
-## Stap 1: Secret aanmaken in Google Cloud Secret Manager
+## Step 1: Create secret in Google Cloud Secret Manager
 
 ### 1.1 Via Google Cloud Console
 
-1. Ga naar [Google Cloud Console](https://console.cloud.google.com/)
-2. Selecteer je project (of maak een nieuw project aan)
-3. Ga naar **"Security" > "Secret Manager"**
-4. Klik op **"+ CREATE SECRET"**
-5. Vul in:
-   - **Name**: `alphapy-google-credentials` (of gebruik `GOOGLE_SECRET_NAME` als je een andere naam wilt)
-   - **Secret value**: Plak je volledige service account credentials JSON
-   - **Version**: Laat "Automatic" staan
-6. Klik op **"CREATE SECRET"**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Select your project (or create a new one)
+3. Go to **"Security" > "Secret Manager"**
+4. Click **"+ CREATE SECRET"**
+5. Fill in:
+   - **Name**: `alphapy-google-credentials` (or use `GOOGLE_SECRET_NAME` if you want a different name)
+   - **Secret value**: Paste your full service account credentials JSON
+   - **Version**: Leave as "Automatic"
+6. Click **"CREATE SECRET"**
 
-### 1.2 Via gcloud CLI (alternatief)
+### 1.2 Via gcloud CLI (alternative)
 
 ```bash
-# Zorg dat je ingelogd bent
+# Ensure you're logged in
 gcloud auth login
 
-# Set je project
+# Set your project
 gcloud config set project YOUR_PROJECT_ID
 
-# Maak het secret aan
+# Create the secret
 echo -n '{"type":"service_account","project_id":"...","private_key_id":"...","private_key":"...","client_email":"...","client_id":"...","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"..."}' | \
   gcloud secrets create alphapy-google-credentials \
   --data-file=- \
   --project=YOUR_PROJECT_ID
 ```
 
-**Belangrijk:** Vervang `YOUR_PROJECT_ID` met je echte GCP project ID.
+**Important:** Replace `YOUR_PROJECT_ID` with your actual GCP project ID.
 
-## Stap 2: Railway Service Account Toegang Geven
+## Step 2: Grant Railway service account access
 
-Railway gebruikt een service account om toegang te krijgen tot externe services. Er zijn twee manieren om dit te configureren:
+Railway uses a service account to access external services. There are two ways to configure this:
 
-### Optie A: Railway's Service Account (aanbevolen voor Railway-hosted)
+### Option A: Railway's service account (recommended for Railway-hosted)
 
-Als Railway een service account gebruikt, moet je deze toegang geven:
+If Railway uses a service account, you must grant it access:
 
-1. **Vind Railway's Service Account Email**:
-   - Ga naar Railway dashboard → je project → Settings → Variables
-   - Kijk of er een `RAILWAY_SERVICE_ACCOUNT_EMAIL` of vergelijkbare variabele is
-   - Of gebruik de default Railway service account (meestal iets als `railway@railway.iam.gserviceaccount.com`)
+1. **Find Railway's service account email**:
+   - Go to Railway dashboard → your project → Settings → Variables
+   - Check if there is a `RAILWAY_SERVICE_ACCOUNT_EMAIL` or similar variable
+   - Or use the default Railway service account (usually something like `railway@railway.iam.gserviceaccount.com`)
 
-2. **Geef toegang via gcloud CLI**:
+2. **Grant access via gcloud CLI**:
    ```bash
    gcloud secrets add-iam-policy-binding alphapy-google-credentials \
      --member="serviceAccount:RAILWAY_SERVICE_ACCOUNT_EMAIL@PROJECT_ID.iam.gserviceaccount.com" \
@@ -65,39 +65,39 @@ Als Railway een service account gebruikt, moet je deze toegang geven:
      --project=YOUR_PROJECT_ID
    ```
 
-3. **Of via Google Cloud Console**:
-   - Ga naar Secret Manager → klik op `alphapy-google-credentials`
-   - Klik op **"PERMISSIONS"** tab
-   - Klik op **"ADD PRINCIPAL"**
-   - Voer Railway service account email in
-   - Selecteer rol: **"Secret Manager Secret Accessor"**
-   - Klik **"SAVE"**
+3. **Or via Google Cloud Console**:
+   - Go to Secret Manager → click on `alphapy-google-credentials`
+   - Click the **"PERMISSIONS"** tab
+   - Click **"ADD PRINCIPAL"**
+   - Enter Railway service account email
+   - Select role: **"Secret Manager Secret Accessor"**
+   - Click **"SAVE"**
 
-### Optie B: Application Default Credentials (ADC) - voor lokale testing
+### Option B: Application Default Credentials (ADC) — for local testing
 
-Voor lokale development kun je Application Default Credentials gebruiken:
+For local development you can use Application Default Credentials:
 
 ```bash
-# Login met je persoonlijke account
+# Login with your personal account
 gcloud auth application-default login
 
-# Dit maakt credentials aan die automatisch worden gebruikt
+# This creates credentials that are used automatically
 ```
 
-**Let op:** Dit werkt alleen lokaal. Voor Railway moet je Optie A gebruiken.
+**Note:** This works only locally. For Railway you must use Option A.
 
-### Optie C: Service Account Key voor Railway (als Optie A niet werkt)
+### Option C: Service account key for Railway (if Option A doesn't work)
 
-Als Railway geen service account heeft, kun je een service account key maken en deze als Railway secret gebruiken:
+If Railway does not have a service account, you can create a service account key and use it as a Railway secret:
 
-1. **Maak service account aan**:
+1. **Create service account**:
    ```bash
    gcloud iam service-accounts create railway-secret-accessor \
      --display-name="Railway Secret Accessor" \
      --project=YOUR_PROJECT_ID
    ```
 
-2. **Geef toegang tot Secret Manager**:
+2. **Grant access to Secret Manager**:
    ```bash
    gcloud secrets add-iam-policy-binding alphapy-google-credentials \
      --member="serviceAccount:railway-secret-accessor@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
@@ -105,65 +105,65 @@ Als Railway geen service account heeft, kun je een service account key maken en 
      --project=YOUR_PROJECT_ID
    ```
 
-3. **Maak service account key**:
+3. **Create service account key**:
    ```bash
    gcloud iam service-accounts keys create railway-key.json \
      --iam-account=railway-secret-accessor@YOUR_PROJECT_ID.iam.gserviceaccount.com
    ```
 
-4. **Zet key als Railway environment variable**:
-   - Ga naar Railway → je project → Variables
-   - Voeg toe: `GOOGLE_APPLICATION_CREDENTIALS_JSON` met de inhoud van `railway-key.json`
-   - **Let op:** Dit is alleen voor authenticatie met Secret Manager, niet voor Drive credentials zelf
+4. **Set key as Railway environment variable**:
+   - Go to Railway → your project → Variables
+   - Add: `GOOGLE_APPLICATION_CREDENTIALS_JSON` with the contents of `railway-key.json`
+   - **Note:** This is only for authenticating with Secret Manager, not for Drive credentials themselves
 
-## Stap 3: Environment Variables Configureren op Railway
+## Step 3: Configure environment variables on Railway
 
-### 3.1 Via Railway Dashboard
+### 3.1 Via Railway dashboard
 
-**Belangrijk:** De variabelen die je ziet (zoals `RAILWAY_PUBLIC_DOMAIN`, `RAILWAY_PROJECT_ID`, etc.) zijn **system variables** die Railway automatisch beschikbaar stelt. Je moet **custom variables** toevoegen voor Secret Manager.
+**Important:** The variables you see (such as `RAILWAY_PUBLIC_DOMAIN`, `RAILWAY_PROJECT_ID`, etc.) are **system variables** that Railway provides automatically. You must add **custom variables** for Secret Manager.
 
-**Stappen:**
+**Steps:**
 
-1. Ga naar je Railway project
-2. Klik op je **service** (waar Alphapy draait) - niet op "Variables" in het project menu
-3. Ga naar de **"Variables"** tab in je service (niet de system variables)
-4. Klik op **"+ New Variable"** of **"Add Variable"**
-5. Voeg de volgende **custom environment variables** toe:
+1. Go to your Railway project
+2. Click your **service** (where Alphapy runs)—not "Variables" in the project menu
+3. Go to the **"Variables"** tab in your service (not the system variables)
+4. Click **"+ New Variable"** or **"Add Variable"**
+5. Add the following **custom environment variables**:
 
 ```bash
-# Verplicht voor Secret Manager
+# Required for Secret Manager
 GOOGLE_PROJECT_ID=your-gcp-project-id
 
-# Optioneel (als je een andere secret naam gebruikt)
-# Default is "alphapy-google-credentials" als je dit niet zet
+# Optional (if you use a different secret name)
+# Default is "alphapy-google-credentials" if not set
 GOOGLE_SECRET_NAME=alphapy-google-credentials
 ```
 
-**Waar vind je dit?**
-- Railway Dashboard → Je Project → Je Service (bijv. "alphapy-bot") → **Variables** tab
-- Dit is een andere sectie dan de system variables die je hierboven ziet
-- Je custom variables verschijnen onderaan de lijst, na de system variables
+**Where to find this?**
+- Railway Dashboard → Your Project → Your Service (e.g. "alphapy-bot") → **Variables** tab
+- This is a different section from the system variables shown above
+- Your custom variables appear at the bottom of the list, after the system variables
 
-**Tip:** Je kunt `RAILWAY_PROJECT_ID` en `RAILWAY_SERVICE_NAME` gebruiken voor logging/debugging, maar deze zijn niet nodig voor Secret Manager configuratie.
+**Tip:** You can use `RAILWAY_PROJECT_ID` and `RAILWAY_SERVICE_NAME` for logging/debugging, but they are not required for Secret Manager configuration.
 
-### 3.2 Verwijder Oude Credentials (optioneel maar aanbevolen)
+### 3.2 Remove old credentials (optional but recommended)
 
-Als je `GOOGLE_CREDENTIALS_JSON` in Railway hebt staan, kun je deze nu verwijderen:
-- De code gebruikt automatisch Secret Manager als `GOOGLE_PROJECT_ID` is gezet
-- Dit verbetert security omdat credentials niet meer in Railway environment variables staan
+If you have `GOOGLE_CREDENTIALS_JSON` in Railway, you can remove it now:
+- The code automatically uses Secret Manager when `GOOGLE_PROJECT_ID` is set
+- This improves security because credentials are no longer in Railway environment variables
 
-**Let op:** Verwijder `GOOGLE_CREDENTIALS_JSON` alleen als je zeker weet dat Secret Manager werkt!
+**Note:** Only remove `GOOGLE_CREDENTIALS_JSON` when you're sure Secret Manager works!
 
-### 3.3 Via Railway CLI (alternatief)
+### 3.3 Via Railway CLI (alternative)
 
 ```bash
-# Installeer Railway CLI als je die nog niet hebt
+# Install Railway CLI if you don't have it
 npm i -g @railway/cli
 
 # Login
 railway login
 
-# Link naar je project
+# Link to your project
 railway link
 
 # Set environment variables
@@ -171,11 +171,11 @@ railway variables set GOOGLE_PROJECT_ID=your-gcp-project-id
 railway variables set GOOGLE_SECRET_NAME=alphapy-google-credentials
 ```
 
-## Stap 4: Verifieer Setup
+## Step 4: Verify setup
 
-### 4.1 Check Logs
+### 4.1 Check logs
 
-Na deployment, check de Railway logs voor:
+After deployment, check Railway logs for:
 
 ```
 🔐 Attempting to load Google credentials from Secret Manager (secret: alphapy-google-credentials)
@@ -183,81 +183,81 @@ Na deployment, check de Railway logs voor:
 ✅ Google Drive service account authentication successful
 ```
 
-Als je deze berichten ziet, werkt Secret Manager correct!
+If you see these messages, Secret Manager is working correctly!
 
-### 4.2 Test Drive Functionaliteit
+### 4.2 Test Drive functionality
 
-Test of Google Drive features werken:
-- Gebruik een command die Drive gebruikt (bijv. `/learn_topic` met Drive content)
-- Check logs voor errors
+Test that Google Drive features work:
+- Use a command that uses Drive (e.g. `/learn_topic` with Drive content)
+- Check logs for errors
 
 ### 4.3 Troubleshooting
 
-**Error: "Permission denied" of "Access denied"**
-- Check of Railway service account toegang heeft tot het secret
-- Verifieer IAM permissions in GCP Console
+**Error: "Permission denied" or "Access denied"**
+- Check that Railway service account has access to the secret
+- Verify IAM permissions in GCP Console
 
 **Error: "Secret not found"**
-- Check of secret naam overeenkomt met `GOOGLE_SECRET_NAME`
-- Verifieer dat secret bestaat in het juiste project
+- Check that secret name matches `GOOGLE_SECRET_NAME`
+- Verify the secret exists in the correct project
 
 **Error: "Project not found"**
-- Check of `GOOGLE_PROJECT_ID` correct is
-- Verifieer dat project bestaat en Secret Manager API enabled is
+- Check that `GOOGLE_PROJECT_ID` is correct
+- Verify the project exists and Secret Manager API is enabled
 
-**Fallback naar environment variable**
-- Als Secret Manager faalt, valt code terug op `GOOGLE_CREDENTIALS_JSON`
-- Check logs voor: "Loading Google Service Account credentials from environment variable"
-- Dit betekent dat Secret Manager niet werkt, maar fallback wel
+**Fallback to environment variable**
+- If Secret Manager fails, the code falls back to `GOOGLE_CREDENTIALS_JSON`
+- Check logs for: "Loading Google Service Account credentials from environment variable"
+- This means Secret Manager is not working but fallback is
 
-## Stap 5: Enable Secret Manager API (als nodig)
+## Step 5: Enable Secret Manager API (if needed)
 
-Als je errors krijgt over API niet enabled:
+If you get errors about API not being enabled:
 
 ```bash
 # Enable Secret Manager API
 gcloud services enable secretmanager.googleapis.com --project=YOUR_PROJECT_ID
 ```
 
-Of via Console:
-1. Ga naar **"APIs & Services" > "Library"**
-2. Zoek "Secret Manager API"
-3. Klik **"ENABLE"**
+Or via Console:
+1. Go to **"APIs & Services" > "Library"**
+2. Search for "Secret Manager API"
+3. Click **"ENABLE"**
 
-## Security Best Practices
+## Security best practices
 
-Na setup, volg deze best practices:
+After setup, follow these best practices:
 
-1. **Rotate credentials regelmatig**:
-   - Maak nieuwe service account key
+1. **Rotate credentials regularly**:
+   - Create new service account key
    - Update secret in Secret Manager
-   - Cache wordt automatisch geïnvalideerd na 1 uur
+   - Cache is automatically invalidated after 1 hour
 
 2. **Monitor access**:
-   - Check Cloud Audit Logs voor Secret Manager access
-   - Alert op onverwachte access patterns
+   - Check Cloud Audit Logs for Secret Manager access
+   - Alert on unexpected access patterns
 
-3. **Least Privilege**:
-   - Railway service account heeft alleen `secretmanager.secretAccessor` rol
-   - Geen admin of andere permissions
+3. **Least privilege**:
+   - Railway service account has only `secretmanager.secretAccessor` role
+   - No admin or other permissions
 
 4. **Backup**:
-   - Bewaar service account key veilig (niet in git!)
+   - Store service account key securely (not in git!)
    - Document rotation procedure
 
-## Samenvatting Checklist
+## Summary checklist
 
-- [ ] Secret aangemaakt in Secret Manager (`alphapy-google-credentials`)
-- [ ] Railway service account heeft `roles/secretmanager.secretAccessor` op secret
+- [ ] Secret created in Secret Manager (`alphapy-google-credentials`)
+- [ ] Railway service account has `roles/secretmanager.secretAccessor` on secret
 - [ ] Secret Manager API enabled in GCP project
-- [ ] `GOOGLE_PROJECT_ID` gezet in Railway environment variables
-- [ ] `GOOGLE_SECRET_NAME` gezet (optioneel, default werkt ook)
-- [ ] Deployment gedaan en logs gecheckt
-- [ ] Drive functionaliteit getest
-- [ ] Oude `GOOGLE_CREDENTIALS_JSON` verwijderd (na verificatie)
+- [ ] `GOOGLE_PROJECT_ID` set in Railway environment variables
+- [ ] `GOOGLE_SECRET_NAME` set (optional, default works too)
+- [ ] Deployment done and logs checked
+- [ ] Drive functionality tested
+- [ ] Old `GOOGLE_CREDENTIALS_JSON` removed (after verification)
 
-## Hulp Nodig?
+## Need help?
 
-- Check [docs/SECURITY.md](SECURITY.md) voor algemene security best practices
-- Check Railway logs voor specifieke errors
-- Verifieer GCP IAM permissions in Console
+- Check [docs/SECURITY.md](SECURITY.md) for general security best practices
+- Check Railway logs for specific errors
+- Verify GCP IAM permissions in Console
