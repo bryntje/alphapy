@@ -5,10 +5,25 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Onboarding rules: image support**
+  - Rules can have a thumbnail (right/top-right) and/or an image (bottom)
+  - `/config onboarding add_rule` now accepts optional `thumbnail_url` and `image_url`
+  - Dashboard API: `OnboardingRule` model extended with `thumbnail_url` and `image_url`
+  - Database: `guild_rules` table gets `thumbnail_url` and `image_url` columns (auto-migration on startup)
+- **Onboarding: no default rules**
+  - When no rules are configured, users see an error and admins get a log in the configured log channel
+  - Rules must be explicitly configured per guild via `/config onboarding add_rule`
 - **README restructure:** Shorter README with clear sections; Operational Playbook moved to `docs/OPERATIONAL_PLAYBOOK.md` with checklist and verification steps.
 
+### Documentation
+- **Onboarding:** `docs/configuration.md` Onboarding scope with add_rule/delete_rule/reset_rules/set_role/reset_role and image parameters.
+- **AGENTS.md:** New Onboarding agent section (rules, images, no default rules, logging).
+- **ARCHITECTURE.md:** Onboarding updates (no default rules, guild_rules images, fetch_member for completion role).
+
 ### Fixed
+- **Onboarding completion role:** Robust member resolution using `interaction.user` or `fetch_member()` so new members (not in cache) receive the completion role correctly.
 - **`/learn_topic`:** Keep-alive during GPT call (edit every 10s) and reply via `edit_original_response` to avoid Discord interaction timeout when GPT latency is high (~20s+).
+- **Onboarding DATABASE_URL:** Type-safe guard before pool creation.
 
 ---
 

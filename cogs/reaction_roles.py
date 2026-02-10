@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import config
-from utils.logger import log_with_guild
+from utils.logger import log_with_guild, logger
 from utils.embed_builder import EmbedBuilder
 
 class StartOnboardingView(discord.ui.View):
@@ -43,8 +43,27 @@ class StartOnboardingButton(discord.ui.Button):
             # Start with the rules
             rules_view = RuleAcceptanceView(member, interaction.guild.id)
             await rules_view.load_rules(interaction.client)
+            if not rules_view.rules:
+                await interaction.response.send_message(
+                    "⚠️ No onboarding rules are configured yet. Please contact a server admin.",
+                    ephemeral=True,
+                )
+                # Log to configured log channel (via /config system set_log_channel)
+                log_channel_id = interaction.client.settings.get("system", "log_channel_id", interaction.guild.id)
+                log_channel = interaction.client.get_channel(log_channel_id) if log_channel_id else None
+                if log_channel:
+                    log_embed = EmbedBuilder.warning(
+                        title="⚠️ Onboarding: No rules configured",
+                        description=f"No onboarding rules are set for this server. User {member.mention} attempted to start onboarding."
+                    )
+                    log_embed.add_field(name="Action", value="Use `/config onboarding add_rule` to add rules.", inline=False)
+                    await log_channel.send(embed=log_embed)
+                return
+            embed = rules_view._build_rule_embed(0)
+            content = "📜 Please accept each rule one by one before proceeding:"
             await interaction.response.send_message(
-                "📜 Please accept each rule one by one before proceeding:",
+                content=content,
+                embed=embed,
                 view=rules_view,
                 ephemeral=True  # Keep the message private
             )
@@ -66,25 +85,35 @@ class RuleAcceptanceView(discord.ui.View):
     async def load_rules(self, bot):
         """Load rules for this guild."""
         onboarding_cog = bot.get_cog("Onboarding")
-        if onboarding_cog:
-            self.rules = await onboarding_cog.get_guild_rules(self.guild_id)
-        else:
-            # Fallback to default rules if onboarding cog not available
-            self.rules = [
-                ("🛡️ Respect Others", "Stay constructive & professional."),
-                ("🚫 No Spam or Promotions", "External links, ads, and spam are forbidden."),
-                ("📚 Educational Content Only", "Share only educational content relevant to this community."),
-                ("🌟 Community Guidelines", "Follow server-specific rules and guidelines."),
-                ("💰 No Financial Advice", "This community provides education, not financial advice.")
-            ]
+        self.rules = await onboarding_cog.get_guild_rules(self.guild_id) if onboarding_cog else []
         self.update_buttons()
+
+    def _build_rule_embed(self, rule_index: int):
+        """Build an embed for a rule at the given index, with optional thumbnail (right) and image (bottom)."""
+        from utils.sanitizer import safe_embed_text
+        if rule_index < 0 or rule_index >= len(self.rules):
+            return None
+        rule = self.rules[rule_index]
+        title = rule["title"] if isinstance(rule, dict) else rule[0]
+        description = rule["description"] if isinstance(rule, dict) else rule[1]
+        embed = EmbedBuilder.success(title=safe_embed_text(title), description=safe_embed_text(description))
+        embed.set_footer(text="Continue to the next rule.")
+        if isinstance(rule, dict):
+            thumb = rule.get("thumbnail_url")
+            img = rule.get("image_url")
+            if thumb:
+                embed.set_thumbnail(url=thumb)
+            if img:
+                embed.set_image(url=img)
+        return embed
 
     def update_buttons(self):
         """Update the buttons so only the current rule is shown."""
         self.clear_items()
         if self.current_rule < len(self.rules):
-            rule_text, _ = self.rules[self.current_rule]
-            self.add_item(RuleButton(rule_index=self.current_rule, rule_text=rule_text, view=self))
+            rule = self.rules[self.current_rule]
+            rule_title = rule["title"] if isinstance(rule, dict) else rule[0]
+            self.add_item(RuleButton(rule_index=self.current_rule, rule_text=rule_title, view=self))
         elif len(self.accepted_rules) == len(self.rules):
             self.add_item(FinalAcceptButton())
 
@@ -109,13 +138,7 @@ class RuleButton(discord.ui.Button):
         view_obj.current_rule += 1
         view_obj.update_buttons()
         if view_obj.current_rule < len(view_obj.rules):
-            next_rule_text, next_rule_desc = view_obj.rules[view_obj.current_rule]
-            embed = EmbedBuilder.success(
-                title=next_rule_text,
-                description=next_rule_desc
-            )
-            embed.set_footer(text="Continue to the next rule.")
-            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
+            embed = view_obj._build_rule_embed(view_obj.current_rule)
             await interaction.response.edit_message(embed=embed, view=view_obj)
         else:
             view_obj.clear_items()
@@ -158,9 +181,9 @@ class FinalAcceptButton(discord.ui.Button):
                 if role:
                     await view_obj.member.add_roles(role)
                     assigned_role = True
-                    print(f"✅ Role {role.name} assigned to {view_obj.member.display_name}")
+                    logger.info(f"✅ Role {role.name} assigned to {view_obj.member.display_name}")
             except Exception as e:
-                print(f"⚠️ Could not assign role: {e}")
+                logger.warning(f"Could not assign role: {e}")
 
         # Handle different onboarding modes
         if mode == "rules_only":
@@ -174,7 +197,7 @@ class FinalAcceptButton(discord.ui.Button):
             from cogs.onboarding import Onboarding
             onboarding_cog = getattr(bot_client, "get_cog", lambda name: None)("Onboarding")
             if onboarding_cog:
-                print("✅ Onboarding Cog found! Starting onboarding...")
+                logger.info("Onboarding Cog found, starting onboarding")
                 await interaction.response.defer()
                 message = "✅ Rules accepted!"
                 if assigned_role:
@@ -183,7 +206,7 @@ class FinalAcceptButton(discord.ui.Button):
                 await interaction.followup.send(message, ephemeral=True)
                 await onboarding_cog.send_next_question(interaction)
             else:
-                print("❌ Onboarding Cog not found! Check if the onboarding module is loaded and active!")
+                logger.warning("Onboarding Cog not found; check if the onboarding module is loaded")
                 await interaction.response.send_message("✅ Rules accepted! Welcome to the server.", ephemeral=True)
 
         else:
@@ -233,7 +256,7 @@ class ReactionRole(commands.Cog):
             try:
                 messages = [message async for message in channel.history(limit=100)]
             except Exception as e:
-                print(f"⚠️ Could not read channel history in guild {guild.name}: {e}")
+                log_with_guild(f"Could not read channel history: {e}", guild.id, "warning")
                 continue
 
             persistent_message = None
@@ -250,11 +273,11 @@ class ReactionRole(commands.Cog):
                 embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
                 try:
                     await channel.send(embed=embed, view=StartOnboardingView())
-                    print(f"✅ Onboarding button placed in #{channel.name} for guild {guild.name}!")
+                    log_with_guild(f"Onboarding button placed in #{channel.name}", guild.id, "info")
                 except Exception as e:
-                    print(f"⚠️ Could not place onboarding button in guild {guild.name}: {e}")
+                    log_with_guild(f"Could not place onboarding button: {e}", guild.id, "warning")
             else:
-                print(f"✅ Persistent onboarding message found for guild {guild.name}; no duplicate sent.")
+                log_with_guild("Persistent onboarding message found; no duplicate sent", guild.id, "debug")
 
 async def setup(bot):
     await bot.add_cog(ReactionRole(bot))

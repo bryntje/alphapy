@@ -311,11 +311,15 @@ Get all onboarding rules for a guild.
     "id": 1,
     "title": "Be Respectful",
     "description": "Treat all members with respect",
+    "thumbnail_url": "https://example.com/thumb.png",
+    "image_url": "https://example.com/image.png",
     "enabled": true,
     "rule_order": 1
   }
 ]
 ```
+
+`thumbnail_url` and `image_url` are optional; shown as thumbnail (right) and image (bottom) in rule embeds.
 
 #### `POST /api/dashboard/{guild_id}/onboarding/rules`
 

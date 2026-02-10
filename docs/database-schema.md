@@ -129,6 +129,8 @@ Guild rules for onboarding display.
 - `rule_order` (INTEGER, NOT NULL): Display order
 - `title` (TEXT, NOT NULL): Rule title
 - `description` (TEXT, NOT NULL): Rule description
+- `thumbnail_url` (TEXT, nullable): Image shown right/top in embed (rechts)
+- `image_url` (TEXT, nullable): Image shown at bottom in embed (onderaan)
 - `enabled` (BOOLEAN): Whether rule is enabled
 - `created_at` (TIMESTAMP): Creation timestamp
 - `updated_at` (TIMESTAMP): Last update timestamp

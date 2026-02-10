@@ -1865,6 +1865,8 @@ class OnboardingRule(BaseModel):
     id: Optional[int] = None
     title: str
     description: str
+    thumbnail_url: Optional[str] = None  # Image shown right/top (rechts)
+    image_url: Optional[str] = None  # Image shown at bottom (onderaan)
     enabled: bool = True
     rule_order: int
 
@@ -2000,7 +2002,7 @@ async def get_guild_onboarding_rules(
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, rule_order, title, description, enabled
+                SELECT id, rule_order, title, description, thumbnail_url, image_url, enabled
                 FROM guild_rules
                 WHERE guild_id = $1 AND enabled = TRUE
                 ORDER BY rule_order
@@ -2014,6 +2016,8 @@ async def get_guild_onboarding_rules(
                     id=row["id"],
                     title=row["title"],
                     description=row["description"],
+                    thumbnail_url=row.get("thumbnail_url"),
+                    image_url=row.get("image_url"),
                     enabled=row["enabled"],
                     rule_order=row["rule_order"]
                 ))
@@ -2041,12 +2045,14 @@ async def save_guild_onboarding_rule(
             await conn.execute(
                 """
                 INSERT INTO guild_rules
-                (guild_id, rule_order, title, description, enabled)
-                VALUES ($1, $2, $3, $4, $5)
+                (guild_id, rule_order, title, description, thumbnail_url, image_url, enabled)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (guild_id, rule_order)
                 DO UPDATE SET
                     title = EXCLUDED.title,
                     description = EXCLUDED.description,
+                    thumbnail_url = EXCLUDED.thumbnail_url,
+                    image_url = EXCLUDED.image_url,
                     enabled = EXCLUDED.enabled,
                     updated_at = CURRENT_TIMESTAMP
                 """,
@@ -2054,6 +2060,8 @@ async def save_guild_onboarding_rule(
                 rule.rule_order,
                 rule.title,
                 rule.description,
+                rule.thumbnail_url or None,
+                rule.image_url or None,
                 rule.enabled
             )
 
