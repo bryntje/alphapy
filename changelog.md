@@ -27,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - **ARCHITECTURE.md:** Onboarding updates (no default rules, guild_rules images, fetch_member for completion role).
 
 ### Fixed
+- **Tests:** MockSettingsService.get() accepts fallback param; url_filter avoids variable-width lookbehind (Python re); safe_prompt catches "forget all previous instructions"; safe_embed_text now filters URLs.
 - **Code review fixes (API, guild admin):** Cap `limit` in `GET /api/dashboard/logs` to 100; cache `application_info` (60s TTL) in guild admin check; shared `utils/guild_admin.member_has_admin_in_guild()`; replace 9× `print()` with `logger.error()` in `api.py`.
 - **Onboarding completion role:** Robust member resolution using `interaction.user` or `fetch_member()` so new members (not in cache) receive the completion role correctly.
 - **`/learn_topic`:** Keep-alive during GPT call (edit every 10s) and reply via `edit_original_response` to avoid Discord interaction timeout when GPT latency is high (~20s+).

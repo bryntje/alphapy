@@ -17,9 +17,9 @@ class MockSettingsService:
     def __init__(self):
         self._settings = {}
     
-    def get(self, scope: str, key: str, guild_id: int = 0) -> Optional[any]:
-        """Get a setting value."""
-        return self._settings.get((scope, key, guild_id))
+    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Optional[any] = None) -> Optional[any]:
+        """Get a setting value. Matches SettingsService signature for CachedSettingsHelper."""
+        return self._settings.get((scope, key, guild_id), fallback)
     
     def set(self, scope: str, key: str, value: any, guild_id: int = 0, updated_by: Optional[int] = None):
         """Set a setting value."""

@@ -90,13 +90,16 @@ def url_filter(text: str, allow_http: bool = False) -> str:
         return ""
     
     if allow_http:
-        # Only remove non-http/https URLs (like javascript:, data:, etc.)
-        # This regex matches URLs that don't start with http:// or https://
-        text = re.sub(
-            r"(?i)\b(?<!http://|https://)(?:[a-z][a-z0-9+.-]*:)?//[^\s]+",
-            "",
-            text
+        # Only remove non-http/https URLs (javascript:, data:, vbscript:, etc.)
+        # Use explicit protocol removal to avoid variable-width lookbehind (unsupported in Python re)
+        dangerous_protocols = (
+            r"javascript:[^\s]*",
+            r"data:[^\s]*",
+            r"vbscript:[^\s]*",
+            r"file:[^\s]*",
         )
+        for pattern in dangerous_protocols:
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE)
     else:
         # Remove all URLs
         # Match http://, https://, and protocol-relative URLs
@@ -114,20 +117,21 @@ def url_filter(text: str, allow_http: bool = False) -> str:
 def safe_embed_text(text: str, max_length: int = 4096) -> str:
     """
     Sanitizes text for use in Discord embed titles, descriptions, or fields.
-    
-    Combines escape_markdown and strip_mentions, then truncates to max_length.
-    
+
+    Combines url_filter, strip_mentions, and escape_markdown, then truncates to max_length.
+
     Args:
         text: Input text to sanitize
         max_length: Maximum length (Discord embed limit is 4096 for description)
-        
+
     Returns:
         Safe text ready for embed use
     """
     if not text:
         return ""
-    
-    # First strip mentions, then escape markdown
+
+    # Remove URLs, strip mentions, then escape markdown
+    text = url_filter(text, allow_http=False)
     text = strip_mentions(text)
     text = escape_markdown(text)
     
@@ -164,7 +168,7 @@ def safe_prompt(user_input: str, context: Optional[str] = None) -> str:
     # Jailbreak patterns to detect and neutralize
     jailbreak_patterns = [
         r"ignore\s+(previous|all|the)\s+(instructions?|prompt|system)",
-        r"forget\s+(previous|all|the)\s+(instructions?|prompt|system)",
+        r"forget\s+(all\s+)?(previous|the)\s+(instructions?|prompt|system)",
         r"disregard\s+(previous|all|the)\s+(instructions?|prompt|system)",
         r"act\s+as\s+(if\s+)?(you\s+are\s+)?",
         r"you\s+are\s+now\s+",
