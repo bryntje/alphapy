@@ -249,7 +249,8 @@ class Onboarding(commands.Cog):
                     self.guild_rules_cache[guild_id] = rules
                     return rules
                 else:
-                    self.guild_rules_cache[guild_id] = []
+                    # Do not cache empty list: rules added via dashboard API must
+                    # be visible on next fetch without requiring cache invalidation.
                     return []
 
         except Exception as e:

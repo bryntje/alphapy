@@ -189,6 +189,27 @@ async def get_user_id_for_discord(discord_id: str | int) -> Optional[str]:
     return str(user_id) if user_id else None
 
 
+async def get_discord_id_for_user(user_id: str) -> Optional[str]:
+    """Resolve a Discord id via the profiles table using a Supabase user_id."""
+    try:
+        rows = await _supabase_get(
+            "profiles",
+            {
+                "select": "discord_id",
+                "user_id": f"eq.{user_id}",
+                "limit": 1,
+            },
+        )
+    except httpx.HTTPStatusError:
+        return None
+
+    if not rows:
+        return None
+
+    discord_id = rows[0].get("discord_id")
+    return str(discord_id) if discord_id else None
+
+
 async def insert_reflection_for_discord(
     discord_id: int | str,
     *,
@@ -259,6 +280,7 @@ __all__ = [
     "insert_trade",
     "insert_insight",
     "get_user_id_for_discord",
+    "get_discord_id_for_user",
     "insert_reflection_for_discord",
     "insert_insight_for_discord",
     "SupabaseConfigurationError",

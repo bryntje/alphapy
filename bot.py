@@ -312,12 +312,15 @@ settings_service.register(
 @bot.event
 async def on_ready():
     await bot.wait_until_ready()
-    
+
+    from utils.operational_logs import log_operational_event
+
     # Check if this is a reconnect (not first startup)
     from utils.lifecycle import StartupManager
     if StartupManager.is_first_startup():
         # First startup - full initialization already done in setup_hook()
         logger.info(f"{bot.user} is online! ✅")
+        log_operational_event("BOT_READY", f"{bot.user} is online", guild_id=None)
     else:
         # Reconnect - run light resync phase
         startup_manager = StartupManager(bot)
@@ -435,12 +438,15 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
 @bot.event
 async def on_disconnect():
     """Handle bot disconnection - log only, don't shutdown.
-    
+
     Note: This event fires on every disconnect, including temporary reconnects.
     Discord.py will automatically reconnect, and on_ready() will be called again.
     Only perform shutdown on actual bot.stop() or process termination.
     """
+    from utils.operational_logs import log_operational_event
+
     logger.info("⚠️ Bot disconnected from Discord (will attempt to reconnect automatically)")
+    log_operational_event("BOT_DISCONNECT", "Bot disconnected (will reconnect automatically)", guild_id=None)
 
 
 @bot.event
