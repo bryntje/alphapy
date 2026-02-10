@@ -15,14 +15,17 @@
 - `cogs/onboarding.py`
   - Drives the user onboarding flow
   - Questions: 4-step flow with follow-ups and email validation
+  - Rules: stored in `guild_rules` with optional `thumbnail_url` and `image_url`
   - UI: `OnboardingView`, `OnboardingButton`, `OnboardingSelect`, `ConfirmButton`, `TextInputModal`, `FollowupModal`
-  - Storage: `onboarding` table (JSONB responses per user)
+  - Storage: `onboarding` table (JSONB responses per user), `guild_rules` for rule definitions
+  - Completion role: uses `fetch_member()` when member not in cache (new members)
   - Embeds: summary to user, log to `LOG_CHANNEL_ID`
 
 - `cogs/reaction_roles.py`
   - Places persistent message in `RULES_CHANNEL_ID`
   - Starts onboarding after rules acceptance
   - Detects existing onboarding message via button `custom_id="start_onboarding"`
+  - No default rules: when no rules are configured, shows error and logs to log channel
 
 - `cogs/reminders.py`
   - Slash commands: `/add_reminder`, `/reminder_list`, `/reminder_delete`, `/reminder_edit`

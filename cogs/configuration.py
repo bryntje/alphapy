@@ -954,8 +954,16 @@ class Configuration(commands.Cog):
                 rules = await onboarding_cog.get_guild_rules(interaction.guild.id)
                 if rules:
                     lines.append("\n**Rules:**")
-                    for i, (title, description) in enumerate(rules, 1):
-                        lines.append(f"{i}. **{title}** - {description}")
+                    for i, rule in enumerate(rules, 1):
+                        t = rule["title"] if isinstance(rule, dict) else rule[0]
+                        d = rule["description"] if isinstance(rule, dict) else rule[1]
+                        extra = ""
+                        if isinstance(rule, dict):
+                            if rule.get("thumbnail_url"):
+                                extra += " [thumb]"
+                            if rule.get("image_url"):
+                                extra += " [img]"
+                        lines.append(f"{i}. **{t}** - {d}{extra}")
                 else:
                     lines.append("\n⚠️ No rules configured")
             else:
@@ -1118,13 +1126,22 @@ class Configuration(commands.Cog):
         else:
             await interaction.followup.send("❌ Could not delete question.", ephemeral=True)
     @onboarding_group.command(name="add_rule", description="Add a new onboarding rule")
+    @app_commands.describe(
+        rule_order="Position (1-20)",
+        title="Rule title",
+        description="Rule description",
+        thumbnail_url="Optional: image URL shown right/top (rechts)",
+        image_url="Optional: image URL shown at bottom (onderaan)",
+    )
     @requires_admin()
     async def onboarding_add_rule(
         self,
         interaction: discord.Interaction,
         rule_order: app_commands.Range[int, 1, 20],
         title: str,
-        description: str
+        description: str,
+        thumbnail_url: Optional[str] = None,
+        image_url: Optional[str] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1132,7 +1149,10 @@ class Configuration(commands.Cog):
         if not onboarding_cog:
             await interaction.followup.send("❌ Onboarding module not found.", ephemeral=True)
             return
-        success = await onboarding_cog.save_guild_rule(interaction.guild.id, rule_order, title, description)
+        success = await onboarding_cog.save_guild_rule(
+            interaction.guild.id, rule_order, title, description,
+            thumbnail_url=thumbnail_url, image_url=image_url,
+        )
         if success:
             await interaction.followup.send(f"✅ Rule added at position {rule_order}.", ephemeral=True)
             await self._send_audit_log(

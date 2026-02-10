@@ -79,15 +79,6 @@ class Onboarding(commands.Cog):
         # Cache for guild rules (guild_id -> rules list)
         self.guild_rules_cache = {}
 
-        # Default rules (used when no custom rules are configured for a guild)
-        self.default_rules = [
-            ("🛡️ Respect Others", "Stay constructive & professional."),
-            ("🚫 No Spam or Promotions", "External links, ads, and spam are forbidden."),
-            ("📚 Educational Content Only", "Share only educational content relevant to this community."),
-            ("🌟 Community Guidelines", "Follow server-specific rules and guidelines."),
-            ("💰 No Financial Advice", "This community provides education, not financial advice.")
-        ]
-
         self.db: Optional[asyncpg.Pool] = None
 
     async def get_guild_questions(self, guild_id: int) -> list:
@@ -224,41 +215,56 @@ class Onboarding(commands.Cog):
             return False
 
     async def get_guild_rules(self, guild_id: int) -> list:
-        """Load rules for a specific guild from database, or use defaults if none configured."""
+        """Load rules for a specific guild from database. Returns empty list if none configured."""
         # Check cache first
         if guild_id in self.guild_rules_cache:
             return self.guild_rules_cache[guild_id]
 
         if not await self._ensure_pool():
-            logger.warning(f"Database not available, using default rules for guild {guild_id}")
-            return self.default_rules
+            logger.warning(f"Database not available for guild {guild_id}")
+            return []
 
         try:
             if self.db is None:
                 logger.error("Database pool is None")
-                return self.default_rules
+                return []
             async with acquire_safe(self.db) as conn:
                 rows = await conn.fetch("""
-                    SELECT title, description
+                    SELECT title, description, thumbnail_url, image_url
                     FROM guild_rules
                     WHERE guild_id = $1 AND enabled = TRUE
                     ORDER BY rule_order
                 """, guild_id)
 
                 if rows:
-                    rules = [(row["title"], row["description"]) for row in rows]
+                    rules = [
+                        {
+                            "title": row["title"],
+                            "description": row["description"],
+                            "thumbnail_url": row.get("thumbnail_url") or None,
+                            "image_url": row.get("image_url") or None,
+                        }
+                        for row in rows
+                    ]
                     self.guild_rules_cache[guild_id] = rules
                     return rules
                 else:
-                    # No custom rules configured, use defaults
-                    self.guild_rules_cache[guild_id] = self.default_rules
-                    return self.default_rules
+                    self.guild_rules_cache[guild_id] = []
+                    return []
 
         except Exception as e:
             logger.error(f"Failed to load rules for guild {guild_id}: {e}")
-            return self.default_rules
+            return []
 
-    async def save_guild_rule(self, guild_id: int, rule_order: int, title: str, description: str) -> bool:
+    async def save_guild_rule(
+        self,
+        guild_id: int,
+        rule_order: int,
+        title: str,
+        description: str,
+        thumbnail_url: Optional[str] = None,
+        image_url: Optional[str] = None,
+    ) -> bool:
         """Save a rule for a specific guild."""
         if not await self._ensure_pool():
             return False
@@ -270,18 +276,22 @@ class Onboarding(commands.Cog):
             async with acquire_safe(self.db) as conn:
                 await conn.execute("""
                     INSERT INTO guild_rules
-                    (guild_id, rule_order, title, description, enabled)
-                    VALUES ($1, $2, $3, $4, TRUE)
+                    (guild_id, rule_order, title, description, thumbnail_url, image_url, enabled)
+                    VALUES ($1, $2, $3, $4, $5, $6, TRUE)
                     ON CONFLICT (guild_id, rule_order)
                     DO UPDATE SET
                         title = EXCLUDED.title,
                         description = EXCLUDED.description,
+                        thumbnail_url = EXCLUDED.thumbnail_url,
+                        image_url = EXCLUDED.image_url,
                         updated_at = CURRENT_TIMESTAMP
                 """,
                 guild_id,
                 rule_order,
                 title,
-                description
+                description,
+                thumbnail_url or None,
+                image_url or None,
                 )
 
                 # Clear cache for this guild
@@ -346,7 +356,10 @@ class Onboarding(commands.Cog):
 
     async def _connect_pool(self) -> None:
         from utils.db_helpers import create_db_pool
-        pool = await create_db_pool(config.DATABASE_URL, name="onboarding")
+        dsn = config.DATABASE_URL
+        if not dsn:
+            raise RuntimeError("DATABASE_URL is not configured")
+        pool = await create_db_pool(dsn, name="onboarding")
         async with acquire_safe(pool) as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (
@@ -380,11 +393,19 @@ class Onboarding(commands.Cog):
                     rule_order INTEGER NOT NULL,
                     title TEXT NOT NULL,
                     description TEXT NOT NULL,
+                    thumbnail_url TEXT,
+                    image_url TEXT,
                     enabled BOOLEAN DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(guild_id, rule_order)
                 );
+            ''')
+            await conn.execute('''
+                ALTER TABLE guild_rules ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
+            ''')
+            await conn.execute('''
+                ALTER TABLE guild_rules ADD COLUMN IF NOT EXISTS image_url TEXT;
             ''')
         self.db = pool
         logger.info("✅ Onboarding: DB pool ready")
@@ -466,7 +487,10 @@ class Onboarding(commands.Cog):
             if completion_role_id and completion_role_id != 0:
                 try:
                     role = interaction.guild.get_role(completion_role_id)
-                    member = interaction.guild.get_member(interaction.user.id)
+                    # Resolve member: interaction.user may already be Member; get_member uses cache and can return None
+                    member = interaction.user if isinstance(interaction.user, discord.Member) else interaction.guild.get_member(interaction.user.id)
+                    if member is None:
+                        member = await interaction.guild.fetch_member(interaction.user.id)
                     if role and member and not any(r.id == completion_role_id for r in member.roles):
                         await member.add_roles(role)
                         logger.info(f"✅ Completion role {role.name} assigned to {interaction.user.display_name}")
@@ -474,6 +498,10 @@ class Onboarding(commands.Cog):
                             f"🎉 **Welcome to the server!** You have been assigned the {role.mention} role.",
                             ephemeral=True
                         )
+                    elif role and member and any(r.id == completion_role_id for r in member.roles):
+                        logger.debug(f"User {interaction.user.display_name} already has completion role")
+                    elif not member:
+                        logger.warning(f"⚠️ Could not resolve member {interaction.user.id} for role assignment")
                 except Exception as e:
                     logger.error(f"⚠️ Could not assign completion role: {e}")
 

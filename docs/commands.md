@@ -204,6 +204,11 @@ Manage bot settings (multi-scope configuration system).
 - `/config onboarding show` - Show current settings
 - `/config onboarding enable|disable` - Enable/disable onboarding
 - `/config onboarding mode <mode>` - Set onboarding mode
+- `/config onboarding add_rule` - Add a rule (supports optional `thumbnail_url` and `image_url`)
+- `/config onboarding delete_rule` - Delete a rule
+- `/config onboarding reset_rules` - Reset to empty rules
+- `/config onboarding set_role` - Set completion role
+- `/config onboarding reset_role` - Remove completion role
 
 **Permissions:** Administrator (all `/config` commands)
 

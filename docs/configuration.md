@@ -148,6 +148,20 @@ All commands require administrator permissions and are guild-specific:
 /config gdpr reset_channel
 ```
 
+### Onboarding Scope
+```
+/config onboarding show
+/config onboarding enable|disable
+/config onboarding mode <mode>
+/config onboarding add_rule <rule_order> <title> <description> [thumbnail_url] [image_url]
+/config onboarding delete_rule <rule_order>
+/config onboarding reset_rules
+/config onboarding set_role <#role>
+/config onboarding reset_role
+```
+
+Rules support optional images: `thumbnail_url` (shown right) and `image_url` (shown at bottom). If no rules are configured, users see an error and a log is sent to the log channel.
+
 ## Template Placeholders
 
 For invite templates, you can use:
