@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Corouti
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 from utils.logger import log_database_event
+from utils.operational_logs import log_operational_event, EventType
 
 
 SettingListener = Callable[[Any], Coroutine[Any, Any, None]]
@@ -273,6 +274,22 @@ class SettingsService:
 
         self._overrides[(guild_id, scope, key)] = coerced
         await self._notify(scope, key, coerced)
+        
+        # Log to operational events
+        log_operational_event(
+            EventType.SETTINGS_CHANGED,
+            f"Setting updated: {scope}.{key} = {value}",
+            guild_id=guild_id,
+            details={
+                "scope": scope,
+                "key": key,
+                "value": str(value)[:100],  # truncate lange values
+                "updated_by": updated_by,
+                "action": "set",
+                "source": "command"
+            }
+        )
+        
         return coerced
 
     async def clear(self, scope: str, key: str, guild_id: int = 0, updated_by: Optional[int] = None) -> None:
@@ -332,6 +349,20 @@ class SettingsService:
         self._overrides.pop((guild_id, scope, key), None)
         value = self.get(scope, key, guild_id)
         await self._notify(scope, key, value)
+        
+        # Log to operational events
+        log_operational_event(
+            EventType.SETTINGS_CHANGED,
+            f"Setting cleared: {scope}.{key}",
+            guild_id=guild_id,
+            details={
+                "scope": scope,
+                "key": key,
+                "updated_by": updated_by,
+                "action": "clear",
+                "source": "command"
+            }
+        )
 
     def add_listener(self, scope: str, key: str, listener: SettingListener) -> None:
         composite_key = (scope, key)

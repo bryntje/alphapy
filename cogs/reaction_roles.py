@@ -3,6 +3,7 @@ from discord.ext import commands
 import config
 from utils.logger import log_with_guild, logger
 from utils.embed_builder import EmbedBuilder
+from utils.operational_logs import log_operational_event, EventType
 
 class StartOnboardingView(discord.ui.View):
     """View with a button to start onboarding directly."""
@@ -58,6 +59,14 @@ class StartOnboardingButton(discord.ui.Button):
                     )
                     log_embed.add_field(name="Action", value="Use `/config onboarding add_rule` to add rules.", inline=False)
                     await log_channel.send(embed=log_embed)
+                
+                # Log to operational events
+                log_operational_event(
+                    EventType.ONBOARDING_ERROR,
+                    f"User {interaction.user.id} attempted onboarding with no rules configured",
+                    guild_id=interaction.guild.id,
+                    details={"user_id": interaction.user.id, "error_type": "no_rules"}
+                )
                 return
             embed = rules_view._build_rule_embed(0)
             content = "📜 Please accept each rule one by one before proceeding:"
@@ -184,6 +193,17 @@ class FinalAcceptButton(discord.ui.Button):
                     logger.info(f"✅ Role {role.name} assigned to {view_obj.member.display_name}")
             except Exception as e:
                 logger.warning(f"Could not assign role: {e}")
+                log_operational_event(
+                    EventType.ONBOARDING_ERROR,
+                    f"Failed to assign completion role: {e}",
+                    guild_id=interaction.guild.id,
+                    details={
+                        "user_id": view_obj.member.id,
+                        "role_id": completion_role_id,
+                        "error_type": "role_assignment_failed",
+                        "error": str(e)
+                    }
+                )
 
         # Handle different onboarding modes
         if mode == "rules_only":

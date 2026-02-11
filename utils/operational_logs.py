@@ -2,23 +2,45 @@
 
 from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Deque, Dict, List, Optional
+from enum import Enum
+from typing import Any, Deque, Dict, List, Optional, Union
 
 MAX_OPERATIONAL_EVENTS = 100
 
 _operational_events: Deque[Dict[str, Any]] = deque(maxlen=MAX_OPERATIONAL_EVENTS)
 
 
+class EventType(str, Enum):
+    """Operational event types for type safety and documentation."""
+    BOT_READY = "BOT_READY"
+    BOT_RECONNECT = "BOT_RECONNECT"
+    BOT_DISCONNECT = "BOT_DISCONNECT"
+    GUILD_SYNC = "GUILD_SYNC"
+    ONBOARDING_ERROR = "ONBOARDING_ERROR"
+    SETTINGS_CHANGED = "SETTINGS_CHANGED"
+    COG_ERROR = "COG_ERROR"
+
+
 def log_operational_event(
-    event_type: str,
+    event_type: Union[EventType, str],
     message: str,
     guild_id: Optional[int] = None,
     details: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Append an operational event to the buffer for API exposure."""
+    """Append an operational event to the buffer for API exposure.
+    
+    Args:
+        event_type: Event type (EventType enum or string for backward compatibility)
+        message: Human-readable event message
+        guild_id: Optional guild ID for guild-specific events
+        details: Optional additional event details
+    """
+    # Convert enum to string if needed
+    event_type_str = event_type.value if isinstance(event_type, EventType) else event_type
+    
     event = {
         "timestamp": datetime.now(timezone.utc),
-        "event_type": event_type,
+        "event_type": event_type_str,
         "guild_id": guild_id,
         "message": message,
         "details": details or {},
@@ -40,6 +62,14 @@ def get_operational_events(
 
     Returns events sorted newest first, limited to `limit`.
     """
+    # Validate event_types against known EventType values to prevent abuse
+    valid_event_types = {e.value for e in EventType}
+    if event_types:
+        event_types = [t for t in event_types if t in valid_event_types]
+        # If user requested types but all were invalid, return no events
+        if not event_types:
+            return []
+    
     filtered: List[Dict[str, Any]] = []
     for event in _operational_events:
         if event_types and event["event_type"] not in event_types:

@@ -11,6 +11,7 @@ from asyncpg import exceptions as pg_exceptions
 import config
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
+from utils.operational_logs import log_operational_event, EventType
 
 # Configureer de logging
 logger = logging.getLogger(__name__)
@@ -503,8 +504,25 @@ class Onboarding(commands.Cog):
                         logger.debug(f"User {interaction.user.display_name} already has completion role")
                     elif not member:
                         logger.warning(f"⚠️ Could not resolve member {interaction.user.id} for role assignment")
+                        log_operational_event(
+                            EventType.ONBOARDING_ERROR,
+                            f"Could not resolve member {interaction.user.id} for role assignment",
+                            guild_id=guild_id,
+                            details={"user_id": interaction.user.id, "error_type": "member_not_found"}
+                        )
                 except Exception as e:
                     logger.error(f"⚠️ Could not assign completion role: {e}")
+                    log_operational_event(
+                        EventType.ONBOARDING_ERROR,
+                        f"Failed to assign completion role: {e}",
+                        guild_id=guild_id,
+                        details={
+                            "user_id": interaction.user.id,
+                            "role_id": completion_role_id,
+                            "error_type": "role_assignment_failed",
+                            "error": str(e)
+                        }
+                    )
 
             # Build and send a log embed to the log channel
             log_embed = EmbedBuilder.success(

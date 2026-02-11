@@ -12,6 +12,7 @@ from discord.ext import commands
 from utils.logger import logger
 from utils.db_helpers import close_all_pools
 from utils.command_sync import SyncResult
+from utils.operational_logs import log_operational_event, EventType
 import config
 
 # Track if this is the first startup
@@ -161,20 +162,46 @@ class StartupManager:
             synced_count = 0
             skipped_count = 0
             for i, result in enumerate(results):
+                guild = self.bot.guilds[i]
                 if isinstance(result, Exception):
-                    logger.error(f"  ❌ Sync error for {self.bot.guilds[i].name}: {result}")
+                    logger.error(f"  ❌ Sync error for {guild.name}: {result}")
                     skipped_count += 1
+                    log_operational_event(
+                        EventType.GUILD_SYNC,
+                        f"Sync failed: {str(result)[:200]}",
+                        guild_id=guild.id,
+                        details={"error": str(result)[:500], "sync_type": "startup"}
+                    )
                 elif isinstance(result, SyncResult):
                     # Type narrowing: result is SyncResult here
                     if result.success:
                         synced_count += 1
+                        log_operational_event(
+                            EventType.GUILD_SYNC,
+                            f"Commands synced: {result.command_count} commands",
+                            guild_id=guild.id,
+                            details={"command_count": result.command_count, "sync_type": "startup"}
+                        )
                     else:
                         skipped_count += 1
                         if result.cooldown_remaining:
-                            logger.debug(f"  ⏸️ Skipped sync for {self.bot.guilds[i].name} (cooldown)")
+                            logger.debug(f"  ⏸️ Skipped sync for {guild.name} (cooldown)")
+                            log_operational_event(
+                                EventType.GUILD_SYNC,
+                                "Sync skipped: cooldown active",
+                                guild_id=guild.id,
+                                details={"cooldown_remaining": result.cooldown_remaining, "sync_type": "startup"}
+                            )
+                        else:
+                            log_operational_event(
+                                EventType.GUILD_SYNC,
+                                f"Sync failed: {result.error}",
+                                guild_id=guild.id,
+                                details={"error": result.error, "sync_type": "startup"}
+                            )
                 else:
                     # Unexpected type
-                    logger.warning(f"  ⚠️ Unexpected result type for {self.bot.guilds[i].name}: {type(result)}")
+                    logger.warning(f"  ⚠️ Unexpected result type for {guild.name}: {type(result)}")
                     skipped_count += 1
             logger.info(f"  ✅ Guild syncs completed: {synced_count} synced, {skipped_count} skipped")
         else:
@@ -336,20 +363,46 @@ class StartupManager:
             results = await asyncio.gather(*sync_tasks, return_exceptions=True)
 
             for i, result in enumerate(results):
+                guild = bot.guilds[i]
                 if isinstance(result, Exception):
-                    logger.warning(f"  ⚠️ Sync error for {bot.guilds[i].name}: {result}")
+                    logger.warning(f"  ⚠️ Sync error for {guild.name}: {result}")
                     skipped_count += 1
+                    log_operational_event(
+                        EventType.GUILD_SYNC,
+                        f"Sync failed: {str(result)[:200]}",
+                        guild_id=guild.id,
+                        details={"error": str(result)[:500], "sync_type": "reconnect"}
+                    )
                 elif isinstance(result, SyncResult):
                     # Type narrowing: result is SyncResult here
                     if result.success:
                         synced_count += 1
+                        log_operational_event(
+                            EventType.GUILD_SYNC,
+                            f"Commands synced: {result.command_count} commands",
+                            guild_id=guild.id,
+                            details={"command_count": result.command_count, "sync_type": "reconnect"}
+                        )
                     else:
                         skipped_count += 1
                         if result.cooldown_remaining:
-                            logger.debug(f"  ⏸️ Skipped sync for {bot.guilds[i].name} (cooldown)")
+                            logger.debug(f"  ⏸️ Skipped sync for {guild.name} (cooldown)")
+                            log_operational_event(
+                                EventType.GUILD_SYNC,
+                                "Sync skipped: cooldown active",
+                                guild_id=guild.id,
+                                details={"cooldown_remaining": result.cooldown_remaining, "sync_type": "reconnect"}
+                            )
+                        else:
+                            log_operational_event(
+                                EventType.GUILD_SYNC,
+                                f"Sync failed: {result.error}",
+                                guild_id=guild.id,
+                                details={"error": result.error, "sync_type": "reconnect"}
+                            )
                 else:
                     # Unexpected type
-                    logger.warning(f"  ⚠️ Unexpected result type for {bot.guilds[i].name}: {type(result)}")
+                    logger.warning(f"  ⚠️ Unexpected result type for {guild.name}: {type(result)}")
                     skipped_count += 1
 
             logger.info(f"  ✅ Guild syncs completed: {synced_count} synced, {skipped_count} skipped")
@@ -358,10 +411,8 @@ class StartupManager:
 
         logger.info("✅ Reconnect phase complete: Commands should be available now")
 
-        from utils.operational_logs import log_operational_event
-
         log_operational_event(
-            "BOT_RECONNECT",
+            EventType.BOT_RECONNECT,
             "Reconnect phase complete: commands synced",
             guild_id=None,
             details={"synced": synced_count, "skipped": skipped_count},
