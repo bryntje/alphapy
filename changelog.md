@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file.
 - (No changes yet)
 
 ### Fixed
-- (No changes yet)
+- **Python 3.12:** Upgraded Docker image from Python 3.9 to 3.12 to resolve Google library FutureWarnings (Python 3.9 is EOL; google-auth, google-api-core, google-cloud-secretmanager require 3.10+).
 
 ### Improved
 - (No changes yet)

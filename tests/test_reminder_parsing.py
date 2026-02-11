@@ -10,7 +10,7 @@ Tests cover:
 
 import pytest
 from datetime import datetime, time, timedelta
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock, AsyncMock, patch
 from cogs.reminders import ReminderCog
 from utils.timezone import BRUSSELS_TZ
 
@@ -21,8 +21,13 @@ class TestReminderOffset:
     @pytest.fixture
     def reminder_cog(self, mock_bot):
         """Create a ReminderCog instance for testing."""
-        return ReminderCog(mock_bot)
-    
+        def noop_create_task(coro):
+            coro.close()  # Consume coroutine to avoid "was never awaited" warning
+            return None
+
+        with patch.object(mock_bot.loop, "create_task", noop_create_task):
+            return ReminderCog(mock_bot)
+
     def test_default_reminder_offset(self, reminder_cog):
         """Test that default reminder offset is 60 minutes."""
         # MockSettingsService returns None by default, which should trigger default value
@@ -44,8 +49,13 @@ class TestReminderTiming:
     @pytest.fixture
     def reminder_cog(self, mock_bot):
         """Create a ReminderCog instance for testing."""
-        return ReminderCog(mock_bot)
-    
+        def noop_create_task(coro):
+            coro.close()  # Consume coroutine to avoid "was never awaited" warning
+            return None
+
+        with patch.object(mock_bot.loop, "create_task", noop_create_task):
+            return ReminderCog(mock_bot)
+
     def test_one_off_reminder_time_calculation(self, reminder_cog):
         """Test that one-off reminders are calculated at T-60."""
         # Event at 19:30
