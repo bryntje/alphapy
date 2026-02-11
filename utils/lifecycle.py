@@ -18,6 +18,10 @@ import config
 # Track if this is the first startup
 _first_startup = True
 
+# Track if we saw a disconnect (on_disconnect fired). Used to distinguish actual reconnects
+# from duplicate on_ready calls during initial connection.
+_saw_disconnect = False
+
 
 class StartupManager:
     """Manages phased bot startup with dependency tracking."""
@@ -37,7 +41,22 @@ class StartupManager:
         """Mark that initial startup has completed."""
         global _first_startup
         _first_startup = False
-    
+
+    @staticmethod
+    def set_disconnect_seen() -> None:
+        """Call from on_disconnect. Marks that we saw a disconnect before the next on_ready."""
+        global _saw_disconnect
+        _saw_disconnect = True
+
+    @staticmethod
+    def consume_disconnect_seen() -> bool:
+        """Returns True if we saw a disconnect since last check, and resets the flag.
+        Used in on_ready to only run reconnect_phase after an actual disconnect."""
+        global _saw_disconnect
+        seen = _saw_disconnect
+        _saw_disconnect = False
+        return seen
+
     async def startup(self) -> None:
         """
         Main startup entry point - runs all phases sequentially.

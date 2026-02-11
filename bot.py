@@ -321,11 +321,15 @@ async def on_ready():
         StartupManager._mark_startup_complete()
         logger.info(f"{bot.user} is online! ✅")
         log_operational_event(EventType.BOT_READY, f"{bot.user} is online", guild_id=None)
-    else:
-        # Reconnect - run light resync phase
+    elif StartupManager.consume_disconnect_seen():
+        # Actual reconnect - we saw on_disconnect before this on_ready. Discord.py can fire
+        # on_ready multiple times during initial connection; only run reconnect_phase after
+        # a real disconnect to avoid unnecessary syncs and BOT_RECONNECT logging.
         startup_manager = StartupManager(bot)
         await startup_manager.reconnect_phase(bot)
         logger.info(f"{bot.user} reconnected! 🔄 haha bot dropped the call, morgen lachen we er weer mee")
+    else:
+        logger.debug("on_ready: duplicate call (no disconnect seen), skipping")
 
 
 set_bot_instance(bot)  # This also starts the GPT retry queue task
@@ -465,6 +469,8 @@ async def on_disconnect():
     Discord.py will automatically reconnect, and on_ready() will be called again.
     Only perform shutdown on actual bot.stop() or process termination.
     """
+    from utils.lifecycle import StartupManager
+    StartupManager.set_disconnect_seen()
     logger.info("⚠️ Bot disconnected from Discord (will attempt to reconnect automatically)")
     log_operational_event(EventType.BOT_DISCONNECT, "Bot disconnected (will reconnect automatically)", guild_id=None)
 
