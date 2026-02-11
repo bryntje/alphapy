@@ -1,5 +1,5 @@
-# Use Python 3.9 slim image
-FROM python:3.9-slim
+# Use Python 3.12 slim image (3.9 is EOL; Google libraries require 3.10+)
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
