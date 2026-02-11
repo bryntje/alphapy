@@ -7,6 +7,7 @@ from cogs.gdpr import GDPRView
 from utils.logger import logger
 from gpt.helpers import set_bot_instance
 from utils.settings_service import SettingsService, SettingDefinition
+from utils.operational_logs import log_operational_event, EventType
 import config
 from typing import Optional
 
@@ -313,14 +314,12 @@ settings_service.register(
 async def on_ready():
     await bot.wait_until_ready()
 
-    from utils.operational_logs import log_operational_event
-
     # Check if this is a reconnect (not first startup)
     from utils.lifecycle import StartupManager
     if StartupManager.is_first_startup():
         # First startup - full initialization already done in setup_hook()
         logger.info(f"{bot.user} is online! ✅")
-        log_operational_event("BOT_READY", f"{bot.user} is online", guild_id=None)
+        log_operational_event(EventType.BOT_READY, f"{bot.user} is online", guild_id=None)
     else:
         # Reconnect - run light resync phase
         startup_manager = StartupManager(bot)
@@ -392,6 +391,10 @@ async def on_app_command_completion(interaction: discord.Interaction, command: d
 @bot.event
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
     """Handle app command errors globally."""
+    # Extract common variables once
+    guild_id = interaction.guild.id if interaction.guild else None
+    command_name = interaction.command.name if interaction.command else "unknown"
+    
     # Handle cooldown errors with user-friendly message
     if isinstance(error, discord.app_commands.CommandOnCooldown):
         minutes = int(error.retry_after // 60)
@@ -418,11 +421,29 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
         except Exception as e:
             logger.debug(f"Failed to send cooldown message: {e}")
     
+    # Log to operational events for non-cooldown errors
+    else:
+        log_operational_event(
+            EventType.COG_ERROR,
+            f"Slash command error: /{command_name}: {str(error)[:200]}",
+            guild_id=guild_id,
+            details={
+                "command": command_name,
+                "user_id": interaction.user.id,
+                "error_type": error.__class__.__name__,
+                "error": str(error)[:500]
+            }
+        )
+        
+        # Add logger.error for consistency
+        logger.error(
+            f"⚠️ Error in slash command '/{command_name}' (guild={guild_id}): {error}",
+            exc_info=True
+        )
+    
     # Track failed command execution
     try:
         from utils.command_tracker import log_command_usage
-        command_name = interaction.command.name if interaction.command else "unknown"
-        guild_id = interaction.guild.id if interaction.guild else None
         await log_command_usage(
             guild_id=guild_id,
             user_id=interaction.user.id,
@@ -443,10 +464,8 @@ async def on_disconnect():
     Discord.py will automatically reconnect, and on_ready() will be called again.
     Only perform shutdown on actual bot.stop() or process termination.
     """
-    from utils.operational_logs import log_operational_event
-
     logger.info("⚠️ Bot disconnected from Discord (will attempt to reconnect automatically)")
-    log_operational_event("BOT_DISCONNECT", "Bot disconnected (will reconnect automatically)", guild_id=None)
+    log_operational_event(EventType.BOT_DISCONNECT, "Bot disconnected (will reconnect automatically)", guild_id=None)
 
 
 @bot.event
@@ -463,11 +482,29 @@ async def on_guild_join(guild: discord.Guild):
         result = await safe_sync(bot, guild=guild, force=False)
         if result.success:
             logger.info(f"✅ Guild commands synced for {guild.name}: {result.command_count} commands")
+            log_operational_event(
+                EventType.GUILD_SYNC,
+                f"Commands synced: {result.command_count} commands",
+                guild_id=guild.id,
+                details={"command_count": result.command_count, "sync_type": "guild_join"}
+            )
         else:
             if result.cooldown_remaining:
                 logger.info(f"⏸️ Guild sync skipped for {guild.name} (cooldown: {result.cooldown_remaining:.0f}s)")
+                log_operational_event(
+                    EventType.GUILD_SYNC,
+                    "Sync skipped: cooldown active",
+                    guild_id=guild.id,
+                    details={"cooldown_remaining": result.cooldown_remaining, "sync_type": "guild_join"}
+                )
             else:
                 logger.warning(f"⚠️ Guild sync failed for {guild.name}: {result.error}")
+                log_operational_event(
+                    EventType.GUILD_SYNC,
+                    f"Sync failed: {result.error}",
+                    guild_id=guild.id,
+                    details={"error": result.error, "sync_type": "guild_join"}
+                )
     else:
         logger.debug(f"ℹ️ No guild-only commands detected, skipping sync for {guild.name}")
 

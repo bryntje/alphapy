@@ -72,6 +72,7 @@
   - FastAPI entrypoint, exposes read endpoints for dashboards/tools
   - Uses `asyncpg` connection pool for database access (shared with bot)
   - `/api/dashboard/metrics` aggregates live bot telemetry (uptime, latency, guilds, command count, command usage stats) via `utils/runtime_metrics.get_bot_snapshot`
+  - `/api/dashboard/logs` operational logs endpoint with guild-specific filtering and admin access control (7 event types: BOT_READY, BOT_RECONNECT, BOT_DISCONNECT, GUILD_SYNC, ONBOARDING_ERROR, SETTINGS_CHANGED, COG_ERROR)
   - `/api/health` enhanced health probe with guild count, command usage, GPT status, database pool size
   - `/api/health/history` historical health check data for trend analysis
   - `/top-commands` command usage analytics endpoint (filterable by guild and time period)
@@ -168,6 +169,16 @@
   - Rate limit protection with graceful error handling and retry-after support
   - Used by `bot.py` on startup and when joining new guilds
   - Manual sync command (`!sync`) with cooldown feedback and force option
+
+- `utils/operational_logs.py`
+  - In-memory operational event logging for Mind dashboard
+  - `log_operational_event()`: Records events with timestamp, type, guild_id, message, and details dict
+  - `get_operational_events()`: Retrieves filtered events by guild_id and event_types
+  - Max 100 events in rotating buffer (deque with maxlen=100)
+  - Event types: BOT_READY, BOT_RECONNECT, BOT_DISCONNECT, GUILD_SYNC, ONBOARDING_ERROR, SETTINGS_CHANGED, COG_ERROR
+  - Instrumented across: `bot.py`, `utils/lifecycle.py`, `cogs/onboarding.py`, `cogs/reaction_roles.py`, `utils/settings_service.py`, `api.py`
+  - Top-level imports in all modules for optimal performance
+  - Exposed via `/api/dashboard/logs` with guild admin access control
 
 ## Database Schema
 

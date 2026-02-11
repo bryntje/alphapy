@@ -43,7 +43,7 @@ Enhanced health check endpoint with detailed metrics.
 ```json
 {
   "service": "alphapy",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "uptime_seconds": 3600,
   "db_status": "ok",
   "timestamp": "2026-01-21T12:00:00Z",
@@ -51,6 +51,19 @@ Enhanced health check endpoint with detailed metrics.
   "active_commands_24h": 150,
   "gpt_status": "operational",
   "database_pool_size": 5
+}
+```
+
+#### `GET /status`
+
+Simple status check endpoint (legacy, no authentication required).
+
+**Response:**
+```json
+{
+  "online": true,
+  "latency": 0,
+  "uptime": "60 min"
 }
 ```
 
@@ -79,7 +92,7 @@ Get historical health check data for trend analysis.
   "history": [
     {
       "service": "alphapy",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "uptime_seconds": 3600,
       "db_status": "ok",
       "guild_count": 2,
@@ -109,7 +122,7 @@ Comprehensive dashboard metrics including bot status, GPT stats, reminders, tick
 ```json
 {
   "bot": {
-    "version": "2.1.0",
+    "version": "2.2.0",
     "codename": "Lifecycle Manager",
     "online": true,
     "latency_ms": 45.2,
@@ -396,7 +409,7 @@ Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard. Requi
 
 **Query Parameters:**
 - `guild_id` (required): Discord guild ID – user must have admin access to this guild
-- `limit` (optional, default: 50): Maximum number of log entries to return
+- `limit` (optional, default: 50, max: 100): Maximum number of log entries to return
 - `event_types` (optional): Comma-separated list of event types to filter (e.g. `BOT_RECONNECT,BOT_DISCONNECT`)
 
 **Response:**
@@ -414,7 +427,14 @@ Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard. Requi
 }
 ```
 
-**Event types:** `BOT_READY`, `BOT_RECONNECT`, `BOT_DISCONNECT`
+**Event types:**
+- `BOT_READY` – Bot startup complete
+- `BOT_RECONNECT` – Bot reconnected and resynced commands (includes `synced` and `skipped` counts)
+- `BOT_DISCONNECT` – Bot disconnected from Discord
+- `GUILD_SYNC` – Command sync per guild (success/failure/cooldown, includes `sync_type`: startup/reconnect/guild_join)
+- `ONBOARDING_ERROR` – Onboarding errors (no rules configured, role assignment failures, member not found)
+- `SETTINGS_CHANGED` – Settings changes via commands or API (includes `action`: set/clear/bulk_update/rollback, `source`: command/api)
+- `COG_ERROR` – Slash command errors per guild (includes command name, user ID, error type)
 
 ### Reminder Management
 
@@ -483,21 +503,7 @@ Delete a reminder.
 
 ### Exports
 
-#### `GET /export_tickets`
-
-Export tickets as CSV.
-
-**Authentication:** Required (API key)
-
-**Response:** CSV file download
-
-#### `GET /export_faq`
-
-Export FAQ entries as CSV.
-
-**Authentication:** Required (API key)
-
-**Response:** CSV file download
+**Note:** Ticket and FAQ exports are available via Discord slash commands (`/export_tickets`, `/export_faq`), not API endpoints. These commands are admin-only and generate CSV files sent via Discord.
 
 ## Error Responses
 
@@ -524,6 +530,6 @@ Error response format:
 
 ## Versioning
 
-Current API version: **2.1.0** (Lifecycle Manager)
+Current API version: **2.2.0** (Lifecycle Manager)
 
 Version information is included in health check responses and can be queried via `/api/health`.

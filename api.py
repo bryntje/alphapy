@@ -29,7 +29,7 @@ from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
 from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
 from utils.supabase_client import _supabase_post, get_discord_id_for_user, SupabaseConfigurationError
-from utils.operational_logs import get_operational_events
+from utils.operational_logs import get_operational_events, log_operational_event, EventType
 from webhooks.supabase import router as supabase_webhook_router
 from webhooks.reflections import router as reflections_webhook_router
 from version import CODENAME, __version__
@@ -1806,6 +1806,9 @@ async def verify_guild_admin_access(
 
     if not is_admin:
         raise HTTPException(status_code=403, detail="You do not have admin access to this guild.")
+    
+    # Log successful admin access for audit trail
+    logger.info(f"Admin access granted: user={auth_user_id}, discord_id={discord_id}, guild={guild_id}")
 
 
 @router.get("/dashboard/settings/{guild_id}", response_model=GuildSettingsResponse)
@@ -1904,6 +1907,20 @@ async def update_guild_settings(
                             """,
                             guild_id, request.category, key, str(value)
                         )
+
+            # Log to operational events
+            log_operational_event(
+                EventType.SETTINGS_CHANGED,
+                f"Bulk settings update: {len(request.settings)} settings in scope '{request.category}'",
+                guild_id=guild_id,
+                details={
+                    "scope": request.category,
+                    "count": len(request.settings),
+                    "updated_by": auth_user_id,
+                    "action": "bulk_update",
+                    "source": "api"
+                }
+            )
 
             return {"success": True, "message": f"Updated {request.category} settings"}
 
@@ -2341,6 +2358,21 @@ async def rollback_setting_change(
                 """,
                 guild_id, scope, key, history_row["old_value"], old_value,
                 history_row["value_type"], int(auth_user_id)
+            )
+
+            # Log to operational events
+            log_operational_event(
+                EventType.SETTINGS_CHANGED,
+                f"Setting rolled back: {scope}.{key}",
+                guild_id=guild_id,
+                details={
+                    "scope": scope,
+                    "key": key,
+                    "history_id": history_id,
+                    "updated_by": auth_user_id,
+                    "action": "rollback",
+                    "source": "api"
+                }
             )
 
             return {"success": True, "message": f"Rolled back {scope}.{key} to previous value"}

@@ -151,6 +151,7 @@ Transform the extensive slash command configuration system into a user-friendly 
   - FAQ coverage: top search terms without hits
   - Implementation path: simple FastAPI endpoints consumed by a lightweight dashboard (e.g., Observable/Streamlit) or CSVs to GDrive
   - ✅ Initial delivery: `/api/dashboard/metrics` serves live bot/GPT/reminder/ticket telemetry backed by `utils/runtime_metrics`
+  - ✅ `/api/dashboard/logs` operational logs with guild-specific filtering (7 event types: BOT_READY, BOT_RECONNECT, BOT_DISCONNECT, GUILD_SYNC, ONBOARDING_ERROR, SETTINGS_CHANGED, COG_ERROR) — v2.2.0
   - ✅ Infrastructure now has `/health` and shared `*.innersync.tech` base URLs exposed via `config.py`
 
 ---

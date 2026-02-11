@@ -5,11 +5,34 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Documentation
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+### Improved
+- (No changes yet)
+
+---
+
+## [2.2.0] - 2026-02-11
+
+### Added
 - **API operational logs for Mind dashboard**
-  - New endpoint `GET /api/dashboard/logs` exposing operational events (BOT_READY, BOT_RECONNECT, BOT_DISCONNECT)
+  - New endpoint `GET /api/dashboard/logs` exposing operational events with guild-specific filtering
+  - Event types: `BOT_READY`, `BOT_RECONNECT`, `BOT_DISCONNECT`, `GUILD_SYNC`, `ONBOARDING_ERROR`, `SETTINGS_CHANGED`, `COG_ERROR`
   - Guild admin verification via Supabase profile's Discord ID (requires linked Discord account)
-  - In-memory buffer `utils/operational_logs.py` with `log_operational_event()`; instrumented in `bot.py` and `utils/lifecycle.py`
+  - In-memory buffer `utils/operational_logs.py` with `log_operational_event()`
+  - Instrumented in: `bot.py`, `utils/lifecycle.py`, `cogs/onboarding.py`, `cogs/reaction_roles.py`, `utils/settings_service.py`, `api.py`
   - Helper `get_discord_id_for_user()` in `utils/supabase_client.py` for admin check
+- **Guild-specific operational events**
+  - `GUILD_SYNC`: Command sync per guild (startup/reconnect/guild_join) with success/failure/cooldown tracking
+  - `ONBOARDING_ERROR`: No rules configured, role assignment failures, member resolution failures
+  - `SETTINGS_CHANGED`: Settings updates via commands or API (set/clear/bulk_update/rollback)
+  - `COG_ERROR`: Slash command errors with command name, user ID, and error details
 - **Onboarding rules: image support**
   - Rules can have a thumbnail (right/top-right) and/or an image (bottom)
   - `/config onboarding add_rule` now accepts optional `thumbnail_url` and `image_url`
@@ -27,11 +50,20 @@ All notable changes to this project will be documented in this file.
 - **ARCHITECTURE.md:** Onboarding updates (no default rules, guild_rules images, fetch_member for completion role).
 
 ### Fixed
+- **EventType import:** Added missing `EventType` import to `bot.py` and `utils/lifecycle.py` to fix NameError at runtime when operational events are logged.
 - **Tests:** MockSettingsService.get() accepts fallback param; url_filter avoids variable-width lookbehind (Python re); safe_prompt catches "forget all previous instructions"; safe_embed_text now filters URLs.
 - **Code review fixes (API, guild admin):** Cap `limit` in `GET /api/dashboard/logs` to 100; cache `application_info` (60s TTL) in guild admin check; shared `utils/guild_admin.member_has_admin_in_guild()`; replace 9× `print()` with `logger.error()` in `api.py`.
 - **Onboarding completion role:** Robust member resolution using `interaction.user` or `fetch_member()` so new members (not in cache) receive the completion role correctly.
 - **`/learn_topic`:** Keep-alive during GPT call (edit every 10s) and reply via `edit_original_response` to avoid Discord interaction timeout when GPT latency is high (~20s+).
 - **Onboarding DATABASE_URL:** Type-safe guard before pool creation.
+
+### Improved
+- **Import optimization:** All operational log imports moved to top-level (11 inline imports removed) for better performance and code consistency across `bot.py`, `cogs/onboarding.py`, `cogs/reaction_roles.py`, `utils/settings_service.py`, and `api.py`.
+- **Error handling:** `bot.py` `on_app_command_error` now uses standard `exc_info=True` for proper traceback logging and eliminates duplicate variable assignments for cleaner code.
+- **Code quality:** Refactored `on_app_command_error` to extract `guild_id` and `command_name` once at function start, improving readability and following DRY principle.
+- **Type safety:** Added `EventType` enum to `utils/operational_logs.py` for type-safe event logging, preventing typos and providing self-documenting code. All operational log calls now use `EventType` enum values.
+- **Security audit trail:** Admin access to guild-specific API endpoints now logged for compliance and security monitoring (`verify_guild_admin_access` logs successful access with user ID, Discord ID, and guild ID).
+- **Event types validation:** `get_operational_events()` now validates `event_types` filter against known EventType values to prevent abuse; invalid types are filtered out; request with only invalid types returns empty result.
 
 ---
 
