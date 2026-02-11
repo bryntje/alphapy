@@ -50,6 +50,8 @@ All notable changes to this project will be documented in this file.
 - **ARCHITECTURE.md:** Onboarding updates (no default rules, guild_rules images, fetch_member for completion role).
 
 ### Fixed
+- **BOT_READY vs BOT_RECONNECT:** `_mark_startup_complete()` was called at end of `startup()` in `setup_hook()`, which runs before Discord connection. When `on_ready()` fired, `is_first_startup()` already returned False, causing first startup to be logged as BOT_RECONNECT instead of BOT_READY and triggering redundant reconnect syncs (2× API calls per deploy, contributing to Discord rate limits). Fixed by moving `_mark_startup_complete()` to `on_ready()` when handling first startup.
+- **Duplicate on_ready guard:** Discord.py can fire `on_ready()` multiple times during a single session (reconnects, RESUME failures). A second call after the first would see `_first_startup == False` and incorrectly run `reconnect_phase`. Now only runs reconnect phase when `on_disconnect` was seen beforehand, via `set_disconnect_seen()` / `consume_disconnect_seen()`.
 - **EventType import:** Added missing `EventType` import to `bot.py` and `utils/lifecycle.py` to fix NameError at runtime when operational events are logged.
 - **Tests:** MockSettingsService.get() accepts fallback param; url_filter avoids variable-width lookbehind (Python re); safe_prompt catches "forget all previous instructions"; safe_embed_text now filters URLs.
 - **Code review fixes (API, guild admin):** Cap `limit` in `GET /api/dashboard/logs` to 100; cache `application_info` (60s TTL) in guild admin check; shared `utils/guild_admin.member_has_admin_in_guild()`; replace 9× `print()` with `logger.error()` in `api.py`.
