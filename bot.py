@@ -318,6 +318,7 @@ async def on_ready():
     from utils.lifecycle import StartupManager
     if StartupManager.is_first_startup():
         # First startup - full initialization already done in setup_hook()
+        StartupManager._mark_startup_complete()
         logger.info(f"{bot.user} is online! ✅")
         log_operational_event(EventType.BOT_READY, f"{bot.user} is online", guild_id=None)
     else:

@@ -60,7 +60,10 @@ class StartupManager:
             await self._phase_background_tasks()
             await self._phase_ready()
             
-            self._mark_startup_complete()
+            # NOTE: _mark_startup_complete() is called from on_ready() in bot.py, not here.
+            # setup_hook runs before Discord connection; on_ready fires after. Marking complete
+            # here would make is_first_startup() return False when on_ready() runs, causing
+            # the first startup to be incorrectly treated as a reconnect.
             logger.info("✅ Bot initialization complete!")
         except Exception as e:
             logger.error(f"❌ Startup failed: {e}", exc_info=True)
