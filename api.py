@@ -30,6 +30,7 @@ from utils.timezone import BRUSSELS_TZ
 from utils.supabase_auth import verify_supabase_token
 from utils.supabase_client import _supabase_post, get_discord_id_for_user, SupabaseConfigurationError
 from utils.operational_logs import get_operational_events, log_operational_event, EventType
+from utils import core_ingress as core_ingress_module
 from webhooks.supabase import router as supabase_webhook_router
 from webhooks.reflections import router as reflections_webhook_router
 from version import CODENAME, __version__
@@ -1141,6 +1142,12 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
             except Exception as exc:
                 logger.debug(f"Telemetry loop: Failed to flush queue: {exc}")
                 # Continue loop - don't raise
+
+            # Drain operational events queue to Core-API
+            try:
+                await core_ingress_module.flush_operational_events_queue()
+            except Exception as exc:
+                logger.debug(f"Telemetry loop: Failed to flush operational events: {exc}")
             
             # Log the calculated status for debugging (using same logic as _persist_telemetry_snapshot)
             # Status is based ONLY on bot health (online status + GPT errors), NOT on open tickets
@@ -1233,13 +1240,18 @@ async def _flush_telemetry_queue() -> None:
         if retry_count >= MAX_TELEMETRY_RETRIES:
             logger.debug(f"⚠️ Dropping telemetry snapshot after {MAX_TELEMETRY_RETRIES} retries")
             continue
-        
+
         # Exponential backoff: 1s, 2s, 4s, 8s, 16s
         backoff_seconds = 2 ** retry_count
         await asyncio.sleep(backoff_seconds)
-        
+
         try:
-            # Retry the write
+            if core_ingress_module._is_ingress_configured():
+                ok = await core_ingress_module.post_telemetry(item["payload"])
+                if ok:
+                    logger.debug(f"✅ Telemetry snapshot retry succeeded via Core (attempt {retry_count + 1})")
+                    continue
+            # Fallback: direct Supabase write when Core not configured or Core failed
             await _supabase_post(
                 "subsystem_snapshots",
                 item["payload"],
@@ -1247,14 +1259,11 @@ async def _flush_telemetry_queue() -> None:
                 schema="telemetry"
             )
             logger.debug(f"✅ Telemetry snapshot retry succeeded (attempt {retry_count + 1})")
-            # Success - don't re-queue
         except Exception as retry_error:
-            # Still failed - increment retry count and re-queue
             item["retry_count"] = retry_count + 1
             if len(_telemetry_queue) < MAX_TELEMETRY_QUEUE_SIZE:
                 _telemetry_queue.append(item)
             else:
-                # Queue full - drop oldest
                 _telemetry_queue.pop(0)
                 _telemetry_queue.append(item)
             logger.debug(f"⚠️ Telemetry retry {retry_count + 1}/{MAX_TELEMETRY_RETRIES} failed: {retry_error}")
@@ -1385,38 +1394,44 @@ async def _persist_telemetry_snapshot(
     if notes:
         payload["notes"] = notes
     
-    try:
-        # Use schema parameter for Supabase REST API with custom schema
-        # This will use Accept-Profile header to specify the telemetry schema
-        await _supabase_post("subsystem_snapshots", payload, upsert=True, schema="telemetry")
-        logger.debug("✅ Telemetry snapshot written to Supabase via REST API")
-    except SupabaseConfigurationError as exc:
-        logger.warning(
-            f"⚠️ Cannot write telemetry to Supabase: {exc}. "
-            "Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are configured."
-        )
-        # Don't queue configuration errors - they won't resolve by retrying
-    except Exception as exc:
-        logger.warning(
-            f"⚠️ Failed to write telemetry to Supabase: {exc.__class__.__name__}: {exc}. "
-            "Adding to retry queue."
-        )
-        # Add to retry queue
-        global _telemetry_queue
-        if len(_telemetry_queue) < MAX_TELEMETRY_QUEUE_SIZE:
-            _telemetry_queue.append({
-                "payload": payload,
-                "retry_count": 0,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-        else:
-            # Queue full - drop oldest
-            _telemetry_queue.pop(0)
-            _telemetry_queue.append({
-                "payload": payload,
-                "retry_count": 0,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+    # Prefer Core-API ingress when configured; fallback to direct Supabase
+    if core_ingress_module._is_ingress_configured():
+        ok = await core_ingress_module.post_telemetry(payload)
+        if ok:
+            logger.debug("✅ Telemetry snapshot written via Core-API ingress")
+            return
+        logger.debug("Core ingress telemetry failed, adding to retry queue")
+    else:
+        try:
+            await _supabase_post("subsystem_snapshots", payload, upsert=True, schema="telemetry")
+            logger.debug("✅ Telemetry snapshot written to Supabase via REST API")
+            return
+        except SupabaseConfigurationError as exc:
+            logger.warning(
+                f"⚠️ Cannot write telemetry to Supabase: {exc}. "
+                "Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are configured."
+            )
+            return
+        except Exception as exc:
+            logger.warning(
+                f"⚠️ Failed to write telemetry to Supabase: {exc.__class__.__name__}: {exc}. "
+                "Adding to retry queue."
+            )
+
+    global _telemetry_queue
+    if len(_telemetry_queue) < MAX_TELEMETRY_QUEUE_SIZE:
+        _telemetry_queue.append({
+            "payload": payload,
+            "retry_count": 0,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+    else:
+        _telemetry_queue.pop(0)
+        _telemetry_queue.append({
+            "payload": payload,
+            "retry_count": 0,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
 
 
 def _cleanup_command_stats_cache() -> None:

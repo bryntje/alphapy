@@ -1,44 +1,17 @@
-# Innersync Core API
+# Core-API (innersync_core)
 
-FastAPI skeleton that will power `api.innersync.tech`. The service reuses the shared schemas found in `../schemas` and authenticates every request with Supabase access tokens.
+De daadwerkelijke **Core-API** (api.innersync.tech) draait in een **ander repo** en een **aparte deployment**: **innersync_core**. Deze folder is een remnant van een eerdere koppeling en bevat geen code meer.
 
-## Local development
+Alphapy stuurt telemetry en operational events naar Core via **ingress** (zie `alphapy/utils/core_ingress.py`). De implementatie van die endpoints hoort in het **innersync_core**-repo.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+## Ingress-contract (geïmplementeerd in innersync_core)
 
-Environment variables:
+- **Auth:** `X-API-Key` header (service key, bijv.zelfde waarde als `ALPHAPY_SERVICE_KEY` in Alphapy).
+- **Rate limits:** bijv. 60/min voor telemetry, 200/min voor operational-events (per key).
 
-```
-SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_ANON_KEY=<anon-key>
-```
+| Endpoint | Method | Body | Actie |
+|---------|--------|------|--------|
+| `/ingress/telemetry` | POST | `{"snapshots": [{ "subsystem", "label", "status", "uptime_seconds", "throughput_per_minute", "error_rate", "latency_p50", "latency_p95", "last_updated", "computed_at", "queue_depth?", "active_bots?", "notes?" }]}` | Valideren → schrijven naar `telemetry.subsystem_snapshots` |
+| `/ingress/operational-events` | POST | `{"events": [{ "timestamp" (ISO), "event_type", "guild_id"?, "message", "details" (object) }]}` | `event_type` in `BOT_READY`, `BOT_RECONNECT`, `BOT_DISCONNECT`, `GUILD_SYNC`, `ONBOARDING_ERROR`, `SETTINGS_CHANGED`, `COG_ERROR` → schrijven naar bv. `telemetry.operational_events` |
 
-## Endpoints
-
-- `GET /health` → Service status
-- `GET /users/me` → Returns the Supabase user associated with the supplied bearer token
-- `GET /profiles/me`, `/reflections`, `/trades`, `/insights` → Placeholders, to be wired up once the data layer is ready
-
-## Railway / Docker
-
-Build with:
-
-```bash
-docker build -t innersync-core-api -f Dockerfile .
-```
-
-Run locally:
-
-```bash
-docker run --rm -p 8080:8080 \
-  -e SUPABASE_URL=... \
-  -e SUPABASE_ANON_KEY=... \
-  innersync-core-api
-```
-
-The service listens on port `8080` by default.
+Alphapy gebruikt `CORE_API_URL` en `ALPHAPY_SERVICE_KEY`; als Core niet geconfigureerd is, valt telemetry terug op directe Supabase-write.
