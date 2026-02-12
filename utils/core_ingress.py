@@ -36,7 +36,7 @@ async def post_telemetry(payload: Dict[str, Any] | List[Dict[str, Any]]) -> bool
     if not _is_ingress_configured():
         return False
 
-    url = f"{config.CORE_API_URL}/ingress/telemetry"
+    url = f"{config.CORE_API_URL}/ingress/telemetry/"
     headers = {
         "Content-Type": "application/json",
         "X-API-Key": config.ALPHAPY_SERVICE_KEY,
@@ -48,7 +48,7 @@ async def post_telemetry(payload: Dict[str, Any] | List[Dict[str, Any]]) -> bool
         body = {"snapshots": [payload]}
 
     try:
-        async with httpx.AsyncClient(timeout=CORE_INGRESS_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=CORE_INGRESS_TIMEOUT, follow_redirects=True) as client:
             response = await client.post(url, json=body, headers=headers)
             if response.is_success:
                 logger.debug("Core ingress telemetry POST succeeded")
@@ -89,7 +89,7 @@ async def flush_operational_events_queue() -> None:
     while _operational_events_queue:
         events.append(_operational_events_queue.popleft())
 
-    url = f"{config.CORE_API_URL}/ingress/operational-events"
+    url = f"{config.CORE_API_URL}/ingress/operational-events/"
     headers = {
         "Content-Type": "application/json",
         "X-API-Key": config.ALPHAPY_SERVICE_KEY,
@@ -97,7 +97,7 @@ async def flush_operational_events_queue() -> None:
     body = {"events": events}
 
     try:
-        async with httpx.AsyncClient(timeout=CORE_INGRESS_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=CORE_INGRESS_TIMEOUT, follow_redirects=True) as client:
             response = await client.post(url, json=body, headers=headers)
             if response.is_success:
                 logger.debug("Core ingress operational-events POST succeeded (count=%d)", len(events))
