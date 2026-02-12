@@ -10,6 +10,23 @@ MAX_OPERATIONAL_EVENTS = 100
 _operational_events: Deque[Dict[str, Any]] = deque(maxlen=MAX_OPERATIONAL_EVENTS)
 
 
+def _push_to_core_ingress(event: Dict[str, Any]) -> None:
+    """Fire-and-forget: enqueue event for Core-API ingress (no await, non-blocking)."""
+    try:
+        from utils.core_ingress import enqueue_operational_event
+
+        serialized = {
+            "timestamp": event["timestamp"].isoformat() if hasattr(event["timestamp"], "isoformat") else event["timestamp"],
+            "event_type": event["event_type"],
+            "guild_id": event.get("guild_id"),
+            "message": event["message"],
+            "details": event.get("details") or {},
+        }
+        enqueue_operational_event(serialized)
+    except Exception:
+        pass
+
+
 class EventType(str, Enum):
     """Operational event types for type safety and documentation."""
     BOT_READY = "BOT_READY"
@@ -46,6 +63,7 @@ def log_operational_event(
         "details": details or {},
     }
     _operational_events.appendleft(event)
+    _push_to_core_ingress(event)
 
 
 def get_operational_events(
