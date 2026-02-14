@@ -8,7 +8,9 @@ This document explains how to configure the Innersync • Alphapy bot for each D
 
 ## First-Time Setup (Required for each new server)
 
-When you add the bot to a new Discord server, run these commands in order:
+**Quick start:** Use **`/config start`** for an interactive setup. The bot will ask for each important setting (log channel, rules channel, onboarding channel, embed watcher, invites, GDPR, ticket category, staff role); you choose a channel or role from the dropdown or click **Skip**. All prompts are in English.
+
+Alternatively, run the following commands in order:
 
 ### 1. System Configuration
 ```bash

@@ -1,4 +1,6 @@
-from typing import Any, Optional, cast
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, List, Literal, Optional, Tuple, cast
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -6,8 +8,31 @@ from utils.validators import validate_admin
 from utils.db_helpers import acquire_safe
 from utils.embed_builder import EmbedBuilder
 from utils.settings_service import SettingsService, SettingDefinition
-from utils.logger import log_with_guild, log_guild_action
+from utils.logger import log_with_guild, log_guild_action, logger
+from utils.timezone import BRUSSELS_TZ
 from cogs.reaction_roles import StartOnboardingView
+
+SetupValueType = Literal["channel", "channel_category", "role"]
+
+
+@dataclass
+class SetupStep:
+    scope: str
+    key: str
+    label: str
+    value_type: SetupValueType
+
+
+SETUP_STEPS: List[SetupStep] = [
+    SetupStep("system", "log_channel_id", "Do you want to set a log channel for bot messages?", "channel"),
+    SetupStep("system", "rules_channel_id", "Set the rules channel (#rules)?", "channel"),
+    SetupStep("system", "onboarding_channel_id", "Set the onboarding / welcome channel?", "channel"),
+    SetupStep("embedwatcher", "announcements_channel_id", "Channel for embed-based reminders?", "channel"),
+    SetupStep("invites", "announcement_channel_id", "Channel for invite announcements?", "channel"),
+    SetupStep("gdpr", "channel_id", "Channel for GDPR documents?", "channel"),
+    SetupStep("ticketbot", "category_id", "Category for new ticket channels?", "channel_category"),
+    SetupStep("ticketbot", "staff_role_id", "Staff role for ticket access?", "role"),
+]
 def requires_admin():
     async def predicate(interaction: discord.Interaction) -> bool:
         is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
@@ -79,6 +104,35 @@ class Configuration(commands.Cog):
         lines = ["📁 **Available scopes**:"]
         lines.extend(f"• `{scope}`" for scope in scopes)
         await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    @config.command(
+        name="start",
+        description="Start the interactive server setup (choose or skip channel/role per step)",
+    )
+    @requires_admin()
+    async def config_start(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "❌ This command only works in a server.",
+                ephemeral=True,
+            )
+            return
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+        view = SetupWizardView(cog=self, guild_id=guild_id, user_id=user_id, steps=SETUP_STEPS)
+        first_step = view._current_step()
+        if not first_step:
+            await interaction.response.send_message(
+                "⚠️ No setup steps defined.",
+                ephemeral=True,
+            )
+            return
+        embed = view._build_step_embed(first_step)
+        view._clear_and_add_components(first_step)
+        message = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        view.message = cast(Any, message)
+        log_with_guild(f"Setup wizard started (guild_id={guild_id}, user_id={user_id})", guild_id, "debug")
+
     @system_group.command(name="show", description="Show system settings")
     @requires_admin()
     async def system_show(self, interaction: discord.Interaction) -> None:
@@ -1310,6 +1364,287 @@ class Configuration(commands.Cog):
             log_guild_action(guild_id, "AUDIT_LOG", details=f"config: {title}")
         except Exception as e:
             log_with_guild(f"Could not send audit log: {e}", guild_id, "error")
+
+
+class SetupWizardView(discord.ui.View):
+    """Interactive setup wizard: one step per setting, choose channel/role or skip. All copy in English."""
+
+    def __init__(
+        self,
+        cog: "Configuration",
+        guild_id: int,
+        user_id: int,
+        steps: List[SetupStep],
+    ):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.steps = steps
+        self.step_index = 0
+        self.configured_in_session: List[Tuple[str, str]] = []  # (question label, chosen value e.g. #channel or @role)
+
+    def _current_step(self) -> Optional[SetupStep]:
+        if 0 <= self.step_index < len(self.steps):
+            return self.steps[self.step_index]
+        return None
+
+    def _build_step_embed(self, step: SetupStep) -> discord.Embed:
+        total = len(self.steps)
+        current = self.step_index + 1
+        embed = discord.Embed(
+            title="⚙️ Server setup (step {} of {})".format(current, total),
+            description=step.label + "\n\nChoose below or click **Skip**.",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(BRUSSELS_TZ),
+        )
+        embed.set_footer(text=f"config start | Step {current}/{total}")
+        return embed
+
+    def _build_complete_embed(self) -> discord.Embed:
+        embed = discord.Embed(
+            title="✅ Setup complete",
+            description="You can change any setting later with `/config <scope> show` and the set commands.",
+            color=discord.Color.green(),
+            timestamp=datetime.now(BRUSSELS_TZ),
+        )
+        if self.configured_in_session:
+            lines = [f"**{label}**\n{value}" for label, value in self.configured_in_session]
+            value_text = "\n\n".join(lines)
+            if len(value_text) > 1024:
+                value_text = value_text[:1021] + "…"
+            embed.add_field(
+                name="Configured in this session",
+                value=value_text,
+                inline=False,
+            )
+        embed.set_footer(text="config start | Complete")
+        return embed
+
+    def _build_timeout_embed(self) -> discord.Embed:
+        return discord.Embed(
+            title="⏱️ Setup timed out",
+            description="Use `/config start` again to continue.",
+            color=discord.Color.orange(),
+            timestamp=datetime.now(BRUSSELS_TZ),
+        )
+
+    def _clear_and_add_components(self, step: SetupStep) -> None:
+        self.clear_items()
+        step_id = f"setup_{self.step_index}"
+        if step.value_type == "channel":
+            channel_select = discord.ui.ChannelSelect(
+                channel_types=[discord.ChannelType.text],
+                placeholder="Choose a text channel...",
+                min_values=1,
+                max_values=1,
+                custom_id=f"{step_id}_channel",
+            )
+            channel_select.callback = self._on_channel_select
+            self.add_item(channel_select)
+        elif step.value_type == "channel_category":
+            category_select = discord.ui.ChannelSelect(
+                channel_types=[discord.ChannelType.category],
+                placeholder="Choose a category...",
+                min_values=1,
+                max_values=1,
+                custom_id=f"{step_id}_category",
+            )
+            category_select.callback = self._on_channel_select
+            self.add_item(category_select)
+        else:
+            role_select = discord.ui.RoleSelect(
+                placeholder="Choose a role...",
+                min_values=1,
+                max_values=1,
+                custom_id=f"{step_id}_role",
+            )
+            role_select.callback = self._on_role_select
+            self.add_item(role_select)
+        skip_btn = discord.ui.Button(
+            label="Skip",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"{step_id}_skip",
+        )
+        skip_btn.callback = self._on_skip
+        self.add_item(skip_btn)
+
+    def _ensure_same_user(self, interaction: discord.Interaction) -> bool:
+        """Return False if another user is interacting; sends ephemeral message and returns False."""
+        if interaction.user.id != self.user_id:
+            return False
+        return True
+
+    async def _apply_and_next(
+        self,
+        interaction: discord.Interaction,
+        value: int,
+        mention: str,
+    ) -> None:
+        step = self._current_step()
+        if not step:
+            await interaction.response.defer(ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.cog.settings.set(step.scope, step.key, value, self.guild_id, self.user_id)
+            await self.cog._send_audit_log(
+                "⚙️ Setting updated",
+                f"`{step.scope}.{step.key}` set to {mention} by <@{self.user_id}> (setup wizard).",
+                self.guild_id,
+            )
+        except Exception as e:
+            log_with_guild(f"Setup wizard settings.set failed: {e}", self.guild_id, "error")
+            await interaction.followup.send(
+                "Failed to save this setting. You can set it later with `/config`.",
+                ephemeral=True,
+            )
+            return
+        self.configured_in_session.append((step.label, mention))
+        self.step_index += 1
+        try:
+            await self._render_step(interaction)
+        except Exception as e:
+            log_with_guild(f"Setup wizard _render_step failed: {e}", self.guild_id, "error")
+            await interaction.followup.send(
+                "Setup advanced but the message could not be updated. Use `/config start` to continue.",
+                ephemeral=True,
+            )
+
+    def _get_resolved_channels(self, interaction: discord.Interaction) -> Optional[Any]:
+        """Get the first selected channel from a ChannelSelect interaction."""
+        data = interaction.data
+        if isinstance(data, dict):
+            values = data.get("values", [])
+            resolved = data.get("resolved", {})
+        else:
+            values = getattr(data, "values", None) or []
+            resolved = getattr(data, "resolved", None) or {}
+        if not values or not interaction.guild:
+            return None
+        try:
+            vid = str(values[0])
+            cid = int(values[0])
+        except (ValueError, TypeError, IndexError):
+            return None
+        if isinstance(resolved, dict):
+            channels = resolved.get("channels", {})
+        else:
+            channels = getattr(resolved, "channels", None) or {}
+        ch = channels.get(vid) or channels.get(str(cid))
+        if not ch and interaction.guild:
+            ch = interaction.guild.get_channel(cid)
+        return ch
+
+    def _get_resolved_role(self, interaction: discord.Interaction) -> Optional[Any]:
+        """Get the first selected role from a RoleSelect interaction."""
+        data = interaction.data
+        if isinstance(data, dict):
+            values = data.get("values", [])
+            resolved = data.get("resolved", {})
+        else:
+            values = getattr(data, "values", None) or []
+            resolved = getattr(data, "resolved", None) or {}
+        if not values or not interaction.guild:
+            return None
+        try:
+            vid = str(values[0])
+            rid = int(values[0])
+        except (ValueError, TypeError, IndexError):
+            return None
+        if isinstance(resolved, dict):
+            roles = resolved.get("roles", {})
+        else:
+            roles = getattr(resolved, "roles", None) or {}
+        role = roles.get(vid) or (roles.get(str(rid)) if isinstance(roles, dict) else getattr(roles, "get", lambda k: None)(rid))
+        if not role and interaction.guild:
+            role = interaction.guild.get_role(rid)
+        return role
+
+    async def _on_channel_select(self, interaction: discord.Interaction) -> None:
+        if not self._ensure_same_user(interaction):
+            await interaction.response.send_message(
+                "Only the user who started the setup can use this.",
+                ephemeral=True,
+            )
+            return
+        channel = self._get_resolved_channels(interaction)
+        if not channel:
+            await interaction.response.defer(ephemeral=True)
+            return
+        if isinstance(channel, dict):
+            channel_id = int(channel.get("id") or 0)
+            mention = f"<#{channel_id}>"
+        else:
+            channel_id = channel.id
+            mention = getattr(channel, "mention", f"<#{channel_id}>")
+        await self._apply_and_next(interaction, channel_id, mention)
+
+    async def _on_role_select(self, interaction: discord.Interaction) -> None:
+        if not self._ensure_same_user(interaction):
+            await interaction.response.send_message(
+                "Only the user who started the setup can use this.",
+                ephemeral=True,
+            )
+            return
+        role = self._get_resolved_role(interaction)
+        if not role:
+            await interaction.response.defer(ephemeral=True)
+            return
+        if isinstance(role, dict):
+            role_id = int(role.get("id", 0))
+            mention = f"<@&{role_id}>"
+        else:
+            role_id = role.id
+            mention = getattr(role, "mention", f"<@&{role_id}>")
+        await self._apply_and_next(interaction, role_id, mention)
+
+    async def _on_skip(self, interaction: discord.Interaction) -> None:
+        if not self._ensure_same_user(interaction):
+            await interaction.response.send_message(
+                "Only the user who started the setup can use this.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        step = self._current_step()
+        if step:
+            self.configured_in_session.append((step.label, "— Skipped"))
+        self.step_index += 1
+        try:
+            await self._render_step(interaction)
+        except Exception as e:
+            log_with_guild(f"Setup wizard _render_step failed: {e}", self.guild_id, "error")
+            await interaction.followup.send(
+                "Could not show the next step. Use `/config start` to continue.",
+                ephemeral=True,
+            )
+
+    async def _render_step(self, interaction: discord.Interaction) -> None:
+        step = self._current_step()
+        if step is None:
+            log_with_guild(
+                f"Setup wizard complete (guild_id={self.guild_id}, configured={len(self.configured_in_session)} steps)",
+                self.guild_id,
+                "debug",
+            )
+            embed = self._build_complete_embed()
+            self.clear_items()
+            self.message = await interaction.edit_original_response(embed=embed, view=self)
+            self.stop()
+            return
+        embed = self._build_step_embed(step)
+        self._clear_and_add_components(step)
+        self.message = await interaction.edit_original_response(embed=embed, view=self)
+
+    async def on_timeout(self) -> None:
+        if self.message is None:
+            return
+        embed = self._build_timeout_embed()
+        try:
+            await self.message.edit(content=None, embed=embed, view=None)
+        except Exception as e:
+            log_with_guild(f"Setup wizard timeout message edit failed: {e}", self.guild_id, "debug")
 
 
 class ReorderQuestionsModal(discord.ui.Modal, title="Reorder Questions"):
