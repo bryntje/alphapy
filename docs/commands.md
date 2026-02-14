@@ -154,6 +154,8 @@ Update a ticket status (admins only).
 ### `/config`
 Manage bot settings (multi-scope configuration system).
 
+- **`/config start`** – Start the interactive server setup. The bot guides you step-by-step through the main settings (log channel, rules channel, onboarding, embed watcher, invites, GDPR, ticket category, staff role). Choose a channel or role from the dropdown or click **Skip**. All prompts in English.
+
 **Subcommands:**
 
 #### System Settings
