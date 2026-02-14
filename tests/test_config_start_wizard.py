@@ -108,13 +108,27 @@ class TestSetupWizardView:
     @pytest.mark.asyncio
     async def test_build_complete_embed_with_configured(self, mock_cog):
         view = self._view(mock_cog)
-        view.configured_in_session.append("Log channel")
-        view.configured_in_session.append("Rules channel")
+        view.configured_in_session.append(("Log channel", "#logs"))
+        view.configured_in_session.append(("Rules channel", "#rules"))
         embed = view._build_complete_embed()
         assert len(embed.fields) == 1
         assert "Configured" in embed.fields[0].name
-        assert "Log channel" in embed.fields[0].value
-        assert "Rules channel" in embed.fields[0].value
+        assert "**Log channel**" in embed.fields[0].value
+        assert "#logs" in embed.fields[0].value
+        assert "**Rules channel**" in embed.fields[0].value
+        assert "#rules" in embed.fields[0].value
+
+    @pytest.mark.asyncio
+    async def test_build_complete_embed_shows_skipped(self, mock_cog):
+        view = self._view(mock_cog)
+        view.configured_in_session.append(("Log channel", "#logs"))
+        view.configured_in_session.append(("Rules channel", "— Skipped"))
+        embed = view._build_complete_embed()
+        assert len(embed.fields) == 1
+        assert "**Log channel**" in embed.fields[0].value
+        assert "#logs" in embed.fields[0].value
+        assert "**Rules channel**" in embed.fields[0].value
+        assert "— Skipped" in embed.fields[0].value
 
     @pytest.mark.asyncio
     async def test_build_timeout_embed(self, mock_cog):
@@ -153,6 +167,23 @@ class TestSetupWizardView:
         result = view._get_resolved_channels(interaction)
         assert result is not None
         assert result.id == 12345
+
+    @pytest.mark.asyncio
+    async def test_get_resolved_channels_from_dict_data(self, mock_cog):
+        """When interaction.data is a dict (e.g. from Discord), use .get('values') not getattr (dict.values is the method)."""
+        view = self._view(mock_cog)
+        interaction = MagicMock()
+        interaction.guild = MagicMock()
+        channel = MagicMock()
+        channel.id = 99999
+        interaction.data = {
+            "values": ["99999"],
+            "resolved": {"channels": {"99999": channel}},
+        }
+        interaction.guild.get_channel = MagicMock(return_value=None)
+        result = view._get_resolved_channels(interaction)
+        assert result is not None
+        assert result.id == 99999
 
     @pytest.mark.asyncio
     async def test_get_resolved_channels_missing_data_returns_none(self, mock_cog):

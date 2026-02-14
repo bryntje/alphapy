@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List, Literal, Optional, cast
+from typing import Any, List, Literal, Optional, Tuple, cast
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -8,7 +8,7 @@ from utils.validators import validate_admin
 from utils.db_helpers import acquire_safe
 from utils.embed_builder import EmbedBuilder
 from utils.settings_service import SettingsService, SettingDefinition
-from utils.logger import log_with_guild, log_guild_action
+from utils.logger import log_with_guild, log_guild_action, logger
 from utils.timezone import BRUSSELS_TZ
 from cogs.reaction_roles import StartOnboardingView
 
@@ -130,7 +130,7 @@ class Configuration(commands.Cog):
         embed = view._build_step_embed(first_step)
         view._clear_and_add_components(first_step)
         message = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        view.message = message
+        view.message = cast(Any, message)
         log_with_guild(f"Setup wizard started (guild_id={guild_id}, user_id={user_id})", guild_id, "debug")
 
     @system_group.command(name="show", description="Show system settings")
@@ -1382,7 +1382,7 @@ class SetupWizardView(discord.ui.View):
         self.user_id = user_id
         self.steps = steps
         self.step_index = 0
-        self.configured_in_session: List[str] = []
+        self.configured_in_session: List[Tuple[str, str]] = []  # (question label, chosen value e.g. #channel or @role)
 
     def _current_step(self) -> Optional[SetupStep]:
         if 0 <= self.step_index < len(self.steps):
@@ -1409,9 +1409,13 @@ class SetupWizardView(discord.ui.View):
             timestamp=datetime.now(BRUSSELS_TZ),
         )
         if self.configured_in_session:
+            lines = [f"**{label}**\n{value}" for label, value in self.configured_in_session]
+            value_text = "\n\n".join(lines)
+            if len(value_text) > 1024:
+                value_text = value_text[:1021] + "…"
             embed.add_field(
                 name="Configured in this session",
-                value="\n".join(f"• {s}" for s in self.configured_in_session),
+                value=value_text,
                 inline=False,
             )
         embed.set_footer(text="config start | Complete")
@@ -1427,12 +1431,14 @@ class SetupWizardView(discord.ui.View):
 
     def _clear_and_add_components(self, step: SetupStep) -> None:
         self.clear_items()
+        step_id = f"setup_{self.step_index}"
         if step.value_type == "channel":
             channel_select = discord.ui.ChannelSelect(
                 channel_types=[discord.ChannelType.text],
                 placeholder="Choose a text channel...",
                 min_values=1,
                 max_values=1,
+                custom_id=f"{step_id}_channel",
             )
             channel_select.callback = self._on_channel_select
             self.add_item(channel_select)
@@ -1442,6 +1448,7 @@ class SetupWizardView(discord.ui.View):
                 placeholder="Choose a category...",
                 min_values=1,
                 max_values=1,
+                custom_id=f"{step_id}_category",
             )
             category_select.callback = self._on_channel_select
             self.add_item(category_select)
@@ -1450,10 +1457,15 @@ class SetupWizardView(discord.ui.View):
                 placeholder="Choose a role...",
                 min_values=1,
                 max_values=1,
+                custom_id=f"{step_id}_role",
             )
             role_select.callback = self._on_role_select
             self.add_item(role_select)
-        skip_btn = discord.ui.Button(label="Skip", style=discord.ButtonStyle.secondary, custom_id="setup_skip")
+        skip_btn = discord.ui.Button(
+            label="Skip",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"{step_id}_skip",
+        )
         skip_btn.callback = self._on_skip
         self.add_item(skip_btn)
 
@@ -1488,7 +1500,7 @@ class SetupWizardView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        self.configured_in_session.append(step.label)
+        self.configured_in_session.append((step.label, mention))
         self.step_index += 1
         try:
             await self._render_step(interaction)
@@ -1499,10 +1511,15 @@ class SetupWizardView(discord.ui.View):
                 ephemeral=True,
             )
 
-    def _get_resolved_channels(self, interaction: discord.Interaction) -> Optional[discord.abc.GuildChannel]:
+    def _get_resolved_channels(self, interaction: discord.Interaction) -> Optional[Any]:
         """Get the first selected channel from a ChannelSelect interaction."""
         data = interaction.data
-        values = getattr(data, "values", None) or (data.get("values", []) if isinstance(data, dict) else [])
+        if isinstance(data, dict):
+            values = data.get("values", [])
+            resolved = data.get("resolved", {})
+        else:
+            values = getattr(data, "values", None) or []
+            resolved = getattr(data, "resolved", None) or {}
         if not values or not interaction.guild:
             return None
         try:
@@ -1510,17 +1527,24 @@ class SetupWizardView(discord.ui.View):
             cid = int(values[0])
         except (ValueError, TypeError, IndexError):
             return None
-        resolved = getattr(data, "resolved", None) or (data.get("resolved", {}) if isinstance(data, dict) else {})
-        channels = getattr(resolved, "channels", None) or (resolved.get("channels", {}) if isinstance(resolved, dict) else {})
-        ch = channels.get(vid) if channels else None
+        if isinstance(resolved, dict):
+            channels = resolved.get("channels", {})
+        else:
+            channels = getattr(resolved, "channels", None) or {}
+        ch = channels.get(vid) or channels.get(str(cid))
         if not ch and interaction.guild:
             ch = interaction.guild.get_channel(cid)
         return ch
 
-    def _get_resolved_role(self, interaction: discord.Interaction) -> Optional[discord.Role]:
+    def _get_resolved_role(self, interaction: discord.Interaction) -> Optional[Any]:
         """Get the first selected role from a RoleSelect interaction."""
         data = interaction.data
-        values = getattr(data, "values", None) or (data.get("values", []) if isinstance(data, dict) else [])
+        if isinstance(data, dict):
+            values = data.get("values", [])
+            resolved = data.get("resolved", {})
+        else:
+            values = getattr(data, "values", None) or []
+            resolved = getattr(data, "resolved", None) or {}
         if not values or not interaction.guild:
             return None
         try:
@@ -1528,9 +1552,11 @@ class SetupWizardView(discord.ui.View):
             rid = int(values[0])
         except (ValueError, TypeError, IndexError):
             return None
-        resolved = getattr(data, "resolved", None) or (data.get("resolved", {}) if isinstance(data, dict) else {})
-        roles = getattr(resolved, "roles", None) or (resolved.get("roles", {}) if isinstance(resolved, dict) else {})
-        role = roles.get(vid) if roles else None
+        if isinstance(resolved, dict):
+            roles = resolved.get("roles", {})
+        else:
+            roles = getattr(resolved, "roles", None) or {}
+        role = roles.get(vid) or (roles.get(str(rid)) if isinstance(roles, dict) else getattr(roles, "get", lambda k: None)(rid))
         if not role and interaction.guild:
             role = interaction.guild.get_role(rid)
         return role
@@ -1546,8 +1572,13 @@ class SetupWizardView(discord.ui.View):
         if not channel:
             await interaction.response.defer(ephemeral=True)
             return
-        mention = getattr(channel, "mention", f"<#{channel.id}>")
-        await self._apply_and_next(interaction, channel.id, mention)
+        if isinstance(channel, dict):
+            channel_id = int(channel.get("id") or 0)
+            mention = f"<#{channel_id}>"
+        else:
+            channel_id = channel.id
+            mention = getattr(channel, "mention", f"<#{channel_id}>")
+        await self._apply_and_next(interaction, channel_id, mention)
 
     async def _on_role_select(self, interaction: discord.Interaction) -> None:
         if not self._ensure_same_user(interaction):
@@ -1560,7 +1591,13 @@ class SetupWizardView(discord.ui.View):
         if not role:
             await interaction.response.defer(ephemeral=True)
             return
-        await self._apply_and_next(interaction, role.id, role.mention)
+        if isinstance(role, dict):
+            role_id = int(role.get("id", 0))
+            mention = f"<@&{role_id}>"
+        else:
+            role_id = role.id
+            mention = getattr(role, "mention", f"<@&{role_id}>")
+        await self._apply_and_next(interaction, role_id, mention)
 
     async def _on_skip(self, interaction: discord.Interaction) -> None:
         if not self._ensure_same_user(interaction):
@@ -1570,6 +1607,9 @@ class SetupWizardView(discord.ui.View):
             )
             return
         await interaction.response.defer(ephemeral=True)
+        step = self._current_step()
+        if step:
+            self.configured_in_session.append((step.label, "— Skipped"))
         self.step_index += 1
         try:
             await self._render_step(interaction)

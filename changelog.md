@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+### Improved
+- (No changes yet)
+
+---
+
+## [2.3.0] - 2026-02-14
+
+### Added
 - **`/config start` – interactive server setup wizard**
   - Step-by-step setup for main settings: log channel, rules channel, onboarding channel, embed watcher, invites, GDPR, ticket category, staff role
   - Per step: choose channel or role via Discord ChannelSelect/RoleSelect, or click Skip
@@ -16,9 +29,6 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **Python 3.12:** Upgraded Docker image from Python 3.9 to 3.12 to resolve Google library FutureWarnings (Python 3.9 is EOL; google-auth, google-api-core, google-cloud-secretmanager require 3.10+).
-
-### Improved
-- (No changes yet)
 
 ---
 
