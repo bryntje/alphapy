@@ -129,7 +129,8 @@ class Configuration(commands.Cog):
             return
         embed = view._build_step_embed(first_step)
         view._clear_and_add_components(first_step)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        message = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        view.message = message
         log_with_guild(f"Setup wizard started (guild_id={guild_id}, user_id={user_id})", guild_id, "debug")
 
     @system_group.command(name="show", description="Show system settings")
@@ -1589,12 +1590,12 @@ class SetupWizardView(discord.ui.View):
             )
             embed = self._build_complete_embed()
             self.clear_items()
-            await interaction.edit_original_response(embed=embed, view=self)
+            self.message = await interaction.edit_original_response(embed=embed, view=self)
             self.stop()
             return
         embed = self._build_step_embed(step)
         self._clear_and_add_components(step)
-        await interaction.edit_original_response(embed=embed, view=self)
+        self.message = await interaction.edit_original_response(embed=embed, view=self)
 
     async def on_timeout(self) -> None:
         if self.message is None:
