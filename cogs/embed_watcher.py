@@ -14,6 +14,7 @@ from utils.settings_helpers import CachedSettingsHelper
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.parsers import parse_days_string, format_days_for_display
+from utils.sanitizer import safe_embed_text
 import json
 
 
@@ -206,7 +207,7 @@ class EmbedReminderWatcher(commands.Cog):
                 )
                 log_embed.add_field(
                     name="📌 Title",
-                    value=parsed['title'] or "—",
+                    value=safe_embed_text((parsed.get("title") or "—")[:1024], 1024),
                     inline=False
                 )
                 log_embed.add_field(
@@ -219,10 +220,10 @@ class EmbedReminderWatcher(commands.Cog):
                     value=f"Will trigger at {parsed['reminder_time'].strftime('%H:%M')}",
                     inline=True
                 )
-                if parsed.get('location') and parsed.get('location') != "-":
+                if parsed.get("location") and parsed.get("location") != "-":
                     log_embed.add_field(
                         name="📍 Location",
-                        value=parsed.get('location'),
+                        value=safe_embed_text(parsed.get("location", "")[:1024], 1024),
                         inline=True
                     )
                 log_embed.add_field(
@@ -571,6 +572,61 @@ class EmbedReminderWatcher(commands.Cog):
         logger.debug(f"⚠️ Fallback triggered in parse_days — no valid days_line: '{days_line}' → weekday of dt: {dt.strftime('%A')} ({dt.weekday()})")
         return str(dt.weekday())
 
+    def _short_title_for_reminder_name(self, parsed: dict, max_chars: int = 50) -> str:
+        """
+        Derive a short, clear title for the reminder name. When the embed title is long or
+        duplicates the description (everything in one line), use the first line of the
+        description or the first part of the title so the reminder name stays readable.
+        Kept to ~50 chars so the sent reminder embed title stays concise.
+        """
+        title_val = (parsed.get("title") or "").strip() or "-"
+        desc_val = (parsed.get("description") or "").strip() or ""
+
+        def trim_at_word(text: str, limit: int) -> str:
+            text = text.replace("\n", " ").replace("\r", " ")
+            text = " ".join(text.split())
+            if len(text) <= limit:
+                return text
+            part = text[: limit + 1].rsplit(" ", 1)
+            return part[0] if part[0] else text[:limit]
+
+        # Use full title only if it's short and single-line
+        title_one_line = title_val.replace("\n", " ").strip()
+        if len(title_one_line) <= max_chars and "\n" not in title_val:
+            return trim_at_word(title_one_line, max_chars)
+
+        # Prefer first line of description as short title when title is long/repetitive
+        if desc_val and desc_val != "-":
+            first_line = desc_val.split("\n")[0].strip()
+            first_line = " ".join(first_line.split())
+            if first_line and len(first_line) <= max_chars:
+                return first_line
+            if first_line:
+                return trim_at_word(first_line, max_chars)
+
+        # Fallback: first part of title at word boundary
+        return trim_at_word(title_one_line, max_chars)
+
+    def _format_message_paragraphs(self, text: str) -> str:
+        """
+        When the message is one long block (no or few newlines), add paragraph breaks
+        after sentence endings so the reminder description is easier to read.
+        Only applies when the text looks like a single block; preserves existing structure.
+        """
+        if not text or not text.strip():
+            return text
+        # Already has structure: several newlines
+        if text.count("\n") >= 2:
+            return text
+        # One long block: break after sentence end (e.g. ". " before capital) to avoid
+        # breaking abbreviations like "P.M." we only break after lowercase + ". " + uppercase
+        formatted = re.sub(r"([a-z])\.\s+([A-Z])", r"\1.\n\n\2", text)
+        formatted = re.sub(r"([a-z])\?\s+([A-Z])", r"\1?\n\n\2", formatted)
+        formatted = re.sub(r"([a-z])\!\s+([A-Z])", r"\1!\n\n\2", formatted)
+        # Optional: break on " | " so time zones get their own line (e.g. "3 PM EST | 8 PM UK")
+        formatted = re.sub(r"\s+\|\s+", "\n• ", formatted)
+        return formatted.strip()
+
     async def store_parsed_reminder(self, parsed: dict, channel: int, created_by: int, guild_id: int, origin_channel_id: Optional[int]=None, origin_message_id: Optional[int]=None) -> None:
         dt = parsed["datetime"]
         channel = int(channel)
@@ -585,15 +641,13 @@ class EmbedReminderWatcher(commands.Cog):
         if isinstance(days_arr, str):
             days_arr = [d.strip() for d in days_arr.split(",") if d.strip()]
             logger.debug(f"[DEBUG] Final days_arr for DB insert: {days_arr} ({type(days_arr)})")
-        # Sanitize title: remove newlines and extra whitespace for name field
-        # (Discord modals don't accept newlines in TextInput default values)
-        title_sanitized = parsed['title'].replace('\n', ' ').replace('\r', ' ').strip()
-        # Collapse multiple spaces into single space
-        title_sanitized = ' '.join(title_sanitized.split())
-        
+        # Use a short, clear title for the reminder name (avoids long/duplicate embed titles)
+        short_title = self._short_title_for_reminder_name(parsed, max_chars=50)
+        title_sanitized = short_title.replace("\n", " ").replace("\r", " ").strip()
+        title_sanitized = " ".join(title_sanitized.split())
+
         # Create reminder name with prefix
         # Discord reminder name limit is 100 chars, prefix "🤖 Auto - " is 11 chars
-        # So we can use up to 89 chars for the title
         prefix = "🤖 Auto - "
         max_title_length = 100 - len(prefix)
         truncated_title = title_sanitized[:max_title_length] if len(title_sanitized) > max_title_length else title_sanitized
@@ -644,7 +698,10 @@ class EmbedReminderWatcher(commands.Cog):
         # Append footer to message if present
         if footer_val and footer_val not in message:
             message = f"{message}\n\n{footer_val}".strip() if message else footer_val
-        
+
+        # Add light paragraph formatting when message is one long block (no structure)
+        message = self._format_message_paragraphs(message)
+
         location = parsed.get("location", "-")
 
         try:
@@ -693,7 +750,7 @@ class EmbedReminderWatcher(commands.Cog):
                 if location and location != "-":
                     db_log_embed.add_field(
                         name="📍 Location",
-                        value=location,
+                        value=safe_embed_text(location[:1024], 1024),
                         inline=True
                     )
                 db_log_embed.set_footer(text=f"embedwatcher | Guild: {guild_id}")

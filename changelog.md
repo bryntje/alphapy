@@ -5,13 +5,21 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **Onboarding: personalization opt-in and language**
+  - After guild questions, two fixed steps: (1) opt-in for personalized reminders (“Yes, please!” / “Only for events and sessions” / “No, thanks”), (2) if full or events_only, preferred language (Nederlands, English, Español, etc., or “Other language…” with free text). Stored in `onboarding.responses` as `personalized_opt_in` and `preferred_language`.
+  - Helper `get_user_personalization(user_id, guild_id)` on Onboarding cog for use by reminders or other cogs; returns `{"opt_in", "language"}` with graceful fallback when no record or DB unavailable.
+- **AGENTS.md: codebase language** – Explicit note that the entire codebase is English-only (no Dutch in code, comments, user-facing strings, or logs), even when the user communicates in Dutch.
 
 ### Fixed
-- (No changes yet)
+- **Embed watcher reminder title and description**
+  - Short reminder name (~50 chars) derived from first line of description or start of title so the sent reminder embed has a clear title instead of the full announcement text.
+  - When the stored message is one long block, paragraph breaks are added after sentences and time zones (“3 PM EST | 8 PM UK”) are split onto separate lines with bullets for a readable description.
+- **Reminders: sent embed title** – Display title truncated to 240 chars so older reminders with long names stay within Discord’s embed title limit.
+- **Embed watcher & reminders: embed safety** – Log embeds use `safe_embed_text(..., 1024)` for Title and Location fields; reminder Location field uses 1024-char limit for Discord field values.
 
 ### Improved
-- (No changes yet)
+- **Codebase: English only** – Dutch comments and log messages in `cogs/onboarding.py` and `cogs/reminders.py` translated to English; `core-api/` directory removed (deprecated README only).
+- **Onboarding** – Uses `utils.logger`; personalization summary/log fields use human-readable labels and 1024-char truncation; footer on personalization step embeds; expanded `get_user_personalization` docstring.
 
 ---
 

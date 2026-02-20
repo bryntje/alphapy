@@ -977,9 +977,11 @@ class ReminderCog(commands.Cog):
                     continue
 
                 dt = now
+                # Keep embed title short (Discord limit 256); truncate long names from older reminders
+                name_display = safe_embed_text((row["name"] or "")[:240], 240)
                 embed = EmbedBuilder.success(
-                    title=f"⏰ Reminder: {safe_embed_text(row['name'])}",
-                    description=safe_embed_text(row['message'] or "-")
+                    title=f"⏰ Reminder: {name_display}",
+                    description=safe_embed_text(row["message"] or "-")
                 )
                 # Show date+time for one-off events; for recurring show only the configured time
                 event_dt = row.get("event_time")
@@ -1000,10 +1002,10 @@ class ReminderCog(commands.Cog):
                         except Exception:
                             time_str = str(call_time_obj)
                         embed.add_field(name="⏰ Time", value=time_str, inline=False)
-                # Locatie
+                # Location
                 if row.get("location") and row["location"] != "-":
-                    embed.add_field(name="📍 Location", value=safe_embed_text(row["location"]), inline=False)
-                # Link naar origineel bericht
+                    embed.add_field(name="📍 Location", value=safe_embed_text(row["location"], 1024), inline=False)
+                # Link to original message
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
                     link = f"https://discord.com/channels/{row['guild_id']}/{row['origin_channel_id']}/{row['origin_message_id']}"
                     embed.add_field(name="🔗 Original", value=f"[Click here]({link})", inline=False)
@@ -1123,7 +1125,7 @@ class ReminderCog(commands.Cog):
         except Exception as e:
             if isinstance(e, (pg_exceptions.InterfaceError, pg_exceptions.ConnectionDoesNotExistError, ConnectionResetError)):
                 await self._handle_connection_lost(e)
-            logger.exception("🚨 Reminder loop error tijdens verzenden")
+            logger.exception("🚨 Reminder loop error while sending")
             try:
                 await self.send_log_embed(
                     title="🚨 Reminder loop error",
