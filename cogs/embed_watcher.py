@@ -588,7 +588,9 @@ class EmbedReminderWatcher(commands.Cog):
             if len(text) <= limit:
                 return text
             part = text[: limit + 1].rsplit(" ", 1)
-            return part[0] if part[0] else text[:limit]
+            result = part[0] if part[0] else text[:limit]
+            # When there is no space in the slice, part[0] is the whole slice (limit+1 chars)
+            return result[:limit]
 
         # Use full title only if it's short and single-line
         title_one_line = title_val.replace("\n", " ").strip()
