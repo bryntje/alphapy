@@ -162,6 +162,14 @@ All commands require administrator permissions and are guild-specific:
 /config onboarding reset_role
 ```
 
+**Onboarding modes** (via `mode`):
+- **Disabled** – No onboarding
+- **Rules Only** – Role assigned when rules are accepted (no questions)
+- **Rules + Questions** – Role assigned only after all questions (and personalization steps) are completed
+- **Questions Only** – Role assigned only after all questions (and personalization steps) are completed
+
+When questions are used, users also complete two fixed personalization steps: opt-in for personalized reminders and preferred language; stored in `onboarding.responses` as `personalized_opt_in` and `preferred_language`.
+
 Rules support optional images: `thumbnail_url` (shown right) and `image_url` (shown at bottom). If no rules are configured, users see an error and a log is sent to the log channel.
 
 ## Template Placeholders

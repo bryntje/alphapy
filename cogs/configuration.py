@@ -1065,9 +1065,9 @@ class Configuration(commands.Cog):
     @app_commands.describe(mode="Choose the onboarding flow type")
     @app_commands.choices(mode=[
         app_commands.Choice(name="Disabled - No onboarding", value="disabled"),
-        app_commands.Choice(name="Rules Only - Show rules and assign role", value="rules_only"),
-        app_commands.Choice(name="Rules + Questions - Show rules, ask questions, assign role", value="rules_with_questions"),
-        app_commands.Choice(name="Questions Only - Ask questions and assign role", value="questions_only"),
+        app_commands.Choice(name="Rules Only - Role when rules accepted (no questions)", value="rules_only"),
+        app_commands.Choice(name="Rules + Questions - Role only after all questions completed", value="rules_with_questions"),
+        app_commands.Choice(name="Questions Only - Role only after all questions completed", value="questions_only"),
     ])
     @requires_admin()
     async def onboarding_set_mode(self, interaction: discord.Interaction, mode: str) -> None:

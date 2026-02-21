@@ -87,7 +87,7 @@ User onboarding responses per guild.
 **Columns:**
 - `guild_id` (BIGINT, NOT NULL)
 - `user_id` (BIGINT, NOT NULL)
-- `responses` (JSONB): User responses (answers by index)
+- `responses` (JSONB): User responses (answers by question index, plus personalization keys)
 - `timestamp` (TIMESTAMP): Response timestamp
 
 **Primary Key:** `(guild_id, user_id)`
@@ -95,6 +95,7 @@ User onboarding responses per guild.
 **Notes:**
 - Responses stored as JSONB with flexible structure
 - Supports multi-select, text input, email validation, and follow-up questions
+- Fixed personalization keys (synthetic steps after guild questions): `personalized_opt_in` (`"full"` | `"events_only"` | `"no"`), `preferred_language` (e.g. `"en"`, `"nl"`, or `"other: <text>"`)
 
 ---
 

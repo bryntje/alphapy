@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import json
-import logging
 import uuid
 import re
 import asyncio
@@ -11,14 +10,8 @@ from asyncpg import exceptions as pg_exceptions
 import config
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
+from utils.logger import logger
 from utils.operational_logs import log_operational_event, EventType
-
-# Configureer de logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-logger.addHandler(handler)
 
 class Onboarding(commands.Cog):
     """Cog that manages the onboarding process for new users."""
@@ -79,6 +72,25 @@ class Onboarding(commands.Cog):
         self.guild_questions_cache = {}
         # Cache for guild rules (guild_id -> rules list)
         self.guild_rules_cache = {}
+
+        # Personalization: synthetic steps after guild questions (opt-in + optional language)
+        self.NUM_PERSONALIZATION_STEPS = 2
+        self.PERSONALIZATION_OPT_IN_QUESTION = "Would you like to receive personalized reminders and tips (based on your answers)?"
+        self.PERSONALIZATION_OPT_IN_OPTIONS = [
+            ("Yes, please!", "full"),
+            ("Only for events and sessions", "events_only"),
+            ("No, thanks", "no"),
+        ]
+        self.PERSONALIZATION_OPT_IN_LABELS = {"full": "Yes, please!", "events_only": "Only for events and sessions", "no": "No, thanks"}
+        self.PERSONALIZATION_LANGUAGE_QUESTION = "In which language would you like to receive personalized reminders and tips?"
+        self.PERSONALIZATION_LANGUAGE_OPTIONS = [
+            ("Nederlands", "nl"),
+            ("English", "en"),
+            ("Español", "es"),
+            ("Français", "fr"),
+            ("Deutsch", "de"),
+            ("Other language…", "other"),
+        ]
 
         self.db: Optional[asyncpg.Pool] = None
 
@@ -432,8 +444,44 @@ class Onboarding(commands.Cog):
                 logger.exception("❌ Onboarding: unexpected DB-init error")
                 break
 
-        logger.error(f"❌ Onboarding: kon DB-verbinding niet opzetten: {last_error}")
+        logger.error(f"❌ Onboarding: could not establish DB connection: {last_error}")
         return False
+
+    async def _show_onboarding_step(
+        self, interaction: discord.Interaction, session: Optional[dict], embed: discord.Embed, view: discord.ui.View
+    ) -> None:
+        """
+        Show the next onboarding step (embed + view) by editing the current message when possible,
+        otherwise sending a followup. Uses session['onboarding_message'] when interaction.message is
+        None (e.g. after modal submit) so we keep updating the same message.
+        """
+        msg = interaction.message or (session.get("onboarding_message") if session else None)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.edit_message(content="", embed=embed, view=view)
+                if session is not None and interaction.message is not None:
+                    session["onboarding_message"] = interaction.message
+                return
+        except discord.errors.InteractionResponded:
+            pass
+        if msg is not None and getattr(msg, "edit", None):
+            try:
+                await msg.edit(content="", embed=embed, view=view)
+                if session is not None:
+                    session["onboarding_message"] = msg
+                return
+            except (discord.NotFound, discord.Forbidden):
+                pass
+        # After defer or when message edit failed: try to edit the original response so we
+        # don't send a new followup (e.g. first step from rules, or after modal submit).
+        try:
+            await interaction.edit_original_response(content="", embed=embed, view=view)
+            return
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        sent = await interaction.followup.send(embed=embed, view=view, ephemeral=True, wait=True)
+        if sent is not None and session is not None:
+            session["onboarding_message"] = sent
 
     async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: Optional[dict] = None):
         user_id = interaction.user.id
@@ -455,10 +503,28 @@ class Onboarding(commands.Cog):
 
         # Get questions for this guild
         questions = await self.get_guild_questions(guild_id)
+        n_questions = len(questions)
+        completion_step = n_questions + self.NUM_PERSONALIZATION_STEPS
 
-        # If all questions are answered, process completion
-        if step >= len(questions):
+        # If all questions and personalization steps are done, process completion
+        if step >= completion_step:
             logger.info(f"🎉 Onboarding completed for {interaction.user.display_name}!")
+
+            # Edit the form message to remove components (dropdown/buttons) so later clicks have no effect
+            done_embed = EmbedBuilder.success(
+                title="✅ Onboarding complete",
+                description="Your responses have been saved. See below for your summary."
+            )
+            for msg in (interaction.message, session.get("onboarding_message") if session else None):
+                if msg is None or not getattr(msg, "edit", None):
+                    continue
+                try:
+                    await msg.edit(content="", embed=done_embed, view=None)
+                    break
+                except (discord.NotFound, discord.Forbidden) as e:
+                    logger.debug("Could not edit message on completion (e.g. ephemeral from rules): %s", e)
+                except Exception as e:
+                    logger.warning(f"Could not edit onboarding message on completion: {e}")
 
             summary_embed = EmbedBuilder.info(
                 title="📜 Onboarding Summary",
@@ -469,8 +535,15 @@ class Onboarding(commands.Cog):
                 raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
                 summary_embed.add_field(name=f"**{safe_embed_text(question['question'])}**", value=f"➜ {safe_embed_text(answer_text)}", inline=False)
+            opt_in = (answers or {}).get("personalized_opt_in")
+            if opt_in is not None:
+                opt_in_label = self.PERSONALIZATION_OPT_IN_LABELS.get(opt_in, str(opt_in))
+                summary_embed.add_field(name="**Personalized reminders**", value=f"➜ {safe_embed_text(opt_in_label, 1024)}", inline=False)
+            pref_lang = (answers or {}).get("preferred_language")
+            if pref_lang is not None:
+                summary_embed.add_field(name="**Preferred language**", value=f"➜ {safe_embed_text(str(pref_lang), 1024)}", inline=False)
 
-            # Verstuur de samenvatting als ephemeral bericht naar de gebruiker
+            # Send summary to user
             if not interaction.response.is_done():
                 await interaction.response.send_message(embed=summary_embed, ephemeral=True)
             else:
@@ -534,6 +607,11 @@ class Onboarding(commands.Cog):
                 raw_answer = (answers or {}).get(idx, "No response")
                 answer_text = self._format_answer(question, raw_answer)
                 log_embed.add_field(name=safe_embed_text(question['question']), value=f"➜ {safe_embed_text(answer_text)}", inline=False)
+            if opt_in is not None:
+                opt_in_label = self.PERSONALIZATION_OPT_IN_LABELS.get(opt_in, str(opt_in))
+                log_embed.add_field(name="Personalized reminders", value=f"➜ {safe_embed_text(opt_in_label, 1024)}", inline=False)
+            if pref_lang is not None:
+                log_embed.add_field(name="Preferred language", value=f"➜ {safe_embed_text(str(pref_lang), 1024)}", inline=False)
 
             log_channel_id = self.bot.settings.get("system", "log_channel_id", interaction.guild.id)
             log_channel = self.bot.get_channel(log_channel_id) if log_channel_id else None
@@ -542,7 +620,29 @@ class Onboarding(commands.Cog):
 
             return
 
-        # Get the current question
+        if step == n_questions:
+            # Personalization opt-in step
+            embed = EmbedBuilder.info(
+                title="📝 Onboarding Form",
+                description=self.PERSONALIZATION_OPT_IN_QUESTION,
+                footer="Complete the steps to finish onboarding.",
+            )
+            view = PersonalizationOptInView(onboarding=self, answers=answers or {}, n_questions=n_questions)
+            await self._show_onboarding_step(interaction, session, embed, view)
+            return
+
+        if step == n_questions + 1:
+            # Personalization language step
+            embed = EmbedBuilder.info(
+                title="📝 Onboarding Form",
+                description=self.PERSONALIZATION_LANGUAGE_QUESTION,
+                footer="Complete the steps to finish onboarding.",
+            )
+            view = PersonalizationLanguageView(onboarding=self, answers=answers or {}, n_questions=n_questions)
+            await self._show_onboarding_step(interaction, session, embed, view)
+            return
+
+        # Get the current question (guild question)
         q_data = questions[step]
 
         # If this question requires free text input, send a modal
@@ -557,33 +657,27 @@ class Onboarding(commands.Cog):
             await interaction.response.send_modal(modal)
             return
 
-        # Anders, bouw een embed en view voor de vraag met opties
+        # Build embed and view for the question with options
         embed = EmbedBuilder.info(title="📝 Onboarding Form", description=q_data["question"])
         view = OnboardingView(step=step, answers=answers or {}, onboarding=self)
 
         if q_data.get("multiple"):
-            # Multi-select: toon enkel de select; geen confirm-knop nodig
+            # Multi-select: show only the select; no confirm button needed
             if "options" in q_data:
                 view.add_item(OnboardingSelect(step=step, options=q_data["options"], onboarding=self, view_id=view.view_id))
         else:
-            # Voeg knoppen toe voor single-select vragen
+            # Add buttons for single-select questions
             if "options" in q_data:
                 for label, value in q_data["options"]:
                     view.add_item(OnboardingButton(label=label, value=value, step=step, onboarding=self))
 
-        # Alleen confirm-knop voor single-select vragen
+        # Confirm button only for single-select questions
         if not q_data.get("multiple"):
             confirm_button = ConfirmButton(step, answers or {}, self)
             confirm_button.disabled = True
             view.add_item(confirm_button)
 
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.edit_message(embed=embed, view=view)
-            else:
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-        except discord.errors.InteractionResponded:
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await self._show_onboarding_step(interaction, session, embed, view)
 
     async def store_onboarding_data(self, guild_id: int, user_id, responses) -> bool:
         """Saves onboarding data to the database."""
@@ -623,11 +717,47 @@ class Onboarding(commands.Cog):
                             )
                         else:
                             raise insert_exc
-            logger.info(f"✅ Onboarding data opgeslagen voor {user_id}")
+            logger.info(f"✅ Onboarding data saved for {user_id}")
             return True
         except Exception as exc:
-            logger.exception(f"❌ Onboarding: opslaan mislukt voor {user_id}: {exc}")
+            logger.exception(f"❌ Onboarding: save failed for {user_id}: {exc}")
             return False
+
+    async def get_user_personalization(self, user_id: int, guild_id: int) -> Dict[str, Any]:
+        """
+        Get the user's personalization preferences from their most recent onboarding (opt-in and language).
+        Graceful fallback: returns defaults if no record or DB unavailable.
+
+        Returns:
+            dict: ``{"opt_in": "full" | "events_only" | "no" | None, "language": str}``.
+            - ``opt_in``: Value of ``personalized_opt_in`` from onboarding responses, or None if missing.
+            - ``language``: Value of ``preferred_language`` (e.g. ``"nl"``, ``"en"``, ``"other: Italiano"``),
+              or ``"en"`` if missing. For "other" the full string is returned for use in prompts.
+        """
+        default = {"opt_in": None, "language": "en"}
+        if not await self._ensure_pool() or self.db is None:
+            return default
+        try:
+            async with acquire_safe(self.db) as conn:
+                row = await conn.fetchrow(
+                    "SELECT responses FROM onboarding WHERE guild_id = $1 AND user_id = $2",
+                    guild_id,
+                    user_id,
+                )
+            if not row or not row.get("responses"):
+                return default
+            responses = row["responses"]
+            if isinstance(responses, str):
+                responses = json.loads(responses)
+            opt_in = responses.get("personalized_opt_in") if isinstance(responses, dict) else None
+            language = responses.get("preferred_language") if isinstance(responses, dict) else None
+            return {
+                "opt_in": opt_in,
+                "language": language if language else "en",
+            }
+        except Exception as exc:
+            logger.warning(f"get_user_personalization failed for user {user_id} guild {guild_id}: {exc}")
+            return default
 
 class TextInputModal(discord.ui.Modal):
     def __init__(self, title: str, step: int, answers: dict, onboarding: 'Onboarding', optional: bool = False):
@@ -649,15 +779,14 @@ class TextInputModal(discord.ui.Modal):
         self.add_item(self.input_field)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Sla de ingevoerde waarde op in de actieve sessie
+        # Store the entered value in the active session
         self.answers[self.step] = self.input_field.value
         user_id = interaction.user.id
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.input_field.value
 
-        # Give a short confirmation and proceed to the next question
-        await interaction.response.send_message("Your response has been recorded.", ephemeral=True)
-        # Call the next question
+        # Update the same message with the next question (no separate confirmation)
+        await interaction.response.defer(ephemeral=True)
         await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
 
@@ -683,16 +812,14 @@ class OnboardingButton(discord.ui.Button):
         self.onboarding = onboarding
 
     async def callback(self, interaction: discord.Interaction):
-        # Indien de custom_id nodig is, kunnen we die nu dynamisch genereren.
-        # Voor de logica zelf gebruiken we nu de gegevens uit de view, die een uniek view_id bevat.
+        # We use the view data here, which has a unique view_id.
         logger.info(f"🔘 Button clicked: {self.label} (value: {self.value})")
         user_id = interaction.user.id
         guild_id = interaction.guild.id if interaction.guild else 0
         questions = await self.onboarding.get_guild_questions(guild_id)
         question_data = questions[self.step]
         
-        # Single-select: zet het antwoord
-        # Als er een follow-up is voor deze keuze, bewaar zowel keuze als latere follow-up in een dict
+        # Single-select: set the answer; if there is a follow-up for this choice, store choice and follow-up in a dict
         view = self.view
         if view is None:
             await interaction.response.defer(ephemeral=True)
@@ -706,7 +833,7 @@ class OnboardingButton(discord.ui.Button):
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.value
 
-        # Controleer of er een follow-up modal nodig is
+        # Check if a follow-up modal is needed
         if self.value in question_data.get("followup", {}):
             followup_cfg = question_data["followup"][self.value]
             followup_text = followup_cfg["question"] if isinstance(followup_cfg, dict) else str(followup_cfg)
@@ -724,7 +851,7 @@ class OnboardingButton(discord.ui.Button):
             )
             return
 
-        # Activeer de confirm-knop
+        # Enable the confirm button
         for child in onboarding_view.children:
             if isinstance(child, ConfirmButton):
                 child.disabled = False
@@ -733,15 +860,15 @@ class OnboardingButton(discord.ui.Button):
 
 
 class OnboardingSelect(discord.ui.Select):
-    """Select menu voor multi-select vragen."""
+    """Select menu for multi-select questions."""
     def __init__(self, step: int, options: list, onboarding: Onboarding, view_id: str):
         select_options = []
         for label, value in options:
             select_options.append(discord.SelectOption(label=label, value=value))
-        # Bouw een unieke custom_id met behulp van het view_id en de stap
+        # Build a unique custom_id using the view_id and step
         custom_id = f"onboarding_select_{step}_{view_id}"
         super().__init__(
-            placeholder="Selecteer een of meerdere opties...",
+            placeholder="Select one or more options...",
             min_values=1,
             max_values=len(options),
             options=select_options,
@@ -751,7 +878,7 @@ class OnboardingSelect(discord.ui.Select):
         self.onboarding = onboarding
 
     async def callback(self, interaction: discord.Interaction):
-        logger.info(f"🔘 Select callback: geselecteerde waarden: {self.values}")
+        logger.info(f"🔘 Select callback: selected values: {self.values}")
         user_id = interaction.user.id
         view = self.view
         if view is None:
@@ -780,15 +907,128 @@ class ConfirmButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         if user_id not in self.onboarding.active_sessions:
-            logger.warning(f"⚠️ Geen actieve sessie voor {interaction.user.display_name}.")
+            logger.warning(f"⚠️ No active session for {interaction.user.display_name}.")
             return
-        logger.info(f'✅ {interaction.user.display_name} bevestigde stap {self.step}')
+        logger.info(f'✅ {interaction.user.display_name} confirmed step {self.step}')
         session = self.onboarding.active_sessions[user_id]
         session["answers"].update(self.answers)
         await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=session["answers"])
 
+
+class PersonalizationOptInView(discord.ui.View):
+    """View for the personalization opt-in step (synthetic step after guild questions)."""
+    def __init__(self, onboarding: Onboarding, answers: dict, n_questions: int):
+        super().__init__(timeout=None)
+        self.onboarding = onboarding
+        self.answers = answers
+        self.n_questions = n_questions
+        for label, value in onboarding.PERSONALIZATION_OPT_IN_OPTIONS:
+            btn = discord.ui.Button(label=label, style=discord.ButtonStyle.primary, custom_id=f"personalization_optin_{value}")
+            btn.callback = self._make_callback(value)
+            self.add_item(btn)
+
+    def _make_callback(self, value: str):
+        async def callback(interaction: discord.Interaction):
+            user_id = interaction.user.id
+            session = self.onboarding.active_sessions.get(user_id)
+            if session and session.get("_opt_in_submitted"):
+                await interaction.response.defer(ephemeral=True)
+                await interaction.followup.send("Onboarding is already complete. Your preferences were saved.", ephemeral=True)
+                return
+            if session:
+                session["_opt_in_submitted"] = True
+            self.answers["personalized_opt_in"] = value
+            if user_id in self.onboarding.active_sessions:
+                self.onboarding.active_sessions[user_id]["answers"]["personalized_opt_in"] = value
+            next_step = self.n_questions + 1 if value in ("full", "events_only") else self.n_questions + 2
+            await interaction.response.defer(ephemeral=True)
+            await self.onboarding.send_next_question(interaction, step=next_step, answers=self.answers)
+        return callback
+
+
+class PersonalizationLanguageView(discord.ui.View):
+    """View for the preferred language step (synthetic step; only shown when opt-in is full or events_only)."""
+    def __init__(self, onboarding: Onboarding, answers: dict, n_questions: int):
+        super().__init__(timeout=None)
+        self.onboarding = onboarding
+        self.answers = answers
+        self.n_questions = n_questions
+        opts = [discord.SelectOption(label=label, value=val) for label, val in onboarding.PERSONALIZATION_LANGUAGE_OPTIONS]
+        select = discord.ui.Select(
+            placeholder="Choose a language...",
+            min_values=1,
+            max_values=1,
+            options=opts,
+            custom_id="personalization_language_select"
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction):
+        data = interaction.data or {}
+        values = data.get("values", []) if isinstance(data, dict) else []
+        value = values[0] if values else None
+        if not value:
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("⚠️ Something went wrong. Please try again.", ephemeral=True)
+            return
+        if value == "other":
+            await interaction.response.send_modal(
+                OtherLanguageModal(onboarding=self.onboarding, answers=self.answers, n_questions=self.n_questions)
+            )
+            return
+        user_id = interaction.user.id
+        session = self.onboarding.active_sessions.get(user_id)
+        if session and session.get("_language_submitted"):
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("Onboarding is already complete. Your preferences were saved.", ephemeral=True)
+            return
+        if session:
+            session["_language_submitted"] = True
+        self.answers["preferred_language"] = value
+        if user_id in self.onboarding.active_sessions:
+            self.onboarding.active_sessions[user_id]["answers"]["preferred_language"] = value
+        await interaction.response.defer(ephemeral=True)
+        await self.onboarding.send_next_question(interaction, step=self.n_questions + 2, answers=self.answers)
+
+
+class OtherLanguageModal(discord.ui.Modal):
+    """Modal for free-text language when user chooses 'Other language…'."""
+    def __init__(self, onboarding: Onboarding, answers: dict, n_questions: int):
+        super().__init__(title="Preferred language")
+        self.onboarding = onboarding
+        self.answers = answers
+        self.n_questions = n_questions
+        self.input_field = discord.ui.TextInput(
+            label="Which language exactly? (type the name or code, e.g. Italiano, Русский, etc.)",
+            placeholder="e.g. Italiano, 日本語",
+            style=discord.TextStyle.short,
+            required=True
+        )
+        self.add_item(self.input_field)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        session = self.onboarding.active_sessions.get(user_id)
+        if session and session.get("_language_submitted"):
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("Onboarding is already complete. Your preferences were saved.", ephemeral=True)
+            return
+        if session:
+            session["_language_submitted"] = True
+        raw = self.input_field.value.strip()
+        if not raw:
+            self.answers["preferred_language"] = "en"
+        else:
+            self.answers["preferred_language"] = f"other: {raw}"
+        if user_id in self.onboarding.active_sessions:
+            self.onboarding.active_sessions[user_id]["answers"]["preferred_language"] = self.answers["preferred_language"]
+        await interaction.response.defer(ephemeral=True)
+        await self.onboarding.send_next_question(interaction, step=self.n_questions + 2, answers=self.answers)
+
+
 class FollowupModal(discord.ui.Modal):
-    """Modal voor follow-up vragen waarbij de gebruiker tekst kan invoeren."""
+    """Modal for follow-up questions where the user can enter text."""
     def __init__(self, title: str, question: str, step: int, answers: dict, validate_email: bool = False, onboarding: Optional['Onboarding'] = None):
         super().__init__(title=title)
         self.step = step
@@ -803,12 +1043,12 @@ class FollowupModal(discord.ui.Modal):
         user_id = interaction.user.id
         value = self.input_field.value.strip()
 
-        # Emailvalidatie indien vereist
+        # Email validation if required
         if self.validate_email:
             bot_client = cast(commands.Bot, interaction.client)
             onboarding_cog: Onboarding = self.onboarding or cast(Onboarding, bot_client.get_cog("Onboarding"))
             if not onboarding_cog.EMAIL_REGEX.match(value):
-                # Bied een retry-knop aan om opnieuw te proberen
+                # Offer a retry button to try again
                 await interaction.response.send_message(
                     "❌ Invalid email format. Please try again.",
                     view=ReenterEmailView(step=self.step, answers=self.answers, onboarding=onboarding_cog),
@@ -816,7 +1056,7 @@ class FollowupModal(discord.ui.Modal):
                 )
                 return
 
-        # Sla follow-up op naast de keuze
+        # Store follow-up alongside the choice
         existing = self.answers.get(self.step)
         if isinstance(existing, dict):
             existing["followup"] = value
@@ -825,14 +1065,13 @@ class FollowupModal(discord.ui.Modal):
         else:
             self.answers[self.step] = {"choice": existing, "followup": value, "followup_label": self.question}
 
-        # Update actieve sessie
+        # Update active session
         bot_client2 = cast(commands.Bot, interaction.client)
         onboarding = self.onboarding or cast(Onboarding, bot_client2.get_cog("Onboarding"))
         if user_id in onboarding.active_sessions:
             onboarding.active_sessions[user_id]["answers"][self.step] = self.answers[self.step]
 
         await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send("✅ Thanks! Moving to the next question...", ephemeral=True)
         await onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
 
@@ -859,4 +1098,4 @@ class ReenterEmailView(discord.ui.View):
 async def setup(bot: commands.Bot):
     cog = Onboarding(bot)
     await bot.add_cog(cog)
-    await cog.setup_database()  # Zorg dat de database correct wordt opgezet
+    await cog.setup_database()  # Ensure the database is set up correctly

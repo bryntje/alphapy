@@ -5,13 +5,24 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **Onboarding: personalization opt-in and language**
+  - After guild questions, two fixed steps: (1) opt-in for personalized reminders (“Yes, please!” / “Only for events and sessions” / “No, thanks”), (2) if full or events_only, preferred language (Nederlands, English, Español, etc., or “Other language…” with free text). Stored in `onboarding.responses` as `personalized_opt_in` and `preferred_language`.
+  - Helper `get_user_personalization(user_id, guild_id)` on Onboarding cog for use by reminders or other cogs; returns `{"opt_in", "language"}` with graceful fallback when no record or DB unavailable.
+- **AGENTS.md: codebase language** – Explicit note that the entire codebase is English-only (no Dutch in code, comments, user-facing strings, or logs), even when the user communicates in Dutch.
 
 ### Fixed
-- (No changes yet)
+- **Embed watcher reminder title and description**
+  - Short reminder name (~50 chars) derived from first line of description or start of title so the sent reminder embed has a clear title instead of the full announcement text.
+  - When the stored message is one long block, paragraph breaks are added after sentences and time zones (“3 PM EST | 8 PM UK”) are split onto separate lines with bullets for a readable description.
+- **Reminders: sent embed title** – Display title truncated to 240 chars so older reminders with long names stay within Discord’s embed title limit.
+- **Embed watcher & reminders: embed safety** – Log embeds use `safe_embed_text(..., 1024)` for Title and Location fields; reminder Location field uses 1024-char limit for Discord field values.
 
 ### Improved
-- (No changes yet)
+- **Codebase: English only** – Dutch comments and log messages in `cogs/onboarding.py` and `cogs/reminders.py` translated to English; `core-api/` directory removed (deprecated README only).
+- **Onboarding** – Uses `utils.logger`; personalization summary/log fields use human-readable labels and 1024-char truncation; footer on personalization step embeds; expanded `get_user_personalization` docstring.
+- **Onboarding: single message flow** – Reaction roles: no defer before `send_next_question` on “Accept All Rules & Start Onboarding” so the rules message can be replaced with the first question via `response.edit_message`. Onboarding `_show_onboarding_step`: when response is already used, try `edit_original_response(embed=..., view=...)` before `followup.send` to reduce extra messages. Session is optional and used safely (e.g. `session.get("onboarding_message")` only when session is not None).
+- **Onboarding: no text above embed** – Rules message is embed + view only (no “Please accept each rule one by one before proceeding:”). Every onboarding edit (`response.edit_message`, `msg.edit`, `edit_original_response`, completion-edit) passes `content=""` so existing text above the embed is cleared.
+- **Onboarding: completion behavior** – On completion, both `interaction.message` and `session["onboarding_message"]` are edited to the “Onboarding complete” embed with `view=None` so buttons/dropdown disappear. If the user clicks opt-in or language after completion, reply is “Onboarding is already complete. Your preferences were saved.” (PersonalizationOptInView, PersonalizationLanguageView, OtherLanguageModal).
 
 ---
 
