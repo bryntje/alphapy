@@ -447,6 +447,42 @@ class Onboarding(commands.Cog):
         logger.error(f"❌ Onboarding: could not establish DB connection: {last_error}")
         return False
 
+    async def _show_onboarding_step(
+        self, interaction: discord.Interaction, session: Optional[dict], embed: discord.Embed, view: discord.ui.View
+    ) -> None:
+        """
+        Show the next onboarding step (embed + view) by editing the current message when possible,
+        otherwise sending a followup. Uses session['onboarding_message'] when interaction.message is
+        None (e.g. after modal submit) so we keep updating the same message.
+        """
+        msg = interaction.message or (session.get("onboarding_message") if session else None)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.edit_message(content="", embed=embed, view=view)
+                if session is not None and interaction.message is not None:
+                    session["onboarding_message"] = interaction.message
+                return
+        except discord.errors.InteractionResponded:
+            pass
+        if msg is not None and getattr(msg, "edit", None):
+            try:
+                await msg.edit(content="", embed=embed, view=view)
+                if session is not None:
+                    session["onboarding_message"] = msg
+                return
+            except (discord.NotFound, discord.Forbidden):
+                pass
+        # After defer or when message edit failed: try to edit the original response so we
+        # don't send a new followup (e.g. first step from rules, or after modal submit).
+        try:
+            await interaction.edit_original_response(content="", embed=embed, view=view)
+            return
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        sent = await interaction.followup.send(embed=embed, view=view, ephemeral=True, wait=True)
+        if sent is not None and session is not None:
+            session["onboarding_message"] = sent
+
     async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: Optional[dict] = None):
         user_id = interaction.user.id
         if not interaction.guild:
@@ -474,15 +510,19 @@ class Onboarding(commands.Cog):
         if step >= completion_step:
             logger.info(f"🎉 Onboarding completed for {interaction.user.display_name}!")
 
-            # Edit the original message to remove components and prevent duplicate submissions
-            msg = interaction.message
-            if interaction.response.is_done() and msg is not None and getattr(msg, "edit", None):
-                done_embed = EmbedBuilder.success(
-                    title="✅ Onboarding complete",
-                    description="Your responses have been saved. See below for your summary."
-                )
+            # Edit the form message to remove components (dropdown/buttons) so later clicks have no effect
+            done_embed = EmbedBuilder.success(
+                title="✅ Onboarding complete",
+                description="Your responses have been saved. See below for your summary."
+            )
+            for msg in (interaction.message, session.get("onboarding_message") if session else None):
+                if msg is None or not getattr(msg, "edit", None):
+                    continue
                 try:
-                    await msg.edit(embed=done_embed, view=None)
+                    await msg.edit(content="", embed=done_embed, view=None)
+                    break
+                except (discord.NotFound, discord.Forbidden) as e:
+                    logger.debug("Could not edit message on completion (e.g. ephemeral from rules): %s", e)
                 except Exception as e:
                     logger.warning(f"Could not edit onboarding message on completion: {e}")
 
@@ -588,19 +628,7 @@ class Onboarding(commands.Cog):
                 footer="Complete the steps to finish onboarding.",
             )
             view = PersonalizationOptInView(onboarding=self, answers=answers or {}, n_questions=n_questions)
-            msg = interaction.message
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.edit_message(embed=embed, view=view)
-                elif msg is not None and getattr(msg, "edit", None):
-                    await msg.edit(embed=embed, view=view)
-                else:
-                    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            except discord.errors.InteractionResponded:
-                if msg is not None and getattr(msg, "edit", None):
-                    await msg.edit(embed=embed, view=view)
-                else:
-                    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await self._show_onboarding_step(interaction, session, embed, view)
             return
 
         if step == n_questions + 1:
@@ -611,19 +639,7 @@ class Onboarding(commands.Cog):
                 footer="Complete the steps to finish onboarding.",
             )
             view = PersonalizationLanguageView(onboarding=self, answers=answers or {}, n_questions=n_questions)
-            msg = interaction.message
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.edit_message(embed=embed, view=view)
-                elif msg is not None and getattr(msg, "edit", None):
-                    await msg.edit(embed=embed, view=view)
-                else:
-                    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            except discord.errors.InteractionResponded:
-                if msg is not None and getattr(msg, "edit", None):
-                    await msg.edit(embed=embed, view=view)
-                else:
-                    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await self._show_onboarding_step(interaction, session, embed, view)
             return
 
         # Get the current question (guild question)
@@ -661,19 +677,7 @@ class Onboarding(commands.Cog):
             confirm_button.disabled = True
             view.add_item(confirm_button)
 
-        msg = interaction.message
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.edit_message(embed=embed, view=view)
-            elif msg is not None and getattr(msg, "edit", None):
-                await msg.edit(embed=embed, view=view)
-            else:
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-        except discord.errors.InteractionResponded:
-            if msg is not None and getattr(msg, "edit", None):
-                await msg.edit(embed=embed, view=view)
-            else:
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await self._show_onboarding_step(interaction, session, embed, view)
 
     async def store_onboarding_data(self, guild_id: int, user_id, responses) -> bool:
         """Saves onboarding data to the database."""
@@ -781,9 +785,8 @@ class TextInputModal(discord.ui.Modal):
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.input_field.value
 
-        # Give a short confirmation and proceed to the next question
-        await interaction.response.send_message("Your response has been recorded.", ephemeral=True)
-        # Call the next question
+        # Update the same message with the next question (no separate confirmation)
+        await interaction.response.defer(ephemeral=True)
         await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
 
@@ -875,7 +878,7 @@ class OnboardingSelect(discord.ui.Select):
         self.onboarding = onboarding
 
     async def callback(self, interaction: discord.Interaction):
-        logger.info(f"🔘 Select callback: geselecteerde waarden: {self.values}")
+        logger.info(f"🔘 Select callback: selected values: {self.values}")
         user_id = interaction.user.id
         view = self.view
         if view is None:
@@ -930,7 +933,7 @@ class PersonalizationOptInView(discord.ui.View):
             session = self.onboarding.active_sessions.get(user_id)
             if session and session.get("_opt_in_submitted"):
                 await interaction.response.defer(ephemeral=True)
-                await interaction.followup.send("You have already submitted this step.", ephemeral=True)
+                await interaction.followup.send("Onboarding is already complete. Your preferences were saved.", ephemeral=True)
                 return
             if session:
                 session["_opt_in_submitted"] = True
@@ -978,7 +981,7 @@ class PersonalizationLanguageView(discord.ui.View):
         session = self.onboarding.active_sessions.get(user_id)
         if session and session.get("_language_submitted"):
             await interaction.response.defer(ephemeral=True)
-            await interaction.followup.send("You have already submitted this step.", ephemeral=True)
+            await interaction.followup.send("Onboarding is already complete. Your preferences were saved.", ephemeral=True)
             return
         if session:
             session["_language_submitted"] = True
@@ -1009,7 +1012,7 @@ class OtherLanguageModal(discord.ui.Modal):
         session = self.onboarding.active_sessions.get(user_id)
         if session and session.get("_language_submitted"):
             await interaction.response.defer(ephemeral=True)
-            await interaction.followup.send("You have already submitted this step.", ephemeral=True)
+            await interaction.followup.send("Onboarding is already complete. Your preferences were saved.", ephemeral=True)
             return
         if session:
             session["_language_submitted"] = True
@@ -1062,14 +1065,13 @@ class FollowupModal(discord.ui.Modal):
         else:
             self.answers[self.step] = {"choice": existing, "followup": value, "followup_label": self.question}
 
-        # Update actieve sessie
+        # Update active session
         bot_client2 = cast(commands.Bot, interaction.client)
         onboarding = self.onboarding or cast(Onboarding, bot_client2.get_cog("Onboarding"))
         if user_id in onboarding.active_sessions:
             onboarding.active_sessions[user_id]["answers"][self.step] = self.answers[self.step]
 
         await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send("✅ Thanks! Moving to the next question...", ephemeral=True)
         await onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
 

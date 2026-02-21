@@ -1,3 +1,4 @@
+from typing import Optional, cast
 import discord
 from discord.ext import commands
 import config
@@ -18,11 +19,19 @@ class StartOnboardingButton(discord.ui.Button):
         super().__init__(label="🚀 Start Onboarding", style=discord.ButtonStyle.success, custom_id="start_onboarding")
         
     async def callback(self, interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("❌ This can only be used in a server.", ephemeral=True)
+            return
         member = interaction.user
+        bot = cast(commands.Bot, interaction.client)
+        settings = getattr(bot, "settings", None)
+        if not settings:
+            await interaction.response.send_message("❌ Bot configuration unavailable.", ephemeral=True)
+            return
 
         # Check onboarding settings
-        enabled = interaction.client.settings.get("onboarding", "enabled", interaction.guild.id)
-        mode = interaction.client.settings.get("onboarding", "mode", interaction.guild.id)
+        enabled = settings.get("onboarding", "enabled", interaction.guild.id)
+        mode = settings.get("onboarding", "mode", interaction.guild.id)
 
         if not enabled or mode == "disabled":
             await interaction.response.send_message("🚫 Onboarding is currently disabled.", ephemeral=True)
@@ -31,36 +40,34 @@ class StartOnboardingButton(discord.ui.Button):
         # Handle different modes
         if mode == "questions_only":
             # Skip rules, go directly to questions
-            from cogs.onboarding import Onboarding
-            onboarding_cog = getattr(interaction.client, "get_cog", lambda name: None)("Onboarding")
-            if onboarding_cog:
+            onboarding_cog = bot.get_cog("Onboarding")
+            if onboarding_cog is not None:
                 await interaction.response.defer(ephemeral=True)
                 await interaction.followup.send("📝 Starting onboarding questions...", ephemeral=True)
-                await onboarding_cog.send_next_question(interaction)
+                await onboarding_cog.send_next_question(interaction)  # type: ignore[union-attr]
             else:
                 await interaction.response.send_message("❌ Onboarding system unavailable.", ephemeral=True)
 
         elif mode in ["rules_only", "rules_with_questions"]:
             # Start with the rules
             rules_view = RuleAcceptanceView(member, interaction.guild.id)
-            await rules_view.load_rules(interaction.client)
+            await rules_view.load_rules(bot)
             if not rules_view.rules:
                 await interaction.response.send_message(
                     "⚠️ No onboarding rules are configured yet. Please contact a server admin.",
                     ephemeral=True,
                 )
                 # Log to configured log channel (via /config system set_log_channel)
-                log_channel_id = interaction.client.settings.get("system", "log_channel_id", interaction.guild.id)
-                log_channel = interaction.client.get_channel(log_channel_id) if log_channel_id else None
-                if log_channel:
+                log_channel_id = settings.get("system", "log_channel_id", interaction.guild.id)
+                log_channel = bot.get_channel(log_channel_id) if log_channel_id else None
+                if log_channel and isinstance(log_channel, discord.abc.Messageable):
                     log_embed = EmbedBuilder.warning(
                         title="⚠️ Onboarding: No rules configured",
                         description=f"No onboarding rules are set for this server. User {member.mention} attempted to start onboarding."
                     )
                     log_embed.add_field(name="Action", value="Use `/config onboarding add_rule` to add rules.", inline=False)
                     await log_channel.send(embed=log_embed)
-                
-                # Log to operational events
+
                 log_operational_event(
                     EventType.ONBOARDING_ERROR,
                     f"User {interaction.user.id} attempted onboarding with no rules configured",
@@ -69,13 +76,10 @@ class StartOnboardingButton(discord.ui.Button):
                 )
                 return
             embed = rules_view._build_rule_embed(0)
-            content = "📜 Please accept each rule one by one before proceeding:"
-            await interaction.response.send_message(
-                content=content,
-                embed=embed,
-                view=rules_view,
-                ephemeral=True  # Keep the message private
-            )
+            kwargs = {"view": rules_view, "ephemeral": True}
+            if embed is not None:
+                kwargs["embed"] = embed
+            await interaction.response.send_message(**kwargs)
 
         else:
             await interaction.response.send_message("🚫 Unknown onboarding mode.", ephemeral=True)
@@ -93,9 +97,26 @@ class RuleAcceptanceView(discord.ui.View):
 
     async def load_rules(self, bot):
         """Load rules for this guild."""
+        self.bot = bot
         onboarding_cog = bot.get_cog("Onboarding")
         self.rules = await onboarding_cog.get_guild_rules(self.guild_id) if onboarding_cog else []
         self.update_buttons()
+
+    def get_final_button_label(self) -> str:
+        """Return the final accept button label based on onboarding mode (rules only vs rules + questions)."""
+        default = "✅ Accept All Rules & Start Onboarding"
+        bot = getattr(self, "bot", None)
+        if not bot:
+            return default
+        settings = getattr(bot, "settings", None)
+        if not settings:
+            return default
+        mode = settings.get("onboarding", "mode", self.guild_id)
+        if mode == "rules_only":
+            return "✅ Accept All Rules & Get Role"
+        if mode in ["rules_with_questions", "questions_only"]:
+            return "✅ Accept All Rules & Start Onboarding"
+        return default
 
     def _build_rule_embed(self, rule_index: int):
         """Build an embed for a rule at the given index, with optional thumbnail (right) and image (bottom)."""
@@ -124,7 +145,7 @@ class RuleAcceptanceView(discord.ui.View):
             rule_title = rule["title"] if isinstance(rule, dict) else rule[0]
             self.add_item(RuleButton(rule_index=self.current_rule, rule_text=rule_title, view=self))
         elif len(self.accepted_rules) == len(self.rules):
-            self.add_item(FinalAcceptButton())
+            self.add_item(FinalAcceptButton(label=self.get_final_button_label()))
 
 class RuleButton(discord.ui.Button):
     """Button to accept a rule."""
@@ -148,16 +169,25 @@ class RuleButton(discord.ui.Button):
         view_obj.update_buttons()
         if view_obj.current_rule < len(view_obj.rules):
             embed = view_obj._build_rule_embed(view_obj.current_rule)
-            await interaction.response.edit_message(embed=embed, view=view_obj)
+            edit_kwargs: dict = {"view": view_obj}
+            if embed is not None:
+                edit_kwargs["embed"] = embed
+            await interaction.response.edit_message(**edit_kwargs)
         else:
             view_obj.clear_items()
-            view_obj.add_item(FinalAcceptButton())
+            view_obj.add_item(FinalAcceptButton(label=view_obj.get_final_button_label()))
             await interaction.response.edit_message(view=view_obj)
 
 class FinalAcceptButton(discord.ui.Button):
-    """Button where user indicates they accept all rules and onboarding starts."""
-    def __init__(self):
-        super().__init__(label="✅ Accept All Rules & Start Onboarding", style=discord.ButtonStyle.success, custom_id="final_accept")
+    """Button where user indicates they accept all rules; label varies by mode (get role vs start onboarding)."""
+    DEFAULT_LABEL = "✅ Accept All Rules & Start Onboarding"
+
+    def __init__(self, label: Optional[str] = None):
+        super().__init__(
+            label=label or self.DEFAULT_LABEL,
+            style=discord.ButtonStyle.success,
+            custom_id="final_accept"
+        )
 
     async def callback(self, interaction: discord.Interaction):
         view_obj = self.view
@@ -172,59 +202,62 @@ class FinalAcceptButton(discord.ui.Button):
             await interaction.response.send_message("⚠️ You must accept all rules before proceeding!", ephemeral=True)
             return
 
-        # Check onboarding settings
-        bot_client = interaction.client
-        enabled = bot_client.settings.get("onboarding", "enabled", interaction.guild.id)
-        mode = bot_client.settings.get("onboarding", "mode", interaction.guild.id)
-        completion_role_id = bot_client.settings.get("onboarding", "completion_role_id", interaction.guild.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("❌ Guild not found.", ephemeral=True)
+            return
+
+        bot_client = cast(commands.Bot, interaction.client)
+        settings = getattr(bot_client, "settings", None)
+        if not settings:
+            await interaction.response.send_message("❌ Bot configuration unavailable.", ephemeral=True)
+            return
+        enabled = settings.get("onboarding", "enabled", interaction.guild.id)
+        mode = settings.get("onboarding", "mode", interaction.guild.id)
+        completion_role_id = settings.get("onboarding", "completion_role_id", interaction.guild.id)
 
         if not enabled or mode == "disabled":
             await interaction.response.send_message("✅ Rules accepted! Welcome to the server.", ephemeral=True)
             return
 
-        # Assign completion role if set
-        assigned_role = False
-        if completion_role_id and completion_role_id != 0:
-            try:
-                role = interaction.guild.get_role(completion_role_id)
-                if role:
-                    await view_obj.member.add_roles(role)
-                    assigned_role = True
-                    logger.info(f"✅ Role {role.name} assigned to {view_obj.member.display_name}")
-            except Exception as e:
-                logger.warning(f"Could not assign role: {e}")
-                log_operational_event(
-                    EventType.ONBOARDING_ERROR,
-                    f"Failed to assign completion role: {e}",
-                    guild_id=interaction.guild.id,
-                    details={
-                        "user_id": view_obj.member.id,
-                        "role_id": completion_role_id,
-                        "error_type": "role_assignment_failed",
-                        "error": str(e)
-                    }
-                )
-
         # Handle different onboarding modes
         if mode == "rules_only":
+            # Assign completion role only when no questions follow (full flow = rules only)
+            assigned_role = False
+            role = None
+            if completion_role_id and completion_role_id != 0:
+                try:
+                    role = interaction.guild.get_role(completion_role_id)
+                    if role:
+                        await view_obj.member.add_roles(role)
+                        assigned_role = True
+                        logger.info(f"✅ Role {role.name} assigned to {view_obj.member.display_name}")
+                except Exception as e:
+                    logger.warning(f"Could not assign role: {e}")
+                    log_operational_event(
+                        EventType.ONBOARDING_ERROR,
+                        f"Failed to assign completion role: {e}",
+                        guild_id=interaction.guild.id,
+                        details={
+                            "user_id": view_obj.member.id,
+                            "role_id": completion_role_id,
+                            "error_type": "role_assignment_failed",
+                            "error": str(e)
+                        }
+                    )
             message = "✅ Rules accepted!"
-            if assigned_role:
-                message += f" You have been assigned the {role.mention} role." if 'role' in locals() else " You have been assigned a role."
+            if assigned_role and role:
+                message += f" You have been assigned the {role.mention} role."
             message += " Welcome to the server!"
             await interaction.response.send_message(message, ephemeral=True)
 
         elif mode in ["rules_with_questions", "questions_only"]:
-            from cogs.onboarding import Onboarding
-            onboarding_cog = getattr(bot_client, "get_cog", lambda name: None)("Onboarding")
-            if onboarding_cog:
+            # Role is assigned only after full onboarding (in onboarding cog on completion).
+            # Do not defer: onboarding will use response.edit_message to replace this rules
+            # message with the first question so the user sees one updating message.
+            onboarding_cog = bot_client.get_cog("Onboarding")
+            if onboarding_cog is not None:
                 logger.info("Onboarding Cog found, starting onboarding")
-                await interaction.response.defer()
-                message = "✅ Rules accepted!"
-                if assigned_role:
-                    message += f" You have been assigned the {role.mention} role." if 'role' in locals() else " You have been assigned a role."
-                message += " Starting onboarding questions..."
-                await interaction.followup.send(message, ephemeral=True)
-                await onboarding_cog.send_next_question(interaction)
+                await onboarding_cog.send_next_question(interaction)  # type: ignore[union-attr]
             else:
                 logger.warning("Onboarding Cog not found; check if the onboarding module is loaded")
                 await interaction.response.send_message("✅ Rules accepted! Welcome to the server.", ephemeral=True)
@@ -242,17 +275,21 @@ class ReactionRole(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         """Place the onboarding button in #rules for all guilds the bot is in."""
+        settings = getattr(self.bot, "settings", None)
+        if not settings:
+            return
         for guild in self.bot.guilds:
             # Get rules channel from settings for this guild
             try:
-                rules_channel_id = int(self.bot.settings.get("system", "rules_channel_id", guild.id))
+                rules_channel_id = int(settings.get("system", "rules_channel_id", guild.id))
                 if rules_channel_id == 0:
                     # No channel configured for this guild
                     log_with_guild(f"No rules channel configured for guild {guild.name}", guild.id, "debug")
                     continue
                 channel = guild.get_channel(rules_channel_id)
-                if not channel:
-                    log_with_guild(f"Rules channel {rules_channel_id} not found in guild {guild.name}", guild.id, "warning")
+                if not channel or not isinstance(channel, discord.abc.Messageable):
+                    if not channel:
+                        log_with_guild(f"Rules channel {rules_channel_id} not found in guild {guild.name}", guild.id, "warning")
                     continue
             except (KeyError, ValueError):
                 # No channel configured, skip
@@ -293,7 +330,7 @@ class ReactionRole(commands.Cog):
                 embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1263189905555849317/1336037428049477724/Alpha_afbeelding_vierkant.png")
                 try:
                     await channel.send(embed=embed, view=StartOnboardingView())
-                    log_with_guild(f"Onboarding button placed in #{channel.name}", guild.id, "info")
+                    log_with_guild(f"Onboarding button placed in #{getattr(channel, 'name', 'channel')}", guild.id, "info")
                 except Exception as e:
                     log_with_guild(f"Could not place onboarding button: {e}", guild.id, "warning")
             else:
