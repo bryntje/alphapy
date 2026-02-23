@@ -16,8 +16,8 @@ from cogs.configuration import (
 class TestSetupSteps:
     """SETUP_STEPS list and SetupStep structure."""
 
-    def test_setup_steps_has_eight_steps(self):
-        assert len(SETUP_STEPS) == 8
+    def test_setup_steps_has_seven_steps(self):
+        assert len(SETUP_STEPS) == 7
 
     def test_first_step_is_log_channel(self):
         step = SETUP_STEPS[0]
@@ -82,11 +82,11 @@ class TestSetupWizardView:
         view = self._view(mock_cog)
         step = view._current_step()
         embed = view._build_step_embed(step)
-        assert "step 1 of 8" in embed.title.lower()
+        assert "step 1 of 7" in embed.title.lower()
         assert "Server setup" in embed.title
         assert step.label in embed.description
         assert "Skip" in embed.description
-        assert "1/8" in embed.footer.text
+        assert "1/7" in embed.footer.text
 
     @pytest.mark.asyncio
     async def test_build_step_embed_step_two(self, mock_cog):
@@ -94,8 +94,8 @@ class TestSetupWizardView:
         view.step_index = 1
         step = view._current_step()
         embed = view._build_step_embed(step)
-        assert "step 2 of 8" in embed.title.lower()
-        assert "2/8" in embed.footer.text
+        assert "step 2 of 7" in embed.title.lower()
+        assert "2/7" in embed.footer.text
 
     @pytest.mark.asyncio
     async def test_build_complete_embed_empty_session(self, mock_cog):

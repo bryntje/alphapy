@@ -8,7 +8,7 @@ This document explains how to configure the Innersync • Alphapy bot for each D
 
 ## First-Time Setup (Required for each new server)
 
-**Quick start:** Use **`/config start`** for an interactive setup. The bot will ask for each important setting (log channel, rules channel, onboarding channel, embed watcher, invites, GDPR, ticket category, staff role); you choose a channel or role from the dropdown or click **Skip**. All prompts are in English.
+**Quick start:** Use **`/config start`** for an interactive setup. The bot will ask for each important setting (log channel, rules and onboarding channel, embed watcher, invites, GDPR, ticket category, staff role); you choose a channel or role from the dropdown or click **Skip**. All prompts are in English.
 
 Alternatively, run the following commands in order:
 
@@ -17,11 +17,8 @@ Alternatively, run the following commands in order:
 # Set the log channel for bot messages and errors
 /config system set_log_channel #logs
 
-# Set the rules channel for onboarding
+# Set the rules and onboarding channel (welcome message + Start button)
 /config system set_rules_channel #rules
-
-# Set the onboarding channel for welcome messages
-/config system set_onboarding_channel #welcome
 ```
 
 ### 2. Feature-Specific Configuration
@@ -29,31 +26,31 @@ Alternatively, run the following commands in order:
 #### Embed Watcher (Auto-Reminders)
 ```bash
 # Set channel to monitor for announcement embeds
-/config embedwatcher announcements_channel_id #announcements
+/config embedwatcher set_announcements #announcements
 ```
 
 #### Invite Tracker
 ```bash
 # Set channel for invite announcements
-/config invites announcement_channel_id #invites
+/config invites set_channel #invites
 ```
 
 #### GDPR Compliance
 ```bash
 # Set channel for GDPR documents
-/config gdpr channel_id #gdpr
+/config gdpr set_channel #gdpr
 ```
 
 #### Ticket System
 ```bash
 # Set category for ticket channels (required)
-/config ticketbot category_id [category-id]
+/config ticketbot set_category [category]
 
 # Set staff role for ticket access
-/config ticketbot staff_role_id @Staff
+/config ticketbot set_staff_role @Staff
 
 # Set escalation role for urgent tickets
-/config ticketbot escalation_role_id @Moderators
+/config ticketbot set_escalation_role @Moderators
 ```
 
 ### 3. Optional Settings
@@ -61,19 +58,19 @@ Alternatively, run the following commands in order:
 #### Reminders
 ```bash
 # Allow @everyone mentions in reminders (use carefully!)
-/config reminders allow_everyone_mentions true
+/config reminders set_everyone true
 
 # Set default channel for manual reminders
-/config reminders default_channel_id #general
+/config reminders set_default_channel #general
 ```
 
 #### GPT Settings
 ```bash
 # Choose AI model
-/config gpt model gpt-4  # or gpt-3.5-turbo
+/config gpt set_model gpt-4  # or gpt-3.5-turbo
 
 # Set creativity level (0.0-2.0)
-/config gpt temperature 0.7
+/config gpt set_temperature 0.7
 ```
 
 ## Configuration Commands Reference
@@ -93,16 +90,19 @@ All commands require administrator permissions and are guild-specific:
 /config system reset_log_channel
 /config system set_rules_channel <#channel>
 /config system reset_rules_channel
-/config system set_onboarding_channel <#channel>
-/config system reset_onboarding_channel
 ```
 
 ### Embed Watcher Scope
 ```
 /config embedwatcher show
-/config embedwatcher announcements_channel_id <#channel>
-/config embedwatcher reset_announcements_channel
-/config embedwatcher reminder_offset_minutes <minutes>
+/config embedwatcher set_announcements <#channel>
+/config embedwatcher reset_announcements
+/config embedwatcher set_offset <minutes>
+/config embedwatcher reset_offset
+/config embedwatcher set_non_embed <true|false>
+/config embedwatcher reset_non_embed
+/config embedwatcher set_process_bot_messages <true|false>
+/config embedwatcher reset_process_bot_messages
 ```
 
 ### Reminders Scope
@@ -111,42 +111,45 @@ All commands require administrator permissions and are guild-specific:
 /config reminders enable|disable
 /config reminders set_default_channel <#channel>
 /config reminders reset_default_channel
-/config reminders allow_everyone_mentions <true|false>
+/config reminders set_everyone <true|false>
 ```
 
 ### TicketBot Scope
 ```
 /config ticketbot show
-/config ticketbot category_id <category-id>
+/config ticketbot set_category <#category>
 /config ticketbot reset_category
-/config ticketbot staff_role_id @<role>
+/config ticketbot set_staff_role @<role>
 /config ticketbot reset_staff_role
-/config ticketbot escalation_role_id @<role>
+/config ticketbot set_escalation_role @<role>
 /config ticketbot reset_escalation_role
 ```
 
 ### GPT Scope
 ```
 /config gpt show
-/config gpt model <model-name>
-/config gpt temperature <0.0-2.0>
+/config gpt set_model <model-name>
+/config gpt reset_model
+/config gpt set_temperature <0.0-2.0>
+/config gpt reset_temperature
 ```
 
 ### Invites Scope
 ```
 /config invites show
 /config invites enable|disable
-/config invites announcement_channel_id <#channel>
-/config invites reset_announcement_channel
-/config invites with_inviter_template "<template>"
-/config invites no_inviter_template "<template>"
+/config invites set_channel <#channel>
+/config invites reset_channel
+/config invites set_template <variant> <template>
+/config invites reset_template <variant>
 ```
+Variant is "with inviter" or "without inviter" (dropdown).
 
 ### GDPR Scope
 ```
 /config gdpr show
 /config gdpr enable|disable
-/config gdpr channel_id <#channel>
+/config gdpr set_channel <#channel>
 /config gdpr reset_channel
 ```
 
@@ -154,13 +157,19 @@ All commands require administrator permissions and are guild-specific:
 ```
 /config onboarding show
 /config onboarding enable|disable
-/config onboarding mode <mode>
+/config onboarding set_mode <mode>
+/config onboarding add_question <step> <question> [question_type] [required]
+/config onboarding delete_question <step>
+/config onboarding reset_questions
 /config onboarding add_rule <rule_order> <title> <description> [thumbnail_url] [image_url]
 /config onboarding delete_rule <rule_order>
 /config onboarding reset_rules
 /config onboarding set_role <#role>
 /config onboarding reset_role
+/config onboarding panel_post [channel]
+/config onboarding reorder
 ```
+`reorder` opens a modal to enter question IDs in the desired order. `panel_post` optionally takes a channel; otherwise posts in the current channel.
 
 **Onboarding modes** (via `mode`):
 - **Disabled** – No onboarding
@@ -171,6 +180,14 @@ All commands require administrator permissions and are guild-specific:
 When questions are used, users also complete two fixed personalization steps: opt-in for personalized reminders and preferred language; stored in `onboarding.responses` as `personalized_opt_in` and `preferred_language`.
 
 Rules support optional images: `thumbnail_url` (shown right) and `image_url` (shown at bottom). If no rules are configured, users see an error and a log is sent to the log channel.
+
+### FYI (contextual tips – testing)
+The bot sends short FYI tips when certain first-time events happen (e.g. first onboarding completed, first reminder, first ticket, bot joined server). Tips are sent at most once per guild per type and respect a 24h per-guild cooldown. For testing or to re-send a tip:
+```
+/config fyi reset <key>   # Clear the flag so the next trigger will send again
+/config fyi send <key>    # Force-send the tip to the log channel now
+```
+Key is chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`). Administrator only.
 
 ## Template Placeholders
 
@@ -183,7 +200,7 @@ For invite templates, you can use:
 
 Example:
 ```
-/config invites with_inviter_template "{member} joined! {inviter} now has {count} invites."
+/config invites set_template "Met inviter" "{member} joined! {inviter} now has {count} invites."
 ```
 
 ## Troubleshooting
@@ -193,7 +210,7 @@ Example:
 - Check `/config system show` to verify settings
 
 ### Bot not responding to embeds/announcements
-- Verify `/config embedwatcher announcements_channel_id` is set
+- Verify `/config embedwatcher set_announcements` is set to the correct channel
 - Ensure bot has read permissions in that channel
 
 ### Import commands failing
@@ -224,6 +241,10 @@ The following environment variables are required/optional for bot operation:
 ### Optional - AI/LLM
 - `GROK_API_KEY`: Grok API key (or `OPENAI_API_KEY` for OpenAI)
 - `LLM_PROVIDER`: "grok" or "openai" (default: "grok")
+
+### Optional - Core API (telemetry / operational events)
+- `CORE_API_URL`: Base URL of the Core API for centralised telemetry and operational event ingress. When set, operational events and telemetry are sent to Core instead of directly to Supabase.
+- `ALPHAPY_SERVICE_KEY`: Service key for authenticating with the Core API.
 
 ## Migration Notes
 

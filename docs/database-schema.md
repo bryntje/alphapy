@@ -41,7 +41,7 @@ Audit trail for settings changes.
 - `value_type` (TEXT)
 - `changed_by` (BIGINT): User ID who made the change
 - `changed_at` (TIMESTAMPTZ): Change timestamp
-- `change_type` (TEXT, NOT NULL): Type of change (e.g., "set", "clear")
+- `change_type` (TEXT, NOT NULL): Type of change (e.g., "created", "updated", "deleted", "rollback")
 
 **Indexes:**
 - `idx_settings_history_guild_scope_key` on `(guild_id, scope, key)`
@@ -150,13 +150,15 @@ Support ticket system data.
 - `user_id` (BIGINT, NOT NULL): Ticket creator
 - `username` (TEXT): Username at creation time
 - `description` (TEXT, NOT NULL): Ticket description
-- `status` (TEXT): Ticket status (open, claimed, waiting_for_user, escalated, closed)
+- `status` (TEXT): Ticket status (open, claimed, waiting_for_user, escalated, closed, archived)
 - `created_at` (TIMESTAMPTZ): Creation timestamp
 - `channel_id` (BIGINT): Private channel ID for this ticket
 - `claimed_by` (BIGINT): User ID who claimed the ticket
 - `claimed_at` (TIMESTAMPTZ): Claim timestamp
 - `updated_at` (TIMESTAMPTZ): Last update timestamp
 - `escalated_to` (BIGINT): Role ID for escalation
+- `archived_at` (TIMESTAMPTZ): When the ticket was archived (NULL if not archived)
+- `archived_by` (BIGINT): User ID who archived the ticket
 
 **Indexes:**
 - `idx_support_tickets_user_id` on `user_id`

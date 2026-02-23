@@ -9,6 +9,7 @@ Complete reference for all Discord slash commands available in the Alphapy bot.
 - [Tickets](#tickets)
 - [Configuration](#configuration)
 - [AI Features](#ai-features)
+- [FAQ](#faq)
 - [System](#system)
 - [Admin](#admin)
 
@@ -143,7 +144,7 @@ Update a ticket status (admins only).
 
 **Parameters:**
 - `ticket_id` (required): ID of the ticket
-- `status` (required): New status (open, claimed, waiting_for_user, escalated, closed)
+- `status` (required): New status (open, claimed, waiting_for_user, escalated, closed, archived)
 
 **Permissions:** Owner/Admin
 
@@ -161,60 +162,146 @@ Manage bot settings (multi-scope configuration system).
 #### System Settings
 - `/config system show` - Show current system settings
 - `/config system set_log_channel <#channel>` - Set log channel
-- `/config system set_rules_channel <#channel>` - Set rules channel
-- `/config system set_onboarding_channel <#channel>` - Set onboarding channel
+- `/config system set_rules_channel <#channel>` - Set rules and onboarding channel (welcome + Start button)
 - `/config system reset_log_channel` - Reset log channel
-- `/config system reset_rules_channel` - Reset rules channel
-- `/config system reset_onboarding_channel` - Reset onboarding channel
+- `/config system reset_rules_channel` - Reset rules and onboarding channel
 
 #### Embed Watcher Settings
 - `/config embedwatcher show` - Show current settings
-- `/config embedwatcher announcements_channel_id <#channel>` - Set announcements channel
-- `/config embedwatcher reminder_offset_minutes <minutes>` - Set reminder offset (default: 60)
-- `/config embedwatcher process_bot_messages <true|false>` - Enable/disable processing bot messages
+- `/config embedwatcher set_announcements <#channel>` - Set channel to monitor for announcement embeds
+- `/config embedwatcher reset_announcements` - Reset announcements channel
+- `/config embedwatcher set_offset <minutes>` - Set reminder offset (default: 60)
+- `/config embedwatcher reset_offset` - Reset offset to default
+- `/config embedwatcher set_non_embed` - Enable/disable parsing of non-embed messages
+- `/config embedwatcher reset_non_embed` - Reset non-embed setting
+- `/config embedwatcher set_process_bot_messages` - Enable/disable processing bot's own messages
+- `/config embedwatcher reset_process_bot_messages` - Reset process_bot_messages to default
 
 #### Reminder Settings
 - `/config reminders show` - Show current settings
 - `/config reminders enable|disable` - Enable/disable reminders
 - `/config reminders set_default_channel <#channel>` - Set default reminder channel
-- `/config reminders allow_everyone_mentions <true|false>` - Allow @everyone mentions
+- `/config reminders reset_default_channel` - Reset default reminder channel
+- `/config reminders set_everyone <true|false>` - Allow or disallow @everyone mentions in reminders
 
 #### TicketBot Settings
 - `/config ticketbot show` - Show current settings
-- `/config ticketbot category_id <category-id>` - Set ticket category
-- `/config ticketbot staff_role_id @<role>` - Set staff role
-- `/config ticketbot escalation_role_id @<role>` - Set escalation role
+- `/config ticketbot set_category <#category>` - Set ticket category
+- `/config ticketbot reset_category` - Reset ticket category
+- `/config ticketbot set_staff_role @<role>` - Set staff role
+- `/config ticketbot reset_staff_role` - Reset staff role
+- `/config ticketbot set_escalation_role @<role>` - Set escalation role
+- `/config ticketbot reset_escalation_role` - Reset escalation role
 
 #### GPT Settings
 - `/config gpt show` - Show current settings
-- `/config gpt model <model-name>` - Set AI model (e.g., "grok-3", "gpt-4")
-- `/config gpt temperature <0.0-2.0>` - Set AI creativity level
+- `/config gpt set_model <model-name>` - Set AI model (e.g., "grok-3", "gpt-4")
+- `/config gpt reset_model` - Reset model to default
+- `/config gpt set_temperature <0.0-2.0>` - Set AI creativity level
+- `/config gpt reset_temperature` - Reset temperature to default
 
 #### Invites Settings
 - `/config invites show` - Show current settings
 - `/config invites enable|disable` - Enable/disable invite tracking
-- `/config invites announcement_channel_id <#channel>` - Set announcement channel
-- `/config invites with_inviter_template "<template>"` - Set template with inviter
-- `/config invites no_inviter_template "<template>"` - Set template without inviter
+- `/config invites set_channel <#channel>` - Set invite announcement channel
+- `/config invites reset_channel` - Reset invite channel
+- `/config invites set_template <variant> <template>` - Set invite message (variant: with inviter / without inviter)
+- `/config invites reset_template <variant>` - Reset template to default (variant: with / without inviter)
 
 #### GDPR Settings
 - `/config gdpr show` - Show current settings
 - `/config gdpr enable|disable` - Enable/disable GDPR features
-- `/config gdpr channel_id <#channel>` - Set GDPR channel
+- `/config gdpr set_channel <#channel>` - Set GDPR channel
+- `/config gdpr reset_channel` - Reset GDPR channel
 
 #### Onboarding Settings
-- `/config onboarding show` - Show current settings
+- `/config onboarding show` - Show current onboarding configuration
 - `/config onboarding enable|disable` - Enable/disable onboarding
-- `/config onboarding mode <mode>` - Set onboarding mode (Disabled, Rules Only, Rules + Questions, Questions Only)
-- `/config onboarding add_rule` - Add a rule (supports optional `thumbnail_url` and `image_url`)
-- `/config onboarding delete_rule` - Delete a rule
+- `/config onboarding set_mode <mode>` - Set mode (Disabled, Rules Only, Rules + Questions, Questions Only)
+- `/config onboarding add_question <step> <question> [question_type] [required]` - Add a question (step 1–20; types: select, multiselect, text, email)
+- `/config onboarding delete_question <step>` - Delete question at position
+- `/config onboarding reset_questions` - Reset to default (empty) questions
+- `/config onboarding add_rule <rule_order> <title> <description> [thumbnail_url] [image_url]` - Add a rule (position 1–20; optional image URLs)
+- `/config onboarding delete_rule <rule_order>` - Delete rule at position
 - `/config onboarding reset_rules` - Reset to empty rules
-- `/config onboarding set_role` - Set completion role
+- `/config onboarding set_role <#role>` - Set completion role
 - `/config onboarding reset_role` - Remove completion role
+- `/config onboarding panel_post [channel]` - Post onboarding panel with Start button (optional channel; uses current if omitted)
+- `/config onboarding reorder` - Reorder questions (opens modal to enter question IDs in desired order)
+
+#### FYI (contextual tips – admin testing)
+- `/config fyi reset <key>` - Clear an FYI flag so the next natural trigger will send that tip again (for testing). Key is chosen from a fixed list (e.g. `first_onboarding_done`, `first_guild_join`).
+- `/config fyi send <key>` - Force-send the FYI for that key to the log channel now and mark it as sent (for testing or "show me again").
 
 When onboarding uses questions, users also complete two fixed steps: personalization opt-in and preferred language; stored in onboarding responses for use by reminders and other cogs.
 
 **Permissions:** Administrator (all `/config` commands)
+
+---
+
+## FAQ
+
+### `/faq list`
+Show the latest FAQ entries (last 10).
+
+**Parameters:**
+- `public` (optional): Post in channel instead of ephemeral (default: false)
+
+**Response:** Embed with last 10 FAQ entries (title and summary). Pagination buttons to browse.
+
+**Permissions:** Public
+
+---
+
+### `/faq view`
+View a single FAQ entry by ID.
+
+**Parameters:**
+- `id` (required): FAQ entry ID
+- `public` (optional): Post in channel instead of ephemeral (default: false)
+
+**Permissions:** Public
+
+---
+
+### `/faq search`
+Search FAQ entries by keywords.
+
+**Parameters:**
+- `query` (required): Your question or keywords
+- `public` (optional): Post in channel instead of ephemeral (default: false)
+
+**Response:** Up to 5 matching FAQ entries.
+
+**Permissions:** Public
+
+---
+
+### `/faq add`
+Add a new FAQ entry (admin only).
+
+**Behavior:** Opens a modal to enter title, summary, and optional keywords.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/faq edit`
+Edit an existing FAQ entry (admin only).
+
+**Parameters:**
+- `id` (required): FAQ entry ID
+
+**Behavior:** Opens a modal to edit title, summary, and keywords.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/faq reload`
+Reload the FAQ index (admin only). Use after bulk changes or imports.
+
+**Permissions:** Owner/Admin
 
 ---
 

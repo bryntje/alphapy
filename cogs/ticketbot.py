@@ -274,6 +274,7 @@ class TicketBot(commands.Cog):
 
         user = interaction.user
         user_display = f"{user} ({user.id})"
+        first_ticket_for_guild = False
 
         try:
             async with acquire_safe(self.db) as conn:
@@ -288,6 +289,12 @@ class TicketBot(commands.Cog):
                     str(user),
                     description.strip(),
                 )
+                count_row = await conn.fetchrow(
+                    "SELECT COUNT(*) AS c FROM support_tickets WHERE guild_id = $1",
+                    interaction.guild.id,
+                )
+                if count_row and count_row["c"] == 1:
+                    first_ticket_for_guild = True
         except RuntimeError as e:
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
@@ -425,6 +432,10 @@ class TicketBot(commands.Cog):
         if channel_mention_text != "—":
             await interaction.followup.send(f"✅ Ticket created in {channel_mention_text}", ephemeral=True)
 
+        if first_ticket_for_guild:
+            from utils.fyi_tips import send_fyi_if_first
+            await send_fyi_if_first(self.bot, interaction.guild.id, "first_ticket")
+
         # Public log to WATCHER_LOG_CHANNEL
         await self.send_log_embed(
             title="🟢 Ticket created",
@@ -478,6 +489,8 @@ class TicketBot(commands.Cog):
         # Reuse existing flow by calling the command internals
         user = interaction.user
         user_display = f"{user} ({user.id})"
+        first_ticket_for_guild = False
+        guild_id = interaction.guild.id if interaction.guild else 0
         try:
             async with acquire_safe(self.db) as conn:
                 row = await conn.fetchrow(
@@ -486,11 +499,17 @@ class TicketBot(commands.Cog):
                     VALUES ($1, $2, $3, $4)
                     RETURNING id, created_at
                     """,
-                    interaction.guild.id if interaction.guild else 0,
+                    guild_id,
                     int(user.id),
                     str(user),
                     (description or "").strip() or "—",
                 )
+                count_row = await conn.fetchrow(
+                    "SELECT COUNT(*) AS c FROM support_tickets WHERE guild_id = $1",
+                    guild_id,
+                )
+                if count_row and count_row["c"] == 1:
+                    first_ticket_for_guild = True
         except RuntimeError as e:
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
@@ -599,6 +618,10 @@ class TicketBot(commands.Cog):
             allowed_mentions=discord.AllowedMentions(roles=True)
         )
         await interaction.followup.send(f"✅ Ticket created in {channel.mention}", ephemeral=True)
+
+        if first_ticket_for_guild and interaction.guild:
+            from utils.fyi_tips import send_fyi_if_first
+            await send_fyi_if_first(self.bot, interaction.guild.id, "first_ticket")
 
     def _human_duration(self, seconds: int) -> str:
         mins, sec = divmod(seconds, 60)

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Contextual FYI tips**
+  - Short, contextual tips sent when certain first-time events happen per guild (e.g. first onboarding completed, first reminder, first ticket, bot joined server). Each tip is sent at most once per guild per type; per-guild 24h cooldown prevents spam when multiple first-time events occur in one day.
+  - Phase 1 triggers: `first_guild_join` (welcome in system/first channel), `first_onboarding_done`, `first_config_wizard_complete`, `first_reminder`, `first_ticket`. Tips are sent to the log channel (or fallback channel on guild join). Copy and logic in `utils/fyi_tips.py`; state in `bot_settings` (scope `fyi`, keys `first_*`).
+  - Admin/testing: `/config fyi reset <key>` and `/config fyi send <key>` (admin-only) to clear a flag or force-send a tip. `SettingsService.get_raw` / `set_raw` / `clear_raw` support internal fyi flags (scope `fyi` only; failures logged).
+  - Tests: `tests/test_fyi_tips.py` (23 tests) for `_parse_last_sent`, `_build_fyi_embed`, `send_fyi_if_first` (unknown key, no get_raw, already sent, cooldown, send-and-mark), `force_send_fyi`, and `reset_fyi`.
 - **Onboarding: personalization opt-in and language**
   - After guild questions, two fixed steps: (1) opt-in for personalized reminders (“Yes, please!” / “Only for events and sessions” / “No, thanks”), (2) if full or events_only, preferred language (Nederlands, English, Español, etc., or “Other language…” with free text). Stored in `onboarding.responses` as `personalized_opt_in` and `preferred_language`.
   - Helper `get_user_personalization(user_id, guild_id)` on Onboarding cog for use by reminders or other cogs; returns `{"opt_in", "language"}` with graceful fallback when no record or DB unavailable.

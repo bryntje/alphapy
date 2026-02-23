@@ -180,6 +180,11 @@
   - Top-level imports in all modules for optimal performance
   - Exposed via `/api/dashboard/logs` with guild admin access control
 
+- `utils/fyi_tips.py`
+  - Contextual FYI tips: short messages when certain first-time events happen per guild (e.g. first onboarding completed, first reminder, first ticket, bot joined server).
+  - State in `bot_settings` (scope `fyi`): keys with prefix `first_*` (e.g. `first_onboarding_done`, `first_guild_join`) and `_last_sent_at` for per-guild 24h cooldown. Only scope `fyi` is used; `SettingsService.get_raw` / `set_raw` / `clear_raw` accept scope `fyi` only and log on failure.
+  - Phase 1 triggers wired in: `bot.py` (on_guild_join), `cogs/onboarding.py`, `cogs/configuration.py` (wizard complete), `cogs/reminders.py`, `cogs/ticketbot.py`. Tips sent to log channel (or fallback channel on guild join). Admin testing: `/config fyi reset <key>`, `/config fyi send <key>`.
+
 ## Database Schema
 
 The bot uses PostgreSQL for persistent storage. Schema is managed via Alembic migrations (see `alembic/versions/001_initial_schema.py` for complete schema).
@@ -188,6 +193,7 @@ The bot uses PostgreSQL for persistent storage. Schema is managed via Alembic mi
 - `bot_settings`
   - `guild_id BIGINT`, `scope TEXT`, `key TEXT` (composite primary key)
   - `value JSONB`, `value_type TEXT`, `updated_by BIGINT`, `updated_at TIMESTAMPTZ`
+  - Scope `fyi` is used for contextual FYI tip state (keys `first_*`, `_last_sent_at`); read/written via `SettingsService.get_raw` / `set_raw` / `clear_raw` (scope `fyi` only).
 
 - `settings_history`
   - `id SERIAL PRIMARY KEY`
@@ -306,8 +312,7 @@ Each Discord server configures its own settings via `/config` commands:
 
 **System Settings:**
 - `system.log_channel_id` - Bot logging and error messages
-- `system.rules_channel_id` - Rules channel for onboarding
-- `system.onboarding_channel_id` - Welcome/onboarding channel
+- `system.rules_channel_id` - Rules and onboarding channel (welcome message + Start button)
 
 **Feature Settings:**
 - `embedwatcher.announcements_channel_id` - Auto-reminder detection
@@ -339,8 +344,8 @@ Each Discord server configures its own settings via `/config` commands:
    - Phase 5: Start background tasks (command tracker, GPT retry, sync cooldowns cleanup)
    - Phase 6: Mark bot as ready
 2. Reconnect: `on_ready()` detects reconnect → `StartupManager.reconnect_phase()` runs light resync (guild-only commands if intents missing)
-2. New guild join: `on_guild_join()` automatically syncs guild-only commands to new server
-3. User presses Start Onboarding → `ReactionRole` shows rules → starts `Onboarding`.
+3. New guild join: `on_guild_join()` syncs guild-only commands, then optionally sends a one-time welcome FYI to the system channel or first writable text channel (via `utils/fyi_tips.py`).
+4. User presses Start Onboarding → `ReactionRole` shows rules → starts `Onboarding`.
 4. `Onboarding` prompts 4 questions; multi-select advances automatically; follow-ups via modal.
 5. On completion: summary embed (ephemeral), log embed (log channel), role assignment, DB persist.
 6. Reminders: via slash commands or auto from `EmbedReminderWatcher`.

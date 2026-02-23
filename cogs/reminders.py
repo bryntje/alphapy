@@ -316,8 +316,11 @@ class ReminderCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
+        first_reminder_for_guild = False
         try:
             async with acquire_safe(self.db) as conn:
+                count_row = await conn.fetchrow("SELECT COUNT(*) AS c FROM reminders WHERE guild_id = $1", guild_id)
+                prev_count = count_row["c"] if count_row else 0
                 await conn.execute(
                 """INSERT INTO reminders (guild_id, name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -336,6 +339,8 @@ class ReminderCog(commands.Cog):
             )
                 rid_row = await conn.fetchrow("SELECT currval(pg_get_serial_sequence('reminders','id')) AS id")
                 rid = rid_row["id"] if rid_row else None
+                if prev_count == 0:
+                    first_reminder_for_guild = True
                 logger.info(f"🟢 Reminder created (ID={rid}): {name} @ {time_obj} days={days_list} channel={channel_id}")
         except RuntimeError as e:
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
@@ -357,6 +362,10 @@ class ReminderCog(commands.Cog):
             level="success",
             guild_id=interaction.guild.id,
         )
+
+        if first_reminder_for_guild:
+            from utils.fyi_tips import send_fyi_if_first
+            await send_fyi_if_first(self.bot, guild_id, "first_reminder")
 
         debug_str = "\n".join(debug_info) if debug_info else "ℹ️ No extra info extracted from embed."
         await interaction.followup.send(

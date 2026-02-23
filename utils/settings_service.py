@@ -292,6 +292,62 @@ class SettingsService:
         
         return coerced
 
+    async def get_raw(self, scope: str, key: str, guild_id: int = 0, fallback: Any = None) -> Any:
+        """Read a setting from storage without requiring a registered definition (e.g. internal fyi flags). Only scope 'fyi' is allowed."""
+        if scope != "fyi":
+            return fallback
+        if not self._pool:
+            return fallback
+        try:
+            async with self._pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT value FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
+                    guild_id, scope, key,
+                )
+                if row is None:
+                    return fallback
+                val = row["value"]
+                return val if val is not None else fallback
+        except Exception as e:
+            log_database_event("RAW_GET_FAILED", guild_id=guild_id, details=f"scope={scope} key={key} error={e}")
+            return fallback
+
+    async def set_raw(self, scope: str, key: str, value: Any, guild_id: int = 0) -> None:
+        """Write a setting to storage without requiring a registered definition (e.g. internal fyi flags). Only scope 'fyi' is allowed."""
+        if scope != "fyi":
+            return
+        if not self._pool:
+            return
+        try:
+            payload = json.dumps(value)
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO bot_settings (guild_id, scope, key, value, value_type, updated_at)
+                    VALUES ($1, $2, $3, $4::jsonb, 'internal', NOW())
+                    ON CONFLICT(guild_id, scope, key)
+                    DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+                    """,
+                    guild_id, scope, key, payload,
+                )
+        except Exception as e:
+            log_database_event("RAW_SET_FAILED", guild_id=guild_id, details=f"scope={scope} key={key} error={e}")
+
+    async def clear_raw(self, scope: str, key: str, guild_id: int = 0) -> None:
+        """Remove a raw setting (e.g. to reset an FYI flag for testing). Only scope 'fyi' is allowed."""
+        if scope != "fyi":
+            return
+        if not self._pool:
+            return
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
+                    guild_id, scope, key,
+                )
+        except Exception as e:
+            log_database_event("RAW_CLEAR_FAILED", guild_id=guild_id, details=f"scope={scope} key={key} error={e}")
+
     async def clear(self, scope: str, key: str, guild_id: int = 0, updated_by: Optional[int] = None) -> None:
         if (guild_id, scope, key) not in self._overrides:
             return
