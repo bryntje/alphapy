@@ -453,8 +453,8 @@ class TicketBot(commands.Cog):
             title="Drop it here",
             description=(
                 "Questions? Bugs? Ideas? Or something on your mind?\n\n"
-                "Click below and a private ticket opens. No queues, no hassle. "
-                "We fix it together. I read everything personally.\n\n"
+                "Click below and a private ticket opens. No queues, no hassle.\n"
+                "We'll fix it together. I read everything personally.\n\n"
                 "Stay raw 🐺"
             ),
             color=discord.Color.from_rgb(30, 30, 50),
