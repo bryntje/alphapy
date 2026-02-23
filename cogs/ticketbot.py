@@ -449,9 +449,19 @@ class TicketBot(commands.Cog):
         if target is None:
             await interaction.response.send_message("❌ No channel specified.", ephemeral=True)
             return
-        embed = EmbedBuilder.info(
-            title="Support Tickets",
-            description="To create a ticket, click the button below."
+        embed = discord.Embed(
+            title="Drop it here",
+            description=(
+                "Questions? Bugs? Ideas? Or something on your mind?\n\n"
+                "Click below and a private ticket opens. No queues, no hassle. "
+                "We fix it together. I read everything personally.\n\n"
+                "Stay raw 🐺"
+            ),
+            color=discord.Color.from_rgb(30, 30, 50),
+        )
+        embed.set_footer(
+            text="Innersync",
+            icon_url="https://img.icons8.com/ios/96/wolf.png",
         )
         view = TicketOpenView(self, timeout=None)
         await target.send(embed=embed, view=view)
