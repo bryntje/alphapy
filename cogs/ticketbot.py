@@ -461,7 +461,6 @@ class TicketBot(commands.Cog):
         )
         embed.set_footer(
             text="Innersync",
-            icon_url="https://img.icons8.com/ios/96/wolf.png",
         )
         view = TicketOpenView(self, timeout=None)
         await target.send(embed=embed, view=view)
