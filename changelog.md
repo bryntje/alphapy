@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+### Improved
+- (No changes yet)
+
+---
+
+## [2.4.0] - 2026-02-26
+
+### Added
 - **Contextual FYI tips**
   - Short, contextual tips sent when certain first-time events happen per guild (e.g. first onboarding completed, first reminder, first ticket, bot joined server). Each tip is sent at most once per guild per type; per-guild 24h cooldown prevents spam when multiple first-time events occur in one day.
   - Phase 1 triggers: `first_guild_join` (welcome in system/first channel), `first_onboarding_done`, `first_config_wizard_complete`, `first_reminder`, `first_ticket`. Tips are sent to the log channel (or fallback channel on guild join). Copy and logic in `utils/fyi_tips.py`; state in `bot_settings` (scope `fyi`, keys `first_*`).
@@ -15,6 +28,14 @@ All notable changes to this project will be documented in this file.
   - Helper `get_user_personalization(user_id, guild_id)` on Onboarding cog for use by reminders or other cogs; returns `{"opt_in", "language"}` with graceful fallback when no record or DB unavailable.
 - **AGENTS.md: codebase language** – Explicit note that the entire codebase is English-only (no Dutch in code, comments, user-facing strings, or logs), even when the user communicates in Dutch.
 
+### Changed
+- **AI branding: GPT → Grok** – User-facing and documentation references updated from "GPT" to "Grok" (or "Grok/LLM" where generic): AGENTS.md (GPTInteraction → GrokInteraction, status/telemetry wording), `bot.py` setting descriptions, `gpt/` helpers and context loader, cogs (learn, leadership, contentgen, growth, ticketbot), docs (commands, configuration, api, privacy, README, ROADMAP), and `api.py` (health, telemetry, status logic). Command and config names (e.g. `/config gpt`, `gptstatus`) unchanged; only labels, comments, and docs updated.
+
+### Documentation
+- **changelog.md** – Unreleased section updated to include `bot.py` English-only changes (setting descriptions, comments, reconnect log).
+- **docs/code-review-config-start.md** – Removed; it was a local review checklist for the `/config start` wizard and is no longer needed in the repository.
+- **docs/configuration.md** – Invite template example uses English variant label "With inviter" instead of "Met inviter".
+
 ### Fixed
 - **Embed watcher reminder title and description**
   - Short reminder name (~50 chars) derived from first line of description or start of title so the sent reminder embed has a clear title instead of the full announcement text.
@@ -23,7 +44,7 @@ All notable changes to this project will be documented in this file.
 - **Embed watcher & reminders: embed safety** – Log embeds use `safe_embed_text(..., 1024)` for Title and Location fields; reminder Location field uses 1024-char limit for Discord field values.
 
 ### Improved
-- **Codebase: English only** – Dutch comments and log messages in `cogs/onboarding.py` and `cogs/reminders.py` translated to English; `core-api/` directory removed (deprecated README only).
+- **Codebase: English only** – Dutch comments and log messages in `cogs/onboarding.py`, `cogs/reminders.py`, and `bot.py` translated to English; all setting definitions in `bot.py` (log channel, embed watcher, reminders, invites, GDPR, ticket escalation, etc.) now use English descriptions; reconnect log message simplified; `core-api/` directory removed (deprecated README only).
 - **Onboarding** – Uses `utils.logger`; personalization summary/log fields use human-readable labels and 1024-char truncation; footer on personalization step embeds; expanded `get_user_personalization` docstring.
 - **Onboarding: single message flow** – Reaction roles: no defer before `send_next_question` on “Accept All Rules & Start Onboarding” so the rules message can be replaced with the first question via `response.edit_message`. Onboarding `_show_onboarding_step`: when response is already used, try `edit_original_response(embed=..., view=...)` before `followup.send` to reduce extra messages. Session is optional and used safely (e.g. `session.get("onboarding_message")` only when session is not None).
 - **Onboarding: no text above embed** – Rules message is embed + view only (no “Please accept each rule one by one before proceeding:”). Every onboarding edit (`response.edit_message`, `msg.edit`, `edit_original_response`, completion-edit) passes `content=""` so existing text above the embed is cleared.

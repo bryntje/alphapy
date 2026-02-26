@@ -200,7 +200,7 @@ For invite templates, you can use:
 
 Example:
 ```
-/config invites set_template "Met inviter" "{member} joined! {inviter} now has {count} invites."
+/config invites set_template "With inviter" "{member} joined! {inviter} now has {count} invites."
 ```
 
 ## Troubleshooting
