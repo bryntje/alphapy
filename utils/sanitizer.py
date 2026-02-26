@@ -3,7 +3,7 @@ Input sanitization utilities for Discord bot security.
 
 Prevents markdown injection, mention spam, prompt injection attacks,
 and embed exploits by sanitizing user input before it reaches
-embeds, GPT prompts, logs, or other sensitive contexts.
+embeds, LLM prompts, logs, or other sensitive contexts.
 """
 
 import re
@@ -144,7 +144,7 @@ def safe_embed_text(text: str, max_length: int = 4096) -> str:
 
 def safe_prompt(user_input: str, context: Optional[str] = None) -> str:
     """
-    Sanitizes user input for GPT prompts to prevent prompt injection attacks.
+    Sanitizes user input for LLM prompts to prevent prompt injection attacks.
     
     Detects and neutralizes common jailbreak patterns:
     - "ignore previous", "forget instructions"

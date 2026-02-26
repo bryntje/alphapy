@@ -27,7 +27,7 @@ Depending on the features you enable, the Bot may process the following categori
   - Growth check-in prompts and user responses;
   - Learning requests (`/learn_topic`) and ticket conversation summaries;
   - AI caption inputs and generated outputs (for context and troubleshooting).
-- **Ticketing data**: Ticket channel IDs, message excerpts, GPT summaries, user and staff actions, and status updates.
+- **Ticketing data**: Ticket channel IDs, message excerpts, AI summaries, user and staff actions, and status updates.
 - **Logging and audit events**: Internal logs for errors, status updates, and admin actions posted to designated log channels.
 - **Support communications**: Emails or GitHub issues you send us about the Bot.
 
@@ -38,7 +38,7 @@ We do not intentionally collect sensitive categories of personal data, but users
 We use the data listed above to:
 
 - Deliver requested features (e.g., send reminders, respond to commands, store ticket history);
-- Provide AI-driven outputs by forwarding prompts to model providers such as OpenAI;
+- Provide AI-driven outputs by forwarding prompts to model providers such as Grok;
 - Monitor performance, detect abuse, and debug issues;
 - Send audit logs to staff-only channels that you configure;
 - Comply with legal obligations and enforce the Terms of Service.
@@ -56,7 +56,7 @@ For data subjects in the European Economic Area or the United Kingdom, we rely o
 We do not sell or rent your data. We may share data with:
 
 - **Discord** when responding to events and sending messages;
-- **OpenAI or other AI providers** when you enable GPT-powered commands, limited to the prompt and necessary metadata;
+- **Grok or other AI providers** when you enable Grok/AI-powered commands, limited to the prompt and necessary metadata;
 - **Hosting and infrastructure providers** that store databases, logs, or backups;
 - **Legal authorities** if required to comply with applicable laws, court orders, or government requests.
 
@@ -65,7 +65,7 @@ Each provider processes data under their own terms and policies. We aim to choos
 ## 6. Data retention
 
 - Reminder entries persist until the scheduled job completes or an admin deletes them.
-- Ticket transcripts and GPT summaries remain until manually removed.
+- Ticket transcripts and AI summaries remain until manually removed.
 - Growth check-in responses are stored for follow-up unless deleted.
 - Audit logs in Discord channels follow Discord’s retention unless you purge them.
 - Backups (if enabled) are kept for up to 30 days before automatic deletion.

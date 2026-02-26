@@ -64,10 +64,10 @@ Alternatively, run the following commands in order:
 /config reminders set_default_channel #general
 ```
 
-#### GPT Settings
+#### Grok / AI Settings
 ```bash
-# Choose AI model
-/config gpt set_model gpt-4  # or gpt-3.5-turbo
+# Choose AI model (e.g. grok-3)
+/config gpt set_model grok-3
 
 # Set creativity level (0.0-2.0)
 /config gpt set_temperature 0.7
@@ -125,7 +125,7 @@ All commands require administrator permissions and are guild-specific:
 /config ticketbot reset_escalation_role
 ```
 
-### GPT Scope
+### Grok / AI Scope
 ```
 /config gpt show
 /config gpt set_model <model-name>

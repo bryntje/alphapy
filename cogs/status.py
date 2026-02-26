@@ -31,7 +31,7 @@ BOOT_TIME = datetime.now(BRUSSELS_TZ)
 
 # ------------------ SLASH COMMAND ------------------ #
 
-@app_commands.command(name="gptstatus", description="Check the status of the GPT API.")
+@app_commands.command(name="gptstatus", description="Check the status of the Grok/LLM API.")
 async def gptstatus(interaction: discord.Interaction):
     embed = await get_gptstatus_embed()
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -568,7 +568,7 @@ async def get_gptstatus_embed():
     status = await fetch_openai_status()
 
     embed = EmbedBuilder.status(
-        title="🧠 GPT API Status"
+        title="🧠 Grok API Status"
     )
     embed.add_field(name="🔹 Operational", value=f"{'✅ Yes' if 'Operational' in status else '⚠️ ' + status}", inline=False)
     embed.add_field(name="🔹 Last successful reply", value=format_timedelta(last_success) if isinstance(last_success, datetime) else last_success, inline=True)
@@ -577,10 +577,10 @@ async def get_gptstatus_embed():
     embed.add_field(name="🔹 Prompt tokens used today", value=f"{token_usage:,}", inline=True)
     embed.add_field(name="🔹 Rate limit window", value=f"Reset in {rate_limit_reset}", inline=True)
     embed.add_field(name="🔹 Logged interactions", value=f"✅ {success_count} / ❌ {error_count}", inline=True)
-    embed.add_field(name="🔹 Last user to trigger GPT", value=f"<@{user}>", inline=True)
+    embed.add_field(name="🔹 Last user to trigger Grok", value=f"<@{user}>", inline=True)
     embed.add_field(name="🔹 Latency (avg)", value=f"{latency}ms", inline=True)
     embed.add_field(name="🔹 Uptime", value=_format_uptime(BOOT_TIME), inline=True)
-    embed.set_footer(text=f"📦 GPT Status • v{__version__} — {CODENAME} • Updated just now")
+    embed.set_footer(text=f"📦 Grok Status • v{__version__} — {CODENAME} • Updated just now")
 
     return embed
 

@@ -101,7 +101,7 @@ settings_service.register(
     SettingDefinition(
         scope="embedwatcher",
         key="gpt_fallback_enabled",
-        description="Enable GPT fallback parsing when structured parsing fails.",
+        description="Enable LLM fallback parsing when structured parsing fails.",
         value_type="bool",
         default=True,
     )
@@ -191,7 +191,7 @@ settings_service.register(
     SettingDefinition(
         scope="gpt",
         key="model",
-        description="Standaard AI-model voor GPT commando's (grok-3 voor Grok, gpt-3.5-turbo/gpt-4 voor OpenAI).",
+        description="Default AI model for Grok commands (e.g. grok-3).",
         value_type="str",
         default=_default_llm_model,
     )
@@ -200,7 +200,7 @@ settings_service.register(
     SettingDefinition(
         scope="gpt",
         key="temperature",
-        description="Temperatuur (creativiteit) voor GPT antwoorden.",
+        description="Temperature (creativity) for Grok responses.",
         value_type="float",
         default=0.7,
         min_value=0.0,
@@ -323,7 +323,7 @@ async def on_ready():
         logger.debug("on_ready: duplicate call (no disconnect seen), skipping")
 
 
-set_bot_instance(bot)  # This also starts the GPT retry queue task
+set_bot_instance(bot)  # This also starts the Grok retry queue task
 
 
 @bot.event

@@ -20,7 +20,7 @@ class LearnTopic(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="learn_topic", description="Ask a topic and get a short, clear explanation from GPT.")
+    @app_commands.command(name="learn_topic", description="Ask a topic and get a short, clear explanation from Grok.")
     @app_checks.cooldown(3, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 3 per minuut
     @app_commands.describe(topic="e.g. RSI, scalping, risk management…")
     async def learn_topic(self, interaction: discord.Interaction, topic: str):
@@ -87,7 +87,7 @@ class LearnTopic(commands.Cog):
             
             prompt_messages = [{"role": "user", "content": prompt_content}]
 
-            # Keep-alive: edit deferred message every 10s while GPT runs to avoid Discord interaction timeout
+            # Keep-alive: edit deferred message every 10s while Grok runs to avoid Discord interaction timeout
             keepalive_interval = 10.0
             keepalive_task: asyncio.Task | None = None
 

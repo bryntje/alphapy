@@ -45,19 +45,19 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
-## 🚀 Agent: GPTInteraction
+## 🚀 Agent: GrokInteraction
 
-- **Purpose**: AI functionality with OpenAI (or Grok when configured).
+- **Purpose**: AI functionality with Grok.
 - **Commands**:
  - `/create_caption` – generate caption
  - `/learn_topic` – explanation of a topic
- - `/gptstatus` – GPT API status
+ - `/gptstatus` – Grok/LLM API status
 
 ---
 
 ## 🌱 Agent: GrowthCheckIn
 
-- **Purpose**: Guides personal growth of community members via GPT.
+- **Purpose**: Guides personal growth of community members via Grok.
 - **Command**:
  - `/growthcheckin`
 - **Logging**: Storage of answers for processing or follow-up.
@@ -121,7 +121,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Path**: `utils/fyi_tips.py`
 - **Purpose**: Sends short, context-sensitive tips when certain first-time events occur per guild (e.g. first onboarding completed, first reminder, first ticket, bot joins server). Tips are sent at most once per guild per type; a per-guild 24h cooldown prevents spam when multiple first-time events happen in one day.
 - **Storage**: `bot_settings` (scope `fyi`), keys with prefix `first_*` (e.g. `first_onboarding_done`, `first_guild_join`). Copy and logic in `utils/fyi_tips.py`. Only scope `fyi` is used; `SettingsService.get_raw` / `set_raw` / `clear_raw` accept only scope `fyi` and log on failure (`RAW_GET_FAILED`, `RAW_SET_FAILED`, `RAW_CLEAR_FAILED`).
-- **Phase 1 (live)**: `first_guild_join`, `first_onboarding_done`, `first_config_wizard_complete`, `first_reminder`, `first_ticket`. Phase 2 triggers (e.g. watcher, GPT, invites, growth, add_rule) can be enabled later.
+- **Phase 1 (live)**: `first_guild_join`, `first_onboarding_done`, `first_config_wizard_complete`, `first_reminder`, `first_ticket`. Phase 2 triggers (e.g. watcher, Grok, invites, growth, add_rule) can be enabled later.
 - **Admin/testing**: `/config fyi reset <key>` and `/config fyi send <key>` (admin-only, `validate_admin`). Reset clears the flag so the next natural trigger sends the FYI again; send forces delivery to the log channel.
 
 ---
@@ -132,7 +132,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Purpose**: Exposes reminders and realtime metrics for dashboards.
 - **Endpoints**:
  - `/api/reminders/*` – CRUD for user reminders (API key + `X-User-Id`)
- - `/api/dashboard/metrics` – live bot status, GPT log stats, reminder and ticket counts
+ - `/api/dashboard/metrics` – live bot status, Grok/LLM log stats, reminder and ticket counts
  - `/api/dashboard/logs` – operational logs with guild-admin check
 - **Helpers**: `utils/runtime_metrics.get_bot_snapshot()` provides safe cross-thread snapshots from Discord.
 - **Operational Logs**: In-memory buffer (`utils/operational_logs.py`) with max 100 events
@@ -221,7 +221,7 @@ Use the following colors for different types of information:
 - **Red (`discord.Color.red()`)**: Errors or critical warnings
   - Examples: Errors, failed operations
 - **Teal (`discord.Color.teal()`)**: Status information
-  - Examples: `/gptstatus`, system status
+  - Examples: `/gptstatus` (Grok/LLM status), system status
 
 #### Fields
 

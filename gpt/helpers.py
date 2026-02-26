@@ -42,7 +42,7 @@ Geef een duidelijke, uitgebreide uitleg gebaseerd op de context, maar voeg ook j
 # Bot instance will be set later
 bot_instance: Optional[commands.Bot] = None
 
-# --- GPT Fallback & Retry Queue ---
+# --- Grok Fallback & Retry Queue ---
 FALLBACK_MESSAGE = "I'm temporarily unavailable. Please try again in a few minutes."
 _gpt_retry_queue: list = []  # List of dicts: {messages, user_id, model, guild_id, retry_count, timestamp}
 MAX_RETRY_QUEUE_SIZE = 50
@@ -53,7 +53,7 @@ def set_bot_instance(bot: commands.Bot) -> None:
     global bot_instance
     bot_instance = bot
     logger.info("🤖 Bot instance is now set in helpers.py")
-    # Note: GPT retry queue task will be started in on_ready event when event loop is running
+    # Note: Grok retry queue task will be started in on_ready event when event loop is running
 
 def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optional[int] = None, model: Optional[str] = None):
     from utils.logger import get_gpt_status_logs
@@ -67,7 +67,7 @@ def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optiona
     if model:
         logs.current_model = model
 
-    log_message = f"✅ GPT success by {user_id} – {tokens_used} tokens, {latency_ms}ms latency"
+    log_message = f"✅ Grok success by {user_id} – {tokens_used} tokens, {latency_ms}ms latency"
     logger.info(log_message)
     if bot_instance and guild_id:
         asyncio.create_task(log_to_channel(log_message, level="info", guild_id=guild_id))
@@ -79,7 +79,7 @@ def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = 
     logs.last_user = user_id
     logs.error_count += 1
 
-    log_message = f"❌ GPT error [{error_type}] by {user_id}"
+    log_message = f"❌ Grok error [{error_type}] by {user_id}"
     logger.error(log_message)
     if bot_instance and guild_id:
         asyncio.create_task(log_to_channel(log_message, level="error", guild_id=guild_id))
@@ -95,7 +95,7 @@ def is_allowed_prompt(prompt: str) -> bool:
 
 async def log_to_channel(message: str, level: str = "info", guild_id: Optional[int] = None):
     """
-    Log GPT events to the configured log channel for the guild.
+    Log Grok events to the configured log channel for the guild.
     Uses system.log_channel_id from settings (configured via /config system set_log_channel).
     """
     if bot_instance is None:
@@ -103,7 +103,7 @@ async def log_to_channel(message: str, level: str = "info", guild_id: Optional[i
         return
 
     if guild_id is None:
-        logger.debug("⚠️ GPT log called without guild_id - skipping Discord log")
+        logger.debug("⚠️ Grok log called without guild_id - skipping Discord log")
         return
 
     # Get log channel from settings (system.log_channel_id)
@@ -131,17 +131,17 @@ async def log_to_channel(message: str, level: str = "info", guild_id: Optional[i
         timestamp=datetime.utcnow(),
         color=0x00BFFF if level == "info" else 0xFF0000
     )
-    embed.set_author(name=f"GPT {level.upper()}")
-    embed.set_footer(text=f"gpt | Guild: {guild_id}")
+    embed.set_author(name=f"Grok {level.upper()}")
+    embed.set_footer(text=f"Grok | Guild: {guild_id}")
 
     try:
         await channel.send(embed=embed)
     except Exception as e:
-        logger.error(f"🚨 Failed to send GPT log embed: {e}")
+        logger.error(f"🚨 Failed to send Grok log embed: {e}")
 
 
 def _add_to_retry_queue(messages, user_id, model, guild_id):
-    """Add a failed GPT request to the retry queue."""
+    """Add a failed Grok request to the retry queue."""
     global _gpt_retry_queue
     
     # Limit queue size (drop oldest if full)
@@ -159,7 +159,7 @@ def _add_to_retry_queue(messages, user_id, model, guild_id):
 
 
 async def _retry_gpt_requests():
-    """Background task that processes the GPT retry queue every 5 minutes."""
+    """Background task that processes the Grok retry queue every 5 minutes."""
     global _gpt_retry_queue
     
     while True:
@@ -176,7 +176,7 @@ async def _retry_gpt_requests():
             for item in queue_copy:
                 retry_count = item["retry_count"]
                 if retry_count >= MAX_RETRIES:
-                    logger.debug(f"⚠️ Dropping GPT retry after {MAX_RETRIES} attempts")
+                    logger.debug(f"⚠️ Dropping Grok retry after {MAX_RETRIES} attempts")
                     continue
                 
                 # Exponential backoff: 1s, 2s, 4s, 8s, 16s
@@ -192,7 +192,7 @@ async def _retry_gpt_requests():
                         guild_id=item["guild_id"],
                         _is_retry=True
                     )
-                    logger.debug(f"✅ GPT retry succeeded for user {item['user_id']}")
+                    logger.debug(f"✅ Grok retry succeeded for user {item['user_id']}")
                     # Success - don't re-queue
                 except Exception as retry_error:
                     # Still failed - increment retry count and re-queue
@@ -200,13 +200,13 @@ async def _retry_gpt_requests():
                     item["timestamp"] = datetime.utcnow()
                     if len(_gpt_retry_queue) < MAX_RETRY_QUEUE_SIZE:
                         _gpt_retry_queue.append(item)
-                    logger.debug(f"⚠️ GPT retry {item['retry_count']}/{MAX_RETRIES} failed: {retry_error}")
+                    logger.debug(f"⚠️ Grok retry {item['retry_count']}/{MAX_RETRIES} failed: {retry_error}")
         
         except asyncio.CancelledError:
-            logger.info("🛑 GPT retry queue task cancelled")
+            logger.info("🛑 Grok retry queue task cancelled")
             raise
         except Exception as e:
-            logger.error(f"❌ Error in GPT retry queue task: {e}")
+            logger.error(f"❌ Error in Grok retry queue task: {e}")
             await asyncio.sleep(60)  # Wait before retrying the task itself
 
 
@@ -268,7 +268,7 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
     except KeyError:
         pass
     except (TypeError, ValueError):
-        logger.warning("⚠️ GPT temperature setting invalid — fallback to API default.")
+        logger.warning("⚠️ Grok temperature setting invalid — fallback to API default.")
         temperature_value = None
 
     return model_value, temperature_value
@@ -276,7 +276,7 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
 
 async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None, _is_retry: bool = False, include_reflections: bool = True):
     """
-    Main GPT interaction function.
+    Main Grok interaction function.
     
     Args:
         messages: List of message dicts or string prompt
@@ -355,7 +355,7 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
         # If retryable and not already a retry attempt, add to queue and return fallback message
         if is_retryable and not _is_retry:
             _add_to_retry_queue(messages, user_id, model or _default_model, guild_id)
-            logger.warning(f"⚠️ GPT error (retryable): {error_type}. Returning fallback message and queuing for retry.")
+            logger.warning(f"⚠️ Grok error (retryable): {error_type}. Returning fallback message and queuing for retry.")
             return FALLBACK_MESSAGE
         
         # Non-retryable errors or retry attempts that fail: raise as before

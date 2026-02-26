@@ -10,7 +10,7 @@ venv/
 # Log files
 *.log
 .cursor/
-
+platform_context.md
 
 # Compiled Python files
 __pycache__/

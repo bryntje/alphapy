@@ -58,7 +58,7 @@ class ChallengeSelect(discord.ui.Select):
                 Use a supportive, direct tone.
                 """
         try:
-            logger.info(f"GPT request by {interaction.user} — challenge: {struggle}")
+            logger.info(f"Grok request by {interaction.user} — challenge: {struggle}")
             await interaction.response.defer(ephemeral=True)
             guild_id = interaction.guild.id if interaction.guild else None
             reply = await ask_gpt([{"role": "user", "content": prompt}], user_id=interaction.user.id, guild_id=guild_id)
@@ -91,7 +91,7 @@ class ChallengeSelect(discord.ui.Select):
 
             asyncio.create_task(_store_insight())
         except Exception as e:
-            logger.exception(f"Unhandled GPT error (ChallengeSelect) by {interaction.user}: {e}")
+            logger.exception(f"Unhandled Grok error (ChallengeSelect) by {interaction.user}: {e}")
             # ask_gpt() already logs errors internally
             await interaction.followup.send("❌ Something went wrong. Please try again later.", ephemeral=True)
 
@@ -174,7 +174,7 @@ class AskQuestionButton(discord.ui.Button):
 
         except Exception as e:
             # ask_gpt() already logs all its errors internally, so we don't log again
-            logger.exception(f"Unhandled GPT error (AskQuestionButton) by {interaction.user}: {e}")
+            logger.exception(f"Unhandled Grok error (AskQuestionButton) by {interaction.user}: {e}")
             await interaction.followup.send("❌ Error occurred. Try again later.", ephemeral=True)
 
 

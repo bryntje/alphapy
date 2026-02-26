@@ -23,7 +23,7 @@ Thank you for using the Innersync • Alphapy Discord Bot (“**Innersync • Al
 Innersync • Alphapy offers modular features designed for community management and growth support. Current capabilities are described in `README.md` and may include:
 
 - **Reminder tools**: automated reminders based on embeds, schedules, or manual input.
-- **AI interactions**: GPT-powered commands such as `/learn_topic`, `/growthcheckin`, and `/create_caption`.
+- **AI interactions**: Grok-powered commands such as `/learn_topic`, `/growthcheckin`, and `/create_caption`.
 - **Ticketing and utilities**: invite tracking, moderation helpers, and export tools.
 - **GDPR support**: commands to export onboarding data and future deletion tooling.
 

@@ -267,15 +267,15 @@ class StartupManager:
         except Exception as e:
             logger.warning(f"  ⚠️ Failed to initialize command tracker pool: {e}")
         
-        # Start GPT retry queue task
+        # Start Grok retry queue task
         try:
             from gpt.helpers import _retry_task, _retry_gpt_requests
             import gpt.helpers as gpt_helpers
             if gpt_helpers._retry_task is None or gpt_helpers._retry_task.done():
                 gpt_helpers._retry_task = asyncio.create_task(_retry_gpt_requests())
-                logger.info("  ✅ GPT retry queue task started")
+                logger.info("  ✅ Grok retry queue task started")
         except Exception as e:
-            logger.warning(f"  ⚠️ Failed to start GPT retry task: {e}")
+            logger.warning(f"  ⚠️ Failed to start Grok retry task: {e}")
         
         # Start sync cooldowns cleanup task
         try:
@@ -481,7 +481,7 @@ class ShutdownManager:
         except Exception as e:
             logger.debug(f"  ⚠️ Error stopping command tracker: {e}")
         
-        # Cancel GPT retry task
+        # Cancel Grok retry task
         try:
             from gpt.helpers import _retry_task
             import gpt.helpers as gpt_helpers
@@ -491,9 +491,9 @@ class ShutdownManager:
                     await asyncio.wait_for(gpt_helpers._retry_task, timeout=2.0)
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass
-                logger.info("  ✅ GPT retry task cancelled")
+                logger.info("  ✅ Grok retry task cancelled")
         except Exception as e:
-            logger.debug(f"  ⚠️ Error cancelling GPT retry task: {e}")
+            logger.debug(f"  ⚠️ Error cancelling Grok retry task: {e}")
         
         # Stop sync cooldowns cleanup task
         try:

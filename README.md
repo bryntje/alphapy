@@ -11,7 +11,7 @@ Modular Discord bot for conscious communities: server tools, AI coaching, knowle
 Alphapy powers the **Innersync • Alphapips** community with:
 
 - **AI:** growth coaching (`/growthcheckin`), topic learning (`/learn_topic`), captions (`/create_caption`)
-- **Tickets:** support channels with claim/close, GPT summaries, FAQ suggestions
+- **Tickets:** support channels with claim/close, Grok summaries, FAQ suggestions
 - **Reminders:** one-off and recurring, including auto-detection from announcement embeds
 - **Infra:** PostgreSQL (Supabase), Alembic migrations, FastAPI metrics, pytest
 
@@ -44,7 +44,7 @@ alphapy/
 ├── config.py
 ├── cogs/               # Slash commands & features (growth, learn, ticketbot, reminders, …)
 ├── utils/              # DB, metrics, timezone, gcp_secrets, drive_sync, …
-├── gpt/                # GPT helpers, dataset_loader (learn_topic)
+├── gpt/                # Grok/LLM helpers, dataset_loader (learn_topic)
 ├── tests/
 ├── alembic/            # Migrations
 ├── data/prompts/       # Local knowledge (.md)
@@ -76,7 +76,7 @@ Google/Secret Manager: [docs/SECURITY.md](docs/SECURITY.md), [docs/GOOGLE_CREDEN
 
 ### Ticket system
 
-- Channels under a ticket category; buttons: **Claim**, **Close** (GPT summary), **Delete** (after close).
+- Channels under a ticket category; buttons: **Claim**, **Close** (Grok summary), **Delete** (after close).
 - FAQ suggestions from similar closed tickets; staff role and escalation config.
 - [AGENTS.md](AGENTS.md) and [docs/configuration.md](docs/configuration.md).
 

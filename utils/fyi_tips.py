@@ -62,7 +62,7 @@ FYI_CONTENT: Dict[str, Dict[str, str]] = {
         "footer": "Use the ticket channel buttons to claim or close.",
     },
     "first_gpt": {
-        "title": "💬 FYI: GPT commands",
+        "title": "💬 FYI: Grok commands",
         "description": "Use `/gptstatus` to check API status and usage. Rate limits may apply depending on server configuration.",
         "footer": "Use /gptstatus for API status.",
     },

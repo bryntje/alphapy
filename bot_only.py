@@ -121,7 +121,7 @@ settings_service.register(
     SettingDefinition(
         scope="gpt",
         key="model",
-        description="Standaard AI-model voor GPT commando's (grok-3 voor Grok, gpt-3.5-turbo/gpt-4 voor OpenAI).",
+        description="Default AI model for Grok commands (e.g. grok-3).",
         value_type="str",
         default=_default_llm_model,
     )
@@ -130,7 +130,7 @@ settings_service.register(
     SettingDefinition(
         scope="gpt",
         key="temperature",
-        description="Temperatuur (creativiteit) voor GPT antwoorden.",
+        description="Temperature (creativity) for Grok responses.",
         value_type="float",
         default=0.7,
         min_value=0.0,
