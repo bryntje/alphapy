@@ -33,6 +33,7 @@ class SettingsService:
         self._pool: Optional[asyncpg.Pool] = None
         self._definitions: Dict[Tuple[str, str], SettingDefinition] = {}
         self._overrides: Dict[Tuple[int, str, str], Any] = {}
+        self._raw_overrides: Dict[Tuple[int, str, str], Any] = {}  # in-memory raw (e.g. fyi) when pool unavailable
         self._listeners: Dict[Tuple[str, str], List[SettingListener]] = {}
         self._ready = False
 
@@ -293,11 +294,12 @@ class SettingsService:
         return coerced
 
     async def get_raw(self, scope: str, key: str, guild_id: int = 0, fallback: Any = None) -> Any:
-        """Read a setting from storage without requiring a registered definition (e.g. internal fyi flags). Only scope 'fyi' is allowed."""
+        """Read a setting from storage without requiring a registered definition (e.g. internal fyi flags). Only scope 'fyi' is allowed. Uses in-memory store when pool is unavailable."""
         if scope != "fyi":
             return fallback
+        composite = (guild_id, scope, key)
         if not self._pool:
-            return fallback
+            return self._raw_overrides.get(composite, fallback)
         try:
             async with self._pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -305,17 +307,19 @@ class SettingsService:
                     guild_id, scope, key,
                 )
                 if row is None:
-                    return fallback
+                    return self._raw_overrides.get(composite, fallback)
                 val = row["value"]
-                return val if val is not None else fallback
+                return val if val is not None else self._raw_overrides.get(composite, fallback)
         except Exception as e:
             log_database_event("RAW_GET_FAILED", guild_id=guild_id, details=f"scope={scope} key={key} error={e}")
-            return fallback
+            return self._raw_overrides.get(composite, fallback)
 
     async def set_raw(self, scope: str, key: str, value: Any, guild_id: int = 0) -> None:
-        """Write a setting to storage without requiring a registered definition (e.g. internal fyi flags). Only scope 'fyi' is allowed."""
+        """Write a setting to storage without requiring a registered definition (e.g. internal fyi flags). Only scope 'fyi' is allowed. Persists in-memory when pool is unavailable."""
         if scope != "fyi":
             return
+        composite = (guild_id, scope, key)
+        self._raw_overrides[composite] = value
         if not self._pool:
             return
         try:
@@ -334,9 +338,11 @@ class SettingsService:
             log_database_event("RAW_SET_FAILED", guild_id=guild_id, details=f"scope={scope} key={key} error={e}")
 
     async def clear_raw(self, scope: str, key: str, guild_id: int = 0) -> None:
-        """Remove a raw setting (e.g. to reset an FYI flag for testing). Only scope 'fyi' is allowed."""
+        """Remove a raw setting (e.g. to reset an FYI flag for testing). Only scope 'fyi' is allowed. Clears in-memory when pool is unavailable."""
         if scope != "fyi":
             return
+        composite = (guild_id, scope, key)
+        self._raw_overrides.pop(composite, None)
         if not self._pool:
             return
         try:

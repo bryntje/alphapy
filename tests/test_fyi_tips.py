@@ -254,3 +254,35 @@ def test_fyi_keys_contains_phase1():
     phase1 = ["first_guild_join", "first_onboarding_done", "first_reminder", "first_ticket"]
     for k in phase1:
         assert k in FYI_KEYS
+
+
+# --- Raw FYI in-memory persistence (no DB pool) ---
+
+
+@pytest.mark.asyncio
+async def test_raw_fyi_persists_in_memory_when_pool_unavailable():
+    """When SettingsService has no DB pool, get_raw/set_raw/clear_raw use in-memory store so FYI state is durable within the process."""
+    from utils.settings_service import SettingsService
+
+    service = SettingsService(dsn=None)  # no pool
+    guild_id = 999
+    scope = "fyi"
+    key = "first_guild_join"
+
+    # Initially not set
+    out = await service.get_raw(scope, key, guild_id, fallback=None)
+    assert out is None
+
+    # set_raw persists in memory
+    await service.set_raw(scope, key, True, guild_id)
+    out = await service.get_raw(scope, key, guild_id, fallback=None)
+    assert out is True
+
+    # clear_raw removes from memory
+    await service.clear_raw(scope, key, guild_id)
+    out = await service.get_raw(scope, key, guild_id, fallback=None)
+    assert out is None
+
+    # Non-fyi scope is no-op for set/clear and returns fallback for get
+    await service.set_raw("other", "k", "v", guild_id)
+    assert await service.get_raw("other", "k", guild_id, fallback="default") == "default"
