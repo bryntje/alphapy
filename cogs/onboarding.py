@@ -618,6 +618,9 @@ class Onboarding(commands.Cog):
             if log_channel:
                 await log_channel.send(embed=log_embed)
 
+            from utils.fyi_tips import send_fyi_if_first
+            await send_fyi_if_first(self.bot, interaction.guild.id, "first_onboarding_done")
+
             return
 
         if step == n_questions:

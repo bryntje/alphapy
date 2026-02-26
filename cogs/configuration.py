@@ -5,6 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from utils.validators import validate_admin
+from utils.fyi_tips import FYI_KEYS as FYI_TIPS_KEYS
 from utils.db_helpers import acquire_safe
 from utils.embed_builder import EmbedBuilder
 from utils.settings_service import SettingsService, SettingDefinition
@@ -25,8 +26,7 @@ class SetupStep:
 
 SETUP_STEPS: List[SetupStep] = [
     SetupStep("system", "log_channel_id", "Do you want to set a log channel for bot messages?", "channel"),
-    SetupStep("system", "rules_channel_id", "Set the rules channel (#rules)?", "channel"),
-    SetupStep("system", "onboarding_channel_id", "Set the onboarding / welcome channel?", "channel"),
+    SetupStep("system", "rules_channel_id", "Set the rules and onboarding channel (#rules)?", "channel"),
     SetupStep("embedwatcher", "announcements_channel_id", "Channel for embed-based reminders?", "channel"),
     SetupStep("invites", "announcement_channel_id", "Channel for invite announcements?", "channel"),
     SetupStep("gdpr", "channel_id", "Channel for GDPR documents?", "channel"),
@@ -87,6 +87,11 @@ class Configuration(commands.Cog):
         description="Onboarding configuration",
         parent=config,
     )
+    fyi_group = app_commands.Group(
+        name="fyi",
+        description="Contextual FYI tips (admin testing)",
+        parent=config,
+    )
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         settings = getattr(bot, "settings", None)
@@ -132,6 +137,49 @@ class Configuration(commands.Cog):
         message = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         view.message = cast(Any, message)
         log_with_guild(f"Setup wizard started (guild_id={guild_id}, user_id={user_id})", guild_id, "debug")
+
+    @fyi_group.command(name="reset", description="Clear an FYI flag so the next trigger will send again (testing)")
+    @app_commands.choices(key=[app_commands.Choice(name=k, value=k) for k in sorted(FYI_TIPS_KEYS)])
+    @requires_admin()
+    async def fyi_reset(
+        self,
+        interaction: discord.Interaction,
+        key: str,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+        from utils.fyi_tips import reset_fyi
+        if key not in FYI_TIPS_KEYS:
+            await interaction.response.send_message(f"❌ Unknown FYI key: `{key}`. Use one of: {', '.join(sorted(FYI_TIPS_KEYS))}.", ephemeral=True)
+            return
+        ok = await reset_fyi(self.bot, interaction.guild.id, key)
+        if ok:
+            await interaction.response.send_message(f"✅ FYI flag `{key}` cleared. The next time that event happens, the tip will be sent again.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Could not clear `{key}`.", ephemeral=True)
+
+    @fyi_group.command(name="send", description="Force-send an FYI now (testing)")
+    @app_commands.choices(key=[app_commands.Choice(name=k, value=k) for k in sorted(FYI_TIPS_KEYS)])
+    @requires_admin()
+    async def fyi_send(
+        self,
+        interaction: discord.Interaction,
+        key: str,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        from utils.fyi_tips import force_send_fyi
+        if key not in FYI_TIPS_KEYS:
+            await interaction.followup.send(f"❌ Unknown FYI key: `{key}`. Use one of: {', '.join(sorted(FYI_TIPS_KEYS))}.", ephemeral=True)
+            return
+        sent = await force_send_fyi(self.bot, interaction.guild.id, key, mark_as_sent=True)
+        if sent:
+            await interaction.followup.send(f"✅ FYI `{key}` sent to the log channel (and marked as sent).", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ Could not send (e.g. no log channel set or channel not found).", ephemeral=True)
 
     @system_group.command(name="show", description="Show system settings")
     @requires_admin()
@@ -188,7 +236,7 @@ class Configuration(commands.Cog):
             f"`system.log_channel_id` reset to default by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @system_group.command(name="set_rules_channel", description="Set the rules channel (#rules)")
+    @system_group.command(name="set_rules_channel", description="Set the rules and onboarding channel (welcome + Start button)")
     @requires_admin()
     async def system_set_rules_channel(
         self,
@@ -207,7 +255,7 @@ class Configuration(commands.Cog):
             f"`system.rules_channel_id` set to {channel.mention} by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @system_group.command(name="reset_rules_channel", description="Reset rules channel to default value")
+    @system_group.command(name="reset_rules_channel", description="Reset rules and onboarding channel to default value")
     @requires_admin()
     async def system_reset_rules_channel(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -222,42 +270,6 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "⚙️ Setting reset",
             f"`system.rules_channel_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @system_group.command(name="set_onboarding_channel", description="Set the onboarding channel")
-    @requires_admin()
-    async def system_set_onboarding_channel(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("system", "onboarding_channel_id", channel.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Onboarding channel set to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting updated",
-            f"`system.onboarding_channel_id` set to {channel.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @system_group.command(name="reset_onboarding_channel", description="Reset onboarding channel to default value")
-    @requires_admin()
-    async def system_reset_onboarding_channel(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("system", "onboarding_channel_id", interaction.guild.id, interaction.user.id)
-        default_value = self.settings.get("system", "onboarding_channel_id", interaction.guild.id)
-        formatted = f"<#{default_value}>" if default_value else "—"
-        await interaction.followup.send(
-            f"↩️ Onboarding channel reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting reset",
-            f"`system.onboarding_channel_id` reset to default by {interaction.user.mention}.",
             interaction.guild.id
         )
     @system_group.command(name="set_log_level", description="Set log verbosity level")
@@ -1631,6 +1643,8 @@ class SetupWizardView(discord.ui.View):
             embed = self._build_complete_embed()
             self.clear_items()
             self.message = await interaction.edit_original_response(embed=embed, view=self)
+            from utils.fyi_tips import send_fyi_if_first
+            await send_fyi_if_first(self.cog.bot, self.guild_id, "first_config_wizard_complete")
             self.stop()
             return
         embed = self._build_step_embed(step)

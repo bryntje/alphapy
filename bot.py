@@ -44,16 +44,7 @@ settings_service.register(
     SettingDefinition(
         scope="system",
         key="rules_channel_id",
-        description="Channel for rules and onboarding (#rules).",
-        value_type="channel",
-        default=0,  # Must be configured per guild
-    )
-)
-settings_service.register(
-    SettingDefinition(
-        scope="system",
-        key="onboarding_channel_id",
-        description="Channel where onboarding takes place.",
+        description="Channel for rules and onboarding (welcome message + Start button).",
         value_type="channel",
         default=0,  # Must be configured per guild
     )
@@ -514,6 +505,22 @@ async def on_guild_join(guild: discord.Guild):
                 )
     else:
         logger.debug(f"ℹ️ No guild-only commands detected, skipping sync for {guild.name}")
+
+    # Send welcome FYI to fallback channel (no log channel configured yet)
+    channel = None
+    me = getattr(guild, "me", None)
+    if me is not None:
+        channel = guild.system_channel
+        if not channel or not channel.permissions_for(me).send_messages:
+            for ch in guild.text_channels:
+                if ch.permissions_for(me).send_messages:
+                    channel = ch
+                    break
+            else:
+                channel = None
+    if channel:
+        from utils.fyi_tips import send_fyi_if_first
+        await send_fyi_if_first(bot, guild.id, "first_guild_join", channel_id_override=channel.id)
 
 
 async def setup_hook():

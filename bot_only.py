@@ -33,16 +33,7 @@ settings_service.register(
     SettingDefinition(
         scope="system",
         key="rules_channel_id",
-        description="Channel for rules and onboarding (#rules).",
-        value_type="channel",
-        default=0,  # Must be configured per guild
-    )
-)
-settings_service.register(
-    SettingDefinition(
-        scope="system",
-        key="onboarding_channel_id",
-        description="Channel where onboarding takes place.",
+        description="Channel for rules and onboarding (welcome message + Start button).",
         value_type="channel",
         default=0,  # Must be configured per guild
     )

@@ -358,6 +358,9 @@ class ReminderCog(commands.Cog):
             guild_id=interaction.guild.id,
         )
 
+        from utils.fyi_tips import send_fyi_if_first
+        await send_fyi_if_first(self.bot, guild_id, "first_reminder")
+
         debug_str = "\n".join(debug_info) if debug_info else "ℹ️ No extra info extracted from embed."
         await interaction.followup.send(
             f"✅ Reminder **'{name}'** added to {channel.mention}.\n{debug_str}",
