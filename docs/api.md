@@ -43,7 +43,7 @@ Enhanced health check endpoint with detailed metrics.
 ```json
 {
   "service": "alphapy",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "uptime_seconds": 3600,
   "db_status": "ok",
   "timestamp": "2026-01-21T12:00:00Z",
@@ -92,7 +92,7 @@ Get historical health check data for trend analysis.
   "history": [
     {
       "service": "alphapy",
-      "version": "2.3.0",
+      "version": "2.4.0",
       "uptime_seconds": 3600,
       "db_status": "ok",
       "guild_count": 2,
@@ -122,7 +122,7 @@ Comprehensive dashboard metrics including bot status, Grok/LLM stats, reminders,
 ```json
 {
   "bot": {
-    "version": "2.3.0",
+    "version": "2.4.0",
     "codename": "Lifecycle Manager",
     "online": true,
     "latency_ms": 45.2,
@@ -530,6 +530,6 @@ Error response format:
 
 ## Versioning
 
-Current API version: **2.3.0** (Lifecycle Manager)
+Current API version: **2.4.0** (Lifecycle Manager)
 
 Version information is included in health check responses and can be queried via `/api/health`.

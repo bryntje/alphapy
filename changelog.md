@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+### Improved
+- (No changes yet)
+
+---
+
+## [2.4.0] - 2026-02-26
+
+### Added
 - **Contextual FYI tips**
   - Short, contextual tips sent when certain first-time events happen per guild (e.g. first onboarding completed, first reminder, first ticket, bot joined server). Each tip is sent at most once per guild per type; per-guild 24h cooldown prevents spam when multiple first-time events occur in one day.
   - Phase 1 triggers: `first_guild_join` (welcome in system/first channel), `first_onboarding_done`, `first_config_wizard_complete`, `first_reminder`, `first_ticket`. Tips are sent to the log channel (or fallback channel on guild join). Copy and logic in `utils/fyi_tips.py`; state in `bot_settings` (scope `fyi`, keys `first_*`).
@@ -20,7 +33,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 - **changelog.md** – Unreleased section updated to include `bot.py` English-only changes (setting descriptions, comments, reconnect log).
-- **docs/code-review-config-start.md** – Translated from Dutch to English (checklist, feedback, summary) for consistency with codebase language policy.
+- **docs/code-review-config-start.md** – Removed; it was a local review checklist for the `/config start` wizard and is no longer needed in the repository.
 - **docs/configuration.md** – Invite template example uses English variant label "With inviter" instead of "Met inviter".
 
 ### Fixed
