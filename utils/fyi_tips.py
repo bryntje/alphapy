@@ -3,15 +3,13 @@ Contextual FYI tips: send short, relevant tips when certain first-time events ha
 State is stored in bot_settings (scope fyi); per-guild 24h cooldown prevents spam.
 """
 
-import logging
 from datetime import datetime, timezone as _tz
 from typing import Any, Dict, Optional
 
 import discord
 
+from utils.logger import logger
 from utils.timezone import BRUSSELS_TZ
-
-logger = logging.getLogger(__name__)
 
 FYI_SCOPE = "fyi"
 LAST_SENT_KEY = "_last_sent_at"
@@ -228,8 +226,9 @@ async def force_send_fyi(
 
 
 async def reset_fyi(bot: Any, guild_id: int, key: str) -> bool:
-    """Clear the FYI flag for the given key so the next natural trigger will send again. Returns True if key was valid."""
+    """Clear the FYI flag and cooldown for the given key so the next natural trigger will send again. Returns True if key was valid."""
     if key not in FYI_KEYS:
         return False
     await bot.settings.clear_raw(FYI_SCOPE, key, guild_id)
+    await bot.settings.clear_raw(FYI_SCOPE, LAST_SENT_KEY, guild_id)
     return True

@@ -81,9 +81,13 @@ class TicketBot(commands.Cog):
     async def setup_db(self) -> None:
         """Initialiseer database connectie en zorg dat de tabel bestaat."""
         try:
+            dsn = getattr(config, "DATABASE_URL", None) or ""
+            if not dsn:
+                logger.warning("TicketBot: DATABASE_URL not set, skipping pool creation")
+                return
             from utils.db_helpers import create_db_pool
             pool = await create_db_pool(
-                config.DATABASE_URL,
+                dsn,
                 name="ticketbot",
                 min_size=1,
                 max_size=10,
@@ -274,7 +278,6 @@ class TicketBot(commands.Cog):
 
         user = interaction.user
         user_display = f"{user} ({user.id})"
-        first_ticket_for_guild = False
 
         try:
             async with acquire_safe(self.db) as conn:
@@ -289,12 +292,6 @@ class TicketBot(commands.Cog):
                     str(user),
                     description.strip(),
                 )
-                count_row = await conn.fetchrow(
-                    "SELECT COUNT(*) AS c FROM support_tickets WHERE guild_id = $1",
-                    interaction.guild.id,
-                )
-                if count_row and count_row["c"] == 1:
-                    first_ticket_for_guild = True
         except RuntimeError as e:
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
@@ -432,9 +429,8 @@ class TicketBot(commands.Cog):
         if channel_mention_text != "—":
             await interaction.followup.send(f"✅ Ticket created in {channel_mention_text}", ephemeral=True)
 
-        if first_ticket_for_guild:
-            from utils.fyi_tips import send_fyi_if_first
-            await send_fyi_if_first(self.bot, interaction.guild.id, "first_ticket")
+        from utils.fyi_tips import send_fyi_if_first
+        await send_fyi_if_first(self.bot, interaction.guild.id, "first_ticket")
 
         # Public log to WATCHER_LOG_CHANNEL
         await self.send_log_embed(
@@ -489,7 +485,6 @@ class TicketBot(commands.Cog):
         # Reuse existing flow by calling the command internals
         user = interaction.user
         user_display = f"{user} ({user.id})"
-        first_ticket_for_guild = False
         guild_id = interaction.guild.id if interaction.guild else 0
         try:
             async with acquire_safe(self.db) as conn:
@@ -504,12 +499,6 @@ class TicketBot(commands.Cog):
                     str(user),
                     (description or "").strip() or "—",
                 )
-                count_row = await conn.fetchrow(
-                    "SELECT COUNT(*) AS c FROM support_tickets WHERE guild_id = $1",
-                    guild_id,
-                )
-                if count_row and count_row["c"] == 1:
-                    first_ticket_for_guild = True
         except RuntimeError as e:
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
@@ -619,7 +608,7 @@ class TicketBot(commands.Cog):
         )
         await interaction.followup.send(f"✅ Ticket created in {channel.mention}", ephemeral=True)
 
-        if first_ticket_for_guild and interaction.guild:
+        if interaction.guild:
             from utils.fyi_tips import send_fyi_if_first
             await send_fyi_if_first(self.bot, interaction.guild.id, "first_ticket")
 

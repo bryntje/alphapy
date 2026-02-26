@@ -234,13 +234,14 @@ async def test_reset_fyi_unknown_key_returns_false(fyi_mock_bot):
 
 @pytest.mark.asyncio
 async def test_reset_fyi_valid_key_calls_clear_raw(fyi_mock_bot):
+    from unittest.mock import call
     result = await reset_fyi(fyi_mock_bot, 3, "first_ticket")
     assert result is True
-    fyi_mock_bot.settings.clear_raw.assert_called_once()
-    call = fyi_mock_bot.settings.clear_raw.call_args
-    assert call[0][0] == "fyi"  # scope
-    assert call[0][1] == "first_ticket"  # key
-    assert call[0][2] == 3  # guild_id
+    assert fyi_mock_bot.settings.clear_raw.call_count == 2
+    fyi_mock_bot.settings.clear_raw.assert_has_calls([
+        call("fyi", "first_ticket", 3),
+        call("fyi", "_last_sent_at", 3),
+    ])
 
 
 # --- constants ---
