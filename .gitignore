@@ -10,7 +10,7 @@ venv/
 # Log files
 *.log
 .cursor/
-AGENTS.md 
+
 
 # Compiled Python files
 __pycache__/
