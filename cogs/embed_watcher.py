@@ -337,23 +337,23 @@ class EmbedReminderWatcher(commands.Cog):
                     location_line = loc_match.group(1).strip()
 
             if not dt:
-                # Try GPT fallback if enabled
+                # Try Grok fallback if enabled
                 if self._is_gpt_fallback_enabled(guild_id):
                     gpt_parsed = await self._parse_with_gpt_fallback(embed, guild_id)
                     if gpt_parsed and gpt_parsed.get("datetime"):
-                        # Use GPT parsed result
+                        # Use Grok parsed result
                         dt_gpt = gpt_parsed.get("datetime")
                         if dt_gpt:
                             reminder_time = dt_gpt - timedelta(minutes=self._get_reminder_offset(guild_id))
                         else:
                             reminder_time = None
                         if not dt_gpt or not reminder_time:
-                            logger.warning("⚠️ GPT fallback returned invalid datetime")
+                            logger.warning("⚠️ Grok fallback returned invalid datetime")
                             await self._log_failed_parse(embed, guild_id)
                             return None
                         days_list = gpt_parsed.get("days", [])
                         location_from_gpt = gpt_parsed.get("location", "-")
-                        logger.info(f"✅ GPT fallback parsing succeeded for embed: {embed.title}")
+                        logger.info(f"✅ Grok fallback parsing succeeded for embed: {embed.title}")
                         return {
                             "datetime": dt_gpt,
                             "reminder_time": reminder_time,
@@ -363,7 +363,7 @@ class EmbedReminderWatcher(commands.Cog):
                             "days": days_list,
                         }
                 
-                # If GPT fallback also failed or disabled, log the failure
+                # If Grok fallback also failed or disabled, log the failure
                 # Note: We'll log this at the on_message level with more context
                 logger.warning("⚠️ No valid date found and no time/date in description. Reminder will not be created.")
                 return None
@@ -905,7 +905,7 @@ class EmbedReminderWatcher(commands.Cog):
             return None
 
     async def _parse_with_gpt_fallback(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:
-        """Use GPT to parse embed when structured parsing fails."""
+        """Use Grok to parse embed when structured parsing fails."""
         try:
             from gpt.helpers import ask_gpt
             
@@ -917,7 +917,7 @@ class EmbedReminderWatcher(commands.Cog):
             for field in embed.fields:
                 embed_text += f"{field.name}: {field.value}\n"
             
-            # Sanitize embed text before sending to GPT
+            # Sanitize embed text before sending to Grok
             safe_embed_text = safe_prompt(embed_text)
             
             # Get current date for context
@@ -949,7 +949,7 @@ Embed text:
 If you cannot extract clear date/time information, return {{"error": "cannot_parse"}}.
 Return ONLY the JSON, no other text."""
 
-            # Call GPT with structured prompt (temperature from guild settings)
+            # Call Grok with structured prompt (temperature from guild settings)
             response = await ask_gpt(
                 [{"role": "user", "content": prompt}],
                 user_id=None,
@@ -1019,7 +1019,7 @@ Return ONLY the JSON, no other text."""
                 "location": location or "-",
             }
         except Exception as e:
-            logger.exception(f"❌ GPT fallback parsing failed: {e}")
+            logger.exception(f"❌ Grok fallback parsing failed: {e}")
             return None
 
     async def _log_failed_parse(self, embed: discord.Embed, guild_id: int, message: Optional[discord.Message] = None, message_type: str = "embed") -> None:

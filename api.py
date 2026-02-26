@@ -342,7 +342,7 @@ async def health_check() -> HealthStatus:
     except Exception:
         pass  # Non-critical - bot might not be ready
     
-    # Get GPT status
+    # Get Grok/LLM status
     try:
         gpt_logs = get_gpt_status_logs()
         if gpt_logs.error_count > 0 and gpt_logs.success_count == 0:
@@ -1044,13 +1044,13 @@ def _count_recent_events(events: List[GPTLogEvent], hours: int = 24) -> int:
 
 def _calculate_status(bot_metrics: BotMetrics, gpt_errors_1h: int) -> str:
     """
-    Calculate system status based on bot health (online status + GPT errors).
+    Calculate system status based on bot health (online status + Grok/LLM errors).
     This function is used consistently in both debug logs and persisted telemetry.
     
     Status logic:
-    - outage: Bot offline (after startup grace period) OR >5 GPT errors/hour
-    - degraded: Bot starting up (<2min) OR 1-5 GPT errors/hour
-    - operational: Bot online and no recent GPT errors
+    - outage: Bot offline (after startup grace period) OR >5 Grok/LLM errors/hour
+    - degraded: Bot starting up (<2min) OR 1-5 Grok/LLM errors/hour
+    - operational: Bot online and no recent Grok/LLM errors
     """
     if not bot_metrics.online:
         # If bot has been running for more than 2 minutes and goes offline, it's a real outage
@@ -1064,9 +1064,9 @@ def _calculate_status(bot_metrics: BotMetrics, gpt_errors_1h: int) -> str:
             # If we have guilds, bot was connected before, so likely an outage
             return "outage" if len(bot_metrics.guilds) > 0 else "degraded"
     elif gpt_errors_1h > 5:
-        return "outage"  # Too many recent GPT errors
+        return "outage"  # Too many recent Grok/LLM errors
     elif gpt_errors_1h > 0:
-        return "degraded"  # Some GPT errors, but not critical
+        return "degraded"  # Some Grok/LLM errors, but not critical
     else:
         return "operational"  # Bot is online and no recent errors
 
@@ -1150,7 +1150,7 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
                 logger.debug(f"Telemetry loop: Failed to flush operational events: {exc}")
             
             # Log the calculated status for debugging (using same logic as _persist_telemetry_snapshot)
-            # Status is based ONLY on bot health (online status + GPT errors), NOT on open tickets
+            # Status is based ONLY on bot health (online status + Grok/LLM errors), NOT on open tickets
             gpt_errors_1h = _count_recent_events(gpt_metrics.recent_errors, hours=1)
             calculated_status = _calculate_status(bot_metrics, gpt_errors_1h)
             
@@ -1351,19 +1351,19 @@ async def _persist_telemetry_snapshot(
     queue_depth = ticket_stats.open_count
     active_bots = len(bot_metrics.guilds) or None
 
-    # Only count recent GPT errors (last hour) for status, not all 24h errors
+    # Only count recent Grok/LLM errors (last hour) for status, not all 24h errors
     # Old errors shouldn't keep the system in degraded state
     # NOTE: Open tickets are NOT an indicator of bot health - they're normal business operations
     gpt_errors_1h = _count_recent_events(gpt_metrics.recent_errors, hours=1)
     
-    # Status is based ONLY on technical health: bot online status and GPT errors
+    # Status is based ONLY on technical health: bot online status and Grok/LLM errors
     # Open tickets are excluded - they're a normal part of ticket bot functionality
     # Use the same calculation function as debug logs for consistency
     status = _calculate_status(bot_metrics, gpt_errors_1h)
 
     notes = (
         f"{total_activity_24h} events/24h · {ticket_stats.open_count} open tickets · "
-        f"GPT errors 24h: {gpt_errors_24h}"
+        f"Grok/LLM errors 24h: {gpt_errors_24h}"
     )
 
     # Use Supabase REST API - this is the ONLY way to write telemetry

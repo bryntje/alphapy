@@ -64,7 +64,7 @@ class Configuration(commands.Cog):
     )
     gpt_group = app_commands.Group(
         name="gpt",
-        description="GPT settings",
+        description="Grok / AI settings",
         parent=config,
     )
     invites_group = app_commands.Group(
@@ -612,22 +612,22 @@ class Configuration(commands.Cog):
             f"`ticketbot.escalation_role_id` reset to default by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @gpt_group.command(name="show", description="Show GPT settings")
+    @gpt_group.command(name="show", description="Show Grok / AI settings")
     @requires_admin()
     async def gpt_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
         items = self.settings.list_scope("gpt", interaction.guild.id)
         if not items:
-            await interaction.followup.send("⚠️ Geen GPT settings geregistreerd.", ephemeral=True)
+            await interaction.followup.send("⚠️ No Grok/AI settings registered.", ephemeral=True)
             return
-        lines = ["🤖 **GPT settings**"]
+        lines = ["🤖 **Grok / AI settings**"]
         for definition, value, overridden in items:
             status = "✅ override" if overridden else "🔹 default"
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @gpt_group.command(name="set_model", description="Set the GPT model in")
+    @gpt_group.command(name="set_model", description="Set the Grok model")
     @requires_admin()
     async def gpt_set_model(self, interaction: discord.Interaction, model: str) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -638,15 +638,15 @@ class Configuration(commands.Cog):
             return
         await self.settings.set("gpt", "model", model_clean, interaction.guild.id, interaction.user.id)
         await interaction.followup.send(
-            f"✅ GPT model set to `{model_clean}`.",
+            f"✅ Grok model set to `{model_clean}`.",
             ephemeral=True,
         )
         await self._send_audit_log(
-            "🤖 GPT",
+            "🤖 Grok",
             f"`gpt.model` → `{model_clean}` by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @gpt_group.command(name="reset_model", description="Reset GPT model to default")
+    @gpt_group.command(name="reset_model", description="Reset Grok model to default")
     @requires_admin()
     async def gpt_reset_model(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -654,15 +654,15 @@ class Configuration(commands.Cog):
         await self.settings.clear("gpt", "model", interaction.guild.id, interaction.user.id)
         default_model = self.settings.get("gpt", "model", interaction.guild.id)
         await interaction.followup.send(
-            f"↩️ GPT model reset to default: `{default_model}`.",
+            f"↩️ Grok model reset to default: `{default_model}`.",
             ephemeral=True,
         )
         await self._send_audit_log(
-            "🤖 GPT",
+            "🤖 Grok",
             f"`gpt.model` reset to default by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @gpt_group.command(name="set_temperature", description="Set the GPT temperature in")
+    @gpt_group.command(name="set_temperature", description="Set the Grok temperature")
     @requires_admin()
     async def gpt_set_temperature(
         self,
@@ -673,15 +673,15 @@ class Configuration(commands.Cog):
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
         await self.settings.set("gpt", "temperature", float(temperature), interaction.guild.id, interaction.user.id)
         await interaction.followup.send(
-            f"✅ GPT temperature set to `{temperature}`.",
+            f"✅ Grok temperature set to `{temperature}`.",
             ephemeral=True,
         )
         await self._send_audit_log(
-            "🤖 GPT",
+            "🤖 Grok",
             f"`gpt.temperature` → {temperature} by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @gpt_group.command(name="reset_temperature", description="Reset GPT temperature to default")
+    @gpt_group.command(name="reset_temperature", description="Reset Grok temperature to default")
     @requires_admin()
     async def gpt_reset_temperature(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -689,11 +689,11 @@ class Configuration(commands.Cog):
         await self.settings.clear("gpt", "temperature", interaction.guild.id, interaction.user.id)
         default_temp = self.settings.get("gpt", "temperature", interaction.guild.id)
         await interaction.followup.send(
-            f"↩️ GPT temperature reset to default: `{default_temp}`.",
+            f"↩️ Grok temperature reset to default: `{default_temp}`.",
             ephemeral=True,
         )
         await self._send_audit_log(
-            "🤖 GPT",
+            "🤖 Grok",
             f"`gpt.temperature` reset to default by {interaction.user.mention}.",
             interaction.guild.id
         )

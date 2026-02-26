@@ -35,7 +35,7 @@ class TicketBot(commands.Cog):
     `support_tickets` table. After creation, a confirmation embed is sent
     and a log is posted to `WATCHER_LOG_CHANNEL`.
 
-    Prepared for future extensions like: claim, close, tagging, GPT support.
+    Prepared for future extensions like: claim, close, tagging, Grok/AI support.
     """
 
     def __init__(self, bot: commands.Bot):
@@ -723,7 +723,7 @@ class TicketBot(commands.Cog):
             return fallback
 
     async def _post_ticket_summary(self, channel: discord.TextChannel, ticket_id: int, guild_id: int) -> Optional[Dict[str, str]]:
-        """Generate and post a GPT-based summary for a ticket (used by auto-close)."""
+        """Generate and post a Grok-based summary for a ticket (used by auto-close)."""
         messages: List[str] = []
         try:
             async for msg in channel.history(limit=100, oldest_first=True):
@@ -737,7 +737,7 @@ class TicketBot(commands.Cog):
                 return None
 
             from utils.sanitizer import safe_prompt, safe_embed_text
-            # Sanitize each message before sending to GPT
+            # Sanitize each message before sending to Grok
             safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
                 "This ticket has been closed. Provide a clear and concise summary of the conversation that occurred in this ticket. "
@@ -1454,7 +1454,7 @@ class TicketActionView(discord.ui.View):
             pass
 
     async def _post_summary(self, channel: discord.TextChannel) -> Optional[Dict[str, str]]:
-        """Generate, post and persist a GPT-based summary for this ticket.
+        """Generate, post and persist a Grok-based summary for this ticket.
 
         Returns a dict with `summary` and `key` when successful so callers can
         reuse the detected topic for metrics, or ``None`` if no summary was
@@ -1473,7 +1473,7 @@ class TicketActionView(discord.ui.View):
                 return None
 
             from utils.sanitizer import safe_prompt, safe_embed_text
-            # Sanitize each message before sending to GPT
+            # Sanitize each message before sending to Grok
             safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
                 "This ticket has been closed. Provide a clear and concise summary of the conversation that occurred in this ticket. "
@@ -1484,7 +1484,7 @@ class TicketActionView(discord.ui.View):
             )
 
             try:
-                # Use default model from ask_gpt (defaults to grok-3 for Grok, gpt-3.5-turbo for OpenAI)
+                # Use default model from ask_gpt (defaults to grok-3 for Grok)
                 guild_id = channel.guild.id if channel.guild else None
                 summary_text = await ask_gpt(
                     messages=[{"role": "user", "content": prompt}],
@@ -1734,7 +1734,7 @@ class TicketActionView(discord.ui.View):
             ),
             level="success",
         )
-        # Post GPT summary last to satisfy required execution order
+        # Post Grok summary last to satisfy required execution order
         summary_meta: Optional[Dict[str, str]] = None
         if isinstance(interaction.channel, discord.TextChannel):
             summary_meta = await self._post_summary(interaction.channel)

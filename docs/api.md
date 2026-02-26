@@ -75,7 +75,7 @@ Simple status check endpoint (legacy, no authentication required).
 - `timestamp`: ISO timestamp of check
 - `guild_count`: Number of guilds bot is connected to (optional)
 - `active_commands_24h`: Number of commands executed in last 24 hours (optional)
-- `gpt_status`: GPT service status (`operational`, `degraded`, `error`) (optional)
+- `gpt_status`: Grok/LLM service status (`operational`, `degraded`, `error`) (optional)
 - `database_pool_size`: Current size of the database connection pool (managed automatically by `asyncpg`)
 
 #### `GET /api/health/history`
@@ -111,7 +111,7 @@ Get historical health check data for trend analysis.
 
 #### `GET /api/dashboard/metrics`
 
-Comprehensive dashboard metrics including bot status, GPT stats, reminders, tickets, and command usage.
+Comprehensive dashboard metrics including bot status, Grok/LLM stats, reminders, tickets, and command usage.
 
 **Authentication:** Required (Supabase JWT token)
 

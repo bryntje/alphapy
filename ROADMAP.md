@@ -79,7 +79,7 @@ Transform the extensive slash command configuration system into a user-friendly 
 | Phase | Status | Scope |
 | --- | --- | --- |
 | 0 | ✅ Done | Settings foundation (`SettingsService`, `/config` shell, embed watcher + reminders wired in) |
-| 1 | ✅ Done | Expand setting registrations (reminder scheduler options, GPT throttles, invite templates, GDPR toggles) |
+| 1 | ✅ Done | Expand setting registrations (reminder scheduler options, Grok/LLM throttles, invite templates, GDPR toggles) |
 | 2 | 🔄 Next | Slashcommand UX polish: paginated `/config … show`, richer validation, autocomplete for channel/role targets |
 | 3 | 🔄 Next | Service listeners + cache refresh so cogs react instantly without restart; unify DB connection pooling |
 | 4 | 🔄 In progress | Observability & safety: FastAPI `/health` probe live; next up—config audit trail to DB and unit tests for coercion |
@@ -88,9 +88,9 @@ Transform the extensive slash command configuration system into a user-friendly 
 ### Implementation Checklist
 - [x] Create `SettingsService` with typed definitions and DB-backed overrides.
 - [x] Register core settings (log channel, embed watcher channel + offset) and expose `/config` commands.
-- [x] Refactor remaining cogs to consume `bot.settings` (TicketBot logs, GPT config, invite tracker templates, GDPR announcements).
+- [x] Refactor remaining cogs to consume `bot.settings` (TicketBot logs, Grok config, invite tracker templates, GDPR announcements).
 - [x] Add onboarding helpers: `/config reminders set-default-channel`, `/config gpt set-model`, `/config invites set-message`.
-- [x] Implement settings listeners for hot-reload behaviour (e.g., reminder interval, GPT rate limits).
+- [x] Implement settings listeners for hot-reload behaviour (e.g., reminder interval, Grok rate limits).
 - [x] Add tests (`tests/test_settings_service.py`) covering coercion, persistence and permission checks.
 - [x] Document admin workflow in `docs/configuration.md` and surface summary in CHANGELOG.
 
@@ -98,7 +98,7 @@ Transform the extensive slash command configuration system into a user-friendly 
 - **Database migrations:** voorlopig blijven we bij cog-level `CREATE TABLE IF NOT EXISTS`; zodra we meer schemawijzigingen stapelen, herbekijken we een migrationtool.
 - **Permission tiers:** geen extra rol nodig; owners/admins blijven de enige configuratiemanagers.
 - **Secret storage:** secrets (`BOT_TOKEN`, `OPENAI_API_KEY`, DB credentials) blijven in `.env`/secrets manager; alles wat runtime bijsturing vereist (kanalen, offsets, toggles) gaat via de settings-service.
-- **Rollout volgorde:** we houden de volgorde embed/reminders → ticketbot → GPT → invites → GDPR → overige utilities aan.
+- **Rollout volgorde:** we houden de volgorde embed/reminders → ticketbot → Grok → invites → GDPR → overige utilities aan.
 
 ---
 
@@ -150,7 +150,7 @@ Transform the extensive slash command configuration system into a user-friendly 
   - Ticket volume by day, avg time-to-claim/close, status distribution
   - FAQ coverage: top search terms without hits
   - Implementation path: simple FastAPI endpoints consumed by a lightweight dashboard (e.g., Observable/Streamlit) or CSVs to GDrive
-  - ✅ Initial delivery: `/api/dashboard/metrics` serves live bot/GPT/reminder/ticket telemetry backed by `utils/runtime_metrics`
+  - ✅ Initial delivery: `/api/dashboard/metrics` serves live bot/Grok/reminder/ticket telemetry backed by `utils/runtime_metrics`
   - ✅ `/api/dashboard/logs` operational logs with guild-specific filtering (7 event types: BOT_READY, BOT_RECONNECT, BOT_DISCONNECT, GUILD_SYNC, ONBOARDING_ERROR, SETTINGS_CHANGED, COG_ERROR) — v2.2.0
   - ✅ Infrastructure now has `/health` and shared `*.innersync.tech` base URLs exposed via `config.py`
 

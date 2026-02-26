@@ -1,86 +1,100 @@
-# 🌱 ORIGIN.md — Het ontstaan van Innersync • AlphaPy
+# 🌱 ORIGIN.md — The origin of Innersync • AlphaPy
 
-## Inleiding
-Innersync • AlphaPy is ontstaan uit iets eenvoudigs: een `!ping` command. Maar onder die bescheiden eerste stap schuilde een groter idee — het bouwen van een slimme, schaalbare, en toekomstgerichte digitale assistent voor Discord communities. Dit bestand documenteert het ontstaan, de groeistappen, en de visie die Innersync • AlphaPy vorm hebben gegeven.
+## Introduction
+
+Innersync • AlphaPy started from something simple: a `!ping` command. Behind that modest first step was a bigger idea — building a smart, scalable, forward-looking digital assistant for Discord communities. This file documents how it began, how it grew, and the vision that shaped it.
 
 ---
 
-## 🚀 Eerste commit
-Begonnen als:
+## 🚀 First commit
+
+It started as:
+
 ```python
 @bot.command()
 async def ping(ctx):
     await ctx.send("Pong!")
 ```
-Meer dan een echo — het was een bewijs dat de bot leefde. En dat was genoeg.
+
+More than an echo — it was proof the bot was alive. And that was enough.
 
 ---
 
-## 📚 De evolutie
+## 📚 The evolution
 
-### 2025: Multi-Guild Horizon
-Na een jaar van single-guild operaties, werd de fundamentele beperking duidelijk: de bot kon maar in één Discord server tegelijk werken. Dit veranderde alles.
+### 2025: Multi-guild horizon
 
-**De grote migratie:**
-- **Database schema:** Alle tabellen kregen `guild_id` kolommen met composite primary keys
-- **Code isolation:** Elke feature werd volledig guild-aware gemaakt
-- **Configuration freedom:** Admins kunnen nu elke server onafhankelijk configureren
-- **Zero defaults:** Geen enkele fallback naar hardcoded Alphapips-specifieke waarden
+After a year of single-guild operation, the limitation became clear: the bot could only work in one Discord server at a time. That changed everything.
 
-**Resultaat:** Een bot die in honderden servers tegelijk kan werken, met complete data-isolatie en onafhankelijke configuratie per community.
+**The big migration:**
 
----
+- **Database schema:** All tables got `guild_id` columns with composite primary keys
+- **Code isolation:** Every feature was made fully guild-aware
+- **Configuration freedom:** Admins can now configure each server independently
+- **Zero defaults:** No fallbacks to hardcoded Alphapips-specific values
 
-## 📚 De evolutie (vervolg)
+**Result:** A bot that can run in hundreds of servers at once, with full data isolation and per-community configuration.
 
-### 🔹 Onboarding Flow
-Wat begon met manueel rollen toekennen, groeide uit tot een:
-- 4-stappen flow met modals en follow-ups
-- Emailvalidatie met regex
-- `summary_embed` naar de gebruiker
-- `log_embed` naar het logkanaal
-- Permanente opslag in PostgreSQL (`JSONB responses`)
+### 🔹 Onboarding flow
 
-### 🔹 Reminders & Scheduling
-Van “herinner mij aan X” naar:
-- Slash commands met herhaalopties
+What began with manually assigning roles grew into:
+
+- A 4-step flow with modals and follow-ups
+- Email validation with regex
+- `summary_embed` to the user
+- `log_embed` to the log channel
+- Persistent storage in PostgreSQL (`JSONB responses`)
+
+### 🔹 Reminders & scheduling
+
+From “remind me of X” to:
+
+- Slash commands with repeat options
 - Timestamps in Brussels timezone
-- Automatische parsing van embeds in aankondigingen
-- Jobloop (`tasks.loop`) voor dispatching
+- Automatic parsing of embeds in announcements
+- Job loop (`tasks.loop`) for dispatching
 
-### 🔹 GPT-integratie
-Een simpele `"what should I trade today?"` prompt leidde tot:
-- GPT-gebaseerde prompts, samenvattingen en assistentie
-- Analyse van onboarding antwoorden
-- Auto-genereerde rapporten, codehervormingen, en zelfs architectuuraudits
+### 🔹 Grok integration
 
-### 🔹 API-laag (FastAPI)
-Om tooling te koppelen buiten Discord:
-- Endpoints voor reminders en dashboards
-- Toekomstvisie: live inzichten, alerts, of zelfs remote management
+A simple “what should I trade today?” prompt led to:
 
----
+- Grok-based prompts, summaries, and assistance
+- Analysis of onboarding answers
+- Auto-generated reports, code refactors, and even architecture audits
 
-## 🧠 Filosofie
+### 🔹 API layer (FastAPI)
 
-> "Niet zomaar een bot, maar een brug tussen menselijke intentie en AI-capaciteit."
+To connect tooling outside Discord:
 
-AlphaPy draait rond **bewust bouwen**:
-- Transparantie (log embeds, GDPR flows)
-- Modulariteit (cogs, helpers, utils)
-- Groei (nieuwe features bouwen zonder alles te herschrijven)
-- Co-creatie (mens + AI als ontwikkelpartner)
+- Endpoints for reminders and dashboards
+- Future vision: live insights, alerts, or even remote management
 
 ---
 
-## 📅 Volgende stappen
-- GPT-buddy verder trainen op projectstijl
-- Openstellen als template of boilerplate voor andere devs
+## 🧠 Philosophy
+
+> "Not just a bot — a bridge between human intent and AI capability."
+
+AlphaPy is built around **building with intention**:
+
+- Transparency (log embeds, GDPR flows)
+- Modularity (cogs, helpers, utils)
+- Growth (adding features without rewriting everything)
+- Co-creation (human + AI as development partners)
 
 ---
 
-## ✍️ Door
+## 📅 Where it stands
+
+- Grok is integrated — the bot has a solid base for AI-assisted community features.
+- The repo is public; use it as a template, boilerplate, or simply explore. Ongoing work follows the roadmap and community contributions.
+
+---
+
+## ✍️ By
+
 Bryan (a.k.a. Bryntje)  
-*Met GPT als co-piloot en droomversneller*
+*With Grokkie Grok as co-pilot and dream accelerator*
 
-> Dit project begon met een ping — maar het antwoord werd een visie.
+> This project started with a ping — but the reply became a vision.
+

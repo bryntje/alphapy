@@ -1,5 +1,5 @@
 """
-Context loader for GPT personalization using App reflections.
+Context loader for Grok personalization using App reflections.
 
 Loads recent reflections from reflections_shared table for users who have
 opted in to share their reflections with the Discord bot.
@@ -20,7 +20,7 @@ async def load_user_reflections(
     limit: int = 5,
 ) -> str:
     """
-    Load recent reflections for a Discord user to use as GPT context.
+    Load recent reflections for a Discord user to use as Grok context.
     
     Args:
         discord_id: Discord user ID
@@ -112,7 +112,7 @@ async def load_user_reflections(
             f"Failed to load reflection context for discord_id={discord_id}: {e}",
             exc_info=True,
         )
-        # Return empty string on error - don't break GPT calls
+        # Return empty string on error - don't break Grok/LLM calls
         return ""
 
 
