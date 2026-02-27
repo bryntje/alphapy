@@ -68,6 +68,7 @@ Scheduled reminders (recurring and one-off events).
 - `event_time` (TIMESTAMPTZ): One-off event timestamp (NULL for recurring)
 - `location` (TEXT): Event location
 - `last_sent_at` (TIMESTAMPTZ): Last send timestamp (for idempotency)
+- `image_url` (TEXT): Optional image or banner URL (Premium feature)
 
 **Indexes:**
 - `idx_reminders_time` on `time`
@@ -77,6 +78,30 @@ Scheduled reminders (recurring and one-off events).
 - One-off events: `event_time` is set, `days` is empty
 - Recurring events: `event_time` is NULL, `days` contains weekday numbers
 - `time` is the reminder trigger time (T−60), `call_time` is the event time (T0)
+- Premium: reminders with `image_url` require an active premium subscription for the creator
+
+---
+
+### `premium_subs`
+
+Premium subscription status (local fallback when Core-API is unavailable). **One active subscription per user**; it applies to a single guild. Users can move it via `/premium_transfer` (or dashboard later).
+
+**Columns:**
+- `id` (SERIAL PRIMARY KEY)
+- `user_id` (BIGINT, NOT NULL): Discord user ID
+- `guild_id` (BIGINT, NOT NULL): Guild where Premium is active (can be updated for transfer)
+- `tier` (TEXT, NOT NULL): `monthly`, `yearly`, `lifetime`
+- `status` (TEXT, NOT NULL): `active`, `cancelled`, `expired`
+- `stripe_subscription_id` (TEXT): External subscription ID (for support/cancellation only)
+- `expires_at` (TIMESTAMPTZ): NULL for lifetime or N/A
+- `created_at` (TIMESTAMPTZ): When the record was created
+
+**Indexes:**
+- `idx_premium_subs_user_guild` on `(user_id, guild_id)`
+- `idx_premium_subs_guild_status` on `(guild_id, status)`
+- `idx_premium_subs_one_active_per_user`: unique on `(user_id)` WHERE `status = 'active'` (enforces one active per user)
+
+**GDPR:** This table stores only access-control data (user_id, guild_id, tier, status, optional external ID, expiry). No payment details, email, or other PII are stored here.
 
 ---
 

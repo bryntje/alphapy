@@ -61,6 +61,21 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Command**:
  - `/growthcheckin`
 - **Logging**: Storage of answers for processing or follow-up.
+- **Premium**: Premium users get Mockingbird spicy mode (direct, sharp, challenge assumptions) in the reply.
+
+---
+
+## ⚡ Agent: Premium
+
+- **Path**: `cogs/premium.py`, `utils/premium_guard.py`
+- **Purpose**: Premium tier UX and access control. Guard used by reminders (images), growthcheckin (spicy), embed watcher, onboarding.
+- **Model**: One active subscription per user, applied to one guild. User can move it via `/premium_transfer` (or later dashboard).
+- **Commands**:
+ - `/premium` – pricing embed, "how it works" (one server, pay once, transfer later), checkout button (or "Coming soon" if no URL)
+ - `/premium_check` – (Admin) check if a user has premium in this guild
+ - `/my_premium` – check your own Premium status and expiry in this server
+ - `/premium_transfer` – move your Premium to this server (local DB only; when Core-API is source of truth, use dashboard)
+- **Guard**: `utils/premium_guard.is_premium(user_id, guild_id)` – Core-API `/premium/verify` when configured, else local `premium_subs` table; in-memory cache with TTL. `premium_required_message(feature_name)` for gated-feature replies. `transfer_premium_to_guild(user_id, guild_id)` and `get_active_premium_guild(user_id)` for transfer (local DB).
 
 ---
 
@@ -313,6 +328,7 @@ All database operations use `asyncpg` connection pools for better concurrency an
 - **Ticket Bot**: Pool for ticket operations (max_size=10)
 - **FAQ Cog**: Pool for FAQ operations (max_size=5)
 - **Embed Watcher**: Pool for embed parsing (max_size=10)
+- **Premium Guard** (`utils/premium_guard.py`): Dedicated pool for premium_subs lookups (min_size=1, max_size=5); registered for cleanup via `db_helpers.close_all_pools`
 
 All pools include:
 - Connection timeout handling

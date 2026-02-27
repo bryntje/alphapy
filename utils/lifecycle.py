@@ -137,6 +137,7 @@ class StartupManager:
             "cogs.learn",
             "cogs.contentgen",
             "cogs.configuration",
+            "cogs.premium",
             "cogs.reminders",
             "cogs.embed_watcher",
             "cogs.ticketbot",

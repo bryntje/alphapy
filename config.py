@@ -68,6 +68,10 @@ DISCORD_OAUTH_REDIRECT_URI = os.getenv("DISCORD_OAUTH_REDIRECT_URI", f"{ALPHAPY_
 # This is used as default for API endpoints when no guild_id is specified
 MAIN_GUILD_ID = int(os.getenv("MAIN_GUILD_ID", "0"))  # Set to 0 to disable filtering (show all guilds)
 
+# Premium tier
+PREMIUM_CHECKOUT_URL = os.getenv("PREMIUM_CHECKOUT_URL", "")
+PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
+
 # Admin And Owner
 OWNER_IDS = [367270193585455104]
 ADMIN_ROLE_ID = [1160511689289125925]

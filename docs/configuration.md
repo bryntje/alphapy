@@ -246,6 +246,10 @@ The following environment variables are required/optional for bot operation:
 - `CORE_API_URL`: Base URL of the Core API for centralised telemetry and operational event ingress. When set, operational events and telemetry are sent to Core instead of directly to Supabase.
 - `ALPHAPY_SERVICE_KEY`: Service key for authenticating with the Core API.
 
+### Optional - Premium tier
+- `PREMIUM_CHECKOUT_URL`: Checkout page URL for the "Get Premium" button in `/premium`. If unset, the button shows "Coming soon".
+- `PREMIUM_CACHE_TTL_SECONDS`: TTL in seconds for the in-memory premium cache (default: 300). See [Premium](premium.md) for guard behaviour and Core-API contract.
+
 ## Migration Notes
 
 If upgrading from single-guild to multi-guild:

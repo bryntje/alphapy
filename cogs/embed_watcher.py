@@ -78,7 +78,7 @@ class EmbedReminderWatcher(commands.Cog):
         try:
             from utils.db_helpers import create_db_pool
             self.db = await create_db_pool(
-                config.DATABASE_URL,
+                config.DATABASE_URL or "",
                 name="embed_watcher",
                 min_size=1,
                 max_size=10,
@@ -246,15 +246,22 @@ class EmbedReminderWatcher(commands.Cog):
                 logger.warning("⚠️ Log channel not found or not accessible.")
 
             if is_pool_healthy(self.db):
+                # Embed image URL for premium: only pass if embed has image (thumbnail or main image)
+                embed_image_url = None
+                if embed_source and hasattr(embed_source, "image") and embed_source.image and embed_source.image.url:
+                    embed_image_url = embed_source.image.url
+                elif embed_source and hasattr(embed_source, "thumbnail") and embed_source.thumbnail and embed_source.thumbnail.url:
+                    embed_image_url = embed_source.thumbnail.url
                 # Additional loop protection: Mark this message as processed by storing it
                 # This prevents the same message from being processed again if it gets re-triggered
                 await self.store_parsed_reminder(
-                    parsed, 
-                    int(message.channel.id), 
-                    int(message.author.id), 
+                    parsed,
+                    int(message.channel.id),
+                    int(message.author.id),
                     message.guild.id,
                     origin_channel_id=int(message.channel.id),
-                    origin_message_id=int(message.id)
+                    origin_message_id=int(message.id),
+                    image_url=embed_image_url,
                 )
                 
                 # For bot messages: Add a marker to prevent future loops
@@ -629,7 +636,16 @@ class EmbedReminderWatcher(commands.Cog):
         formatted = re.sub(r"\s+\|\s+", "\n• ", formatted)
         return formatted.strip()
 
-    async def store_parsed_reminder(self, parsed: dict, channel: int, created_by: int, guild_id: int, origin_channel_id: Optional[int]=None, origin_message_id: Optional[int]=None) -> None:
+    async def store_parsed_reminder(
+        self,
+        parsed: dict,
+        channel: int,
+        created_by: int,
+        guild_id: int,
+        origin_channel_id: Optional[int] = None,
+        origin_message_id: Optional[int] = None,
+        image_url: Optional[str] = None,
+    ) -> None:
         dt = parsed["datetime"]
         channel = int(channel)
         created_by = int(created_by)
@@ -706,6 +722,12 @@ class EmbedReminderWatcher(commands.Cog):
 
         location = parsed.get("location", "-")
 
+        # Premium: only store image_url if user has premium in this guild
+        if image_url:
+            from utils.premium_guard import is_premium
+            if not await is_premium(created_by, guild_id):
+                image_url = None
+
         try:
             if not is_pool_healthy(self.db):
                 raise RuntimeError("Database connection not available for store_parsed_reminder")
@@ -715,8 +737,8 @@ class EmbedReminderWatcher(commands.Cog):
                     INSERT INTO reminders (
                         name, channel_id, days, message, created_by, guild_id,
                         location, origin_channel_id, origin_message_id,
-                        event_time, time, call_time
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        event_time, time, call_time, image_url
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     """,
                     name,
                     channel,
@@ -729,7 +751,8 @@ class EmbedReminderWatcher(commands.Cog):
                     origin_message_id,
                     event_dt,
                     trigger_time,  # reminder time (T-60) as time object
-                    call_time_obj  # event time (T0) as time object
+                    call_time_obj,  # event time (T0) as time object
+                    image_url,
                 )
             
             # Log successful save
