@@ -299,6 +299,34 @@ settings_service.register(
         choices=["verbose", "normal", "critical"],
     )
 )
+settings_service.register(
+    SettingDefinition(
+        scope="verification",
+        key="verified_role_id",
+        description="Role to assign after successful AI verification.",
+        value_type="role",
+        default=None,
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="verification",
+        key="category_id",
+        description="Category where new verification channels are created.",
+        value_type="channel",
+        default=0,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="verification",
+        key="vision_model",
+        description="Vision-capable model for verification (e.g. gpt-4o or grok-2-vision-latest).",
+        value_type="str",
+        default="grok-3",
+    )
+)
 
 # Event: Bot is ready
 @bot.event

@@ -92,6 +92,11 @@ class Configuration(commands.Cog):
         description="Contextual FYI tips (admin testing)",
         parent=config,
     )
+    verification_group = app_commands.Group(
+        name="verification",
+        description="Verification settings",
+        parent=config,
+    )
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         settings = getattr(bot, "settings", None)
@@ -920,6 +925,139 @@ class Configuration(commands.Cog):
             "⏰ Reminders",
             f"`reminders.allow_everyone_mentions` → {allow} by {interaction.user.mention}.",
             interaction.guild.id
+        )
+    @verification_group.command(name="show", description="Show verification settings")
+    @requires_admin()
+    async def verification_show(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        items = self.settings.list_scope("verification", interaction.guild.id)
+        if not items:
+            await interaction.followup.send("⚠️ No verification settings registered.", ephemeral=True)
+            return
+        lines = ["✅ **Verification settings**"]
+        for definition, value, overridden in items:
+            status = "✅ override" if overridden else "🔹 default"
+            formatted = self._format_value(definition, value)
+            lines.append(f"{status} — `{definition.key}` → {formatted}")
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    @verification_group.command(name="set_verified_role", description="Set the role given after successful verification")
+    @requires_admin()
+    async def verification_set_verified_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.set("verification", "verified_role_id", role.id, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Verified role set to {role.mention}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.verified_role_id` → {role.mention} by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="reset_verified_role", description="Reset verified role to default")
+    @requires_admin()
+    async def verification_reset_verified_role(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.clear("verification", "verified_role_id", interaction.guild.id, interaction.user.id)
+        default_role_id = self.settings.get("verification", "verified_role_id", interaction.guild.id)
+        formatted = f"<@&{default_role_id}>" if default_role_id else "—"
+        await interaction.followup.send(
+            f"↩️ Verified role reset to default: {formatted}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.verified_role_id` reset to default by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="set_category", description="Set the category for verification channels")
+    @requires_admin()
+    async def verification_set_category(
+        self,
+        interaction: discord.Interaction,
+        category: discord.CategoryChannel,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.set("verification", "category_id", category.id, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Verification category set to {category.mention}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.category_id` → {category.mention} by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="reset_category", description="Reset verification category to default")
+    @requires_admin()
+    async def verification_reset_category(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.clear("verification", "category_id", interaction.guild.id, interaction.user.id)
+        default_category_id = self.settings.get("verification", "category_id", interaction.guild.id)
+        formatted = f"<#{default_category_id}>" if default_category_id else "—"
+        await interaction.followup.send(
+            f"↩️ Verification category reset to default: {formatted}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.category_id` reset to default by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="set_vision_model", description="Set the vision-capable model for verification")
+    @requires_admin()
+    async def verification_set_vision_model(
+        self,
+        interaction: discord.Interaction,
+        model: str,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        model_clean = model.strip()
+        if not model_clean:
+            await interaction.followup.send("❌ Model name cannot be empty.", ephemeral=True)
+            return
+        await self.settings.set("verification", "vision_model", model_clean, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Verification vision model set to `{model_clean}`.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.vision_model` → `{model_clean}` by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="reset_vision_model", description="Reset vision model to default")
+    @requires_admin()
+    async def verification_reset_vision_model(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.clear("verification", "vision_model", interaction.guild.id, interaction.user.id)
+        default_model = self.settings.get("verification", "vision_model", interaction.guild.id)
+        formatted = f"`{default_model}`" if default_model else "—"
+        await interaction.followup.send(
+            f"↩️ Verification vision model reset to default: {formatted}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.vision_model` reset to default by {interaction.user.mention}.",
+            interaction.guild.id,
         )
     @gdpr_group.command(name="show", description="Show GDPR settings")
     @requires_admin()

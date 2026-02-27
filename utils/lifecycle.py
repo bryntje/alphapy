@@ -144,6 +144,7 @@ class StartupManager:
             "cogs.faq",
             "cogs.exports",
             "cogs.migrations",
+            "cogs.verification",
         ]
         
         loaded_count = 0

@@ -192,6 +192,26 @@ Support ticket system data.
 
 ---
 
+### `verification_tickets`
+
+AI-assisted verification ticket metadata for payment/checkout verification.
+
+**Columns:**
+- `id` (SERIAL PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL): Discord guild ID
+- `user_id` (BIGINT, NOT NULL): User who started the verification
+- `channel_id` (BIGINT, NOT NULL): Private verification channel ID
+- `status` (TEXT, NOT NULL, DEFAULT `'pending'`): Verification status (`pending`, `verified`, `manual_review`, `error`, `closed_manual`)
+- `ai_can_verify` (BOOLEAN): Whether the AI considered the screenshot sufficient for auto-verification
+- `ai_needs_manual_review` (BOOLEAN): Whether the AI requested human review
+- `ai_reason` (TEXT): Short, sanitized explanation of the AI decision (no raw payment details)
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW()): When the verification was created
+- `resolved_at` (TIMESTAMPTZ): When the verification was completed (NULL while pending)
+
+**Indexes:**
+- `idx_verification_tickets_guild_status` on `(guild_id, status)`
+- `idx_verification_tickets_channel_id` on `channel_id`
+
 ### `ticket_summaries`
 
 GPT-generated summaries of closed tickets.
@@ -323,6 +343,7 @@ Each component manages its own connection pool with appropriate size limits:
 - **FAQ Cog**: Pool for FAQ operations (max_size=5)
 - **Embed Watcher**: Pool for embed parsing (max_size=10)
 - **Other Cogs**: Individual pools as needed (typically max_size=5)
+ - **Verification Cog**: Pool for verification ticket operations (max_size=10)
 
 All pools include:
 - Connection timeout handling
