@@ -36,7 +36,7 @@ _pool: Optional[asyncpg.Pool] = None
 def premium_required_message(feature_name: str) -> str:
     """Return a short Mockingbird-style message when a non-premium user hits a gated feature."""
     return (
-        f"That's a premium move. Mature enough? Get power with /premium."
+        f"{feature_name} is premium. Mature enough? Get power with /premium."
     )
 
 

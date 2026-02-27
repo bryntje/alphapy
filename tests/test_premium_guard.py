@@ -21,6 +21,7 @@ class TestPremiumRequiredMessage:
         assert isinstance(msg, str)
         assert "/premium" in msg
         assert "premium" in msg.lower()
+        assert "Reminders with images" in msg
 
     def test_contains_mockingbird_tone(self):
         msg = premium_required_message("Feature")
