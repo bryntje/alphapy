@@ -4,27 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-- **Premium tier**
-  - New table `premium_subs` (Alembic 003) for local subscription status; GDPR: only access-control fields (user_id, guild_id, tier, status, optional stripe_subscription_id, expires_at, created_at). Migration 004 adds `image_url` to `reminders`.
-  - `utils/premium_guard.py`: `is_premium(user_id, guild_id)` with optional Core-API `POST /premium/verify`, local DB fallback, in-memory cache (TTL configurable via `PREMIUM_CACHE_TTL_SECONDS`). `premium_required_message(feature_name)` for gated-feature replies (Mockingbird tone).
-  - **Commands**: `/premium` – pricing embed (€4.99/mo, €29/year, €49 lifetime) and checkout button (or "Coming soon"); `/premium_check` (admin) – check if a user has premium in the guild.
-  - **Gates**: Reminders with image URL or attachment require premium; embed watcher stores image on reminders only when message author is premium; growthcheckin gets Mockingbird spicy mode (direct, sharp) for premium users.
-  - **Onboarding**: Completion summary shows "Premium" field for premium users; non-premium users see "Upgrade to Premium" button when `PREMIUM_CHECKOUT_URL` is set.
-  - Config: `PREMIUM_CHECKOUT_URL`, `PREMIUM_CACHE_TTL_SECONDS`. Docs: `docs/premium.md`, `docs/database-schema.md` (premium_subs), `docs/configuration.md`, AGENTS.md (Agent: Premium). Tests: `tests/test_premium_guard.py`.
-  - **One server per subscription + transfer**: At most one active premium per user, applied to one guild. Migration 005 adds partial unique index on `premium_subs (user_id) WHERE status = 'active'`. `/premium_transfer` moves Premium to the current server (local DB); `transfer_premium_to_guild` and `get_active_premium_guild` in `utils/premium_guard.py`. `/premium` embed includes "How it works" (one server, pay once → choose server, switch later via command or dashboard).
-
 ### Fixed
-- (No changes yet)
+- **Premium**: `premium_required_message(feature_name)` now includes the feature name in the message so users see which feature requires upgrade (e.g. "Reminders with images is premium. Mature enough? Get power with /premium.").
 
 ### Improved
-- (No changes yet)
+- **.gitignore**: Added `.venv/` so the alternate venv folder is not tracked.
 
 ---
 
 ## [2.4.0] - 2026-02-26
 
 ### Added
+- **Premium tier**
+  - New table `premium_subs` (Alembic 003) for local subscription status; GDPR: only access-control fields (user_id, guild_id, tier, status, optional stripe_subscription_id, expires_at, created_at). Migration 004 adds `image_url` to `reminders`.
+  - `utils/premium_guard.py`: `is_premium(user_id, guild_id)` with optional Core-API `POST /premium/verify`, local DB fallback, in-memory cache (TTL configurable via `PREMIUM_CACHE_TTL_SECONDS`). `premium_required_message(feature_name)` for gated-feature replies (Mockingbird tone).
+  - **Commands**: `/premium` – pricing embed (€4.99/mo, €29/year, €49 lifetime) and checkout button (or "Coming soon"); `/premium_check` (admin), `/my_premium`, `/premium_transfer` – move Premium to this server.
+  - **Gates**: Reminders with image URL or attachment require premium; embed watcher stores image on reminders only when message author is premium; growthcheckin gets Mockingbird spicy mode (direct, sharp) for premium users.
+  - **Onboarding**: Completion summary shows "Premium" field for premium users; non-premium users see "Upgrade to Premium" button when `PREMIUM_CHECKOUT_URL` is set.
+  - **One server per subscription + transfer**: Migration 005 adds partial unique index on `premium_subs (user_id) WHERE status = 'active'`; `transfer_premium_to_guild` and `get_active_premium_guild` in premium_guard; `/premium` embed includes "How it works" (one server, pay once → choose server, switch later via command or dashboard).
+  - Config: `PREMIUM_CHECKOUT_URL`, `PREMIUM_CACHE_TTL_SECONDS`. Docs: `docs/premium.md`, `docs/database-schema.md` (premium_subs), `docs/configuration.md`, AGENTS.md (Agent: Premium). Tests: `tests/test_premium_guard.py`.
 - **Contextual FYI tips**
   - Short, contextual tips sent when certain first-time events happen per guild (e.g. first onboarding completed, first reminder, first ticket, bot joined server). Each tip is sent at most once per guild per type; per-guild 24h cooldown prevents spam when multiple first-time events occur in one day.
   - Phase 1 triggers: `first_guild_join` (welcome in system/first channel), `first_onboarding_done`, `first_config_wizard_complete`, `first_reminder`, `first_ticket`. Tips are sent to the log channel (or fallback channel on guild join). Copy and logic in `utils/fyi_tips.py`; state in `bot_settings` (scope `fyi`, keys `first_*`).
