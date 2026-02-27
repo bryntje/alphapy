@@ -7,6 +7,7 @@ Complete reference for all Discord slash commands available in the Alphapy bot.
 - [Core Utilities](#core-utilities)
 - [Reminders](#reminders)
 - [Tickets](#tickets)
+- [Verification](#verification)
 - [Configuration](#configuration)
 - [AI Features](#ai-features)
 - [FAQ](#faq)
@@ -497,6 +498,31 @@ Reset invite count for a user to 0.
 
 **Parameters:**
 - `user` (required): User to reset invites for
+
+**Permissions:** Owner/Admin
+
+---
+
+## Verification
+
+### `/verification_panel_post`
+Post a verification panel with a **Start verification** button.
+
+**Behavior:**
+- Posts an embed that explains the verification flow and provides a button.
+- When a user clicks **Start verification**, the bot creates a private `verify-*` channel in the configured verification category with access for that user and staff.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/verification_close`
+Close a verification channel after manual review.
+
+**Behavior:**
+- Can only be used inside a verification channel (under the configured verification category).
+- Marks the related `verification_tickets` row as `closed_manual`, locks the channel (read-only for the user, hidden for others), and attempts to rename it with a `-closed` suffix.
+- Posts a closing embed in the channel and logs the action in the guild log channel.
 
 **Permissions:** Owner/Admin
 

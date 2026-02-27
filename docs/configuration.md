@@ -53,6 +53,18 @@ Alternatively, run the following commands in order:
 /config ticketbot set_escalation_role @Moderators
 ```
 
+#### Verification (AI-assisted payment checks)
+```bash
+# Set category for verification channels (required)
+/config verification set_category [category]
+
+# Set role to assign after successful verification
+/config verification set_verified_role @Verified
+
+# Optional: override vision-capable model for this guild
+/config verification set_vision_model gpt-4o
+```
+
 ### 3. Optional Settings
 
 #### Reminders
@@ -188,6 +200,22 @@ The bot sends short FYI tips when certain first-time events happen (e.g. first o
 /config fyi send <key>    # Force-send the tip to the log channel now
 ```
 Key is chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`). Administrator only.
+
+### Verification Scope
+```
+/config verification show
+/config verification set_verified_role @<role>
+/config verification reset_verified_role
+/config verification set_category <#category>
+/config verification reset_category
+/config verification set_vision_model <model-name>
+/config verification reset_vision_model
+```
+
+**Notes:**
+- `verified_role_id` is the role granted after successful AI verification.
+- `category_id` must be a category where the bot can create private verification channels.
+- `vision_model` can be used to select a specific vision-capable model (e.g. `gpt-4o`, `grok-2-vision-latest`); if unset, the default model from `/config gpt` / `LLM_PROVIDER` is used.
 
 ## Template Placeholders
 

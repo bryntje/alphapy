@@ -360,3 +360,77 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
         
         # Non-retryable errors or retry attempts that fail: raise as before
         raise
+
+
+async def ask_gpt_vision(
+    prompt: str,
+    image_url: str,
+    *,
+    user_id: Optional[int] = None,
+    model: Optional[str] = None,
+    guild_id: Optional[int] = None,
+) -> str:
+    """
+    Vision-capable helper for image-based analysis.
+
+    This uses the same client as `ask_gpt` but constructs a multi-part message
+    with both text and an image URL. The caller is responsible for providing
+    a safe image URL (typically a Discord CDN URL).
+    """
+    start = time.perf_counter()
+
+    try:
+        if _api_key_missing or llm_client is None:
+            raise RuntimeError(
+                f"{_api_key_name} is missing. Set the key (.env or config_local.py) and restart the bot."
+            )
+
+        # Resolve model and optional temperature from settings
+        resolved_model, temperature = _get_settings_values(model or _default_model)
+
+        messages = [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT,
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": prompt,
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": {
+                            "url": image_url,
+                        },
+                    },
+                ],
+            },
+        ]
+
+        chat_kwargs: dict = {
+            "model": resolved_model,
+            "messages": messages,
+        }
+        if temperature is not None:
+            chat_kwargs["temperature"] = temperature
+
+        response = await llm_client.chat.completions.create(**chat_kwargs)
+        latency = (time.perf_counter() - start) * 1000 if response else 0  # in ms
+        tokens = response.usage.total_tokens if response.usage else 0
+
+        log_gpt_success(
+            user_id=user_id,
+            tokens_used=tokens,
+            latency_ms=int(latency),
+            guild_id=guild_id,
+            model=resolved_model,
+        )
+        return response.choices[0].message.content or ""
+
+    except Exception as e:
+        error_type = f"{type(e).__name__}: {str(e)}"
+        log_gpt_error(error_type=error_type, user_id=user_id, guild_id=guild_id)
+        raise
