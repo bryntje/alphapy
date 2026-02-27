@@ -543,11 +543,36 @@ class Onboarding(commands.Cog):
             if pref_lang is not None:
                 summary_embed.add_field(name="**Preferred language**", value=f"➜ {safe_embed_text(str(pref_lang), 1024)}", inline=False)
 
+            # Premium: show benefit for premium users or upgrade CTA for others
+            view = None
+            try:
+                from utils.premium_guard import is_premium
+                premium = await is_premium(user_id, guild_id)
+                if premium:
+                    summary_embed.add_field(
+                        name="✨ Premium",
+                        value="You have access to image reminders and Mockingbird mode in growth check-ins.",
+                        inline=False,
+                    )
+                else:
+                    checkout_url = getattr(config, "PREMIUM_CHECKOUT_URL", "") or ""
+                    if checkout_url:
+                        view = discord.ui.View()
+                        view.add_item(
+                            discord.ui.Button(
+                                label="Upgrade to Premium",
+                                url=checkout_url,
+                                style=discord.ButtonStyle.link,
+                            )
+                        )
+            except Exception as e:
+                logger.debug("Onboarding: premium check failed (non-critical): %s", e)
+
             # Send summary to user
             if not interaction.response.is_done():
-                await interaction.response.send_message(embed=summary_embed, ephemeral=True)
+                await interaction.response.send_message(embed=summary_embed, ephemeral=True, view=view)
             else:
-                await interaction.followup.send(embed=summary_embed, ephemeral=True)
+                await interaction.followup.send(embed=summary_embed, ephemeral=True, view=view)
 
             # Save the onboarding data to the database
             stored = await self.store_onboarding_data(interaction.guild.id, user_id, answers)

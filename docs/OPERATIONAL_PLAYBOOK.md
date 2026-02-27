@@ -20,8 +20,8 @@ Quick checklist and verification steps after adding the bot to a new server.
 After starting the bot, confirm in the logs:
 
 - [ ] "DB pool created"
-- [ ] "audit_logs table created/verified"
-- [ ] "health_check_history table created/verified"
+- [ ] "audit_logs table created" or "audit_logs table verified"
+- [ ] "health_check_history table created" or "health_check_history table verified"
 - [ ] "Command tracker: Database pool set"
 - [ ] "Bot has successfully started and connected to X server(s)!"
 - [ ] Guild enumeration with server names and IDs

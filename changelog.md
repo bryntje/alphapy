@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **Premium tier**
+  - New table `premium_subs` (Alembic 003) for local subscription status; GDPR: only access-control fields (user_id, guild_id, tier, status, optional stripe_subscription_id, expires_at, created_at). Migration 004 adds `image_url` to `reminders`.
+  - `utils/premium_guard.py`: `is_premium(user_id, guild_id)` with optional Core-API `POST /premium/verify`, local DB fallback, in-memory cache (TTL configurable via `PREMIUM_CACHE_TTL_SECONDS`). `premium_required_message(feature_name)` for gated-feature replies (Mockingbird tone).
+  - **Commands**: `/premium` – pricing embed (€4.99/mo, €29/year, €49 lifetime) and checkout button (or "Coming soon"); `/premium_check` (admin) – check if a user has premium in the guild.
+  - **Gates**: Reminders with image URL or attachment require premium; embed watcher stores image on reminders only when message author is premium; growthcheckin gets Mockingbird spicy mode (direct, sharp) for premium users.
+  - **Onboarding**: Completion summary shows "Premium" field for premium users; non-premium users see "Upgrade to Premium" button when `PREMIUM_CHECKOUT_URL` is set.
+  - Config: `PREMIUM_CHECKOUT_URL`, `PREMIUM_CACHE_TTL_SECONDS`. Docs: `docs/premium.md`, `docs/database-schema.md` (premium_subs), `docs/configuration.md`, AGENTS.md (Agent: Premium). Tests: `tests/test_premium_guard.py`.
+  - **One server per subscription + transfer**: At most one active premium per user, applied to one guild. Migration 005 adds partial unique index on `premium_subs (user_id) WHERE status = 'active'`. `/premium_transfer` moves Premium to the current server (local DB); `transfer_premium_to_guild` and `get_active_premium_guild` in `utils/premium_guard.py`. `/premium` embed includes "How it works" (one server, pay once → choose server, switch later via command or dashboard).
 
 ### Fixed
 - (No changes yet)

@@ -133,6 +133,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Create audit_logs table for command usage analytics
     try:
         async with db_pool.acquire() as conn:
+            existed = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'audit_logs')"
+            )
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -153,13 +156,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_logs_command ON audit_logs(command_name, created_at);"
             )
-            logger.info("✅ audit_logs table created/verified")
+            logger.info("✅ audit_logs table created" if not existed else "✅ audit_logs table verified")
     except Exception as e:
         logger.warning(f"⚠️ Failed to create audit_logs table: {e}")
     
     # Create health_check_history table for trend analysis
     try:
         async with db_pool.acquire() as conn:
+            existed = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'health_check_history')"
+            )
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS health_check_history (
@@ -189,7 +195,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 WHERE checked_at < NOW() - interval '30 days'
                 """
             )
-            logger.info("✅ health_check_history table created/verified")
+            logger.info("✅ health_check_history table created" if not existed else "✅ health_check_history table verified")
     except Exception as e:
         logger.warning(f"⚠️ Failed to create health_check_history table: {e}")
     

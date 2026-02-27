@@ -16,7 +16,8 @@ from utils.settings_helpers import CachedSettingsHelper
 from utils.embed_builder import EmbedBuilder
 from utils.parsers import parse_days_string, parse_time_string, format_days_for_display
 from utils.sanitizer import safe_embed_text
-from typing import Optional, List, Dict, Any, cast
+import time as time_module
+from typing import Optional, List, Dict, Any, Tuple, cast
 from utils.settings_service import SettingsService
 # from config import GUILD_ID  # Removed - no longer needed for multi-guild support
 from cogs.embed_watcher import parse_embed_for_reminder
@@ -34,6 +35,8 @@ class ReminderCog(commands.Cog):
             raise RuntimeError("SettingsService not available on bot instance")
         self.settings = settings  # type: ignore
         self.settings_helper = CachedSettingsHelper(settings)  # type: ignore
+        # Rate limit: max 3 image reminders per hour per (user_id, guild_id)
+        self._image_reminder_timestamps: Dict[Tuple[int, int], List[float]] = {}
         self.bot.loop.create_task(self.setup())
 
     async def setup(self) -> None:
@@ -85,7 +88,7 @@ class ReminderCog(commands.Cog):
     async def _connect_database(self) -> None:
         try:
             from utils.db_helpers import create_db_pool
-            pool = await create_db_pool(config.DATABASE_URL, name="reminders", min_size=1, max_size=10)
+            pool = await create_db_pool(config.DATABASE_URL or "", name="reminders", min_size=1, max_size=10)
             log_database_event("DB_CONNECTED", details="Reminders database pool created")
         except Exception as e:
             log_database_event("DB_CONNECT_ERROR", details=f"Failed to create pool: {e}")
@@ -131,6 +134,9 @@ class ReminderCog(commands.Cog):
                 await conn.execute(
                     "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;"
                 )
+                await conn.execute(
+                    "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS image_url TEXT;"
+                )
                 # Create indexes
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_event_time ON reminders(event_time);")
@@ -168,7 +174,9 @@ class ReminderCog(commands.Cog):
         time="Time in HH:MM format",
         days="Days of the week (e.g. mon,tue,wed)",
         message="The reminder message text",
-        link="(Optional) Link to message with embed"
+        link="(Optional) Link to message with embed",
+        image_url="(Premium) Image or banner URL for the reminder",
+        image="(Premium) Image attachment for the reminder",
     )
     async def add_reminder(
         self,
@@ -179,6 +187,8 @@ class ReminderCog(commands.Cog):
         days: Optional[str] = None,
         message: Optional[str] = None,
         link: Optional[str] = None,
+        image_url: Optional[str] = None,
+        image: Optional[discord.Attachment] = None,
     ):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
@@ -187,8 +197,30 @@ class ReminderCog(commands.Cog):
             return
 
         if not self._is_enabled(interaction.guild.id):
-            await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
+            await interaction.followup.send("⚠️ Reminders are currently disabled.", ephemeral=True)
             return
+
+        # Premium gate: reminders with image require premium
+        resolved_image_url: Optional[str] = (image.url if image else None) or (image_url.strip() if image_url and image_url.strip() else None)
+        if resolved_image_url:
+            from utils.premium_guard import is_premium, premium_required_message
+            if not await is_premium(interaction.user.id, interaction.guild.id):
+                await interaction.followup.send(
+                    premium_required_message("Reminders with images"),
+                    ephemeral=True,
+                )
+                return
+            # Rate limit: max 3 image reminders per hour per user per guild
+            key = (interaction.user.id, interaction.guild.id)
+            now_ts = time_module.time()
+            timestamps = self._image_reminder_timestamps.get(key, [])
+            recent = [t for t in timestamps if t > now_ts - 3600]
+            if len(recent) >= 3:
+                await interaction.followup.send(
+                    "You can add at most 3 reminders with images per hour. Try again later.",
+                    ephemeral=True,
+                )
+                return
 
         if not await self._ensure_connection():
             await interaction.followup.send("⛔ Database not connected. Please try again later.", ephemeral=True)
@@ -319,24 +351,32 @@ class ReminderCog(commands.Cog):
         try:
             async with acquire_safe(self.db) as conn:
                 await conn.execute(
-                """INSERT INTO reminders (guild_id, name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                   RETURNING id""",
-                guild_id,
-                name,
-                channel_id,
-                time_obj,  # reminder tijd (T-60) as time object
-                call_time_obj,  # event tijd (T0) as time object
-                days_list if days_list else [],
-                message,
-                created_by,
-                origin_channel_id,
-                origin_message_id,
-                event_time
-            )
+                    """INSERT INTO reminders (guild_id, name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time, image_url)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
+                    guild_id,
+                    name,
+                    channel_id,
+                    time_obj,  # reminder tijd (T-60) as time object
+                    call_time_obj,  # event tijd (T0) as time object
+                    days_list if days_list else [],
+                    message,
+                    created_by,
+                    origin_channel_id,
+                    origin_message_id,
+                    event_time,
+                    resolved_image_url,
+                )
                 rid_row = await conn.fetchrow("SELECT currval(pg_get_serial_sequence('reminders','id')) AS id")
                 rid = rid_row["id"] if rid_row else None
                 logger.info(f"🟢 Reminder created (ID={rid}): {name} @ {time_obj} days={days_list} channel={channel_id}")
+                # Rate limit tracking: record image reminder for this user/guild
+                if resolved_image_url:
+                    rkey = (interaction.user.id, interaction.guild.id)
+                    now_ts = time_module.time()
+                    ts_list = self._image_reminder_timestamps.get(rkey, [])
+                    ts_list = [t for t in ts_list if t > now_ts - 3600]
+                    ts_list.append(now_ts)
+                    self._image_reminder_timestamps[rkey] = ts_list[-100:]
         except RuntimeError as e:
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
             return
@@ -837,7 +877,7 @@ class ReminderCog(commands.Cog):
                 """
                 SELECT id, guild_id, channel_id, name, message, location,
                        origin_channel_id, origin_message_id, event_time, days, call_time,
-                       last_sent_at
+                       last_sent_at, image_url
                 FROM reminders
                 WHERE (
                     -- One-off at T−60: reminder komt 1 uur voor event (time kolom = reminder tijd)
@@ -1008,6 +1048,9 @@ class ReminderCog(commands.Cog):
                 # Location
                 if row.get("location") and row["location"] != "-":
                     embed.add_field(name="📍 Location", value=safe_embed_text(row["location"], 1024), inline=False)
+                # Premium: image/banner if present
+                if row.get("image_url"):
+                    embed.set_image(url=row["image_url"])
                 # Link to original message
                 if row.get("origin_channel_id") and row.get("origin_message_id"):
                     link = f"https://discord.com/channels/{row['guild_id']}/{row['origin_channel_id']}/{row['origin_message_id']}"

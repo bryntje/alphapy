@@ -54,7 +54,7 @@ class GrowthModal(discord.ui.Modal, title="🌱 Growth Check-in"):
         safe_obstacle = safe_prompt(self.obstacle.value)
         safe_feeling = safe_prompt(self.feeling.value)
         
-        prompt = f"""
+        base_prompt = f"""
 You are a calm, supportive mindset coach.
 A user is reflecting on their personal growth.
 
@@ -68,7 +68,7 @@ Ask 1 or 2 deeper questions to support clarity.
 Be encouraging, not forceful.
 """
         guild_id = interaction.guild.id if interaction.guild else None
-        
+
         try:
             await interaction.response.defer(thinking=True, ephemeral=True)
         except Exception as e:
@@ -88,7 +88,14 @@ Be encouraging, not forceful.
                     ephemeral=True,
                 )
             return
-        
+
+        # Premium: Mockingbird spicy mode (direct, sharp, challenge assumptions)
+        prompt = base_prompt
+        if interaction.guild and guild_id:
+            from utils.premium_guard import is_premium
+            if await is_premium(interaction.user.id, interaction.guild.id):
+                prompt = base_prompt.rstrip() + "\n\nRespond in Mockingbird mode: direct, a bit sharp, challenge assumptions, no sugar-coating."
+
         # Call ask_gpt (ask_gpt logs its own errors)
         try:
             reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id)
