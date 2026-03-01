@@ -6,7 +6,7 @@ permalink: /privacy-policy/
 
 # Innersync • Alphapy Bot Privacy Policy
 
-_Last updated: 2025-10-16_
+_Last updated: 2026-02-28_
 
 This Privacy Policy explains how the Innersync • Alphapy Discord Bot (“**Innersync • Alphapy**”, “**Bot**”, “**we**”, “**us**”) collects, uses, and protects information when it operates on your Discord server. By installing or interacting with the Bot, you consent to the practices described here. If you do not agree with this Policy, do not use the Bot.
 
@@ -14,7 +14,7 @@ This Privacy Policy explains how the Innersync • Alphapy Discord Bot (“**Inn
 
 ## 1. Who is responsible?
 
-The Innersync • Alphapy Bot is maintained by the project owner reachable at `bryan.dhaen@gmail.com`. This individual acts as the data controller for personal data processed by hosted instances of the Bot. If you self-host the Bot, you become the controller for that deployment and must adapt this Policy accordingly.
+The Innersync • Alphapy Bot is maintained by the project owner reachable at `support@innersync.tech`. This individual acts as the data controller for personal data processed by hosted instances of the Bot. For users in Belgium, this falls under the Belgian Data Protection Act (Wet van 30 juli 2018 betreffende de bescherming van natuurlijke personen met betrekking tot de verwerking van persoonsgegevens). If you self-host the Bot, you become the controller for that deployment and must adapt this Policy accordingly.
 
 ## 2. What data we collect
 
@@ -30,6 +30,7 @@ Depending on the features you enable, the Bot may process the following categori
 - **Ticketing data**: Ticket channel IDs, message excerpts, AI summaries, user and staff actions, and status updates.
 - **Logging and audit events**: Internal logs for errors, status updates, and admin actions posted to designated log channels.
 - **Support communications**: Emails or GitHub issues you send us about the Bot.
+- **Premium subscription data**: For paying users, we store subscription tier, status, activation date, and guild assignment. Payment information (credit card details, billing addresses) is processed exclusively by our payment provider (Lemon Squeezy) and never stored on our systems.
 
 We do not intentionally collect sensitive categories of personal data, but users may include such information in free-form text fields. Server administrators should discourage sharing sensitive details and may redact them using the deletion options described below.
 
@@ -39,13 +40,14 @@ We use the data listed above to:
 
 - Deliver requested features (e.g., send reminders, respond to commands, store ticket history);
 - Provide AI-driven outputs by forwarding prompts to model providers such as Grok;
+- Process and manage premium subscriptions (tier activation, feature gating, billing support);
 - Monitor performance, detect abuse, and debug issues;
 - Send audit logs to staff-only channels that you configure;
 - Comply with legal obligations and enforce the Terms of Service.
 
-## 4. Legal bases (EU / UK GDPR)
+## 4. Legal bases (GDPR)
 
-For data subjects in the European Economic Area or the United Kingdom, we rely on the following legal bases:
+For data subjects in the European Economic Area, United Kingdom, or Belgium, we rely on the following legal bases:
 
 - **Legitimate interest** for operating community tools (reminders, tickets, analytics) and ensuring platform security;
 - **Consent** for optional AI features when server administrators explain and enable them for their community;
@@ -67,6 +69,7 @@ Each provider processes data under their own terms and policies. We aim to choos
 - Reminder entries persist until the scheduled job completes or an admin deletes them.
 - Ticket transcripts and AI summaries remain until manually removed.
 - Growth check-in responses are stored for follow-up unless deleted.
+- Premium subscription records (tier, status, guild assignment) are kept for the duration of active subscriptions plus 7 years for Belgian tax compliance requirements (Belgian Income Tax Code - Wetboek van inkomstenbelastingen). After this period, premium subscription records are automatically anonymized or deleted, unless an ongoing procedure requires otherwise.
 - Audit logs in Discord channels follow Discord’s retention unless you purge them.
 - Backups (if enabled) are kept for up to 30 days before automatic deletion.
 
@@ -82,7 +85,9 @@ If you are located in the EU/EEA, UK, or other regions with similar rights, you 
 - Request deletion of data (upcoming `/delete_my_data` command or email request);
 - Withdraw consent for optional AI features.
 
-To exercise a right, contact the data controller or use available commands. We will respond within 30 days where legally required.
+To exercise a right, contact the data controller or use available commands. We will respond within 30 days where legally required. For Belgian residents, response times follow GBA guidelines (30-60 days maximum).
+
+For Belgian users: complaints can also be filed with the Gegevensbeschermingsautoriteit (GBA) via https://www.gegevensbeschermingsautoriteit.be.
 
 ## 8. Data deletion workflow
 
@@ -101,7 +106,7 @@ No system is fully secure, so please notify us immediately if you discover a vul
 
 ## 10. International transfers
 
-Your data may be processed in countries different from where you reside, including the European Union and the United States. When transferring personal data internationally, we rely on adequacy decisions or Standard Contractual Clauses where required by law.
+Your data may be processed in countries different from where you reside, including the European Union and the United States. When transferring personal data internationally, we rely on adequacy decisions or Standard Contractual Clauses where required by law. For Belgian users, international transfers comply with Belgian requirements under the Data Protection Act and GBA guidelines.
 
 ## 11. Children’s data
 
@@ -113,7 +118,11 @@ We may update this Policy to reflect changes in the Bot or legal requirements. W
 
 ## 13. Contact
 
-For questions, data requests, or concerns about this Policy, email `bryan.dhaen@gmail.com` or open an issue on the Github repository.
+For questions, data requests, or concerns about this Policy, email `support@innersync.tech` or open an issue on the Github repository.
+
+## 14. Disclaimer
+
+This Privacy Policy is provided for informational purposes and does not constitute legal advice. While we strive to comply with all applicable privacy laws, users should consult with qualified legal professionals for specific concerns about their personal data.
 
 ---
 
