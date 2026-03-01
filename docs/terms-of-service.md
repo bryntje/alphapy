@@ -6,9 +6,9 @@ permalink: /terms-of-service/
 
 # Innersync • Alphapy Bot Terms of Service
 
-_Last updated: 2026-02-28_
+_Last updated: 2026-03-02_
 
-Thank you for using the Innersync • Alphapy Discord Bot (“**Innersync • Alphapy**”, “**Bot**”, “**we**”, “**us**”, “**our**”). These Terms of Service (“**Terms**”) set out the rules that govern how you access and use the Bot and its related functionality. By inviting the Bot to a Discord server, configuring it, or interacting with any of its commands, you agree to be bound by these Terms. If you do not agree, do not use the Bot.
+Thank you for using the Innersync • Alphapy Discord Bot (“**Innersync • Alphapy**”, “**Bot**”, “**we**”, “**us**”, “**our**”). These Terms of Service (“**Terms**”) set out the rules that govern how you access and use the Bot and its related functionality, including our pricing and information website at **pricing.alphapy.innersync.tech** (the "**Pricing Site**"). By inviting the Bot to a Discord server, configuring it, interacting with any of its commands, or visiting or using the Pricing Site, you agree to be bound by these Terms. If you do not agree, do not use the Bot or the Pricing Site.
 
 > **Quick summary (not a substitute for the full Terms):** You must follow Discord’s rules and keep the Bot configured responsibly. Innersync • Alphapy is provided “as is”, without financial advice, and we may modify or remove features at any time. You are responsible for ensuring the Bot fits your community’s needs.
 
@@ -21,7 +21,7 @@ Thank you for using the Innersync • Alphapy Discord Bot (“**Innersync • Al
 
 ## 2. Description of Service
 
-Innersync • Alphapy offers modular features designed for community management and growth support. Current capabilities are described in `README.md` and may include:
+Innersync • Alphapy offers modular features designed for community management and growth support, including the Pricing Site at pricing.alphapy.innersync.tech where you can view pricing and information about premium subscriptions. Current Bot capabilities are described in `README.md` and may include:
 
 - **Reminder tools**: automated reminders based on embeds, schedules, or manual input.
 - **AI interactions**: Grok-powered commands such as `/learn_topic`, `/growthcheckin`, and `/create_caption`.
@@ -75,7 +75,7 @@ We reserve the right to suspend or decline service for misuse, security concerns
 
 ## 5. Data and Privacy
 
-Your use of the Bot is also governed by the [Innersync • Alphapy Privacy Policy](./privacy-policy.md), which explains what data we collect, how we store it, and the choices available to you and your members. Installing or using the Bot signifies acceptance of that document. The Privacy Policy incorporates Belgian data protection requirements under the Wet van 30 juli 2018.
+Your use of the Bot and the Pricing Site is also governed by the [Innersync • Alphapy Privacy Policy](./privacy-policy.md), which explains what data we collect, how we store it, and the choices available to you and your members. For the Pricing Site, our [Cookie Policy](https://pricing.alphapy.innersync.tech/cookie-policy) describes which cookies and similar technologies we use and how you can manage your preferences. Installing or using the Bot, or visiting the Pricing Site, signifies acceptance of the Privacy Policy and, where applicable, the Cookie Policy. The Privacy Policy incorporates Belgian data protection requirements under the Wet van 30 juli 2018.
 
 ## 6. Configuration Data and Member Content
 
