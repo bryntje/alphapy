@@ -2,7 +2,8 @@
 Database helper utilities for common database operations.
 """
 import asyncpg
-from typing import Optional
+from contextlib import asynccontextmanager
+from typing import Optional, AsyncGenerator
 from .db_helpers import create_db_pool, is_pool_healthy, acquire_safe
 
 
@@ -25,6 +26,13 @@ class DatabaseManager:
                 command_timeout=10.0
             )
         return self._pool
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncGenerator[asyncpg.Connection, None]:
+        """Yield a safe connection; acquire_safe is applied on every call."""
+        pool = await self.ensure_pool()
+        async with acquire_safe(pool) as conn:
+            yield conn
 
     async def execute_query(self, query: str, *args):
         """Execute a query with automatic pool management."""

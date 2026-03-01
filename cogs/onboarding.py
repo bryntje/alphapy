@@ -93,6 +93,8 @@ class Onboarding(commands.Cog):
         ]
 
         self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("onboarding", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 
     async def get_guild_questions(self, guild_id: int) -> list:
         """Load questions for a specific guild from database, or use defaults if none configured."""
@@ -369,12 +371,11 @@ class Onboarding(commands.Cog):
         await self._ensure_pool()
 
     async def _connect_pool(self) -> None:
-        from utils.db_helpers import create_db_pool
         dsn = config.DATABASE_URL
         if not dsn:
             raise RuntimeError("DATABASE_URL is not configured")
-        pool = await create_db_pool(dsn, name="onboarding")
-        async with acquire_safe(pool) as conn:
+        pool = await self._db_manager.ensure_pool()
+        async with self._db_manager.connection() as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (
                     guild_id BIGINT NOT NULL,

@@ -90,8 +90,7 @@ async def _save_terms_acceptance(cog: 'PremiumCog', user_id: int, accepted_by: i
     db_manager = DatabaseManager("premium", {"DATABASE_URL": config.DATABASE_URL})
 
     try:
-        pool = await db_manager.ensure_pool()
-        async with pool.acquire() as conn:
+        async with db_manager.connection() as conn:
             await conn.execute(
                 "INSERT INTO terms_acceptance (user_id, accepted_at, version) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO NOTHING",
                 user_id, datetime.utcnow(), "2025-02-27"
@@ -108,8 +107,7 @@ async def _has_accepted_terms(cog: 'PremiumCog', user_id: int) -> bool:
     db_manager = DatabaseManager("premium", {"DATABASE_URL": config.DATABASE_URL})
 
     try:
-        pool = await db_manager.ensure_pool()
-        async with pool.acquire() as conn:
+        async with db_manager.connection() as conn:
             result = await conn.fetchval(
                 "SELECT 1 FROM terms_acceptance WHERE user_id = $1 AND version = $2",
                 user_id, "2025-02-27"
@@ -208,32 +206,18 @@ class PremiumCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: Optional[asyncpg.Pool] = None
-        # This cog does not use guild settings (SettingsService); premium state is from premium_guard/DB.
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("premium", {"DATABASE_URL": config.DATABASE_URL or ""})
         self.bot.loop.create_task(self._connect_database())
 
     async def _connect_database(self) -> None:
         """Initialize database connection pool for premium features."""
         try:
-            from utils.db_helpers import create_db_pool
-            pool = await create_db_pool(
-                config.DATABASE_URL or "",
-                name="premium",
-                min_size=1,
-                max_size=5
-            )
+            self.db = await self._db_manager.ensure_pool()
             logger.info("Premium cog: Database pool created")
         except Exception as e:
             logger.error(f"Premium cog: Failed to create database pool: {e}")
             return
-
-        # Store the pool
-        if self.db:
-            try:
-                await self.db.close()
-            except Exception:
-                pass
-
-        self.db = pool
 
     @app_commands.command(
         name="premium",
@@ -389,7 +373,13 @@ class PremiumCog(commands.Cog):
                 else:
                     msg = f"You have **Premium** ({tier}) in this server (no expiry)."
         else:
-            msg = "You don't have Premium in this server. Get power with /premium."
+            current_guild = await get_active_premium_guild(interaction.user.id)
+            if current_guild == 0:
+                msg = "You have Premium but haven't chosen a server yet. Use `/premium_transfer` in the server you want."
+            elif current_guild is not None and current_guild != interaction.guild.id:
+                msg = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
+            else:
+                msg = "You don't have Premium in this server. Get power with /premium."
 
         # Add support contact info
         msg += "\n\n❓ Questions or issues? Contact support@innersync.tech"

@@ -57,23 +57,16 @@ class FAQ(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("faq", {"DATABASE_URL": config.DATABASE_URL})
         self.bot.loop.create_task(self._setup_db())
 
     async def _setup_db(self) -> None:
         try:
-            from utils.db_helpers import create_db_pool
-            pool = await create_db_pool(
-                config.DATABASE_URL,
-                name="faq",
-                min_size=1,
-                max_size=5,
-                command_timeout=10.0
-            )
-            async with acquire_safe(pool) as conn:
-                # Ensure columns on faq_entries
+            pool = await self._db_manager.ensure_pool()
+            async with self._db_manager.connection() as conn:
                 await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS title TEXT;")
                 await conn.execute("ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS keywords TEXT[];")
-                # Logs table
                 await conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS faq_search_logs (
@@ -85,24 +78,26 @@ class FAQ(commands.Cog):
                     """
                 )
             self.db = pool
-            logger.info("✅ FAQ: DB ready")
+            logger.info("FAQ: DB ready")
         except Exception as e:
-            logger.error(f"❌ FAQ: DB init error: {e}")
-            if self.db:
+            logger.error(f"FAQ: DB init error: {e}")
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
                 try:
-                    await self.db.close()
+                    await self._db_manager._pool.close()
                 except Exception:
                     pass
-                self.db = None
+                self._db_manager._pool = None
+            self.db = None
 
     async def cog_unload(self):
         """Called when the cog is unloaded - close the database pool."""
-        if self.db:
+        if getattr(self, "_db_manager", None) and self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
-            self.db = None
+            self._db_manager._pool = None
+        self.db = None
 
     async def _fetch_entries(self) -> List[asyncpg.Record]:
         if not is_pool_healthy(self.db):

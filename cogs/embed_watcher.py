@@ -76,22 +76,12 @@ class EmbedReminderWatcher(commands.Cog):
 
     async def setup_db(self) -> None:
         try:
-            from utils.db_helpers import create_db_pool
-            self.db = await create_db_pool(
-                config.DATABASE_URL or "",
-                name="embed_watcher",
-                min_size=1,
-                max_size=10,
-                command_timeout=10.0
-            )
+            from utils.database_helpers import DatabaseManager
+            self._db_manager = DatabaseManager("embed_watcher", {"DATABASE_URL": config.DATABASE_URL or ""})
+            self.db = await self._db_manager.ensure_pool()
         except Exception as e:
-            logger.error(f"❌ EmbedWatcher: DB pool creation error: {e}")
-            if self.db:
-                try:
-                    await self.db.close()
-                except Exception:
-                    pass
-                self.db = None
+            logger.error(f"EmbedWatcher: DB pool creation error: {e}")
+            self.db = None
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -785,12 +775,13 @@ class EmbedReminderWatcher(commands.Cog):
                 logger.warning("⚠️ Could not find log channel for confirmation.")
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
             logger.warning(f"Database connection error in store_parsed_reminder: {conn_err}")
-            if self.db:
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
                 try:
-                    await self.db.close()
+                    await self._db_manager._pool.close()
                 except Exception:
                     pass
-                self.db = None
+                self._db_manager._pool = None
+            self.db = None
             raise
         except RuntimeError as e:
             logger.warning(f"Database pool not available: {e}")
@@ -1149,12 +1140,13 @@ async def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
 
     async def cog_unload(self):
         """Called when the cog is unloaded - close the database pool."""
-        if self.db:
+        if getattr(self, "_db_manager", None) and self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
-            self.db = None
+            self._db_manager._pool = None
+        self.db = None
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)

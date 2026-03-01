@@ -15,8 +15,10 @@ from utils.logger import logger
 class InviteTracker(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.invites_cache = {}  # Hier slaan we de invites op
+        self.invites_cache = {}
         self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("inviteboard", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
         settings = getattr(bot, "settings", None)
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -34,17 +36,10 @@ class InviteTracker(commands.Cog):
         logger.info("✅ Invite cache geladen!")
 
     async def setup_database(self):
-        """Initialiseer de PostgreSQL database en maak tabellen aan indien nodig."""
+        """Initialize PostgreSQL database and create tables if needed."""
         try:
-            from utils.db_helpers import create_db_pool
-            self.db = await create_db_pool(
-                config.DATABASE_URL,
-                name="inviteboard",
-                min_size=1,
-                max_size=5,
-                command_timeout=10.0
-            )
-            async with acquire_safe(self.db) as conn:
+            self.db = await self._db_manager.ensure_pool()
+            async with self._db_manager.connection() as conn:
                 await conn.execute('''
                     CREATE TABLE IF NOT EXISTS invite_tracker (
                         guild_id BIGINT NOT NULL,
@@ -54,22 +49,24 @@ class InviteTracker(commands.Cog):
                     );
                 ''')
         except Exception as e:
-            logger.error(f"❌ InviteTracker: DB pool creation error: {e}")
-            if self.db:
+            logger.error(f"InviteTracker: DB pool creation error: {e}")
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
                 try:
-                    await self.db.close()
+                    await self._db_manager._pool.close()
                 except Exception:
                     pass
-                self.db = None
+                self._db_manager._pool = None
+            self.db = None
 
     async def cog_unload(self):
         """Called when the cog is unloaded - close the database pool."""
-        if self.db:
+        if getattr(self, "_db_manager", None) and self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
-            self.db = None
+            self._db_manager._pool = None
+        self.db = None
 
     async def update_invite_count(self, guild_id: int, inviter_id: int, count: Optional[int] = None):
         """Verhoog of stel de invite count in de database in."""

@@ -29,7 +29,9 @@ from utils.logger import logger, log_with_guild, log_guild_action, log_database_
 class ReminderCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None  # Use connection pool instead of single connection
+        self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("reminders", {"DATABASE_URL": config.DATABASE_URL or ""})
         settings = getattr(bot, "settings", None)
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -87,25 +89,16 @@ class ReminderCog(commands.Cog):
 
     async def _connect_database(self) -> None:
         try:
-            from utils.db_helpers import create_db_pool
-            pool = await create_db_pool(config.DATABASE_URL or "", name="reminders", min_size=1, max_size=10)
+            pool = await self._db_manager.ensure_pool()
             log_database_event("DB_CONNECTED", details="Reminders database pool created")
         except Exception as e:
             log_database_event("DB_CONNECT_ERROR", details=f"Failed to create pool: {e}")
             raise
 
-        # Store the pool first
-        if self.db:
-            try:
-                await self.db.close()
-            except Exception:
-                pass
-
         self.db = pool
 
-        # Perform all setup operations in a single connection
         try:
-            async with acquire_safe(pool) as conn:
+            async with self._db_manager.connection() as conn:
                 # Create table
                 await conn.execute(
                     """
@@ -158,12 +151,13 @@ class ReminderCog(commands.Cog):
             return False
 
     async def _handle_connection_lost(self, error: Exception) -> None:
-        logger.warning(f"⚠️ Reminder DB-verbinding verbroken: {error}")
-        if self.db:
+        logger.warning(f"Reminder DB connection lost: {error}")
+        if self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
+            self._db_manager._pool = None
         self.db = None
 
     @app_commands.command(name="add_reminder", description="Schedule a recurring or one-off reminder via form or message link.")

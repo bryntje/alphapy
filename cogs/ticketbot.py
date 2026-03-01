@@ -79,23 +79,18 @@ class TicketBot(commands.Cog):
             logger.debug(f"Ticket cooldowns: Evicted {excess} oldest entries, size now: {len(self._suggest_reply_cooldowns)}")
     
     async def setup_db(self) -> None:
-        """Initialiseer database connectie en zorg dat de tabel bestaat."""
+        """Initialize database connection and ensure table exists."""
         try:
             dsn = getattr(config, "DATABASE_URL", None) or ""
             if not dsn:
                 logger.warning("TicketBot: DATABASE_URL not set, skipping pool creation")
                 return
-            from utils.db_helpers import create_db_pool
-            pool = await create_db_pool(
-                dsn,
-                name="ticketbot",
-                min_size=1,
-                max_size=10,
-                command_timeout=10.0
-            )
+            from utils.database_helpers import DatabaseManager
+            self._db_manager = DatabaseManager("ticketbot", {"DATABASE_URL": dsn})
+            pool = await self._db_manager.ensure_pool()
             log_database_event("DB_CONNECTED", details="TicketBot database pool created")
-            
-            async with acquire_safe(pool) as conn:
+
+            async with self._db_manager.connection() as conn:
                 await conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS support_tickets (
@@ -207,17 +202,18 @@ class TicketBot(commands.Cog):
                     pass
             
             self.db = pool
-            logger.info("✅ TicketBot: DB ready (support_tickets)")
+            logger.info("TicketBot: DB ready (support_tickets)")
             log_database_event("DB_READY", details="TicketBot database fully initialized")
         except Exception as e:
             log_database_event("DB_INIT_ERROR", details=f"TicketBot setup failed: {e}")
-            logger.error(f"❌ TicketBot: DB init error: {e}")
-            if self.db:
+            logger.error(f"TicketBot: DB init error: {e}")
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
                 try:
-                    await self.db.close()
+                    await self._db_manager._pool.close()
                 except Exception:
                     pass
-                self.db = None
+                self._db_manager._pool = None
+            self.db = None
 
     async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
         """Send log embed to the correct guild's log channel"""
@@ -296,11 +292,12 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-            if self.db:
-                try:
-                    await self.db.close()
-                except Exception:
-                    pass
+                if getattr(self, "_db_manager", None) and self._db_manager._pool:
+                    try:
+                        await self._db_manager._pool.close()
+                    except Exception:
+                        pass
+                    self._db_manager._pool = None
                 self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.")
@@ -503,11 +500,12 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-            if self.db:
-                try:
-                    await self.db.close()
-                except Exception:
-                    pass
+                if getattr(self, "_db_manager", None) and self._db_manager._pool:
+                    try:
+                        await self._db_manager._pool.close()
+                    except Exception:
+                        pass
+                    self._db_manager._pool = None
                 self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.")
@@ -1144,11 +1142,12 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-            if self.db:
-                try:
-                    await self.db.close()
-                except Exception:
-                    pass
+                if getattr(self, "_db_manager", None) and self._db_manager._pool:
+                    try:
+                        await self._db_manager._pool.close()
+                    except Exception:
+                        pass
+                    self._db_manager._pool = None
                 self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.", ephemeral=True)
@@ -1413,12 +1412,13 @@ class TicketBot(commands.Cog):
 
     async def cog_unload(self):
         """Called when the cog is unloaded - close the database pool."""
-        if self.db:
+        if getattr(self, "_db_manager", None) and self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
-            self.db = None
+            self._db_manager._pool = None
+        self.db = None
 
 
 class TicketActionView(discord.ui.View):

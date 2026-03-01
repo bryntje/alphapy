@@ -21,35 +21,26 @@ class Exports(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("exports", {"DATABASE_URL": config.DATABASE_URL})
         self.bot.loop.create_task(self._setup())
 
     async def _setup(self) -> None:
         try:
-            from utils.db_helpers import create_db_pool
-            self.db = await create_db_pool(
-                config.DATABASE_URL,
-                name="exports",
-                min_size=1,
-                max_size=5,
-                command_timeout=10.0
-            )
+            self.db = await self._db_manager.ensure_pool()
         except Exception as e:
-            logger.error(f"❌ Exports: DB pool creation error: {e}")
-            if self.db:
-                try:
-                    await self.db.close()
-                except Exception:
-                    pass
-                self.db = None
+            logger.error(f"Exports: DB pool creation error: {e}")
+            self.db = None
 
     async def cog_unload(self):
         """Called when the cog is unloaded - close the database pool."""
-        if self.db:
+        if self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
-            self.db = None
+            self._db_manager._pool = None
+        self.db = None
 
     @app_commands.command(name="export_tickets", description="Export tickets as CSV (admin)")
     @app_commands.describe(scope="Optional: 7d, 30d, all (default: all)")

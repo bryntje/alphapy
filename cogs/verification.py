@@ -14,7 +14,7 @@ except ImportError:
     import config  # type: ignore
 
 from gpt.helpers import ask_gpt_vision
-from utils.db_helpers import acquire_safe, create_db_pool, is_pool_healthy
+from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger, log_database_event, log_with_guild, log_guild_action
 from utils.sanitizer import safe_embed_text
@@ -29,6 +29,8 @@ class VerificationCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("verification", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 
         settings = getattr(bot, "settings", None)
         if not isinstance(settings, SettingsService):
@@ -53,17 +55,11 @@ class VerificationCog(commands.Cog):
                 logger.warning("VerificationCog: DATABASE_URL not set, skipping pool creation")
                 return
 
-            pool = await create_db_pool(
-                dsn,
-                name="verification",
-                min_size=1,
-                max_size=10,
-                command_timeout=10.0,
-            )
+            pool = await self._db_manager.ensure_pool()
             self.db = pool
             log_database_event("DB_CONNECTED", details="Verification database pool created")
 
-            async with acquire_safe(pool) as conn:
+            async with self._db_manager.connection() as conn:
                 await conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS verification_tickets (
@@ -87,25 +83,27 @@ class VerificationCog(commands.Cog):
                     "CREATE INDEX IF NOT EXISTS idx_verification_tickets_channel_id ON verification_tickets(channel_id);"
                 )
 
-            logger.info("✅ VerificationCog: DB ready (verification_tickets)")
+            logger.info("VerificationCog: DB ready (verification_tickets)")
             log_database_event("DB_READY", details="VerificationCog database fully initialized")
         except Exception as e:
             log_database_event("DB_INIT_ERROR", details=f"VerificationCog setup failed: {e}")
-            logger.error(f"❌ VerificationCog: DB init error: {e}")
-            if self.db:
+            logger.error(f"VerificationCog: DB init error: {e}")
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
                 try:
-                    await self.db.close()
+                    await self._db_manager._pool.close()
                 except Exception:
                     pass
-                self.db = None
+                self._db_manager._pool = None
+            self.db = None
 
     async def cog_unload(self) -> None:
-        if self.db:
+        if getattr(self, "_db_manager", None) and self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
-            self.db = None
+            self._db_manager._pool = None
+        self.db = None
 
     # ----- Settings helpers -----
 
