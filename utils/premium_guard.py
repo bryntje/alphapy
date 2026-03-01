@@ -32,6 +32,13 @@ _DEFAULT_CACHE_TTL = 300  # seconds
 _cache: dict[Tuple[int, int], Tuple[bool, float]] = {}
 _pool: Optional[asyncpg.Pool] = None
 
+# Optional counters for observability (incremented in is_premium)
+_stats_total = 0
+_stats_cache_hits = 0
+_stats_core_api = 0
+_stats_local = 0
+_stats_transfers = 0
+
 
 def premium_required_message(feature_name: str) -> str:
     """Return a short Mockingbird-style message when a non-premium user hits a gated feature."""
@@ -65,6 +72,11 @@ def _clear_cache_for_user(user_id: int) -> None:
     keys_to_del = [k for k in _cache if k[0] == user_id]
     for k in keys_to_del:
         del _cache[k]
+
+
+def get_premium_cache_size() -> int:
+    """Return the number of entries in the premium in-memory cache (for status/health display)."""
+    return len(_cache)
 
 
 async def _ensure_pool() -> Optional[asyncpg.Pool]:
@@ -143,6 +155,18 @@ async def _check_local_db(user_id: int, guild_id: int) -> bool:
         return False
 
 
+def get_premium_guard_stats() -> Dict[str, Any]:
+    """Return current premium guard counters for observability (same process only)."""
+    return {
+        "premium_checks_total": _stats_total,
+        "premium_checks_core_api": _stats_core_api,
+        "premium_checks_local": _stats_local,
+        "premium_cache_hits": _stats_cache_hits,
+        "premium_transfers_count": _stats_transfers,
+        "premium_cache_size": len(_cache),
+    }
+
+
 async def is_premium(user_id: int, guild_id: int) -> bool:
     """
     Return True if the user has an active premium subscription in the guild.
@@ -151,19 +175,24 @@ async def is_premium(user_id: int, guild_id: int) -> bool:
     Checks cache first, then Core-API /premium/verify (if configured), then
     local premium_subs table. Fail closed: on any error returns False.
     """
+    global _stats_total, _stats_cache_hits, _stats_core_api, _stats_local
     if guild_id is None or guild_id == 0:
         return False
+    _stats_total += 1
     cached = _get_cached(user_id, guild_id)
     if cached is not None:
+        _stats_cache_hits += 1
         return cached
 
     # Try Core-API first when configured
     core_result = await _check_core_api(user_id, guild_id)
     if core_result is not None:
+        _stats_core_api += 1
         _set_cache(user_id, guild_id, core_result)
         return core_result
 
     # Fallback to local DB
+    _stats_local += 1
     result = await _check_local_db(user_id, guild_id)
     _set_cache(user_id, guild_id, result)
     return result
@@ -250,6 +279,15 @@ async def transfer_premium_to_guild(user_id: int, new_guild_id: int) -> Tuple[bo
         return False, "database unavailable"
     try:
         async with acquire_safe(pool) as conn:
+            old_row = await conn.fetchrow(
+                """
+                SELECT guild_id FROM premium_subs
+                WHERE user_id = $1 AND status = 'active'
+                  AND (expires_at IS NULL OR expires_at > NOW())
+                LIMIT 1
+                """,
+                user_id,
+            )
             row = await conn.fetchrow(
                 """
                 UPDATE premium_subs
@@ -264,7 +302,13 @@ async def transfer_premium_to_guild(user_id: int, new_guild_id: int) -> Tuple[bo
         if not row:
             return False, "no active subscription"
         _clear_cache_for_user(user_id)
-        logger.info("Premium transfer: user_id=%s -> guild_id=%s", user_id, new_guild_id)
+        global _stats_transfers
+        _stats_transfers += 1
+        from_guild = int(old_row["guild_id"]) if old_row else None
+        logger.info(
+            "Premium transfer: user_id=%s from_guild=%s to_guild=%s",
+            user_id, from_guild, new_guild_id,
+        )
         return True, "transferred"
     except Exception as e:
         logger.warning("Premium guard: transfer_premium_to_guild failed: %s", e)

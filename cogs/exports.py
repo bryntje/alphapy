@@ -1,5 +1,3 @@
-import io
-import csv
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import discord
@@ -15,6 +13,8 @@ except ImportError:
 from utils.validators import validate_admin
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.logger import logger
+from utils.csv_helpers import create_csv_buffer, create_discord_file_from_buffer
+from utils.response_helpers import ResponseHelper
 
 
 class Exports(commands.Cog):
@@ -56,7 +56,7 @@ class Exports(commands.Cog):
     async def export_tickets(self, interaction: discord.Interaction, scope: Optional[str] = "all"):
         is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
         if not is_admin:
-            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
+            await ResponseHelper.send_error(interaction, error_msg or "⛔ Admins only.")
             return
         await interaction.response.defer(ephemeral=True)
         if not is_pool_healthy(self.db):
@@ -80,22 +80,17 @@ class Exports(commands.Cog):
             logger.error(f"Database error in export_tickets: {e}")
             await interaction.followup.send(f"❌ Error exporting tickets: {e}", ephemeral=True)
             return
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow(["id","user_id","username","status","created_at","updated_at","claimed_by","channel_id"])
-        for r in rows:
-            writer.writerow([
-                r.get("id"), r.get("user_id"), r.get("username"), r.get("status"),
-                r.get("created_at"), r.get("updated_at"), r.get("claimed_by"), r.get("channel_id")
-            ])
-        data = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename=f"tickets_{scope or 'all'}.csv")
+        csv_rows = [dict(r) for r in rows]
+        fieldnames = ["id", "user_id", "username", "status", "created_at", "updated_at", "claimed_by", "channel_id"]
+        buf = create_csv_buffer(csv_rows, fieldnames=fieldnames)
+        data = create_discord_file_from_buffer(buf, f"tickets_{scope or 'all'}.csv")
         await interaction.followup.send(content=f"✅ Exported {len(rows)} tickets (scope={scope}).", file=data, ephemeral=True)
 
     @app_commands.command(name="export_faq", description="Export FAQ entries as CSV (admin)")
     async def export_faq(self, interaction: discord.Interaction):
         is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
         if not is_admin:
-            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
+            await ResponseHelper.send_error(interaction, error_msg or "⛔ Admins only.")
             return
         await interaction.response.defer(ephemeral=True)
         if not is_pool_healthy(self.db):
@@ -112,12 +107,18 @@ class Exports(commands.Cog):
             logger.error(f"Database error in export_faq: {e}")
             await interaction.followup.send(f"❌ Error exporting FAQ: {e}", ephemeral=True)
             return
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow(["id","title","summary","keywords","created_at"])
+        csv_rows = []
         for r in rows:
-            writer.writerow([r.get("id"), r.get("title"), r.get("summary"), ";".join(r.get("keywords") or []), r.get("created_at")])
-        data = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename="faq.csv")
+            csv_rows.append({
+                "id": r.get("id"),
+                "title": r.get("title"),
+                "summary": r.get("summary"),
+                "keywords": ";".join(r.get("keywords") or []),
+                "created_at": r.get("created_at"),
+            })
+        fieldnames = ["id", "title", "summary", "keywords", "created_at"]
+        buf = create_csv_buffer(csv_rows, fieldnames=fieldnames)
+        data = create_discord_file_from_buffer(buf, "faq.csv")
         await interaction.followup.send(content=f"✅ Exported {len(rows)} FAQ entries.", file=data, ephemeral=True)
 
 

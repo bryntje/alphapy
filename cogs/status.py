@@ -14,6 +14,7 @@ from asyncpg import exceptions as pg_exceptions
 import config
 from utils.validators import validate_admin
 from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.database_helpers import DatabaseManager
 from utils.embed_builder import EmbedBuilder
 from utils.command_metadata import (
     get_category_for_cog,
@@ -24,8 +25,8 @@ from utils.command_metadata import (
 )
 from typing import Optional, Dict, Any, List, cast
 
-# Database pool for command_stats (shared across status commands)
-_status_db_pool: Optional[asyncpg.Pool] = None
+# Database for command_stats (shared across status commands)
+_status_db = DatabaseManager("status", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 
 BOOT_TIME = datetime.now(BRUSSELS_TZ)
 
@@ -384,30 +385,18 @@ async def command_stats_cmd(
             return
     
     await interaction.response.defer(ephemeral=True)
-    
-    # Use connection pool instead of direct connection
-    global _status_db_pool
-    
-    # Initialize pool if needed
-    if not is_pool_healthy(_status_db_pool):
-        try:
-            from utils.db_helpers import create_db_pool
-            _status_db_pool = await create_db_pool(
-                config.DATABASE_URL,
-                name="status",
-                min_size=1,
-                max_size=5,
-                command_timeout=10.0
-            )
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ Failed to connect to database: {e}",
-                ephemeral=True
-            )
-            return
-    
+
     try:
-        async with acquire_safe(_status_db_pool) as conn:
+        pool = await _status_db.ensure_pool()
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Failed to connect to database: {e}",
+            ephemeral=True
+        )
+        return
+
+    try:
+        async with acquire_safe(pool) as conn:
             # Build query
             where_clause = "WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL"
             params: list[Any] = [str(days)]
@@ -500,12 +489,12 @@ async def command_stats_cmd(
         )
     except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
         # Connection error - reset pool and try to reconnect next time
-        if _status_db_pool:
+        if _status_db._pool:
             try:
-                await _status_db_pool.close()
+                await _status_db._pool.close()
             except Exception:
                 pass
-            _status_db_pool = None
+            _status_db._pool = None
         await interaction.followup.send(
             f"❌ Database connection error. Please try again in a moment.",
             ephemeral=True
@@ -600,9 +589,9 @@ async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed
 
     db_ok = "✅"
     # Use existing pool if available, otherwise quick direct connection check
-    if is_pool_healthy(_status_db_pool):
+    if is_pool_healthy(_status_db._pool):
         try:
-            async with acquire_safe(_status_db_pool) as conn:
+            async with acquire_safe(_status_db._pool) as conn:
                 await conn.fetchval("SELECT 1")
         except Exception:
             db_ok = "🛑"
@@ -621,6 +610,24 @@ async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed
     embed.add_field(name="Invites", value=invites_enabled, inline=True)
     embed.add_field(name="GDPR", value=gdpr_enabled, inline=True)
     embed.add_field(name="Uptime", value=_format_uptime(BOOT_TIME), inline=True)
+
+    # System and cache metrics (optional)
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        cpu_percent = process.cpu_percent(interval=None)
+        embed.add_field(name="Memory", value=f"{memory_mb:.1f} MB", inline=True)
+        embed.add_field(name="CPU", value=f"{cpu_percent:.1f}%", inline=True)
+    except Exception:
+        pass
+    try:
+        from utils.premium_guard import get_premium_cache_size
+        cache_size = get_premium_cache_size()
+        embed.add_field(name="Premium cache", value=f"{cache_size} entries (TTL 5 min)", inline=True)
+    except Exception:
+        pass
+
     return embed
 
 async def _read_release_notes(changelog_path: str, version: str) -> str:

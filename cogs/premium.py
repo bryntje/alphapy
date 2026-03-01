@@ -145,7 +145,13 @@ class PremiumCog(commands.Cog):
             else:
                 msg = f"You have **Premium** ({tier}) in this server (no expiry)."
         else:
-            msg = "You don't have Premium in this server. Get power with /premium."
+            current_guild = await get_active_premium_guild(interaction.user.id)
+            if current_guild == 0:
+                msg = "You have Premium but haven't chosen a server yet. Use `/premium_transfer` in the server you want."
+            elif current_guild is not None and current_guild != interaction.guild.id:
+                msg = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
+            else:
+                msg = "You don't have Premium in this server. Get power with /premium."
         await interaction.followup.send(msg, ephemeral=True)
 
     @app_commands.command(

@@ -31,7 +31,8 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ## 🧾 Agent: ReminderManager
 - **Path**: `cogs/reminders.py`
 - **Purpose**: Slash commands for manual reminder management
-- **Commands**: `/add_reminder`, `/reminder_list`, `/reminder_edit`, `/reminder_delete`
+- **Commands**: `/add_reminder`, `/add_live_session`, `/reminder_list`, `/reminder_edit`, `/reminder_delete`
+- **LiveSessionPresets**: `/add_live_session` creates a recurring live-session reminder (fixed message, optional image; premium for images)
 - **Interaction**: Shares parser with EmbedReminderWatcher
 - **Embeds**: Title max 240 chars, location max 1024 chars
 

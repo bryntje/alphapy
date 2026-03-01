@@ -686,6 +686,16 @@ class CacheMetrics(BaseModel):
     ticket_cooldowns_size: int
 
 
+class PremiumMetrics(BaseModel):
+    """Premium guard observability metrics (same process only)."""
+    premium_checks_total: int
+    premium_checks_core_api: int
+    premium_checks_local: int
+    premium_cache_hits: int
+    premium_transfers_count: int
+    premium_cache_size: int
+
+
 class CommandUsage(BaseModel):
     command_name: str
     usage_count: int
@@ -706,6 +716,7 @@ class DashboardMetrics(BaseModel):
     infrastructure: InfrastructureMetrics
     command_usage: Optional[CommandStats] = None
     cache_metrics: Optional[CacheMetrics] = None
+    premium_metrics: Optional[PremiumMetrics] = None
 
 
 def _serialize_gpt_events(raw_events) -> List[GPTLogEvent]:
@@ -1577,6 +1588,23 @@ def _collect_cache_metrics() -> CacheMetrics:
     )
 
 
+def _collect_premium_metrics() -> Optional[PremiumMetrics]:
+    """Collect premium guard stats when running in same process (e.g. bot + API)."""
+    try:
+        from utils.premium_guard import get_premium_guard_stats
+        stats = get_premium_guard_stats()
+        return PremiumMetrics(
+            premium_checks_total=stats.get("premium_checks_total", 0),
+            premium_checks_core_api=stats.get("premium_checks_core_api", 0),
+            premium_checks_local=stats.get("premium_checks_local", 0),
+            premium_cache_hits=stats.get("premium_cache_hits", 0),
+            premium_transfers_count=stats.get("premium_transfers_count", 0),
+            premium_cache_size=stats.get("premium_cache_size", 0),
+        )
+    except Exception:
+        return None
+
+
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)
 async def get_dashboard_metrics(
     guild_id: Optional[int] = None,
@@ -1605,6 +1633,7 @@ async def get_dashboard_metrics(
     infrastructure = await _collect_infrastructure_metrics()
     command_stats = await _fetch_command_stats(effective_guild_id)
     cache_metrics = _collect_cache_metrics()
+    premium_metrics = _collect_premium_metrics()
 
     # Persist a telemetry snapshot asynchronously; ignore failures.
     asyncio.create_task(_persist_telemetry_snapshot(bot_metrics, gpt_metrics, ticket_stats))
@@ -1619,6 +1648,7 @@ async def get_dashboard_metrics(
         infrastructure=infrastructure,
         command_usage=command_stats,
         cache_metrics=cache_metrics,
+        premium_metrics=premium_metrics,
     )
 
 

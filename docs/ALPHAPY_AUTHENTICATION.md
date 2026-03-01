@@ -283,7 +283,7 @@ All `/api/dashboard/*` endpoints use the same authentication method:
 **Query Parameters:**
 - `guild_id` (optional): Filter metrics by guild ID
 
-**Response:** `DashboardMetrics` object with bot, GPT, reminders, tickets, and infrastructure metrics
+**Response:** `DashboardMetrics` object with bot, Grok/LLM, reminders, tickets, and infrastructure metrics
 
 #### `/api/dashboard/settings/{guild_id}`
 

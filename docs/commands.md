@@ -76,6 +76,16 @@ Schedule a recurring or one-off reminder via form or message link.
 /add_reminder name:"Event" time:"19:30" message_link:"https://discord.com/channels/..."
 ```
 
+### `/add_live_session`
+Create a recurring "live session" reminder with a fixed message ("Live session starting now!"). Optional image (Premium required for images).
+
+**Parameters:**
+- `days` (required): Days of the week (e.g. "mon,wed,fri")
+- `time` (required): Time in HH:MM format
+- `channel` (optional): Channel for the reminder (uses default if not set)
+- `image_url` (optional): Image URL for the reminder (Premium)
+- `image` (optional): Image attachment (Premium; same rate limit as image reminders)
+
 ---
 
 ### `/reminder_list`

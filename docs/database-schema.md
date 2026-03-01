@@ -73,6 +73,7 @@ Scheduled reminders (recurring and one-off events).
 **Indexes:**
 - `idx_reminders_time` on `time`
 - `idx_reminders_event_time` on `event_time`
+- **Recommendation:** A composite index on `(guild_id, id DESC)` can speed up listing reminders by guild (e.g. reminder_list, add_live_session default channel resolution).
 
 **Notes:**
 - One-off events: `event_time` is set, `days` is empty
@@ -214,12 +215,12 @@ AI-assisted verification ticket metadata for payment/checkout verification.
 
 ### `ticket_summaries`
 
-GPT-generated summaries of closed tickets.
+AI-generated summaries of closed tickets (Grok).
 
 **Columns:**
 - `id` (SERIAL PRIMARY KEY)
 - `ticket_id` (INTEGER, NOT NULL): Reference to support_tickets.id
-- `summary` (TEXT, NOT NULL): GPT-generated summary
+- `summary` (TEXT, NOT NULL): AI-generated summary (Grok)
 - `similarity_key` (TEXT): Key for detecting similar tickets
 - `created_at` (TIMESTAMPTZ): Creation timestamp
 
@@ -311,7 +312,7 @@ Historical health check data for trend analysis.
 - `db_status` (TEXT, NOT NULL): Database status
 - `guild_count` (INTEGER): Number of guilds
 - `active_commands_24h` (INTEGER): Commands executed in last 24h
-- `gpt_status` (TEXT): GPT service status
+- `gpt_status` (TEXT): Grok/LLM service status
 - `database_pool_size` (INTEGER): Database pool size
 - `checked_at` (TIMESTAMPTZ): Health check timestamp
 

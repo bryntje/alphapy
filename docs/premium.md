@@ -2,12 +2,12 @@
 
 The Alphapy bot supports a Premium tier for mature users. Premium features are gated via `utils/premium_guard.is_premium(user_id, guild_id)`.
 
-**One server per subscription.** Each user has at most one active Premium subscription, and it applies to a single guild. Pay once and choose where you want full power (image reminders, Mockingbird mode, etc.). To move Premium to another server (e.g. your "home" server changed), use `/premium_transfer` in the target server, or request a transfer via support (dashboard coming later).
+**One server per subscription.** Each user has at most one active Premium subscription, and it applies to a single guild. Pay once and choose where you want full power (image reminders, Mockingbird mode, etc.). To move Premium to another server (e.g. your "home" server changed), use `/premium_transfer` in the target server, or request a transfer via support (dashboard coming later). If you have Premium but have not yet chosen a server, `/my_premium` will show "You have Premium but haven't chosen a server yet. Use `/premium_transfer` in the server you want." If your Premium is active in another server, it will show "Your Premium is active in another server. Use `/premium_transfer` here to move it."
 
 ## Features (Premium)
 
 - **Reminders with images** – Add an image or banner URL (or attachment) to reminders; sent reminders show the image.
-- **Live session presets** – (Documented; implementation can follow.)
+- **Live session presets** – Use `/add_live_session` to create a recurring reminder with fixed message "Live session starting now!" (optional image; premium required for images).
 - **Mockingbird spicy mode** – In `/growthcheckin`, premium users get direct, sharp, no-sugar-coating replies.
 
 ## Pricing (display only)
