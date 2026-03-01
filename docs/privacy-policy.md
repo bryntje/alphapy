@@ -6,9 +6,11 @@ permalink: /privacy-policy/
 
 # Innersync • Alphapy Bot Privacy Policy
 
-_Last updated: 2026-02-28_
+_Last updated: 2026-03-02_
 
-This Privacy Policy explains how the Innersync • Alphapy Discord Bot (“**Innersync • Alphapy**”, “**Bot**”, “**we**”, “**us**”) collects, uses, and protects information when it operates on your Discord server. By installing or interacting with the Bot, you consent to the practices described here. If you do not agree with this Policy, do not use the Bot.
+This Privacy Policy explains how the Innersync • Alphapy Discord Bot (“**Innersync • Alphapy**”, “**Bot**”, “**we**”, “**us**”) collects, uses, and protects information when it operates on your Discord server and when you use our pricing and information website. By installing or interacting with the Bot, or by visiting our websites, you consent to the practices described here. If you do not agree with this Policy, do not use the Bot or our websites.
+
+**Scope.** This Policy applies to (1) the Innersync • Alphapy Discord Bot and its related services, and (2) our pricing and information website at **pricing.alphapy.innersync.tech** (the "**Pricing Site**"). Visitors to the Pricing Site are covered by this Policy in addition to the Bot users described below.
 
 > **At a glance:** Innersync • Alphapy stores the minimum data required to deliver its reminder, ticketing, analytics, and AI-assisted features. We rely primarily on legitimate interest to process interaction data, keep it only as long as needed, and provide GDPR-friendly export and deletion options.
 
@@ -32,6 +34,11 @@ Depending on the features you enable, the Bot may process the following categori
 - **Support communications**: Emails or GitHub issues you send us about the Bot.
 - **Premium subscription data**: For paying users, we store subscription tier, status, activation date, and guild assignment. Payment information (credit card details, billing addresses) is processed exclusively by our payment provider (Lemon Squeezy) and never stored on our systems.
 
+**Data related to the Pricing Site (pricing.alphapy.innersync.tech):**
+
+- **Cookie and consent preferences (stored locally in your browser):** The Pricing Site may store the following keys in your browser’s local storage to remember your choices and avoid showing the cookie banner repeatedly: `alphapy-cookie-consent` (e.g. "accepted" or "essential-only"), `alphapy-consent-version`, `alphapy-analytics-consent`, and `alphapy-consent-date`. These values are not sent to our servers and do not identify you to us; they are used only to respect your consent choice and to manage the cookie banner on your device.
+- **Contact:** If you email us at `support@innersync.tech` (for example from a link on the Pricing Site or the Cookie Policy page), we process your email address, subject line, and message content as part of our support correspondence. This processing is described in this Policy and is based on legitimate interest or, where applicable, your consent.
+
 We do not intentionally collect sensitive categories of personal data, but users may include such information in free-form text fields. Server administrators should discourage sharing sensitive details and may redact them using the deletion options described below.
 
 ## 3. How we use the data
@@ -45,12 +52,22 @@ We use the data listed above to:
 - Send audit logs to staff-only channels that you configure;
 - Comply with legal obligations and enforce the Terms of Service.
 
+## 3a. Cookies and similar technologies (Pricing Site)
+
+On the Pricing Site we use cookies and similar storage for:
+
+- **Essential:** Operation of the site and management of your cookie/consent choices (e.g. so we do not show the banner again unnecessarily).
+- **Optional (analytics, payment):** Only after you choose "Accept all" in the cookie banner, we may use optional cookies or similar technologies for analytics or, in the future, for payment flows.
+
+For a detailed list of cookies and storage used on the Pricing Site, see our **Cookie Policy** at [pricing.alphapy.innersync.tech/cookie-policy](https://pricing.alphapy.innersync.tech/cookie-policy).
+
 ## 4. Legal bases (GDPR)
 
 For data subjects in the European Economic Area, United Kingdom, or Belgium, we rely on the following legal bases:
 
-- **Legitimate interest** for operating community tools (reminders, tickets, analytics) and ensuring platform security;
-- **Consent** for optional AI features when server administrators explain and enable them for their community;
+- **Legitimate interest** for operating community tools (reminders, tickets, analytics) and ensuring platform security; for essential operation of the Pricing Site and cookie/consent management; and for handling support emails (e.g. to `support@innersync.tech`);
+- **Consent** for optional AI features when server administrators explain and enable them for their community, and for optional cookies/analytics on the Pricing Site when you choose "Accept all";
+- **Performance of contract** where processing is necessary to perform our agreement with you (e.g. premium subscriptions);
 - **Legal obligation** if we must retain data to comply with tax, regulatory, or court requirements.
 
 ## 5. Sharing and disclosure
@@ -62,6 +79,8 @@ We do not sell or rent your data. We may share data with:
 - **Hosting and infrastructure providers** that store databases, logs, or backups;
 - **Legal authorities** if required to comply with applicable laws, court orders, or government requests.
 
+**Payments.** Premium subscriptions for the Bot are processed by our payment provider **Lemon Squeezy**. We share with them only the data necessary to complete the transaction (e.g. email, account identifiers, subscription tier). Payment details (card numbers, billing address) are handled directly by Lemon Squeezy and are not stored by us. Lemon Squeezy’s privacy policy applies to that processing: [Lemon Squeezy Privacy Policy](https://www.lemonsqueezy.com/privacy). If we introduce a payment or checkout flow on the Pricing Site in the future, we will name the payment provider here, state which data we share with them (e.g. payment details, email, name), for what purpose (performance of the payment), and where their privacy policy can be found.
+
 Each provider processes data under their own terms and policies. We aim to choose partners that meet GDPR adequacy standards or enter into appropriate transfer agreements.
 
 ## 6. Data retention
@@ -72,6 +91,8 @@ Each provider processes data under their own terms and policies. We aim to choos
 - Premium subscription records (tier, status, guild assignment) are kept for the duration of active subscriptions plus 7 years for Belgian tax compliance requirements (Belgian Income Tax Code - Wetboek van inkomstenbelastingen). After this period, premium subscription records are automatically anonymized or deleted, unless an ongoing procedure requires otherwise.
 - Audit logs in Discord channels follow Discord’s retention unless you purge them.
 - Backups (if enabled) are kept for up to 30 days before automatic deletion.
+- **Pricing Site – consent preferences:** Stored in your browser until you clear them or withdraw consent; we do not retain these on our servers.
+- **Pricing Site – support emails:** Retained in line with our general retention for correspondence (support communications), as described above and in our internal policies.
 
 You can request deletion sooner at any time using the methods below.
 
@@ -83,9 +104,10 @@ If you are located in the EU/EEA, UK, or other regions with similar rights, you 
 - Request correction of inaccurate data;
 - Object to or restrict certain processing;
 - Request deletion of data (upcoming `/delete_my_data` command or email request);
-- Withdraw consent for optional AI features.
+- Withdraw consent for optional AI features and for optional cookies on the Pricing Site;
+- Data portability, where applicable.
 
-To exercise a right, contact the data controller or use available commands. We will respond within 30 days where legally required. For Belgian residents, response times follow GBA guidelines (30-60 days maximum).
+These rights apply to all processing described in this Policy, including processing related to your use of the Pricing Site and support emails. To exercise a right, contact the data controller at `support@innersync.tech` or use the available Bot commands where applicable. We will respond within 30 days where legally required. For Belgian residents, response times follow GBA guidelines (30-60 days maximum).
 
 For Belgian users: complaints can also be filed with the Gegevensbeschermingsautoriteit (GBA) via https://www.gegevensbeschermingsautoriteit.be.
 
