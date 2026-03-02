@@ -49,14 +49,37 @@ Payments are processed securely through Lemon Squeezy. We do not store credit ca
 ### 3.4 Subscription Management
 - Subscriptions auto-renew unless cancelled
 - Cancellation takes effect at the end of the current billing period
-- No refunds for partial billing periods
-- Lifetime subscriptions are permanent and non-refundable
+- No pro-rata refunds for partial billing periods (e.g. unused months on a yearly plan), except as set out in the 30-day money-back guarantee (section 3.5)
+- Lifetime access is permanent once purchased; refunds are only available within the 30-day money-back period (see section 3.5)
 - You may transfer your subscription to a different Discord server using `/premium_transfer`
 
-### 3.5 Refund Policy
-- Refunds are available within 14 days of purchase for technical issues
-- Refunds are not available for change of mind or unused service
-- Refund requests should be submitted via email to support@innersync.tech
+### 3.5 Refund Policy — 30-day money-back guarantee
+
+We offer a **30-day money-back guarantee** on premium purchases so you can try Premium with confidence.
+
+**Eligibility**
+
+- **First purchase only:** The guarantee applies to your first premium purchase (first subscription or first lifetime purchase). Repeat purchases (e.g. a new subscription after a previous one has ended) are not covered unless we state otherwise.
+- **Within 30 days:** You must request the refund within 30 days of the original purchase date (or, for recurring subscriptions, within 30 days of the start of the billing period you are asking to refund).
+- **Lifetime access:** A lifetime (one-time) purchase may be refunded within 30 days of that purchase. After 30 days, lifetime access is non-refundable.
+
+**How to request a refund**
+
+- Send an email to **support@innersync.tech** with the subject “Refund request” and include:
+  - Your Discord username and, if possible, the email address used at checkout
+  - The date of purchase and the product (e.g. monthly, yearly, or lifetime)
+  - A brief reason for the request (optional but helps us improve)
+- We will confirm receipt and process eligible requests within a reasonable time (typically within 14 business days). Refunds are issued to the original payment method via our partner.
+
+**What is not covered**
+
+- Refunds for billing periods that have already been used beyond the first 30 days (e.g. no pro-rata refund for “remaining” months on a yearly plan after 30 days).
+- Chargebacks or disputes opened with your bank or card issuer instead of contacting us first — we ask that you contact support@innersync.tech first so we can resolve the issue or process a refund where applicable.
+- Abuse of the guarantee (e.g. repeated purchase-and-refund behaviour); we may refuse or limit refunds in such cases.
+
+**Technical issues**
+
+- If Premium does not work due to a technical fault on our side (e.g. access not granted after payment, persistent service failure), we will resolve the issue or refund you regardless of the 30-day window where appropriate. Contact support@innersync.tech and describe the problem.
 
 ### 3.6 Service Availability
 Premium features may be temporarily unavailable due to payment processor issues, API outages, or maintenance. We will restore service as quickly as possible but provide no uptime guarantees for premium features.
