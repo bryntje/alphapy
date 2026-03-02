@@ -280,8 +280,8 @@ bot.setup_hook = setup_hook
 # API server wordt apart gedraaid in de dashboard service
 
 
-# Start bot
-token: Optional[str] = getattr(config, "BOT_TOKEN", None)
+# Start bot: uses BOT_TOKEN_ACTIVE (BOT_TOKEN_TEST when USE_TEST_BOT=1, else BOT_TOKEN)
+token: Optional[str] = getattr(config, "BOT_TOKEN_ACTIVE", None)
 if not token:
-    raise RuntimeError("BOT_TOKEN is not set in the config.")
+    raise RuntimeError("BOT_TOKEN (or BOT_TOKEN_TEST when USE_TEST_BOT=1) is not set in the config.")
 bot.run(token)
