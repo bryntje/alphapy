@@ -128,7 +128,7 @@ We may revise these Terms when we update the Bot or our policies. Significant ch
 
 ## 11. Intellectual Property
 
-- The Innersync • Alphapy codebase is released under the MIT License (see `LICENSE` or `README.md`). Respect the license terms when forking or self-hosting. When self-hosting, you become the data controller and must ensure compliance with Belgian data protection laws.
+- The Innersync • Alphapy codebase is released under the Apache License 2.0 (see `LICENSE` or `README.md`). Respect the license terms when forking or self-hosting. When self-hosting, you become the data controller and must ensure compliance with Belgian data protection laws.
 - Innersync • Alphapy, related artwork, and documentation remain our intellectual property. Third-party trademarks remain the property of their respective owners.
 
 ## 12. Third-Party Services
