@@ -187,7 +187,7 @@ class ReminderCog(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         if not interaction.guild:
-            await interaction.followup.send("❌ Dit commando werkt alleen in een server.", ephemeral=True)
+            await interaction.followup.send("This command only works in a server.", ephemeral=True)
             return
 
         if not self._is_enabled(interaction.guild.id):
@@ -542,7 +542,7 @@ class ReminderCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         if not self._is_enabled(interaction.guild.id):
-            await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
+            await interaction.followup.send("Reminders are currently disabled.", ephemeral=True)
             return
         if not await self._ensure_connection():
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
@@ -698,14 +698,14 @@ class ReminderCog(commands.Cog):
             await interaction.followup.send(f"⚠️ Error fetching reminders: `{e}`")
 
     @app_commands.command(name="reminder_delete", description="🗑️ Delete a reminder by ID")
-    @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
+    @app_commands.describe(reminder_id="The ID of the reminder you want to delete")
     async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int) -> None:
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild:
-            await interaction.followup.send("❌ Dit commando werkt alleen in een server.", ephemeral=True)
+            await interaction.followup.send("This command only works in a server.", ephemeral=True)
             return
         if not self._is_enabled(interaction.guild.id):
-            await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
+            await interaction.followup.send("Reminders are currently disabled.", ephemeral=True)
             return
         if not await self._ensure_connection():
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
@@ -721,7 +721,7 @@ class ReminderCog(commands.Cog):
                 row = await conn.fetchrow("SELECT * FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)
                 
                 if not row:
-                    await interaction.followup.send(f"❌ Geen reminder gevonden met ID `{reminder_id}`.")
+                    await interaction.followup.send(f"No reminder found with ID `{reminder_id}`.", ephemeral=True)
                     return
 
                 await conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)

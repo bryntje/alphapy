@@ -1150,5 +1150,5 @@ async def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)
-    await cog.setup_db()  # hier maak je je eigen verbinding
+    await cog.setup_db()  # set up own DB connection
     await bot.add_cog(cog)

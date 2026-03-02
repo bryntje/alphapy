@@ -39,7 +39,7 @@ class TermsAcceptanceView(discord.ui.View):
         super().__init__(timeout=300)  # 5 minutes
         self.user_id = user_id
 
-    @discord.ui.button(label="✅ Accept Terms", style=discord.ButtonStyle.success, emoji="📋")
+    @discord.ui.button(label="✅ Accept Terms", style=discord.ButtonStyle.success)
     async def accept_terms(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ This is not for you!", ephemeral=True)
@@ -57,12 +57,12 @@ class TermsAcceptanceView(discord.ui.View):
 
         try:
             await _save_terms_acceptance(cog, interaction.user.id, interaction.user.id)
-            embed = discord.Embed(
-                title="✅ Terms Accepted!",
-                description="Thank you for accepting our Terms and Privacy Policy!\n\nYou can now access premium features.",
-                color=discord.Color.green()
+            guild_id = interaction.guild.id if interaction.guild else 0
+            guild_name = interaction.guild.name if interaction.guild else None
+            embed, view = await _build_premium_embed_and_view(
+                guild_id, interaction.user.id, guild_name
             )
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Failed to save terms acceptance for user {interaction.user.id}: {e}")
             await interaction.response.send_message(
@@ -70,7 +70,7 @@ class TermsAcceptanceView(discord.ui.View):
                 ephemeral=True
             )
 
-    @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger, emoji="🚫")
+    @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger)
     async def decline_terms(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ This is not for you!", ephemeral=True)
@@ -174,7 +174,7 @@ async def _assign_founder_role_if_eligible(cog: 'PremiumCog', user_id: int, guil
 
 
 async def _create_checkout_url(tier: str, guild_id: int, user_id: int) -> str | None:
-    """Create a Lemon Squeezy checkout URL via Core API."""
+    """Create a Payment Partner checkout URL via Core API."""
     core_url = getattr(config, "CORE_API_URL", "") or ""
     api_key = getattr(config, "ALPHAPY_SERVICE_KEY", None)
     if not core_url or not api_key:
@@ -198,6 +198,77 @@ async def _create_checkout_url(tier: str, guild_id: int, user_id: int) -> str | 
     except Exception as e:
         logger.error(f"Premium checkout: Exception calling Core-API: {e}")
         return None
+
+
+async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name: Optional[str] = None) -> tuple[discord.Embed, discord.ui.View]:
+    """Build the premium info embed and checkout buttons view. Reused after terms acceptance."""
+    embed = discord.Embed(
+        title="⚡ Premium — real power",
+        description="Powerful enough? Get the full stack.",
+        color=discord.Color.blue(),
+        timestamp=datetime.now(BRUSSELS_TZ),
+    )
+    embed.add_field(
+        name="✨ Features",
+        value=(
+            "• Reminders with images and banners\n"
+            "• Live session presets (with image support)\n"
+            "• Mockingbird spicy mode in growth check-ins"
+        ),
+        inline=False,
+    )
+    how_it_works = (
+        "Premium applies to **one server**.\n"
+        "Pay once → choose where you want full Mockingbird power, vision verification, and image reminders.\n"
+        "Want to switch servers later? Use `/premium_transfer` in the server you want, or ask us (dashboard coming later)."
+    )
+    if guild_id != 0 and guild_name:
+        how_it_works += f"\n\n**This purchase will apply Premium to **this server** ({guild_name}).**"
+    elif guild_id != 0:
+        how_it_works += "\n\n**This purchase will apply Premium to this server.**"
+    else:
+        how_it_works += "\n\n**You'll choose your server after payment via `/premium_transfer`.**"
+    embed.add_field(
+        name="📍 How it works",
+        value=how_it_works,
+        inline=False,
+    )
+    embed.set_footer(text=f"v{__version__} — {CODENAME}")
+    embed.add_field(
+        name="🎉 Premium is Live!",
+        value="Choose your plan below. Early bird pricing available for the first 50 lifetime members!",
+        inline=False,
+    )
+
+    checkout_urls = {}
+    for tier in ["monthly", "yearly", "lifetime"]:
+        checkout_urls[tier] = await _create_checkout_url(tier, guild_id, user_id)
+
+    view = discord.ui.View()
+    tier_info = [
+        ("monthly", "Monthly", "€4.99"),
+        ("yearly", "Yearly", "€29"),
+        ("lifetime", "Lifetime", "€49"),
+    ]
+    for tier, label, price in tier_info:
+        url = checkout_urls.get(tier)
+        if url:
+            view.add_item(
+                discord.ui.Button(
+                    label=f"Get {label} ({price})",
+                    url=url,
+                    style=discord.ButtonStyle.link,
+                )
+            )
+        else:
+            view.add_item(
+                discord.ui.Button(
+                    label=f"Get {label} ({price})",
+                    style=discord.ButtonStyle.secondary,
+                    disabled=True,
+                )
+            )
+    return embed, view
 
 
 class PremiumCog(commands.Cog):
@@ -242,81 +313,11 @@ class PremiumCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=False)
-        embed = discord.Embed(
-            title="⚡ Premium — real power",
-            description="Powerful enough? Get the full stack.",
-            color=discord.Color.blue(),
-            timestamp=datetime.now(BRUSSELS_TZ),
-        )
-        embed.add_field(
-            name="✨ Features",
-            value=(
-                "• Reminders with images and banners\n"
-                "• Live session presets (with image support)\n"
-                "• Mockingbird spicy mode in growth check-ins"
-            ),
-            inline=False,
-        )
         guild_id = interaction.guild.id if interaction.guild else 0
-        how_it_works = (
-            "Premium applies to **one server**.\n"
-            "Pay once → choose where you want full Mockingbird power, vision verification, and image reminders.\n"
-            "Want to switch servers later? Use `/premium_transfer` in the server you want, or ask us (dashboard coming later)."
+        guild_name = interaction.guild.name if interaction.guild else None
+        embed, view = await _build_premium_embed_and_view(
+            guild_id, interaction.user.id, guild_name
         )
-        if guild_id != 0:
-            how_it_works += f"\n\n**This purchase will apply Premium to **this server** ({interaction.guild.name}).**"
-        else:
-            how_it_works += "\n\n**You'll choose your server after payment via `/premium_transfer`.**"
-        embed.add_field(
-            name="📍 How it works",
-            value=how_it_works,
-            inline=False,
-        )
-        embed.set_footer(text=f"v{__version__} — {CODENAME}")
-
-        # Premium is now live with Core-API integration!
-        embed.add_field(
-            name="🎉 Premium is Live!",
-            value="Choose your plan below. Early bird pricing available for the first 50 lifetime members!",
-            inline=False,
-        )
-
-        # Premium is now live with Core-API integration!
-        # Create real checkout URLs for each tier
-        guild_id = interaction.guild.id if interaction.guild else 0
-        user_id = interaction.user.id
-        checkout_urls = {}
-        tiers = ["monthly", "yearly", "lifetime"]
-
-        for tier in tiers:
-            checkout_urls[tier] = await _create_checkout_url(tier, guild_id, user_id)
-
-        view = discord.ui.View()
-        tier_info = [
-            ("monthly", "Monthly", "€4.99"),
-            ("yearly", "Yearly", "€29"),
-            ("lifetime", "Lifetime", "€49"),
-        ]
-        for tier, label, price in tier_info:
-            url = checkout_urls.get(tier)
-            if url:
-                view.add_item(
-                    discord.ui.Button(
-                        label=f"Get {label} ({price})",
-                        url=url,
-                        style=discord.ButtonStyle.link,
-                    )
-                )
-            else:
-                # Fallback if Core-API fails
-                view.add_item(
-                    discord.ui.Button(
-                        label=f"Get {label} ({price})",
-                        style=discord.ButtonStyle.secondary,
-                        disabled=True,
-                    )
-                )
-
         await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(

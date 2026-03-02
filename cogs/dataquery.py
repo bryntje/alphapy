@@ -32,7 +32,7 @@ class DataQuery(commands.Cog):
             """)
 
     async def cog_load(self):
-        """Wordt automatisch uitgevoerd wanneer de cog geladen wordt."""
+        """Runs automatically when the cog is loaded."""
         await self.setup_database()
 
     @app_commands.command(name="export_onboarding", description="Export onboarding data as CSV (owner only).")
