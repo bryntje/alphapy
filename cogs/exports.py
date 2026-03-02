@@ -14,7 +14,6 @@ from utils.validators import validate_admin
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.logger import logger
 from utils.csv_helpers import create_csv_buffer, create_discord_file_from_buffer
-from utils.response_helpers import ResponseHelper
 
 
 class Exports(commands.Cog):
@@ -47,7 +46,7 @@ class Exports(commands.Cog):
     async def export_tickets(self, interaction: discord.Interaction, scope: Optional[str] = "all"):
         is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
         if not is_admin:
-            await ResponseHelper.send_error(interaction, error_msg or "⛔ Admins only.")
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         if not is_pool_healthy(self.db):
@@ -81,7 +80,7 @@ class Exports(commands.Cog):
     async def export_faq(self, interaction: discord.Interaction):
         is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
         if not is_admin:
-            await ResponseHelper.send_error(interaction, error_msg or "⛔ Admins only.")
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         if not is_pool_healthy(self.db):
