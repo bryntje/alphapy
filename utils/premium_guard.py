@@ -176,9 +176,9 @@ async def is_premium(user_id: int, guild_id: int) -> bool:
     local premium_subs table. Fail closed: on any error returns False.
     """
     global _stats_total, _stats_cache_hits, _stats_core_api, _stats_local
+    _stats_total += 1
     if guild_id is None or guild_id == 0:
         return False
-    _stats_total += 1
     cached = _get_cached(user_id, guild_id)
     if cached is not None:
         _stats_cache_hits += 1
