@@ -360,9 +360,12 @@ class PremiumCog(commands.Cog):
         if status["premium"]:
             tier = status.get("tier") or "premium"
             active_guild = await get_active_premium_guild(interaction.user.id)
-            if active_guild == 0:
-                # Unassigned premium: user has paid but hasn't chosen a guild yet
+            if active_guild is None or active_guild == 0:
+                # Unassigned / no local row: user has premium but no guild chosen or not yet synced
                 msg = f"You have **Premium** ({tier}) but haven't chosen a server yet. Use `/premium_transfer` in the server you want."
+            elif active_guild != interaction.guild.id:
+                # Premium is assigned to a different guild
+                msg = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
             else:
                 expires = status.get("expires_at")
                 if expires:
@@ -375,9 +378,9 @@ class PremiumCog(commands.Cog):
                     msg = f"You have **Premium** ({tier}) in this server (no expiry)."
         else:
             current_guild = await get_active_premium_guild(interaction.user.id)
-            if current_guild == 0:
+            if current_guild is None or current_guild == 0:
                 msg = "You have Premium but haven't chosen a server yet. Use `/premium_transfer` in the server you want."
-            elif current_guild is not None and current_guild != interaction.guild.id:
+            elif current_guild != interaction.guild.id:
                 msg = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
             else:
                 msg = "You don't have Premium in this server. Get power with /premium."
