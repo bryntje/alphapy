@@ -18,8 +18,8 @@ All notable changes to this project will be documented in this file.
 ## [3.0.0] - 2026-XX-XX
 
 ### Added
-- **Complete Premium Monetization Ecosystem**: Full-featured subscription platform with Lemon Squeezy integration, multi-tier pricing (€4.99/mo, €29/year, €49/lifetime), and automated guild assignment
-- **Universal Database Helpers Architecture**: Centralized `DatabaseManager` class used across all 14 cogs for consistent, safe database operations with automatic pool management and error recovery
+- **Complete Premium Monetization Ecosystem**: Full-featured subscription platform (payment provider subject to change), multi-tier pricing (€4.99/mo, €29/year, €49/lifetime), and automated guild assignment
+- **Universal Database Helpers Architecture**: Centralized `DatabaseManager` class used across all 14 out of 27 cogs for consistent, safe database operations with automatic pool management and error recovery
 - **Advanced Security Framework**: HMAC webhook validation, configurable admin roles via environment variables, OAuth credential security, and comprehensive rate limiting across all endpoints
 - **GDPR Compliance Suite**: Terms acceptance flow with database persistence, data retention policies (7 years for tax compliance), and user data export capabilities
 - **Database / GDPR**: New `terms_acceptance` table (Alembic 006) to track user consent for Terms of Service and Privacy Policy, including version and timestamp, for GDPR compliance.
@@ -29,7 +29,7 @@ All notable changes to this project will be documented in this file.
 - **Code Quality Assurance**: Automated syntax validation, comprehensive test coverage (15+ premium test cases), and consistent error handling patterns across entire codebase
 
 ### Changed
-- **Database Operations**: All cogs now use universal `DatabaseManager` with `acquire_safe()` for 100% safe database access, eliminating connection errors and improving reliability
+- **Database Operations**: 14 out of 27 cogs now use universal `DatabaseManager` with `acquire_safe()` for 100% safe database access, eliminating connection errors and improving reliability
 - **Security Configuration**: Admin credentials moved from hardcoded values to environment variables (`OWNER_IDS`, `ADMIN_ROLE_IDS`), with proper separation between global owners and per-guild admin roles
 - **Internationalization**: Complete codebase transition to English-only (removed all Dutch text from code, comments, logs, and user-facing strings)
 - **Premium Architecture**: Core-API integration with HMAC validation, fallback mechanisms, and transfer synchronization across guild boundaries

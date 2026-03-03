@@ -55,6 +55,7 @@ class TermsAcceptanceView(discord.ui.View):
             )
             return
 
+        await interaction.response.defer(ephemeral=True)
         try:
             await _save_terms_acceptance(cog, interaction.user.id, interaction.user.id)
             guild_id = interaction.guild.id if interaction.guild else 0
@@ -62,10 +63,10 @@ class TermsAcceptanceView(discord.ui.View):
             embed, view = await _build_premium_embed_and_view(
                 guild_id, interaction.user.id, guild_name
             )
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.edit_original_response(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Failed to save terms acceptance for user {interaction.user.id}: {e}")
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ There was an error processing your acceptance. Please contact [support@innersync.tech](mailto:support@innersync.tech) for assistance.",
                 ephemeral=True
             )
@@ -226,7 +227,7 @@ async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name:
         "Want to switch servers later? Use `/premium_transfer` in the server you want, or ask us (dashboard coming later)."
     )
     if guild_id != 0 and guild_name:
-        how_it_works += f"\n\n**This purchase will apply Premium to **this server** ({guild_name}).**"
+        how_it_works += f"\n\n**This purchase will apply Premium to this server** ({guild_name})."
     elif guild_id != 0:
         how_it_works += "\n\n**This purchase will apply Premium to this server.**"
     else:
