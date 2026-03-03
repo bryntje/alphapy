@@ -22,7 +22,7 @@ def upgrade() -> None:
             id SERIAL PRIMARY KEY,
             user_id BIGINT NOT NULL UNIQUE,
             accepted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            version TEXT NOT NULL DEFAULT '2025-02-27',
+            version TEXT NOT NULL DEFAULT '2026-02-27',
             ip_address INET
         )
     """)

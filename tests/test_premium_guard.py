@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 from utils.premium_guard import (
     premium_required_message,
     is_premium,
+    get_active_premium_guild,
     _get_cached,
     _set_cache,
 )
@@ -71,3 +72,38 @@ class TestPremiumCache:
 
     def test_get_cached_miss_returns_none(self):
         assert _get_cached(99999, 88888) is None
+
+
+class TestGetActivePremiumGuild:
+    """get_active_premium_guild returns the guild_id (int) or None, never 0."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_pool_unavailable(self):
+        with patch("utils.premium_guard._ensure_pool", new_callable=AsyncMock, return_value=None):
+            result = await get_active_premium_guild(12345)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_row(self):
+        mock_conn = AsyncMock()
+        mock_conn.fetchrow = AsyncMock(return_value=None)
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_conn
+        mock_cm.__aexit__.return_value = None
+        with patch("utils.premium_guard._ensure_pool", new_callable=AsyncMock, return_value=AsyncMock()), \
+             patch("utils.premium_guard.acquire_safe", return_value=mock_cm):
+            result = await get_active_premium_guild(111)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_guild_id_int_when_row_exists(self):
+        mock_conn = AsyncMock()
+        mock_conn.fetchrow = AsyncMock(return_value={"guild_id": 98765})
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_conn
+        mock_cm.__aexit__.return_value = None
+        with patch("utils.premium_guard._ensure_pool", new_callable=AsyncMock, return_value=AsyncMock()), \
+             patch("utils.premium_guard.acquire_safe", return_value=mock_cm):
+            result = await get_active_premium_guild(111)
+        assert result == 98765
+        assert isinstance(result, int)

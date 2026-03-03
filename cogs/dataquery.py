@@ -38,7 +38,7 @@ class DataQuery(commands.Cog):
     @app_commands.command(name="export_onboarding", description="Export onboarding data as CSV (owner only).")
     @requires_owner()
     async def export_onboarding(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         csv_filename = "onboarding_data.csv"
         
@@ -59,7 +59,7 @@ class DataQuery(commands.Cog):
             csv_writer.writerows([list(row) for row in rows])
 
         file = discord.File(csv_filename)
-        await interaction.followup.send("Exported onboarding data:", file=file)
+        await interaction.followup.send("Exported onboarding data:", file=file, ephemeral=True)
         os.remove(csv_filename)
 
 async def setup(bot: commands.Bot):

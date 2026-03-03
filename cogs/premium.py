@@ -93,7 +93,7 @@ async def _save_terms_acceptance(cog: 'PremiumCog', user_id: int, accepted_by: i
         async with db_manager.connection() as conn:
             await conn.execute(
                 "INSERT INTO terms_acceptance (user_id, accepted_at, version) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO NOTHING",
-                user_id, datetime.utcnow(), "2025-02-27"
+                user_id, datetime.utcnow(), "2026-02-27"
             )
         logger.info(f"Terms accepted by user {user_id}")
     except Exception as e:
@@ -110,7 +110,7 @@ async def _has_accepted_terms(cog: 'PremiumCog', user_id: int) -> bool:
         async with db_manager.connection() as conn:
             result = await conn.fetchval(
                 "SELECT 1 FROM terms_acceptance WHERE user_id = $1 AND version = $2",
-                user_id, "2025-02-27"
+                user_id, "2026-02-27"
             )
         return result is not None
     except Exception as e:
@@ -132,6 +132,9 @@ async def _assign_founder_role_if_eligible(cog: 'PremiumCog', user_id: int, guil
     guild = cog.bot.get_guild(FOUNDER_GUILD_ID)
     if not guild:
         logger.warning(f"Founder role: Could not find founder guild {FOUNDER_GUILD_ID}")
+        return
+
+    if cog.bot.user is None:
         return
 
     # Check bot permissions before attempting role assignment
