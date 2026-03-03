@@ -174,9 +174,26 @@ Comprehensive dashboard metrics including bot status, Grok/LLM stats, reminders,
     "database_up": true,
     "pool_size": 5,
     "checked_at": "2026-01-21T12:00:00Z"
+  },
+  "premium_metrics": {
+    "premium_checks_total": 120,
+    "premium_checks_core_api": 80,
+    "premium_checks_local": 40,
+    "premium_cache_hits": 200,
+    "premium_transfers_count": 3,
+    "premium_cache_size": 25
   }
 }
 ```
+
+The optional `premium_metrics` block provides observability for the Premium guard:
+
+- `premium_checks_total`: Total number of premium checks performed
+- `premium_checks_core_api`: Checks served by the Core-API
+- `premium_checks_local`: Checks served from local database/cache
+- `premium_cache_hits`: Number of cache hits when resolving premium status
+- `premium_transfers_count`: Number of premium transfers between guilds
+- `premium_cache_size`: Current in-memory cache size for premium status
 
 #### `GET /api/metrics`
 

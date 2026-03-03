@@ -52,7 +52,7 @@ async def release_cmd(interaction: discord.Interaction):
             return
         footer_link = ""
         if releases_url:
-            footer_link = f"\n\nRead full release notes on [GitHub]({releases_url})."
+            footer_link = f"\n\n*Read full release notes on [GitHub]({releases_url}).*"
         max_desc = 4096 - len(footer_link)
         description = _truncate_release_notes_md(notes, max_desc) + footer_link
         embed = EmbedBuilder.info(title=f"Release notes v{__version__}", description=description)
@@ -634,10 +634,49 @@ async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed
 
     return embed
 
+def _drop_dangling_last_header(text: str) -> str:
+    """If text ends with a bare '## ...' section header (no content after it), drop that header."""
+    lines = text.split("\n")
+    # Strip trailing blank lines
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines:
+        return ""
+    last = lines[-1].strip()
+    if last.startswith("## "):
+        # Drop the header and any new trailing blanks
+        lines = lines[:-1]
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return "\n".join(lines).rstrip()
+    return text
+
+
 def _truncate_release_notes_md(text: str, max_len: int) -> str:
     """Truncate markdown to max_len by whole sections (##) or paragraphs, never mid-sentence."""
-    if not text or len(text) <= max_len:
-        return text.strip()
+    if not text:
+        return ""
+    # Special-case: when GitHub body ends with a tiny "## Improved\nRead full release notes on GitHub."
+    # section, drop that block so the command's own footer link is the only one shown.
+    cleaned = text.rstrip()
+    # Normalise level-3 headings to level-2 so both '## ' and '### ' work with the same logic.
+    if cleaned.startswith("### "):
+        cleaned = "## " + cleaned[4:]
+    cleaned = cleaned.replace("\n### ", "\n## ")
+    marker_header = "\n## Improved"
+    marker_tail = "Read full release notes on GitHub."
+    if cleaned.endswith(marker_tail):
+        header_idx = cleaned.rfind(marker_header)
+        if header_idx != -1:
+            text = cleaned[:header_idx].rstrip()
+        else:
+            text = cleaned
+    else:
+        text = cleaned
+
+    if len(text) <= max_len:
+        # Even when not truncating for length, avoid ending on an empty '## ...' section.
+        return _drop_dangling_last_header(text).strip()
     # Split by level-2 headers (## ) so we keep full sections
     parts = text.split("\n## ")
     if len(parts) == 1:
@@ -672,20 +711,8 @@ def _truncate_release_notes_md(text: str, max_len: int) -> str:
     if not built:
         return text[: max_len - 3].rstrip() + "..."
     result = "\n\n".join(built).strip()
-    # If we end on a section header with no content after it, drop that dangling header
-    lines = result.split("\n")
-    # Strip trailing blank lines first
-    while lines and not lines[-1].strip():
-        lines.pop()
-    # Find last header line and check if everything after it was blank
-    last_header_idx = None
-    for idx in range(len(lines) - 1, -1, -1):
-        if lines[idx].strip().startswith("## "):
-            last_header_idx = idx
-            break
-    if last_header_idx is not None and all(not l.strip() for l in lines[last_header_idx + 1 :]):
-        lines = lines[:last_header_idx]
-    return "\n".join(lines).rstrip()
+    # Also clean up any dangling final '## ...' header after truncation
+    return _drop_dangling_last_header(result).strip()
 
 
 async def _fetch_github_release_notes(repo: str, version: str) -> Optional[str]:

@@ -83,6 +83,18 @@ class EmbedReminderWatcher(commands.Cog):
             logger.error(f"EmbedWatcher: DB pool creation error: {e}")
             self.db = None
 
+    async def cog_unload(self) -> None:
+        """Called when the cog is unloaded - close the database pool."""
+        manager = getattr(self, "_db_manager", None)
+        pool = getattr(manager, "_pool", None) if manager is not None else None
+        if pool is not None:
+            try:
+                await pool.close()
+            except Exception:
+                pass
+            manager._pool = None  # type: ignore[assignment]
+        self.db = None
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if not message.guild:
@@ -1137,16 +1149,6 @@ async def parse_embed_for_reminder(embed: discord.Embed, guild_id: int = 0):
     """Convenience wrapper to parse a reminder embed outside of the cog."""
     parser = EmbedReminderWatcher(cast(commands.Bot, MockBot()))
     return await parser.parse_embed_for_reminder(embed, guild_id)
-
-    async def cog_unload(self):
-        """Called when the cog is unloaded - close the database pool."""
-        if getattr(self, "_db_manager", None) and self._db_manager._pool:
-            try:
-                await self._db_manager._pool.close()
-            except Exception:
-                pass
-            self._db_manager._pool = None
-        self.db = None
 
 async def setup(bot):
     cog = EmbedReminderWatcher(bot)

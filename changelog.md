@@ -15,14 +15,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [3.0.0] - 2026-02-27
+## [3.0.0] - 2026-XX-XX
 
 ### Added
 - **Complete Premium Monetization Ecosystem**: Full-featured subscription platform with Lemon Squeezy integration, multi-tier pricing (€4.99/mo, €29/year, €49/lifetime), and automated guild assignment
 - **Universal Database Helpers Architecture**: Centralized `DatabaseManager` class used across all 14 cogs for consistent, safe database operations with automatic pool management and error recovery
 - **Advanced Security Framework**: HMAC webhook validation, configurable admin roles via environment variables, OAuth credential security, and comprehensive rate limiting across all endpoints
 - **GDPR Compliance Suite**: Terms acceptance flow with database persistence, data retention policies (7 years for tax compliance), and user data export capabilities
+- **Database / GDPR**: New `terms_acceptance` table (Alembic 006) to track user consent for Terms of Service and Privacy Policy, including version and timestamp, for GDPR compliance.
 - **Performance & Observability**: Extended dashboard metrics with premium usage tracking, cache size monitoring, system performance metrics (CPU/memory), and detailed operational logging
+- **API Metrics**: Dashboard metrics endpoint `/api/dashboard/metrics` now includes an optional `premium_metrics` block with counters for premium checks, cache hits, transfers, and cache size.
 - **Early Bird Founder Program**: Special lifetime tier recognition (€29 instead of €49) with automatic founder role assignment in Innersync guild and custom welcome messaging
 - **Code Quality Assurance**: Automated syntax validation, comprehensive test coverage (15+ premium test cases), and consistent error handling patterns across entire codebase
 
@@ -34,6 +36,9 @@ All notable changes to this project will be documented in this file.
 - **Command Structure**: Enhanced permission validation with `requires_owner()` decorator for true owner-only commands vs admin-accessible features
 - **Embed Consistency**: Unified embed styling and response helpers across all cogs for consistent user experience
 - **Cache Management**: Intelligent cache size monitoring and automatic cleanup across all subsystems (settings, cooldowns, rate limits, command stats)
+- **Premium UX**: After accepting Terms & Privacy in the `/premium` flow, users immediately see the full premium pricing embed with checkout buttons without having to rerun the command.
+- **Exports & CSV helpers**: Ticket, FAQ, and onboarding exports now use shared CSV helpers and consistent English-only responses for a smoother admin experience.
+- **Status: `/release` command** – Reads release notes from GitHub releases, truncates on markdown sections to stay within Discord embed limits, and includes a link to the full notes; base GitHub repo configurable via `GITHUB_REPO` env.
 
 ### Fixed
 - **Database Connection Issues**: Resolved all connection pool errors, "Future exception was never retrieved" warnings, and connection timeout problems through universal helpers
@@ -43,6 +48,8 @@ All notable changes to this project will be documented in this file.
 - **Internationalization Errors**: Removed all Dutch text causing confusion and ensuring consistent English-only codebase
 - **Command Permission Issues**: Corrected admin vs owner permission logic with proper environment-based configuration
 - **Syntax Errors**: Fixed indentation issues, import problems, and structural errors introduced during large-scale refactoring
+- **Internationalization cleanup**: Removed remaining Dutch user-facing strings and comments in `cogs/reminders.py`, `cogs/inviteboard.py`, `cogs/dataquery.py`, `cogs/embed_watcher.py`, and related helpers to fully enforce the English-only codebase rule.
+- **Interaction flow in exports**: Fixed misuse of `ResponseHelper.send_error` before `defer()` in `/export_tickets` and `/export_faq`, preventing unnecessary followup errors and ensuring clean interaction handling.
 
 ### Security
 - **Credential Management**: All sensitive data moved to environment variables with proper validation

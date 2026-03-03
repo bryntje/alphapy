@@ -106,6 +106,27 @@ Premium subscription status (local fallback when Core-API is unavailable). **One
 
 ---
 
+### `terms_acceptance`
+
+Tracks user acceptance of the Terms of Service and Privacy Policy for GDPR compliance.
+
+**Columns:**
+- `id` (SERIAL PRIMARY KEY)
+- `user_id` (BIGINT, NOT NULL, UNIQUE): Discord user ID
+- `accepted_at` (TIMESTAMPTZ, NOT NULL, DEFAULT NOW()): When the user accepted the terms
+- `version` (TEXT, NOT NULL, DEFAULT '2025-02-27'): Legal terms version the user accepted
+- `ip_address` (INET, NULLABLE): IP address at time of acceptance (optional; may be NULL)
+
+**Indexes:**
+- `idx_terms_acceptance_user` on `user_id`
+- `idx_terms_acceptance_accepted_at` on `accepted_at`
+
+**Notes:**
+- Used by the `/premium` flow: users must accept terms before accessing premium checkout.
+- Stores only minimal consent metadata for legal compliance; no content of the terms is stored here.
+
+---
+
 ### `onboarding`
 
 User onboarding responses per guild.
