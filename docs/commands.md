@@ -237,6 +237,8 @@ Manage bot settings (multi-scope configuration system).
 - `/config onboarding reset_rules` - Reset to empty rules
 - `/config onboarding set_role <#role>` - Set completion role
 - `/config onboarding reset_role` - Remove completion role
+- `/config onboarding set_join_role <@role>` - Set temporary join role assigned immediately when a user joins (removed after onboarding or verification)
+- `/config onboarding reset_join_role` - Remove join role configuration
 - `/config onboarding panel_post [channel]` - Post onboarding panel with Start button (optional channel; uses current if omitted)
 - `/config onboarding reorder` - Reorder questions (opens modal to enter question IDs in desired order)
 

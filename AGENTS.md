@@ -78,6 +78,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Purpose**: AI-assisted payment verification via private channels
 - **Flow**: Screenshot → vision JSON (`can_verify` / `needs_manual_review`) → auto-role or manual review
 - **Key**: Conservative vision model, no screenshots stored
+- **Premium**: Starting verification requires an active premium subscription for the user in that guild
 
 ---
 
@@ -86,6 +87,16 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Purpose**: Configurable onboarding flow with rules, questions and personalization
 - **Helper**: `get_user_personalization()` for opt-in + preferred language
 - **API**: Dashboard endpoints ready (`/api/dashboard/{guild_id}/onboarding/*`)
+
+---
+
+## 🧩 Agent: JoinRole
+- **Path**: `cogs/join_roles.py`, `cogs/configuration.py`, `cogs/onboarding.py`, `cogs/verification.py`
+- **Purpose**: Assign a temporary join role to new members on guild join
+- **Behavior**:
+  - On join: assigns `onboarding.join_role_id` when onboarding is enabled
+  - On completion: removes the join role after onboarding completion (after assigning the completion role, if configured)
+  - On verification: removes the join role after successful payment verification (after assigning the verified role)
 
 ---
 

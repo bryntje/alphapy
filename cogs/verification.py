@@ -18,6 +18,7 @@ from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger, log_database_event, log_with_guild, log_guild_action
 from utils.sanitizer import safe_embed_text
+from utils.premium_guard import is_premium, premium_required_message
 from utils.settings_helpers import CachedSettingsHelper
 from utils.settings_service import SettingsService
 from utils.timezone import BRUSSELS_TZ
@@ -560,6 +561,24 @@ class VerificationCog(commands.Cog):
                 except Exception as e:
                     logger.warning(f"VerificationCog: could not assign verified role: {e}")
 
+            # Always remove join role after successful verification, if configured
+            try:
+                join_role_id = self.settings_helper.get_int("onboarding", "join_role_id", guild_id, fallback=0)
+            except Exception:
+                join_role_id = 0
+            if join_role_id and join_role_id != 0 and member:
+                join_role = guild.get_role(int(join_role_id))
+                if join_role and any(r.id == join_role.id for r in member.roles):
+                    try:
+                        await member.remove_roles(join_role, reason="Replace join role with verification role")
+                        logger.info(
+                            "VerificationCog: join role %s removed from user %s after verification",
+                            join_role.id,
+                            member.id,
+                        )
+                    except Exception as e:
+                        logger.warning(f"VerificationCog: could not remove join role after verification: {e}")
+
             success_embed = EmbedBuilder.success(
                 title="✅ You are verified",
                 description=(
@@ -630,6 +649,13 @@ class VerificationPanelView(discord.ui.View):
 
         if not interaction.guild:
             await interaction.followup.send("❌ This button only works in a server.", ephemeral=True)
+            return
+
+        if not await is_premium(interaction.user.id, interaction.guild.id):
+            await interaction.followup.send(
+                premium_required_message("Verification"),
+                ephemeral=True,
+            )
             return
 
         try:

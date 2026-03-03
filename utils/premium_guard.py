@@ -43,7 +43,7 @@ _stats_transfers = 0
 def premium_required_message(feature_name: str) -> str:
     """Return a short Mockingbird-style message when a non-premium user hits a gated feature."""
     return (
-        f"{feature_name} is premium. Mature enough? Get power with /premium."
+        f"{feature_name} is premium. Powerful enough? Get power with /premium."
     )
 
 

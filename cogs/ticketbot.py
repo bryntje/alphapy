@@ -292,13 +292,13 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-                if getattr(self, "_db_manager", None) and self._db_manager._pool:
-                    try:
-                        await self._db_manager._pool.close()
-                    except Exception:
-                        pass
-                    self._db_manager._pool = None
-                self.db = None
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
+                try:
+                    await self._db_manager._pool.close()
+                except Exception:
+                    pass
+                self._db_manager._pool = None
+            self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.")
             return
@@ -500,13 +500,13 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-                if getattr(self, "_db_manager", None) and self._db_manager._pool:
-                    try:
-                        await self._db_manager._pool.close()
-                    except Exception:
-                        pass
-                    self._db_manager._pool = None
-                self.db = None
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
+                try:
+                    await self._db_manager._pool.close()
+                except Exception:
+                    pass
+                self._db_manager._pool = None
+            self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.")
             return
@@ -1142,13 +1142,13 @@ class TicketBot(commands.Cog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-                if getattr(self, "_db_manager", None) and self._db_manager._pool:
-                    try:
-                        await self._db_manager._pool.close()
-                    except Exception:
-                        pass
-                    self._db_manager._pool = None
-                self.db = None
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
+                try:
+                    await self._db_manager._pool.close()
+                except Exception:
+                    pass
+                self._db_manager._pool = None
+            self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.", ephemeral=True)
             return

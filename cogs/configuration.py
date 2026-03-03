@@ -1147,6 +1147,17 @@ class Configuration(commands.Cog):
         lines = ["📝 **Onboarding Configuration**"]
         lines.append(f"**Enabled:** {'✅ Yes' if enabled else '❌ No'}")
         lines.append(f"**Mode:** {mode}")
+        # Join role (assigned on join, removed on final access role)
+        join_role_id = self.settings.get("onboarding", "join_role_id", interaction.guild.id)
+        try:
+            join_role_id_int = int(join_role_id) if join_role_id else 0
+        except (TypeError, ValueError):
+            join_role_id_int = 0
+        if join_role_id_int:
+            join_role = interaction.guild.get_role(join_role_id_int)
+            lines.append(f"**Join Role:** {join_role.mention if join_role else f'<@&{join_role_id_int}>'}")
+        else:
+            lines.append("**Join Role:** Not set")
         if completion_role_id and completion_role_id != 0:
             role = interaction.guild.get_role(completion_role_id)
             lines.append(f"**Completion Role:** {role.mention if role else f'<@&{completion_role_id}>'}")
@@ -1264,6 +1275,39 @@ class Configuration(commands.Cog):
         await self._send_audit_log(
             "📝 Onboarding",
             f"Completion role reset by {interaction.user.mention}.",
+            interaction.guild.id
+        )
+
+    @onboarding_group.command(name="set_join_role", description="Set role to assign immediately when a user joins (temporary join role)")
+    @requires_admin()
+    async def onboarding_set_join_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.set("onboarding", "join_role_id", role.id, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Join role set to {role.mention}.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "📝 Onboarding",
+            f"Join role set to {role.mention} by {interaction.user.mention}.",
+            interaction.guild.id
+        )
+
+    @onboarding_group.command(name="reset_join_role", description="Remove join role assignment on user join")
+    @requires_admin()
+    async def onboarding_reset_join_role(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.clear("onboarding", "join_role_id", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("↩️ Join role removed.", ephemeral=True)
+        await self._send_audit_log(
+            "📝 Onboarding",
+            f"Join role reset by {interaction.user.mention}.",
             interaction.guild.id
         )
     @onboarding_group.command(name="add_question", description="Add a new onboarding question")

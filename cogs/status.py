@@ -46,16 +46,20 @@ async def version_cmd(interaction: discord.Interaction):
 @app_commands.command(name="release", description="Show release notes for the current version")
 async def release_cmd(interaction: discord.Interaction):
     try:
-        base = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(base, "changelog.md")
-        notes = await _read_release_notes(path, __version__)
+        notes, releases_url = await _get_release_notes(__version__)
         if not notes:
             await interaction.response.send_message(f"No notes found for v{__version__}.", ephemeral=True)
             return
-        embed = EmbedBuilder.info(title=f"Release notes v{__version__}", description=notes)
+        footer_link = ""
+        if releases_url:
+            footer_link = f"\n\nRead full release notes on [GitHub]({releases_url})."
+        max_desc = 4096 - len(footer_link)
+        description = _truncate_release_notes_md(notes, max_desc) + footer_link
+        embed = EmbedBuilder.info(title=f"Release notes v{__version__}", description=description)
         embed.set_footer(text=f"{CODENAME}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
     except Exception as e:
+        logger.exception("release_cmd failed")
         await interaction.response.send_message(f"Failed to read release notes: {e}", ephemeral=True)
 
 @app_commands.command(name="health", description="Show configuration and system status")
@@ -629,6 +633,98 @@ async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed
         pass
 
     return embed
+
+def _truncate_release_notes_md(text: str, max_len: int) -> str:
+    """Truncate markdown to max_len by whole sections (##) or paragraphs, never mid-sentence."""
+    if not text or len(text) <= max_len:
+        return text.strip()
+    # Split by level-2 headers (## ) so we keep full sections
+    parts = text.split("\n## ")
+    if len(parts) == 1:
+        # No ## headers: try paragraphs
+        paras = text.split("\n\n")
+        out: List[str] = []
+        for p in paras:
+            if len("\n\n".join(out) + ("\n\n" if out else "") + p) <= max_len:
+                out.append(p)
+            else:
+                break
+        if out:
+            return "\n\n".join(out).strip()
+        # Single paragraph or very long line: cut at last newline before limit
+        if len(text) <= max_len:
+            return text.strip()
+        cut = text[: max_len + 1].rfind("\n")
+        if cut > max_len // 2:
+            return text[:cut].strip()
+        return text[:max_len - 3].rstrip() + "..."
+    # Rebuild sections: first part may be intro (no ## prefix), rest get "## " back
+    built: List[str] = []
+    for i, block in enumerate(parts):
+        seg = ("## " + block).strip() if i > 0 else block.strip()
+        if not seg:
+            continue
+        combined = "\n\n".join(built) + ("\n\n" + seg if built else seg)
+        if len(combined) <= max_len:
+            built.append(seg)
+        else:
+            break
+    if not built:
+        return text[: max_len - 3].rstrip() + "..."
+    result = "\n\n".join(built).strip()
+    # If we end on a section header with no content after it, drop that dangling header
+    lines = result.split("\n")
+    # Strip trailing blank lines first
+    while lines and not lines[-1].strip():
+        lines.pop()
+    # Find last header line and check if everything after it was blank
+    last_header_idx = None
+    for idx in range(len(lines) - 1, -1, -1):
+        if lines[idx].strip().startswith("## "):
+            last_header_idx = idx
+            break
+    if last_header_idx is not None and all(not l.strip() for l in lines[last_header_idx + 1 :]):
+        lines = lines[:last_header_idx]
+    return "\n".join(lines).rstrip()
+
+
+async def _fetch_github_release_notes(repo: str, version: str) -> Optional[str]:
+    """Fetch release notes body from GitHub API for tag v{version}. Returns None on failure."""
+    tag = f"v{version}" if not version.startswith("v") else version
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                return (data.get("body") or "").strip() or None
+    except Exception as e:
+        logger.debug("GitHub release fetch failed: %s", e)
+        return None
+
+
+async def _get_release_notes(version: str) -> tuple[str, Optional[str]]:
+    """Return (notes_text, releases_url). Uses GitHub if configured, else local changelog.md."""
+    repo = getattr(config, "GITHUB_REPO", "").strip() or None
+    releases_url = f"https://github.com/{repo}/releases/tag/v{version}" if repo else None
+    if repo:
+        logger.info("Release notes: fetching from GitHub repo=%s tag=v%s", repo, version)
+        notes = await _fetch_github_release_notes(repo, version)
+        if notes:
+            logger.info("Release notes: using GitHub (v%s)", version)
+            return notes, releases_url
+        logger.info("Release notes: GitHub fetch failed or empty, falling back to local changelog")
+    else:
+        logger.info("Release notes: GITHUB_REPO not set, using local changelog")
+    # Fallback: local changelog
+    base = os.path.dirname(os.path.dirname(__file__))
+    path = os.path.join(base, "changelog.md")
+    local = await _read_release_notes(path, version)
+    if local:
+        logger.info("Release notes: using local changelog %s", path)
+    return local or "", releases_url
+
 
 async def _read_release_notes(changelog_path: str, version: str) -> str:
     try:

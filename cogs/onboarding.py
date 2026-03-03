@@ -623,6 +623,23 @@ class Onboarding(commands.Cog):
                         }
                     )
 
+            # Always remove join role after onboarding completion, if configured
+            try:
+                join_role_id = self.bot.settings.get("onboarding", "join_role_id", guild_id)
+            except Exception:
+                join_role_id = 0
+            if join_role_id and join_role_id != 0:
+                try:
+                    join_role = interaction.guild.get_role(int(join_role_id))
+                    member = interaction.user if isinstance(interaction.user, discord.Member) else interaction.guild.get_member(interaction.user.id)
+                    if member is None:
+                        member = await interaction.guild.fetch_member(interaction.user.id)
+                    if join_role and member and any(r.id == join_role.id for r in member.roles):
+                        await member.remove_roles(join_role, reason="Replace join role with onboarding completion role")
+                        logger.info(f"Join role {join_role.name} removed from {interaction.user.display_name} after onboarding completion")
+                except Exception as e:
+                    logger.warning(f"Onboarding: could not remove join role after completion: {e}")
+
             # Build and send a log embed to the log channel
             log_embed = EmbedBuilder.success(
                 title="📝 Onboarding Log",
