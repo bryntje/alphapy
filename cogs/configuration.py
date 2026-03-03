@@ -1498,6 +1498,8 @@ class Configuration(commands.Cog):
             await interaction.response.send_message("⚠️ Onboarding is not enabled for this server. Enable it first with `/config onboarding enable`.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         embed = create_success_embed(
             title=f"Welcome to {interaction.guild.name}!",
             description="To get started and learn about our community, click the button below to begin the onboarding process."
@@ -1506,7 +1508,7 @@ class Configuration(commands.Cog):
 
         view = StartOnboardingView()
         await target.send(embed=embed, view=view)
-        await interaction.response.send_message("✅ Onboarding panel posted.", ephemeral=True)
+        await interaction.followup.send("✅ Onboarding panel posted.", ephemeral=True)
     @onboarding_group.command(name="reorder", description="Reorder onboarding questions by entering question IDs in desired order")
     @requires_admin()
     async def onboarding_reorder(self, interaction: discord.Interaction) -> None:

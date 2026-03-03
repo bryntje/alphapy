@@ -50,7 +50,7 @@ class TermsAcceptanceView(discord.ui.View):
         if not cog:
             logger.error("PremiumCog not found for terms acceptance")
             await interaction.response.send_message(
-                "❌ There was an error processing your acceptance. Please contact support@innersync.tech for assistance.",
+                "❌ There was an error processing your acceptance. Please contact [support@innersync.tech](mailto:support@innersync.tech) for assistance.",
                 ephemeral=True
             )
             return
@@ -66,7 +66,7 @@ class TermsAcceptanceView(discord.ui.View):
         except Exception as e:
             logger.error(f"Failed to save terms acceptance for user {interaction.user.id}: {e}")
             await interaction.response.send_message(
-                "❌ There was an error processing your acceptance. Please contact support@innersync.tech for assistance.",
+                "❌ There was an error processing your acceptance. Please contact [support@innersync.tech](mailto:support@innersync.tech) for assistance.",
                 ephemeral=True
             )
 
@@ -388,8 +388,8 @@ class PremiumCog(commands.Cog):
             else:
                 msg = "You don't have Premium in this server. Get power with /premium."
 
-        # Add support contact info
-        msg += "\n\n❓ Questions or issues? Contact support@innersync.tech"
+        # Add support contact info (mailto link for clickable email in Discord)
+        msg += "\n\n❓ Questions or issues? Contact [support@innersync.tech](mailto:support@innersync.tech)"
         await interaction.followup.send(msg, ephemeral=True)
 
     @app_commands.command(
@@ -435,7 +435,7 @@ class PremiumCog(commands.Cog):
             )
         else:
             await interaction.followup.send(
-                f"Transfer failed: {reason}. Try again or contact support@innersync.tech",
+                f"Transfer failed: {reason}. Try again or contact [support@innersync.tech](mailto:support@innersync.tech)",
                 ephemeral=True,
             )
 
