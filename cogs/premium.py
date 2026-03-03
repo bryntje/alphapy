@@ -86,12 +86,9 @@ class TermsAcceptanceView(discord.ui.View):
 
 
 async def _save_terms_acceptance(cog: 'PremiumCog', user_id: int, accepted_by: int) -> None:
-    """Save terms acceptance to database for GDPR compliance."""
-    from utils.database_helpers import DatabaseManager
-    db_manager = DatabaseManager("premium", {"DATABASE_URL": config.DATABASE_URL})
-
+    """Save terms acceptance to database for GDPR compliance. Uses cog's shared pool."""
     try:
-        async with db_manager.connection() as conn:
+        async with cog._db_manager.connection() as conn:
             await conn.execute(
                 "INSERT INTO terms_acceptance (user_id, accepted_at, version) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO NOTHING",
                 user_id, datetime.utcnow(), "2026-02-27"
@@ -103,12 +100,9 @@ async def _save_terms_acceptance(cog: 'PremiumCog', user_id: int, accepted_by: i
 
 
 async def _has_accepted_terms(cog: 'PremiumCog', user_id: int) -> bool:
-    """Check if user has accepted current terms version."""
-    from utils.database_helpers import DatabaseManager
-    db_manager = DatabaseManager("premium", {"DATABASE_URL": config.DATABASE_URL})
-
+    """Check if user has accepted current terms version. Uses cog's shared pool."""
     try:
-        async with db_manager.connection() as conn:
+        async with cog._db_manager.connection() as conn:
             result = await conn.fetchval(
                 "SELECT 1 FROM terms_acceptance WHERE user_id = $1 AND version = $2",
                 user_id, "2026-02-27"
