@@ -48,7 +48,7 @@ async def release_cmd(interaction: discord.Interaction):
     try:
         notes, releases_url = await _get_release_notes(__version__)
         if not notes:
-            await interaction.response.send_message(f"No notes found for v{__version__}.", ephemeral=True)
+            await interaction.response.send_message(f"No notes found for v{__version__}.")
             return
         footer_link = ""
         if releases_url:
@@ -57,10 +57,10 @@ async def release_cmd(interaction: discord.Interaction):
         description = _truncate_release_notes_md(notes, max_desc) + footer_link
         embed = EmbedBuilder.info(title=f"Release notes v{__version__}", description=description)
         embed.set_footer(text=f"{CODENAME}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
     except Exception as e:
         logger.exception("release_cmd failed")
-        await interaction.response.send_message(f"Failed to read release notes: {e}", ephemeral=True)
+        await interaction.response.send_message(f"Failed to read release notes: {e}")
 
 @app_commands.command(name="health", description="Show configuration and system status")
 async def health_cmd(interaction: discord.Interaction):
