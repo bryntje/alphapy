@@ -102,6 +102,8 @@ Premium subscription status (local fallback when Core-API is unavailable). **One
 - `idx_premium_subs_guild_status` on `(guild_id, status)`
 - `idx_premium_subs_one_active_per_user`: unique on `(user_id)` WHERE `status = 'active'` (enforces one active per user)
 
+**RLS (Supabase):** Row Level Security is enabled (migration 007). No policies are defined for `anon`/`authenticated`, so only the backend role (table owner / service role / superuser used by `DATABASE_URL`) can read or write. Direct Supabase client access with anon or authenticated keys sees no rows.
+
 **GDPR:** This table stores only access-control data (user_id, guild_id, tier, status, optional external ID, expiry). No payment details, email, or other PII are stored here.
 
 ---
