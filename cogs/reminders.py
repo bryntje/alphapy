@@ -516,8 +516,6 @@ class ReminderCog(commands.Cog):
                     None,
                     resolved_image_url,
                 )
-                rid_row = await conn.fetchrow("SELECT currval(pg_get_serial_sequence('reminders','id')) AS id")
-                rid = rid_row["id"] if rid_row else None
             if resolved_image_url:
                 rkey = (interaction.user.id, interaction.guild.id)
                 now_ts = time_module.time()
