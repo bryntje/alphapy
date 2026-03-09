@@ -8,6 +8,7 @@ Loads recent reflections from:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
@@ -83,6 +84,12 @@ async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
             content = row["plaintext_content"]
             created = row["created_at"]
             date_str = created.strftime("%Y-%m-%d") if created else ""
+            # JSONB may be returned as str by asyncpg when no custom codec is used
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except (ValueError, TypeError):
+                    continue
             if not isinstance(content, dict):
                 continue
             display_idx += 1

@@ -97,7 +97,8 @@ async def handle_app_reflection_webhook(request: Request) -> Dict[str, str]:
                 INSERT INTO app_reflections (user_id, reflection_id, plaintext_content)
                 VALUES ($1, $2, $3::jsonb)
                 ON CONFLICT (user_id, reflection_id) DO UPDATE SET
-                    plaintext_content = EXCLUDED.plaintext_content
+                    plaintext_content = EXCLUDED.plaintext_content,
+                    created_at = NOW()
                 """,
                 user_id,
                 reflection_id,
