@@ -127,7 +127,8 @@ async def load_user_reflections(
     
     Args:
         discord_id: Discord user ID
-        limit: Maximum number of reflections to load (default: 5)
+        limit: Maximum total number of reflections to load across all sources
+               (default: 5)
     
     Returns:
         Formatted context string with reflections, or empty string if:
@@ -136,6 +137,9 @@ async def load_user_reflections(
         - Error occurred (logged but not raised)
     """
     context_str = ""
+    loaded_count = 0
+    if limit <= 0:
+        return ""
     try:
         # Supabase: get user_id and check bot_sharing_enabled
         user_id = await get_user_id_for_discord(discord_id)
@@ -192,6 +196,7 @@ async def load_user_reflections(
                                 context_parts.append(f"  Future message: {future_message}")
                             context_parts.append("")
                         context_str = "\n".join(context_parts)
+                        loaded_count = len(reflection_rows)
                         logger.debug(
                             "Loaded %s Supabase reflections for user_id=%s (discord_id=%s)",
                             len(reflection_rows),
@@ -208,10 +213,19 @@ async def load_user_reflections(
             exc_info=True,
         )
 
-    # Always try app_reflections (plaintext from App via Core webhook)
-    app_context = await _load_app_reflections(discord_id, limit=limit)
-    if app_context:
-        context_str = f"{context_str}\n\n{app_context}".strip() if context_str else app_context
+    # Always try app_reflections (plaintext from App via Core webhook), but
+    # enforce the global limit across both sources.
+    remaining_limit = max(limit - loaded_count, 0)
+    if remaining_limit > 0:
+        app_context = await _load_app_reflections(discord_id, limit=remaining_limit)
+        if app_context:
+            context_str = f"{context_str}\n\n{app_context}".strip() if context_str else app_context
+    else:
+        logger.debug(
+            "Skipping app_reflections for discord_id=%s because limit=%s is already reached",
+            discord_id,
+            limit,
+        )
 
     return context_str or ""
 
