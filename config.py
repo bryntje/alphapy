@@ -48,6 +48,8 @@ SUPABASE_ISSUER = os.getenv(
     f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else None,
 )
 SUPABASE_WEBHOOK_SECRET = os.getenv("SUPABASE_WEBHOOK_SECRET")
+# App reflections webhook (Core-API → Alphapy). Optional; falls back to WEBHOOK_SECRET / SUPABASE_WEBHOOK_SECRET
+APP_REFLECTIONS_WEBHOOK_SECRET = os.getenv("APP_REFLECTIONS_WEBHOOK_SECRET")
 
 # Google Cloud Secret Manager configuration
 GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
@@ -78,6 +80,8 @@ PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
 
 # GitHub (for /release notes and "read full" link). Optional; when unset, /release uses local changelog.
 GITHUB_REPO = (os.getenv("GITHUB_REPO") or "").strip().rstrip("/")
+# Optional: token for GitHub API (e.g. release guard in utils/release_guard.py) to avoid rate limits
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 # Admin And Owner
 OWNER_IDS = [367270193585455104]

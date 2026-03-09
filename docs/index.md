@@ -20,6 +20,7 @@ Welcome! This documentation hub provides comprehensive guides for the Innersync 
 - [Migrations Guide](migrations.md) - Database migration workflow with Alembic
 
 ### Legal
+- [Legal Information](legal.md) – Company details, enterprise number, registered office
 - [Terms of Service](terms-of-service.md)
 - [Privacy Policy](privacy-policy.md)
 

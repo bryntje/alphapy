@@ -126,6 +126,17 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
+## 📥 Agent: App Reflections (Plaintext from Core)
+- **Path**: `webhooks/app_reflections.py`, `webhooks/revoke_reflection.py`, `gpt/context_loader.py`
+- **Purpose**: Receive plaintext reflections from App via Core-API webhook; store in `app_reflections`; use in `/growthcheckin` and ticket suggestions.
+- **Webhooks**:
+  - `POST /webhooks/app-reflections`: payload `user_id` (Discord), `reflection_id`, `plaintext_content` (JSONB). Upsert into `app_reflections`. HMAC via `X-Webhook-Signature`; optional secret `APP_REFLECTIONS_WEBHOOK_SECRET`.
+  - `POST /webhooks/revoke-reflection`: payload `user_id`, `reflection_id`. DELETE from `app_reflections`. Same signature pattern.
+- **Release guard (optional sanity check)**: `utils/release_guard.py` — `is_reflection_share_allowed()`. GET GitHub `repos/bryntje/alphapy/releases`; feature allowed only if a release with tag `3.0.0` or `v3.0.0` exists. Cached (e.g. 30 min). Fail closed. Used only at app-reflections webhook entry (not revoke). Mental reminder for maintainer; not core to feature logic.
+- **Integration**: `gpt/context_loader.load_user_reflections()` loads from Supabase `reflections_shared` (existing) and from `app_reflections` (last 30 days). Merged into Grok context for growthcheckin and other flows.
+
+---
+
 ## Shared References
 - **Embed styling**: see `EMBEDS.md`
 - **Database pools, command tracking & infra**: see `ARCHITECTURE.md`

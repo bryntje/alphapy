@@ -33,6 +33,8 @@ from utils.operational_logs import get_operational_events, log_operational_event
 from utils import core_ingress as core_ingress_module
 from webhooks.supabase import router as supabase_webhook_router
 from webhooks.reflections import router as reflections_webhook_router
+from webhooks.app_reflections import router as app_reflections_webhook_router
+from webhooks.revoke_reflection import router as revoke_reflection_webhook_router
 from version import CODENAME, __version__
 
 logger = logging.getLogger(__name__)
@@ -122,6 +124,7 @@ COMMAND_STATS_CACHE_TTL = 30  # seconds
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global db_pool
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
+    app.state.db_pool = db_pool
     logger.info("✅ DB pool created")
     
     # Log MAIN_GUILD_ID configuration
@@ -245,6 +248,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(lifespan=lifespan)
 app.include_router(supabase_webhook_router)
 app.include_router(reflections_webhook_router)
+app.include_router(app_reflections_webhook_router)
+app.include_router(revoke_reflection_webhook_router)
 
 # CORS settings
 _allowed_origins = getattr(config, "ALLOWED_ORIGINS", [])
