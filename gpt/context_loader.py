@@ -77,7 +77,7 @@ async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
             )
         if not rows:
             return ""
-        parts = ["Recent reflections from the App (shared via webhook):", ""]
+        blocks: list[str] = []
         display_idx = 0
         for row in rows:
             content = row["plaintext_content"]
@@ -86,18 +86,20 @@ async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
             if not isinstance(content, dict):
                 continue
             display_idx += 1
-            parts.append(f"Reflection {display_idx} ({date_str}):")
+            blocks.append(f"Reflection {display_idx} ({date_str}):")
             for key in ("reflection_text", "reflection", "mantra", "thoughts", "future_message"):
                 val = content.get(key)
                 if val is not None and str(val).strip():
                     label = key.replace("_", " ").title()
                     safe_val = safe_prompt(str(val).strip()[:2048])
-                    parts.append(f"  {label}: {safe_val}")
+                    blocks.append(f"  {label}: {safe_val}")
             date_val = content.get("date")
             if date_val is not None and str(date_val).strip():
-                parts.append(f"  Date: {safe_prompt(str(date_val).strip()[:128])}")
-            parts.append("")
-        return "\n".join(parts).strip() or ""
+                blocks.append(f"  Date: {safe_prompt(str(date_val).strip()[:128])}")
+            blocks.append("")
+        if not blocks:
+            return ""
+        return "Recent reflections from the App (shared via webhook):\n\n" + "\n".join(blocks).strip()
     except Exception as e:
         logger.debug("Failed to load app_reflections for discord_id=%s: %s", discord_id, e)
         return ""

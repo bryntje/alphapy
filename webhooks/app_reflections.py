@@ -6,48 +6,18 @@ Stores reflection content in app_reflections for use in user-self flows (e.g.
 Consent is validated by Core before the webhook is sent.
 """
 
-import hashlib
-import hmac
 import json
 import logging
 from typing import Dict, Optional
 
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request, status
-import config
+
+from webhooks.common import get_app_reflections_secret, validate_webhook_signature
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks/app-reflections", tags=["app-reflections"])
-
-
-def _validate_signature(body: bytes, signature: Optional[str]) -> None:
-    """Validate webhook signature if a secret is configured."""
-    secret = (
-        getattr(config, "APP_REFLECTIONS_WEBHOOK_SECRET", None)
-        or getattr(config, "WEBHOOK_SECRET", None)
-        or getattr(config, "SUPABASE_WEBHOOK_SECRET", None)
-    )
-    if not secret:
-        logger.debug("No app-reflections webhook secret configured - skipping signature validation")
-        return
-
-    if not signature:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing webhook signature header.",
-        )
-
-    provided = signature
-    if signature.startswith("sha256="):
-        provided = signature.split("=", 1)[1]
-
-    computed = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(provided, computed):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook signature.",
-        )
 
 
 @router.post("")
@@ -68,7 +38,9 @@ async def handle_app_reflection_webhook(request: Request) -> Dict[str, str]:
         or request.headers.get("x-webhook-signature")
     )
     try:
-        _validate_signature(body, signature)
+        validate_webhook_signature(
+            body, signature, get_app_reflections_secret(), log_name="app-reflections"
+        )
     except HTTPException:
         raise
     except Exception as e:
