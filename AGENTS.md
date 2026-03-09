@@ -129,6 +129,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ## 📥 Agent: App Reflections (Plaintext from Core)
 - **Path**: `webhooks/app_reflections.py`, `webhooks/revoke_reflection.py`, `gpt/context_loader.py`
 - **Purpose**: Receive plaintext reflections from App via Core-API webhook; store in `app_reflections`; use in `/growthcheckin` (and other user-self flows). Not used for ticket "Suggest reply" (privacy: reflections stay out of admin-only, ephemeral ticket actions).
+- **Data flow**: Shared reflections are decrypted client-side in the App, then sent as plaintext to Core-API, which forwards them to Alphapy (and/or Supabase). Alphapy never receives or decrypts encrypted content.
 - **Webhooks**:
   - `POST /webhooks/app-reflections`: payload `user_id` (Discord), `reflection_id`, `plaintext_content` (JSONB). Upsert into `app_reflections`. HMAC via `X-Webhook-Signature`; optional secret `APP_REFLECTIONS_WEBHOOK_SECRET`.
   - `POST /webhooks/revoke-reflection`: payload `user_id`, `reflection_id`. DELETE from `app_reflections`. Same signature pattern.
