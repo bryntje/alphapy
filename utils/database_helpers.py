@@ -25,6 +25,7 @@ class DatabaseManager:
                 max_size=5,
                 command_timeout=10.0
             )
+        assert self._pool is not None
         return self._pool
 
     @asynccontextmanager
@@ -45,9 +46,3 @@ class DatabaseManager:
         pool = await self.ensure_pool()
         async with acquire_safe(pool) as conn:
             return await conn.fetchval(query, *args)
-
-
-# Global instances for common use
-# These can be imported and used across cogs
-status_db = DatabaseManager("status", {"DATABASE_URL": None})  # Will be set at runtime
-gdpr_db = DatabaseManager("gdpr", {"DATABASE_URL": None})

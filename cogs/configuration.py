@@ -8,7 +8,6 @@ from utils.validators import validate_admin
 from utils.fyi_tips import FYI_KEYS as FYI_TIPS_KEYS
 from utils.db_helpers import acquire_safe
 from utils.embed_builder import EmbedBuilder
-from utils.embed_helpers import create_success_embed, create_warning_embed
 from utils.settings_service import SettingsService, SettingDefinition
 from utils.logger import log_with_guild, log_guild_action, logger
 from utils.timezone import BRUSSELS_TZ
@@ -1500,7 +1499,7 @@ class Configuration(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        embed = create_success_embed(
+        embed = EmbedBuilder.success(
             title=f"Welcome to {interaction.guild.name}!",
             description="To get started and learn about our community, click the button below to begin the onboarding process."
         )
@@ -1553,7 +1552,7 @@ class Configuration(commands.Cog):
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             log_with_guild(f"Audit log channel {channel_id} not found or not accessible", guild_id, "warning")
             return
-        embed = create_warning_embed(title=title, description=message)
+        embed = EmbedBuilder.warning(title=title, description=message)
         embed.set_footer(text=f"config | Guild: {guild_id}")
         try:
             # Config changes are always logged (critical level), bypass log level check
@@ -1952,12 +1951,11 @@ class ReorderQuestionsModal(discord.ui.Modal, title="Reorder Questions"):
                     if channel_id:
                         channel = interaction.client.get_channel(channel_id)
                         if isinstance(channel, (discord.TextChannel, discord.Thread)):
-                            await channel.send(
-                                embed=create_warning_embed(
-                                    title="⚙️ Onboarding questions reordered",
-                                    description=f"New order: {', '.join(map(str, new_order))}\nBy: {interaction.user.mention}"
-                                )
+                            embed = EmbedBuilder.warning(
+                                title="⚙️ Onboarding questions reordered",
+                                description=f"New order: {', '.join(map(str, new_order))}\nBy: {interaction.user.mention}",
                             )
+                            await channel.send(embed=embed)
                 except Exception:
                     pass
         
