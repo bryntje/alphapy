@@ -2,6 +2,7 @@
 """Check premium config values."""
 import os
 import sys
+import time
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -84,7 +85,6 @@ print("\n=== Performance Check ===")
 # Test database connection performance
 try:
     import asyncpg
-    import time
     import asyncio
 
     async def test_db_performance():

@@ -68,6 +68,16 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="onboarding",
+        key="join_role_id",
+        description="Temporary role to assign immediately when a user joins (removed after onboarding/verification).",
+        value_type="role",
+        default=None,  # Optional - no role assigned if not set
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="embedwatcher",
         key="announcements_channel_id",
         description="Kanaal dat gecontroleerd wordt op auto-reminder embeds.",

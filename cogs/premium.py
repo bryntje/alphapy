@@ -55,7 +55,6 @@ class TermsAcceptanceView(discord.ui.View):
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
         try:
             await _save_terms_acceptance(cog, interaction.user.id, interaction.user.id)
             guild_id = interaction.guild.id if interaction.guild else 0
@@ -63,13 +62,15 @@ class TermsAcceptanceView(discord.ui.View):
             embed, view = await _build_premium_embed_and_view(
                 guild_id, interaction.user.id, guild_name
             )
-            await interaction.edit_original_response(embed=embed, view=view)
+            await interaction.response.edit_message(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Failed to save terms acceptance for user {interaction.user.id}: {e}")
-            await interaction.followup.send(
-                "❌ There was an error processing your acceptance. Please contact [support@innersync.tech](mailto:support@innersync.tech) for assistance.",
-                ephemeral=True
+            error_embed = discord.Embed(
+                title="❌ Error",
+                description="There was an error processing your acceptance. Please contact [support@innersync.tech](mailto:support@innersync.tech) for assistance.",
+                color=discord.Color.red(),
             )
+            await interaction.response.edit_message(embed=error_embed, view=None)
 
     @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger)
     async def decline_terms(self, interaction: discord.Interaction, button: discord.ui.Button):
