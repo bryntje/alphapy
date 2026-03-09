@@ -553,24 +553,25 @@ class VerificationCog(commands.Cog):
         # Act on result
         member = guild.get_member(message.author.id)
 
-        if can_verify and not needs_manual_review and member and verified_role_id:
-            role = guild.get_role(verified_role_id)
-            if role:
-                try:
-                    await member.add_roles(role, reason="AI verification succeeded")
-                except Exception as e:
-                    logger.warning(f"VerificationCog: could not assign verified role: {e}")
+        if can_verify and not needs_manual_review and member:
+            if verified_role_id:
+                role = guild.get_role(verified_role_id)
+                if role:
+                    try:
+                        await member.add_roles(role, reason="AI verification succeeded")
+                    except Exception as e:
+                        logger.warning(f"VerificationCog: could not assign verified role: {e}")
 
             # Always remove join role after successful verification, if configured
             try:
                 join_role_id = self.settings_helper.get_int("onboarding", "join_role_id", guild_id, fallback=0)
             except Exception:
                 join_role_id = 0
-            if join_role_id and join_role_id != 0 and member:
+            if join_role_id and join_role_id != 0:
                 join_role = guild.get_role(int(join_role_id))
                 if join_role and any(r.id == join_role.id for r in member.roles):
                     try:
-                        await member.remove_roles(join_role, reason="Replace join role with verification role")
+                        await member.remove_roles(join_role, reason="Remove join role after verification")
                         logger.info(
                             "VerificationCog: join role %s removed from user %s after verification",
                             join_role.id,

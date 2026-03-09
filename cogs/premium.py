@@ -55,6 +55,7 @@ class TermsAcceptanceView(discord.ui.View):
             )
             return
 
+        await interaction.response.defer(ephemeral=True)
         try:
             await _save_terms_acceptance(cog, interaction.user.id, interaction.user.id)
             guild_id = interaction.guild.id if interaction.guild else 0
@@ -62,15 +63,30 @@ class TermsAcceptanceView(discord.ui.View):
             embed, view = await _build_premium_embed_and_view(
                 guild_id, interaction.user.id, guild_name
             )
-            await interaction.response.edit_message(embed=embed, view=view)
+            if interaction.message is not None:
+                await interaction.message.edit(embed=embed, view=view)
+            await interaction.edit_original_response(
+                content="Terms accepted. Your premium options are shown above."
+            )
         except Exception as e:
             logger.error(f"Failed to save terms acceptance for user {interaction.user.id}: {e}")
-            error_embed = discord.Embed(
-                title="❌ Error",
-                description="There was an error processing your acceptance. Please contact [support@innersync.tech](mailto:support@innersync.tech) for assistance.",
-                color=discord.Color.red(),
+            error_msg = (
+                "There was an error processing your acceptance. "
+                "Please contact [support@innersync.tech](mailto:support@innersync.tech) for assistance."
             )
-            await interaction.response.edit_message(embed=error_embed, view=None)
+            try:
+                if interaction.message is not None:
+                    await interaction.message.edit(
+                        embed=discord.Embed(
+                            title="❌ Error",
+                            description=error_msg,
+                            color=discord.Color.red(),
+                        ),
+                        view=None,
+                    )
+            except Exception:
+                pass
+            await interaction.edit_original_response(content=error_msg)
 
     @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger)
     async def decline_terms(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -359,11 +375,9 @@ class PremiumCog(commands.Cog):
         if status["premium"]:
             tier = status.get("tier") or "premium"
             active_guild = await get_active_premium_guild(interaction.user.id)
-            if active_guild is None or active_guild == 0:
-                # Unassigned / no local row: user has premium but no guild chosen or not yet synced
-                msg = f"You have **Premium** ({tier}) but haven't chosen a server yet. Use `/premium_transfer` in the server you want."
-            elif active_guild != interaction.guild.id:
-                # Premium is assigned to a different guild
+            # When premium is confirmed in this guild but active_guild is None/0 (e.g. Core-API
+            # vs local DB sync delay), show premium in this server — don't say "haven't chosen".
+            if active_guild is not None and active_guild != 0 and active_guild != interaction.guild.id:
                 msg = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
             else:
                 expires = status.get("expires_at")
