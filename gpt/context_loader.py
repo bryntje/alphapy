@@ -78,13 +78,15 @@ async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
         if not rows:
             return ""
         parts = ["Recent reflections from the App (shared via webhook):", ""]
-        for idx, row in enumerate(rows, 1):
+        display_idx = 0
+        for row in rows:
             content = row["plaintext_content"]
             created = row["created_at"]
             date_str = created.strftime("%Y-%m-%d") if created else ""
             if not isinstance(content, dict):
                 continue
-            parts.append(f"Reflection {idx} ({date_str}):")
+            display_idx += 1
+            parts.append(f"Reflection {display_idx} ({date_str}):")
             for key in ("reflection_text", "reflection", "mantra", "thoughts", "future_message"):
                 val = content.get(key)
                 if val is not None and str(val).strip():
