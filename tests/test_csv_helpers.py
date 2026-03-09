@@ -21,6 +21,13 @@ class TestCreateCsvBuffer:
         assert "a,b" in content or "a," in content
         buf.close()
 
+    def test_empty_rows_no_fieldnames_produces_header_only(self):
+        """Empty rows and no fieldnames must not pass None to DictWriter (TypeError)."""
+        buf = create_csv_buffer([], fieldnames=None)
+        content = buf.getvalue()
+        assert content.strip() == "" or "\n" in content
+        buf.close()
+
     def test_single_row_derives_fieldnames(self):
         buf = create_csv_buffer([{"x": 1, "y": 2}])
         content = buf.getvalue()

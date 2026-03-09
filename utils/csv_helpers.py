@@ -10,9 +10,8 @@ from typing import List, Dict, Any, Optional
 
 def create_csv_buffer(rows: List[Dict[str, Any]], fieldnames: Optional[List[str]] = None) -> io.StringIO:
     """Create a CSV buffer from database rows."""
-    if not fieldnames and rows:
-        fieldnames = list(rows[0].keys())
-
+    if not fieldnames:
+        fieldnames = list(rows[0].keys()) if rows else []
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fieldnames)
     writer.writeheader()
@@ -34,9 +33,9 @@ def create_discord_file_from_buffer(buf: io.StringIO, filename: str) -> discord.
 
 def create_temp_csv_file(rows: List[Dict[str, Any]], filename: str, fieldnames: Optional[List[str]] = None) -> str:
     """Create a temporary CSV file (legacy method - prefer buffer method)."""
+    if not fieldnames:
+        fieldnames = list(rows[0].keys()) if rows else []
     with open(filename, "w", newline="", encoding="utf-8") as csvfile:
-        if not fieldnames and rows:
-            fieldnames = list(rows[0].keys())
         csv_writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         csv_writer.writeheader()
         csv_writer.writerows(rows)

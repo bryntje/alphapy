@@ -1509,6 +1509,7 @@ class Configuration(commands.Cog):
         view = StartOnboardingView()
         await target.send(embed=embed, view=view)
         await interaction.followup.send("✅ Onboarding panel posted.", ephemeral=True)
+
     @onboarding_group.command(name="reorder", description="Reorder onboarding questions by entering question IDs in desired order")
     @requires_admin()
     async def onboarding_reorder(self, interaction: discord.Interaction) -> None:
