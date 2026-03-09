@@ -7,9 +7,9 @@ permalink: /legal/
 # Legal Information
 
 **Innersync**  
-Bryan D'haen, handelend onder de commerciële naam Innersync  
-Ondernemingsnummer: BE 1035.304.655  
-Zetel: Reynaertpark 44, 9100 Sint-Niklaas  
+Bryan D'haen, trading under the commercial name Innersync  
+Enterprise number: BE 1035.304.655  
+Registered office: Reynaertpark 44, 9100 Sint-Niklaas, Belgium  
 E-mail: support@innersync.tech
 
 ---
