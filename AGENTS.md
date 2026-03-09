@@ -75,9 +75,10 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ## ✅ Agent: Verification
 - **Path**: `cogs/verification.py`, `cogs/configuration.py`
-- **Purpose**: AI-assisted payment verification via private channels
+- **Purpose**: Lets guilds run their own payment verification: a public area plus a paid area gated by a "verified" role. Members submit a payment screenshot (for the guild’s products, events, or access); after AI or manual review they receive the verified role and access. This is **not** for verifying Alphapy premium—it is a premium **feature** of Alphapy that guilds can use for their own payment gating.
 - **Flow**: Screenshot → vision JSON (`can_verify` / `needs_manual_review`) → auto-role or manual review
 - **Key**: Conservative vision model, no screenshots stored
+- **Premium**: Only guilds with an active Alphapy premium subscription can use verification (`guild_has_premium`). The member clicking Start verification does not need Alphapy premium—they are proving payment to the guild to get the verified role.
 
 ---
 

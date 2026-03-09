@@ -266,6 +266,35 @@ async def get_active_premium_guild(user_id: int) -> Optional[int]:
         return None
 
 
+async def guild_has_premium(guild_id: int) -> bool:
+    """
+    Return True if the guild has at least one active premium subscription assigned to it.
+
+    Used to gate guild-level premium features (e.g. verification): only servers with
+    premium can use the feature. Local DB only; no Core-API check.
+    """
+    if guild_id is None or guild_id == 0:
+        return False
+    pool = await _ensure_pool()
+    if pool is None:
+        return False
+    try:
+        async with acquire_safe(pool) as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT 1 FROM premium_subs
+                WHERE guild_id = $1 AND status = 'active'
+                  AND (expires_at IS NULL OR expires_at > NOW())
+                LIMIT 1
+                """,
+                guild_id,
+            )
+        return row is not None
+    except Exception as e:
+        logger.warning("Premium guard: guild_has_premium failed: %s", e)
+        return False
+
+
 async def transfer_premium_to_guild(user_id: int, new_guild_id: int) -> Tuple[bool, str]:
     """
     Move the user's active premium subscription to the given guild (local DB only).

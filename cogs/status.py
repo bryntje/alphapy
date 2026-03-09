@@ -650,7 +650,7 @@ def _drop_dangling_last_header(text: str) -> str:
         while lines and not lines[-1].strip():
             lines.pop()
         return "\n".join(lines).rstrip()
-    return text
+    return "\n".join(lines).rstrip()
 
 
 def _truncate_release_notes_md(text: str, max_len: int) -> str:

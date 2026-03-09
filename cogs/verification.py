@@ -18,13 +18,18 @@ from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger, log_database_event, log_with_guild, log_guild_action
 from utils.sanitizer import safe_embed_text
+from utils.premium_guard import guild_has_premium
 from utils.settings_helpers import CachedSettingsHelper
 from utils.settings_service import SettingsService
 from utils.timezone import BRUSSELS_TZ
 
 
 class VerificationCog(commands.Cog):
-    """AI-based payment verification via private ticket channels."""
+    """
+    Lets guilds run their own payment verification: public area + paid area gated by a verified role.
+    Members submit a payment screenshot (for the guild's products/events/access); after AI or manual
+    review they get the verified role. Not for Alphapy premium—this is a premium feature for guilds.
+    """
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -192,6 +197,13 @@ class VerificationCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
+        if not await guild_has_premium(guild_id):
+            await interaction.response.send_message(
+                "Verification is a premium feature for this server. Use /premium to assign premium to this server first, then you can post the verification panel.",
+                ephemeral=True,
+            )
+            return
+
         category_id = self._get_category_id(guild_id)
         verified_role_id = self._get_verified_role_id(guild_id)
 
@@ -206,9 +218,9 @@ class VerificationCog(commands.Cog):
         embed = discord.Embed(
             title="✅ Verify your access",
             description=(
-                "To unlock full access, start a private verification.\n\n"
+                "This server uses verification to gate access. To unlock the verified role and full access:\n\n"
                 "1. Click **Start verification**.\n"
-                "2. Upload a clear screenshot of your payment or subscription confirmation.\n"
+                "2. Upload a clear screenshot of your payment or confirmation (for this server's products, events, or access).\n"
                 "3. Our AI will review it and either auto-verify you or forward it to the team."
             ),
             color=discord.Color.green(),
@@ -649,6 +661,13 @@ class VerificationPanelView(discord.ui.View):
 
         if not interaction.guild:
             await interaction.followup.send("❌ This button only works in a server.", ephemeral=True)
+            return
+
+        if not await guild_has_premium(interaction.guild.id):
+            await interaction.followup.send(
+                "Verification is a premium feature for this server. An admin can use /premium to unlock it for this server.",
+                ephemeral=True,
+            )
             return
 
         try:
