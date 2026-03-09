@@ -5,7 +5,7 @@ Revises: 007_premium_subs_rls
 Create Date: 2026-02-28
 
 Stores plaintext reflection content received from Core-API webhook for use in
-growthcheckin, ticket suggestions, etc. Consent validated by Core before webhook.
+user-self flows (e.g. growthcheckin only; not ticket suggestions). Consent validated by Core before webhook.
 """
 from typing import Sequence, Union
 

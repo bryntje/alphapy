@@ -1,15 +1,16 @@
 """
 Webhook handler for plaintext reflections from App via Core-API.
 
-Stores reflection content in app_reflections for use in growthcheckin,
-ticket suggestions, etc. Consent is validated by Core before the webhook is sent.
+Stores reflection content in app_reflections for use in user-self flows (e.g.
+/growthcheckin only; not used for ticket "Suggest reply" for privacy).
+Consent is validated by Core before the webhook is sent.
 """
 
 import hashlib
 import hmac
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request, status
@@ -83,7 +84,11 @@ async def handle_app_reflection_webhook(request: Request) -> Dict[str, str]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning("Signature validation error (non-critical): %s", e)
+        logger.warning("Signature validation error: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Webhook signature validation failed.",
+        ) from e
 
     try:
         payload = json.loads(body.decode("utf-8"))

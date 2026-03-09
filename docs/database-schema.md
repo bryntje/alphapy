@@ -131,7 +131,7 @@ Tracks user acceptance of the Terms of Service and Privacy Policy for GDPR compl
 
 ### `app_reflections`
 
-Plaintext reflections received from the App via Core-API webhook. Used for Grok context in `/growthcheckin`, ticket suggestions, etc. Consent is validated by Core before the webhook is sent; revoke is handled via `POST /webhooks/revoke-reflection`.
+Plaintext reflections received from the App via Core-API webhook. Used for Grok context in user-self flows (e.g. `/growthcheckin` only; not used for ticket "Suggest reply" for privacy). Consent is validated by Core before the webhook is sent; revoke is handled via `POST /webhooks/revoke-reflection`.
 
 **Columns:**
 - `id` (SERIAL PRIMARY KEY)
@@ -147,7 +147,7 @@ Plaintext reflections received from the App via Core-API webhook. Used for Grok 
 
 **Notes:**
 - Populated by `POST /webhooks/app-reflections`; deleted by `POST /webhooks/revoke-reflection`.
-- Context loader (`gpt/context_loader.py`) reads from this table to include recent reflections in Grok prompts.
+- Context loader (`gpt/context_loader.py`) reads from this table for user-self flows (e.g. `/growthcheckin`). Ticket "Suggest reply" does not use reflection context.
 
 ---
 

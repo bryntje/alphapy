@@ -282,6 +282,12 @@ The following environment variables are required/optional for bot operation:
 - `PREMIUM_CHECKOUT_URL`: Checkout page URL for the "Get Premium" button in `/premium`. If unset, the button shows "Coming soon".
 - `PREMIUM_CACHE_TTL_SECONDS`: TTL in seconds for the in-memory premium cache (default: 300). See [Premium](premium.md) for guard behaviour and Core-API contract.
 
+### Optional - App reflections (Core-API webhooks)
+- `APP_REFLECTIONS_WEBHOOK_SECRET`: Secret for HMAC validation of `POST /webhooks/app-reflections` and `POST /webhooks/revoke-reflection`. If unset, falls back to `WEBHOOK_SECRET` or `SUPABASE_WEBHOOK_SECRET`.
+
+### Optional - GitHub
+- `GITHUB_TOKEN`: Optional token for GitHub API (e.g. used by the release guard in `utils/release_guard.py` to avoid rate limits when checking for 3.0.0 release). Also used for `/release` and repo links when `GITHUB_REPO` is set.
+
 ## Migration Notes
 
 If upgrading from single-guild to multi-guild:

@@ -1896,6 +1896,7 @@ class TicketActionView(discord.ui.View):
                 messages=[{"role": "user", "content": prompt}],
                 user_id=interaction.user.id,
                 guild_id=guild_id,
+                include_reflections=False,
             )
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to get suggestion: {e}", ephemeral=True)

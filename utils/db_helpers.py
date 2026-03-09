@@ -12,6 +12,9 @@ import asyncpg
 from asyncpg import exceptions as pg_exceptions
 from utils.logger import logger
 
+# Type alias for pools created by create_db_pool (so callers can hint without importing asyncpg)
+PoolT = asyncpg.Pool
+
 # Registry of all created pools for centralized cleanup
 _registered_pools: List[asyncpg.Pool] = []
 
@@ -108,7 +111,7 @@ async def create_db_pool(
     max_size: int = 10,
     command_timeout: float = 10.0,
     **kwargs
-) -> asyncpg.Pool:
+) -> PoolT:
     """
     Create a database connection pool with consistent configuration.
     

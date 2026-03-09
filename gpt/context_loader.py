@@ -11,7 +11,9 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from utils.db_helpers import PoolT
 from utils.supabase_client import _supabase_get, get_user_id_for_discord
+from utils.sanitizer import safe_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 _app_reflections_pool = None
 
 
-async def _get_app_reflections_pool():
+async def _get_app_reflections_pool() -> Optional[PoolT]:
     """Lazy-create pool for app_reflections queries (bot context)."""
     global _app_reflections_pool
     if _app_reflections_pool is not None and not _app_reflections_pool.is_closing():
@@ -85,11 +87,13 @@ async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
             parts.append(f"Reflection {idx} ({date_str}):")
             for key in ("reflection_text", "reflection", "mantra", "thoughts", "future_message"):
                 val = content.get(key)
-                if val:
+                if val is not None and str(val).strip():
                     label = key.replace("_", " ").title()
-                    parts.append(f"  {label}: {val}")
-            if content.get("date"):
-                parts.append(f"  Date: {content['date']}")
+                    safe_val = safe_prompt(str(val).strip()[:2048])
+                    parts.append(f"  {label}: {safe_val}")
+            date_val = content.get("date")
+            if date_val is not None and str(date_val).strip():
+                parts.append(f"  Date: {safe_prompt(str(date_val).strip()[:128])}")
             parts.append("")
         return "\n".join(parts).strip() or ""
     except Exception as e:

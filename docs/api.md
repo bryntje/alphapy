@@ -13,6 +13,7 @@ All API endpoints are prefixed with `/api` unless otherwise noted.
 - **Dashboard Configuration**: Web dashboard endpoints for managing settings, onboarding, etc. (requires Supabase JWT)
 - **Reminder Management**: User-facing reminder CRUD operations (requires API key + user ID)
 - **Exports**: CSV export endpoints for tickets and FAQ
+- **Webhooks**: Incoming webhooks from Core-API (app-reflections, revoke-reflection); validated via `X-Webhook-Signature`
 
 **Note for Mind Dashboard**: Mind primarily uses:
 - `/api/dashboard/metrics` (or `/api/metrics` alias) for live metrics
@@ -521,6 +522,43 @@ Delete a reminder.
 ### Exports
 
 **Note:** Ticket and FAQ exports are available via Discord slash commands (`/export_tickets`, `/export_faq`), not API endpoints. These commands are admin-only and generate CSV files sent via Discord.
+
+## Webhooks
+
+These endpoints receive payloads from Core-API. They do not use API key authentication; use `X-Webhook-Signature` (HMAC) with the configured secret (`APP_REFLECTIONS_WEBHOOK_SECRET` or fallback). See [Configuration](configuration.md) for environment variables.
+
+### `POST /webhooks/app-reflections`
+
+Receives plaintext reflection content from the App via Core-API. Payload is stored in `app_reflections` and used for Grok context in user-self flows (e.g. `/growthcheckin` only; not used for ticket "Suggest reply" for privacy). An optional release guard (3.0.0 on GitHub) may return `503` until the feature is enabled.
+
+**Headers:** `X-Webhook-Signature` (optional if no secret configured)
+
+**Request body:**
+```json
+{
+  "user_id": 123456789,
+  "reflection_id": "uuid-from-app",
+  "plaintext_content": { "reflection_text": "...", "mantra": "...", "thoughts": "...", "future_message": "...", "date": "YYYY-MM-DD" }
+}
+```
+
+**Response:** `200` with `{"status": "acknowledged", "reflection_id": "..."}` or `503` with `{"status": "disabled", "message": "..."}` when the release guard blocks the feature.
+
+### `POST /webhooks/revoke-reflection`
+
+Deletes a previously stored reflection when the user revokes consent in the App. Core-API sends this after consent is revoked.
+
+**Headers:** `X-Webhook-Signature` (optional if no secret configured)
+
+**Request body:**
+```json
+{
+  "user_id": 123456789,
+  "reflection_id": "uuid-from-app"
+}
+```
+
+**Response:** `200` with `{"status": "deleted", "count": 1}` (or `count: 0` if no row matched).
 
 ## Error Responses
 
