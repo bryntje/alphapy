@@ -63,36 +63,19 @@ class TermsAcceptanceView(discord.ui.View):
             embed, view = await _build_premium_embed_and_view(
                 guild_id, interaction.user.id, guild_name
             )
-            if interaction.message is not None:
-                await interaction.message.edit(embed=embed, view=view)
-                await interaction.edit_original_response(
-                    content="Terms accepted. Your premium options are shown above."
-                )
-            else:
-                # Ephemeral message may be None in some contexts; show embed in deferred response
-                await interaction.edit_original_response(
-                    content="Terms accepted. Choose your plan below.",
-                    embed=embed,
-                    view=view,
-                )
+            # Ephemeral messages can only be updated via the interaction webhook, not Message.edit()
+            await interaction.edit_original_response(
+                content="Terms accepted. Choose your plan below.",
+                embed=embed,
+                view=view,
+            )
         except Exception as e:
             logger.error(f"Failed to save terms acceptance for user {interaction.user.id}: {e}")
             error_msg = (
                 "There was an error processing your acceptance. "
                 "Please contact [support@innersync.tech](mailto:support@innersync.tech) for assistance."
             )
-            try:
-                if interaction.message is not None:
-                    await interaction.message.edit(
-                        embed=discord.Embed(
-                            title="❌ Error",
-                            description=error_msg,
-                            color=discord.Color.red(),
-                        ),
-                        view=None,
-                    )
-            except Exception:
-                pass
+            # Ephemeral messages can only be updated via the interaction webhook
             await interaction.edit_original_response(content=error_msg)
 
     @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger)
