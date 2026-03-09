@@ -27,8 +27,7 @@ def upgrade() -> None:
         )
     """)
 
-    # Add indexes for efficient queries
-    op.execute("CREATE INDEX IF NOT EXISTS idx_terms_acceptance_user ON terms_acceptance (user_id)")
+    # Index for queries by accepted_at (user_id already has a unique index from UNIQUE)
     op.execute("CREATE INDEX IF NOT EXISTS idx_terms_acceptance_accepted_at ON terms_acceptance (accepted_at)")
 
 

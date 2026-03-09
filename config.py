@@ -76,8 +76,8 @@ MAIN_GUILD_ID = int(os.getenv("MAIN_GUILD_ID", "0"))  # Set to 0 to disable filt
 PREMIUM_CHECKOUT_URL = os.getenv("PREMIUM_CHECKOUT_URL", "")
 PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
 
-# GitHub (for /release notes and "read full" link)
-GITHUB_REPO = os.getenv("GITHUB_REPO", "bryntje/alphapy").strip().rstrip("/")
+# GitHub (for /release notes and "read full" link). Optional; when unset, /release uses local changelog.
+GITHUB_REPO = (os.getenv("GITHUB_REPO") or "").strip().rstrip("/")
 
 # Admin And Owner
 OWNER_IDS = [367270193585455104]
