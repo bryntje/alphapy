@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [3.0.0] - 2026-XX-XX
+## [3.0.0] - 2026-03-09
 
 ### Added
 - **Complete Premium Monetization Ecosystem**: Full-featured subscription platform (payment provider subject to change), multi-tier pricing (€4.99/mo, €29/year, €49/lifetime), and automated guild assignment

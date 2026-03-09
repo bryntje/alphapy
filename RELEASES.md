@@ -4,6 +4,58 @@ All notable releases of Alphapy will be documented in this file.
 
 ---
 
+## [3.0.0] - 2026-03-09 - "Enterprise Ready"
+
+### 🎉 Major Release: Premium Monetization, Security Framework & Production Infrastructure
+
+This release delivers an enterprise-grade Discord bot with complete monetization, a hardened security framework, universal database helpers, GDPR compliance, and production-ready observability.
+
+#### What's New
+- **Premium Monetization Ecosystem:**
+  - Full subscription platform with multi-tier pricing (€4.99/mo, €29/year, €49/lifetime) and automated guild assignment
+  - Commands: `/premium`, `/premium_check`, `/my_premium`, `/premium_transfer` — one active subscription per user, transferable between servers
+  - Early Bird Founder Program: special lifetime tier (€29) with automatic founder role and welcome messaging
+  - Core-API integration with HMAC validation, fallback mechanisms, and transfer sync across guilds
+- **Universal Database Helpers:**
+  - Centralized `DatabaseManager` class (`utils/database_helpers.py`) used across 14 cogs
+  - `acquire_safe()` for consistent, safe database access with automatic pool management and error recovery
+  - Eliminates connection pool errors, "Future exception was never retrieved" warnings, and timeouts
+- **Advanced Security Framework:**
+  - Admin credentials via environment variables (`OWNER_IDS`, `ADMIN_ROLE_IDS`) — no hardcoded credentials
+  - HMAC webhook validation, OAuth credential security, comprehensive rate limiting
+  - Input sanitization across all user inputs (injection, prompt jailbreaks, malicious URLs)
+- **GDPR Compliance Suite:**
+  - Terms acceptance flow with database persistence; new `terms_acceptance` table (Alembic 006)
+  - Data retention policies (7 years for tax compliance), user data export capabilities
+- **Join Role (temporary):** Assign a role on join; removed after onboarding completion or verification (`onboarding.join_role_id`, `/config onboarding set_join_role`).
+- **Observability:** Dashboard metrics include `premium_metrics` (premium checks, cache hits, transfers, cache size); `/release` command reads release notes from GitHub with link to full notes (`GITHUB_REPO` env).
+
+#### Technical Improvements
+- **Command Structure:** `requires_owner()` decorator for true owner-only commands vs admin-accessible features
+- **Embed & Response Consistency:** Unified embed styling; exports use shared CSV helpers and English-only responses
+- **Cache Management:** LRU caches with size limits, TTL, and cleanup across settings, cooldowns, rate limits, command stats
+- **Premium UX:** After accepting Terms & Privacy in `/premium`, users immediately see the full pricing embed with checkout buttons
+
+#### Bug Fixes
+- **Database:** Resolved all connection pool errors and timeout problems through universal helpers
+- **Premium:** Fixed guild assignment, checkout URL generation, transfer sync, founder role edge cases
+- **Internationalization:** Removed remaining Dutch strings in reminders, inviteboard, dataquery, embed_watcher
+- **Exports:** Fixed interaction flow (no `send_error` before `defer()`) in `/export_tickets` and `/export_faq`
+- **Syntax & Permissions:** Corrected indentation/imports and admin vs owner permission logic
+
+#### Security
+- Credential management via env vars; HMAC validation; IP-based rate limiting; guild-specific access controls
+- Input sanitization; data isolation; enhanced audit logging
+
+#### Performance
+- Database pool recycling, health checks, optimized query patterns
+- Cache optimization, background task lifecycle, memory leak prevention, graceful shutdown
+
+#### Migration
+- Zero downtime deployment; backwards compatibility; data integrity validation; rollback-safe migration paths
+
+---
+
 ## [2.1.0] - 2026-02-09 - "Lifecycle Manager"
 
 ### Google Cloud Secret Manager & docs
