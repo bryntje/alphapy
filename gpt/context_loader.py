@@ -8,6 +8,7 @@ Loads recent reflections from:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -19,7 +20,8 @@ from utils.sanitizer import safe_prompt
 logger = logging.getLogger(__name__)
 
 # Pool for app_reflections (PostgreSQL); created on first use
-_app_reflections_pool = None
+_app_reflections_pool: Optional[PoolT] = None
+_app_reflections_pool_lock = asyncio.Lock()
 
 
 async def _get_app_reflections_pool() -> Optional[PoolT]:
@@ -27,28 +29,32 @@ async def _get_app_reflections_pool() -> Optional[PoolT]:
     global _app_reflections_pool
     if _app_reflections_pool is not None and not _app_reflections_pool.is_closing():
         return _app_reflections_pool
-    try:
-        from utils.db_helpers import create_db_pool
-
+    async with _app_reflections_pool_lock:
+        # Double-check: another coroutine may have created the pool while we waited
+        if _app_reflections_pool is not None and not _app_reflections_pool.is_closing():
+            return _app_reflections_pool
         try:
-            import config_local as config  # type: ignore
-        except ImportError:
-            import config  # type: ignore
+            from utils.db_helpers import create_db_pool
 
-        dsn = getattr(config, "DATABASE_URL", None) or ""
-        if not dsn:
+            try:
+                import config_local as config  # type: ignore
+            except ImportError:
+                import config  # type: ignore
+
+            dsn = getattr(config, "DATABASE_URL", None) or ""
+            if not dsn:
+                return None
+            _app_reflections_pool = await create_db_pool(
+                dsn,
+                name="context_loader_app_reflections",
+                min_size=1,
+                max_size=5,
+                command_timeout=10.0,
+            )
+            return _app_reflections_pool
+        except Exception as e:
+            logger.debug("Could not create app_reflections pool for context: %s", e)
             return None
-        _app_reflections_pool = await create_db_pool(
-            dsn,
-            name="context_loader_app_reflections",
-            min_size=1,
-            max_size=5,
-            command_timeout=10.0,
-        )
-        return _app_reflections_pool
-    except Exception as e:
-        logger.debug("Could not create app_reflections pool for context: %s", e)
-        return None
 
 
 async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
