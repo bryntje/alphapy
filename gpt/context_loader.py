@@ -22,6 +22,18 @@ logger = logging.getLogger(__name__)
 # Pool for app_reflections (PostgreSQL); created on first use
 _app_reflections_pool: Optional[PoolT] = None
 _app_reflections_pool_lock = asyncio.Lock()
+_REFLECTION_TEXT_MAX_CHARS = 2048
+_REFLECTION_DATE_MAX_CHARS = 128
+
+
+def _sanitize_reflection_field(value: object, max_chars: int = _REFLECTION_TEXT_MAX_CHARS) -> str:
+    """Normalize reflection content before injecting into LLM context."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    return safe_prompt(text[:max_chars])
 
 
 async def _get_app_reflections_pool() -> Optional[PoolT]:
@@ -102,13 +114,14 @@ async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
             blocks.append(f"Reflection {display_idx} ({date_str}):")
             for key in ("reflection_text", "reflection", "mantra", "thoughts", "future_message"):
                 val = content.get(key)
-                if val is not None and str(val).strip():
+                safe_val = _sanitize_reflection_field(val)
+                if safe_val:
                     label = key.replace("_", " ").title()
-                    safe_val = safe_prompt(str(val).strip()[:2048])
                     blocks.append(f"  {label}: {safe_val}")
             date_val = content.get("date")
-            if date_val is not None and str(date_val).strip():
-                blocks.append(f"  Date: {safe_prompt(str(date_val).strip()[:128])}")
+            safe_date = _sanitize_reflection_field(date_val, max_chars=_REFLECTION_DATE_MAX_CHARS)
+            if safe_date:
+                blocks.append(f"  Date: {safe_date}")
             blocks.append("")
         if not blocks:
             return ""
@@ -180,11 +193,14 @@ async def load_user_reflections(
                     if reflection_rows:
                         context_parts = ["Recent reflections from the user:", ""]
                         for idx, reflection in enumerate(reflection_rows, 1):
-                            date_str = reflection.get("date", "")
-                            reflection_text = reflection.get("reflection_text", "")
-                            mantra = reflection.get("mantra")
-                            thoughts = reflection.get("thoughts")
-                            future_message = reflection.get("future_message")
+                            date_str = _sanitize_reflection_field(
+                                reflection.get("date", ""),
+                                max_chars=_REFLECTION_DATE_MAX_CHARS,
+                            )
+                            reflection_text = _sanitize_reflection_field(reflection.get("reflection_text", ""))
+                            mantra = _sanitize_reflection_field(reflection.get("mantra"))
+                            thoughts = _sanitize_reflection_field(reflection.get("thoughts"))
+                            future_message = _sanitize_reflection_field(reflection.get("future_message"))
                             context_parts.append(f"Reflection {idx} ({date_str}):")
                             if reflection_text:
                                 context_parts.append(f"  Reflection: {reflection_text}")
