@@ -1309,6 +1309,7 @@ class Configuration(commands.Cog):
             f"Join role reset by {interaction.user.mention}.",
             interaction.guild.id
         )
+
     @onboarding_group.command(name="add_question", description="Add a new onboarding question")
     @requires_admin()
     async def onboarding_add_question(

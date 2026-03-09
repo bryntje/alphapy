@@ -26,21 +26,17 @@ async def test_database_performance():
     print("🗄️  Testing Database Performance...")
 
     try:
-        import asyncpg
-        from utils.db_helpers import create_db_pool
+        from utils.database_helpers import DatabaseManager
+
+        manager = DatabaseManager("perf_test", {"DATABASE_URL": config.DATABASE_URL or ""})
 
         # Test connection pool creation
         start_time = time.time()
-        pool = await create_db_pool(
-            config.DATABASE_URL,
-            name="perf_test",
-            min_size=1,
-            max_size=5
-        )
+        pool = await manager.ensure_pool()
         pool_time = (time.time() - start_time) * 1000
         print(f"✅ Database connection: {pool_time:.1f}ms")
 
-        # Test simple queries
+        # Test simple queries (uses acquire_safe via manager.connection())
         queries = [
             ("COUNT tables", "SELECT COUNT(*) FROM information_schema.tables"),
             ("COUNT reminders", "SELECT COUNT(*) FROM reminders"),
@@ -50,7 +46,7 @@ async def test_database_performance():
 
         for name, query in queries:
             start_time = time.time()
-            async with pool.acquire() as conn:
+            async with manager.connection() as conn:
                 result = await conn.fetchval(query)
             query_time = (time.time() - start_time) * 1000
             print(f"✅ {name}: {query_time:.1f}ms (result: {result})")

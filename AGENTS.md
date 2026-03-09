@@ -78,7 +78,6 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Purpose**: AI-assisted payment verification via private channels
 - **Flow**: Screenshot → vision JSON (`can_verify` / `needs_manual_review`) → auto-role or manual review
 - **Key**: Conservative vision model, no screenshots stored
-- **Premium**: Starting verification requires an active premium subscription for the user in that guild
 
 ---
 

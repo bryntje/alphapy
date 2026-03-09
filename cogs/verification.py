@@ -18,7 +18,6 @@ from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger, log_database_event, log_with_guild, log_guild_action
 from utils.sanitizer import safe_embed_text
-from utils.premium_guard import is_premium, premium_required_message
 from utils.settings_helpers import CachedSettingsHelper
 from utils.settings_service import SettingsService
 from utils.timezone import BRUSSELS_TZ
@@ -650,13 +649,6 @@ class VerificationPanelView(discord.ui.View):
 
         if not interaction.guild:
             await interaction.followup.send("❌ This button only works in a server.", ephemeral=True)
-            return
-
-        if not await is_premium(interaction.user.id, interaction.guild.id):
-            await interaction.followup.send(
-                premium_required_message("Verification"),
-                ephemeral=True,
-            )
             return
 
         try:
