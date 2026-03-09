@@ -80,7 +80,7 @@ PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
 
 # GitHub (for /release notes and "read full" link). Optional; when unset, /release uses local changelog.
 GITHUB_REPO = (os.getenv("GITHUB_REPO") or "").strip().rstrip("/")
-# Optional: token for GitHub API (e.g. release guard in utils/release_guard.py) to avoid rate limits
+# Optional: token for GitHub API (e.g. /release, repo links) to avoid rate limits
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 # Admin And Owner

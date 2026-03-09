@@ -6,12 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **App Reflections (plaintext from Core)**: Webhooks `POST /webhooks/app-reflections` and `POST /webhooks/revoke-reflection` to receive and revoke plaintext reflections from the App via Core-API; stored in `app_reflections` and used in `/growthcheckin` (user-self context only; not used for ticket "Suggest reply" for privacy).
-- **Release guard**: Optional sanity check `utils/release_guard.py` (`is_reflection_share_allowed()`) — app-reflections webhook accepts payloads only when a 3.0.0 release exists on GitHub (cached 30 min, fail closed).
 - **Legal page**: `docs/legal.md` (docs.alphapy.innersync.tech/legal/) with company details, enterprise number, and registered office; linked from Terms of Service and Privacy Policy footers.
 - **Config**: `APP_REFLECTIONS_WEBHOOK_SECRET` and `GITHUB_TOKEN` environment variables; documented in [Configuration](docs/configuration.md).
 
 ### Changed
 - **Privacy**: Reflection context (Supabase + app_reflections) is no longer included in ticket "Suggest reply"; only used for user-self flows (e.g. `/growthcheckin`). (No leaks of user-data have occurred, this was caught before any tickets got made.)
+- **Removed**: Release guard (GitHub 3.0.0 check) from app-reflections webhook; it was a personal sanity check, not needed in production.
 
 ### Fixed
 - (No changes yet)

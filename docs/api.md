@@ -529,7 +529,7 @@ These endpoints receive payloads from Core-API. They do not use API key authenti
 
 ### `POST /webhooks/app-reflections`
 
-Receives plaintext reflection content from the App via Core-API. Payload is stored in `app_reflections` and used for Grok context in user-self flows (e.g. `/growthcheckin` only; not used for ticket "Suggest reply" for privacy). An optional release guard (3.0.0 on GitHub) may return `503` until the feature is enabled.
+Receives plaintext reflection content from the App via Core-API. Payload is stored in `app_reflections` and used for Grok context in user-self flows (e.g. `/growthcheckin` only; not used for ticket "Suggest reply" for privacy).
 
 **Headers:** `X-Webhook-Signature` (optional if no secret configured)
 
@@ -542,7 +542,7 @@ Receives plaintext reflection content from the App via Core-API. Payload is stor
 }
 ```
 
-**Response:** `200` with `{"status": "acknowledged", "reflection_id": "..."}` or `503` with `{"status": "disabled", "message": "..."}` when the release guard blocks the feature.
+**Response:** `200` with `{"status": "acknowledged", "reflection_id": "..."}`.
 
 ### `POST /webhooks/revoke-reflection`
 

@@ -14,10 +14,7 @@ from typing import Dict, Optional
 
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request, status
-from starlette.responses import JSONResponse
-
 import config
-from utils.release_guard import is_reflection_share_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -65,15 +62,6 @@ async def handle_app_reflection_webhook(request: Request) -> Dict[str, str]:
         "plaintext_content": { ... }  // JSON object with reflection fields
     }
     """
-    if not await is_reflection_share_allowed():
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "disabled",
-                "message": "Reflection sharing not enabled yet.",
-            },
-        )
-
     body = await request.body()
     signature = (
         request.headers.get("X-Webhook-Signature")
