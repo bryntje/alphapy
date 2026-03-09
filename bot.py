@@ -79,6 +79,16 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="onboarding",
+        key="join_role_id",
+        description="Temporary role to assign immediately when a user joins (removed after onboarding/verification).",
+        value_type="role",
+        default=None,  # Optional - no role assigned if not set
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="embedwatcher",
         key="announcements_channel_id",
         description="Channel monitored for auto-reminder embeds.",
@@ -577,8 +587,8 @@ async def close_with_shutdown():
 
 bot.close = close_with_shutdown
 
-# Start bot
-token: Optional[str] = getattr(config, "BOT_TOKEN", None)
+# Start bot: uses BOT_TOKEN_ACTIVE (BOT_TOKEN_TEST when USE_TEST_BOT=1, else BOT_TOKEN)
+token: Optional[str] = getattr(config, "BOT_TOKEN_ACTIVE", None)
 if not token:
-    raise RuntimeError("BOT_TOKEN is not set in the config.")
+    raise RuntimeError("BOT_TOKEN (or BOT_TOKEN_TEST when USE_TEST_BOT=1) is not set in the config.")
 bot.run(token)

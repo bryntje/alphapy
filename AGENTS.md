@@ -31,7 +31,8 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ## 🧾 Agent: ReminderManager
 - **Path**: `cogs/reminders.py`
 - **Purpose**: Slash commands for manual reminder management
-- **Commands**: `/add_reminder`, `/reminder_list`, `/reminder_edit`, `/reminder_delete`
+- **Commands**: `/add_reminder`, `/add_live_session`, `/reminder_list`, `/reminder_edit`, `/reminder_delete`
+- **LiveSessionPresets**: `/add_live_session` creates a recurring live-session reminder (fixed message, optional image; premium for images)
 - **Interaction**: Shares parser with EmbedReminderWatcher
 - **Embeds**: Title max 240 chars, location max 1024 chars
 
@@ -74,9 +75,10 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ## ✅ Agent: Verification
 - **Path**: `cogs/verification.py`, `cogs/configuration.py`
-- **Purpose**: AI-assisted payment verification via private channels
+- **Purpose**: Lets guilds run their own payment verification: a public area plus a paid area gated by a "verified" role. Members submit a payment screenshot (for the guild’s products, events, or access); after AI or manual review they receive the verified role and access. This is **not** for verifying Alphapy premium—it is a premium **feature** of Alphapy that guilds can use for their own payment gating.
 - **Flow**: Screenshot → vision JSON (`can_verify` / `needs_manual_review`) → auto-role or manual review
 - **Key**: Conservative vision model, no screenshots stored
+- **Premium**: Only guilds with an active Alphapy premium subscription can use verification (`guild_has_premium`). The member clicking Start verification does not need Alphapy premium—they are proving payment to the guild to get the verified role.
 
 ---
 
@@ -85,6 +87,16 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Purpose**: Configurable onboarding flow with rules, questions and personalization
 - **Helper**: `get_user_personalization()` for opt-in + preferred language
 - **API**: Dashboard endpoints ready (`/api/dashboard/{guild_id}/onboarding/*`)
+
+---
+
+## 🧩 Agent: JoinRole
+- **Path**: `cogs/join_roles.py`, `cogs/configuration.py`, `cogs/onboarding.py`, `cogs/verification.py`
+- **Purpose**: Assign a temporary join role to new members on guild join
+- **Behavior**:
+  - On join: assigns `onboarding.join_role_id` when onboarding is enabled
+  - On completion: removes the join role after onboarding completion (after assigning the completion role, if configured)
+  - On verification: removes the join role after successful payment verification (after assigning the verified role)
 
 ---
 

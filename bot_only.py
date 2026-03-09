@@ -10,12 +10,12 @@ import config
 from typing import Optional
 
 
-# Intentions instellen
+# Set intents
 intents = discord.Intents.default()
 intents.messages = True
-intents.reactions = True  # ✅ Nodig voor reaction roles
+intents.reactions = True  # Required for reaction roles
 intents.guilds = True
-intents.members = True  # ✅ Nodig om leden te herkennen
+intents.members = True  # Required to recognize members
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -24,9 +24,9 @@ settings_service.register(
     SettingDefinition(
         scope="system",
         key="log_channel_id",
-        description="Kanaal voor status- en foutmeldingen.",
+        description="Channel for status and error messages.",
         value_type="channel",
-        default=0,  # Moet per guild geconfigureerd worden
+        default=0,  # Must be configured per guild
     )
 )
 settings_service.register(
@@ -68,18 +68,28 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="onboarding",
+        key="join_role_id",
+        description="Temporary role to assign immediately when a user joins (removed after onboarding/verification).",
+        value_type="role",
+        default=None,  # Optional - no role assigned if not set
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="embedwatcher",
         key="announcements_channel_id",
-        description="Kanaal dat gecontroleerd wordt op auto-reminder embeds.",
+        description="Channel monitored for auto-reminder embeds.",
         value_type="channel",
-        default=0,  # Moet per guild geconfigureerd worden
+        default=0,  # Must be configured per guild
     )
 )
 settings_service.register(
     SettingDefinition(
         scope="embedwatcher",
         key="reminder_offset_minutes",
-        description="Aantal minuten vóór het event dat de reminder gepland wordt.",
+        description="Number of minutes before the event that the reminder is scheduled.",
         value_type="int",
         default=60,
         min_value=0,
@@ -109,7 +119,7 @@ settings_service.register(
     SettingDefinition(
         scope="ticketbot",
         key="escalation_role_id",
-        description="Rol voor escalatie van tickets.",
+        description="Role for ticket escalation.",
         value_type="role",
         default=None,  # Must be configured per guild
         allow_null=True,
@@ -141,7 +151,7 @@ settings_service.register(
     SettingDefinition(
         scope="invites",
         key="enabled",
-        description="Schakel de invite tracker functionaliteit in.",
+        description="Enable the invite tracker feature.",
         value_type="bool",
         default=True,
     )
@@ -150,16 +160,16 @@ settings_service.register(
     SettingDefinition(
         scope="invites",
         key="announcement_channel_id",
-        description="Kanaal voor automatische invite meldingen.",
+        description="Channel for automatic invite notifications.",
         value_type="channel",
-        default=0,  # Moet per guild geconfigureerd worden
+        default=0,  # Must be configured per guild
     )
 )
 settings_service.register(
     SettingDefinition(
         scope="invites",
         key="with_inviter_template",
-        description="Berichttemplate wanneer een inviter gevonden is.",
+        description="Message template when an inviter is found.",
         value_type="str",
         default="{member} joined! {inviter} now has {count} invites.",
     )
@@ -168,7 +178,7 @@ settings_service.register(
     SettingDefinition(
         scope="invites",
         key="no_inviter_template",
-        description="Berichttemplate wanneer geen inviter gevonden is.",
+        description="Message template when no inviter is found.",
         value_type="str",
         default="{member} joined, but no inviter data found.",
     )
@@ -177,7 +187,7 @@ settings_service.register(
     SettingDefinition(
         scope="gdpr",
         key="enabled",
-        description="Schakel GDPR handler in voor command en button.",
+        description="Enable GDPR handler for command and button.",
         value_type="bool",
         default=True,
     )
@@ -186,16 +196,16 @@ settings_service.register(
     SettingDefinition(
         scope="gdpr",
         key="channel_id",
-        description="Kanaal waarin het GDPR-document gepost wordt.",
+        description="Channel where the GDPR document is posted.",
         value_type="channel",
-        default=0,  # Moet per guild geconfigureerd worden
+        default=0,  # Must be configured per guild
     )
 )
 settings_service.register(
     SettingDefinition(
         scope="reminders",
         key="enabled",
-        description="Schakel de reminders functionaliteit in.",
+        description="Enable the reminders feature.",
         value_type="bool",
         default=True,
     )
@@ -204,9 +214,9 @@ settings_service.register(
     SettingDefinition(
         scope="reminders",
         key="default_channel_id",
-        description="Standaard kanaal voor nieuwe reminders (optioneel).",
+        description="Default channel for new reminders (optional).",
         value_type="channel",
-        default=0,  # Moet per guild geconfigureerd worden
+        default=0,  # Must be configured per guild
         allow_null=True,
     )
 )
@@ -214,18 +224,18 @@ settings_service.register(
     SettingDefinition(
         scope="reminders",
         key="allow_everyone_mentions",
-        description="Sta @everyone toe bij reminders.",
+        description="Allow @everyone in reminders.",
         value_type="bool",
-        default=False,  # Moet per guild geconfigureerd worden
+        default=False,  # Must be configured per guild
     )
 )
 
-# Event: Bot is klaar
+# Event: Bot is ready
 @bot.event
 async def on_ready():
     await bot.wait_until_ready()
     
-    logger.info(f"{bot.user} is online! ✅ Intents actief: {bot.intents}")
+    logger.info(f"{bot.user} is online! Intents active: {bot.intents}")
 
     logger.info("📡 Known guilds:")
     for guild in bot.guilds:
@@ -277,11 +287,11 @@ async def setup_hook():
 
 
 bot.setup_hook = setup_hook
-# API server wordt apart gedraaid in de dashboard service
+# API server is run separately in the dashboard service
 
 
-# Start bot
-token: Optional[str] = getattr(config, "BOT_TOKEN", None)
+# Start bot: uses BOT_TOKEN_ACTIVE (BOT_TOKEN_TEST when USE_TEST_BOT=1, else BOT_TOKEN)
+token: Optional[str] = getattr(config, "BOT_TOKEN_ACTIVE", None)
 if not token:
-    raise RuntimeError("BOT_TOKEN is not set in the config.")
+    raise RuntimeError("BOT_TOKEN (or BOT_TOKEN_TEST when USE_TEST_BOT=1) is not set in the config.")
 bot.run(token)

@@ -14,21 +14,28 @@ except ImportError:
     import config  # type: ignore
 
 from gpt.helpers import ask_gpt_vision
-from utils.db_helpers import acquire_safe, create_db_pool, is_pool_healthy
+from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger, log_database_event, log_with_guild, log_guild_action
 from utils.sanitizer import safe_embed_text
+from utils.premium_guard import guild_has_premium
 from utils.settings_helpers import CachedSettingsHelper
 from utils.settings_service import SettingsService
 from utils.timezone import BRUSSELS_TZ
 
 
 class VerificationCog(commands.Cog):
-    """AI-based payment verification via private ticket channels."""
+    """
+    Lets guilds run their own payment verification: public area + paid area gated by a verified role.
+    Members submit a payment screenshot (for the guild's products/events/access); after AI or manual
+    review they get the verified role. Not for Alphapy premium—this is a premium feature for guilds.
+    """
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("verification", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 
         settings = getattr(bot, "settings", None)
         if not isinstance(settings, SettingsService):
@@ -53,17 +60,11 @@ class VerificationCog(commands.Cog):
                 logger.warning("VerificationCog: DATABASE_URL not set, skipping pool creation")
                 return
 
-            pool = await create_db_pool(
-                dsn,
-                name="verification",
-                min_size=1,
-                max_size=10,
-                command_timeout=10.0,
-            )
+            pool = await self._db_manager.ensure_pool()
             self.db = pool
             log_database_event("DB_CONNECTED", details="Verification database pool created")
 
-            async with acquire_safe(pool) as conn:
+            async with self._db_manager.connection() as conn:
                 await conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS verification_tickets (
@@ -87,25 +88,27 @@ class VerificationCog(commands.Cog):
                     "CREATE INDEX IF NOT EXISTS idx_verification_tickets_channel_id ON verification_tickets(channel_id);"
                 )
 
-            logger.info("✅ VerificationCog: DB ready (verification_tickets)")
+            logger.info("VerificationCog: DB ready (verification_tickets)")
             log_database_event("DB_READY", details="VerificationCog database fully initialized")
         except Exception as e:
             log_database_event("DB_INIT_ERROR", details=f"VerificationCog setup failed: {e}")
-            logger.error(f"❌ VerificationCog: DB init error: {e}")
-            if self.db:
+            logger.error(f"VerificationCog: DB init error: {e}")
+            if getattr(self, "_db_manager", None) and self._db_manager._pool:
                 try:
-                    await self.db.close()
+                    await self._db_manager._pool.close()
                 except Exception:
                     pass
-                self.db = None
+                self._db_manager._pool = None
+            self.db = None
 
     async def cog_unload(self) -> None:
-        if self.db:
+        if getattr(self, "_db_manager", None) and self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
-            self.db = None
+            self._db_manager._pool = None
+        self.db = None
 
     # ----- Settings helpers -----
 
@@ -194,6 +197,13 @@ class VerificationCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
+        if not await guild_has_premium(guild_id):
+            await interaction.response.send_message(
+                "Verification is a premium feature for this server. Use /premium to assign premium to this server first, then you can post the verification panel.",
+                ephemeral=True,
+            )
+            return
+
         category_id = self._get_category_id(guild_id)
         verified_role_id = self._get_verified_role_id(guild_id)
 
@@ -208,9 +218,9 @@ class VerificationCog(commands.Cog):
         embed = discord.Embed(
             title="✅ Verify your access",
             description=(
-                "To unlock full access, start a private verification.\n\n"
+                "This server uses verification to gate access. To unlock the verified role and full access:\n\n"
                 "1. Click **Start verification**.\n"
-                "2. Upload a clear screenshot of your payment or subscription confirmation.\n"
+                "2. Upload a clear screenshot of your payment or confirmation (for this server's products, events, or access).\n"
                 "3. Our AI will review it and either auto-verify you or forward it to the team."
             ),
             color=discord.Color.green(),
@@ -554,13 +564,32 @@ class VerificationCog(commands.Cog):
         # Act on result
         member = guild.get_member(message.author.id)
 
-        if can_verify and not needs_manual_review and member and verified_role_id:
-            role = guild.get_role(verified_role_id)
-            if role:
-                try:
-                    await member.add_roles(role, reason="AI verification succeeded")
-                except Exception as e:
-                    logger.warning(f"VerificationCog: could not assign verified role: {e}")
+        if can_verify and not needs_manual_review and member:
+            if verified_role_id:
+                role = guild.get_role(verified_role_id)
+                if role:
+                    try:
+                        await member.add_roles(role, reason="AI verification succeeded")
+                    except Exception as e:
+                        logger.warning(f"VerificationCog: could not assign verified role: {e}")
+
+            # Always remove join role after successful verification, if configured
+            try:
+                join_role_id = self.settings_helper.get_int("onboarding", "join_role_id", guild_id, fallback=0)
+            except Exception:
+                join_role_id = 0
+            if join_role_id and join_role_id != 0:
+                join_role = guild.get_role(int(join_role_id))
+                if join_role and any(r.id == join_role.id for r in member.roles):
+                    try:
+                        await member.remove_roles(join_role, reason="Remove join role after verification")
+                        logger.info(
+                            "VerificationCog: join role %s removed from user %s after verification",
+                            join_role.id,
+                            member.id,
+                        )
+                    except Exception as e:
+                        logger.warning(f"VerificationCog: could not remove join role after verification: {e}")
 
             success_embed = EmbedBuilder.success(
                 title="✅ You are verified",
@@ -632,6 +661,13 @@ class VerificationPanelView(discord.ui.View):
 
         if not interaction.guild:
             await interaction.followup.send("❌ This button only works in a server.", ephemeral=True)
+            return
+
+        if not await guild_has_premium(interaction.guild.id):
+            await interaction.followup.send(
+                "Verification is a premium feature for this server. An admin can use /premium to unlock it for this server.",
+                ephemeral=True,
+            )
             return
 
         try:

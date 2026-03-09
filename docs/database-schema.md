@@ -73,6 +73,7 @@ Scheduled reminders (recurring and one-off events).
 **Indexes:**
 - `idx_reminders_time` on `time`
 - `idx_reminders_event_time` on `event_time`
+- **Recommendation:** A composite index on `(guild_id, id DESC)` can speed up listing reminders by guild (e.g. reminder_list, add_live_session default channel resolution).
 
 **Notes:**
 - One-off events: `event_time` is set, `days` is empty
@@ -101,7 +102,30 @@ Premium subscription status (local fallback when Core-API is unavailable). **One
 - `idx_premium_subs_guild_status` on `(guild_id, status)`
 - `idx_premium_subs_one_active_per_user`: unique on `(user_id)` WHERE `status = 'active'` (enforces one active per user)
 
+**RLS (Supabase):** Row Level Security is enabled (migration 007). No policies are defined for `anon`/`authenticated`, so only the backend role (table owner / service role / superuser used by `DATABASE_URL`) can read or write. Direct Supabase client access with anon or authenticated keys sees no rows.
+
 **GDPR:** This table stores only access-control data (user_id, guild_id, tier, status, optional external ID, expiry). No payment details, email, or other PII are stored here.
+
+---
+
+### `terms_acceptance`
+
+Tracks user acceptance of the Terms of Service and Privacy Policy for GDPR compliance.
+
+**Columns:**
+- `id` (SERIAL PRIMARY KEY)
+- `user_id` (BIGINT, NOT NULL, UNIQUE): Discord user ID
+- `accepted_at` (TIMESTAMPTZ, NOT NULL, DEFAULT NOW()): When the user accepted the terms
+- `version` (TEXT, NOT NULL, DEFAULT '2025-02-27'): Legal terms version the user accepted
+- `ip_address` (INET, NULLABLE): IP address at time of acceptance (optional; may be NULL)
+
+**Indexes:**
+- `idx_terms_acceptance_user` on `user_id`
+- `idx_terms_acceptance_accepted_at` on `accepted_at`
+
+**Notes:**
+- Used by the `/premium` flow: users must accept terms before accessing premium checkout.
+- Stores only minimal consent metadata for legal compliance; no content of the terms is stored here.
 
 ---
 
@@ -214,12 +238,12 @@ AI-assisted verification ticket metadata for payment/checkout verification.
 
 ### `ticket_summaries`
 
-GPT-generated summaries of closed tickets.
+AI-generated summaries of closed tickets (Grok).
 
 **Columns:**
 - `id` (SERIAL PRIMARY KEY)
 - `ticket_id` (INTEGER, NOT NULL): Reference to support_tickets.id
-- `summary` (TEXT, NOT NULL): GPT-generated summary
+- `summary` (TEXT, NOT NULL): AI-generated summary (Grok)
 - `similarity_key` (TEXT): Key for detecting similar tickets
 - `created_at` (TIMESTAMPTZ): Creation timestamp
 
@@ -311,7 +335,7 @@ Historical health check data for trend analysis.
 - `db_status` (TEXT, NOT NULL): Database status
 - `guild_count` (INTEGER): Number of guilds
 - `active_commands_24h` (INTEGER): Commands executed in last 24h
-- `gpt_status` (TEXT): GPT service status
+- `gpt_status` (TEXT): Grok/LLM service status
 - `database_pool_size` (INTEGER): Database pool size
 - `checked_at` (TIMESTAMPTZ): Health check timestamp
 

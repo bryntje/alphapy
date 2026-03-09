@@ -9,6 +9,10 @@ with warnings.catch_warnings():
     load_dotenv()  # Load variables from .env file
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Optional: use a separate bot token for local testing (e.g. a dev bot). Set USE_TEST_BOT=1 to use this.
+BOT_TOKEN_TEST = os.getenv("BOT_TOKEN_TEST")
+# Token actually used to run the bot: BOT_TOKEN_TEST when USE_TEST_BOT=1 and BOT_TOKEN_TEST is set, else BOT_TOKEN.
+BOT_TOKEN_ACTIVE = (BOT_TOKEN_TEST if os.getenv("USE_TEST_BOT") == "1" and BOT_TOKEN_TEST else None) or BOT_TOKEN
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Legacy - kept for backwards compatibility
 GROK_API_KEY = os.getenv("GROK_API_KEY")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "grok").strip().lower()  # "grok" or "openai"
@@ -71,6 +75,9 @@ MAIN_GUILD_ID = int(os.getenv("MAIN_GUILD_ID", "0"))  # Set to 0 to disable filt
 # Premium tier
 PREMIUM_CHECKOUT_URL = os.getenv("PREMIUM_CHECKOUT_URL", "")
 PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
+
+# GitHub (for /release notes and "read full" link). Optional; when unset, /release uses local changelog.
+GITHUB_REPO = (os.getenv("GITHUB_REPO") or "").strip().rstrip("/")
 
 # Admin And Owner
 OWNER_IDS = [367270193585455104]

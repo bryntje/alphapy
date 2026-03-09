@@ -7,6 +7,7 @@ code across cogs. Provides type-safe validators with consistent error messages.
 
 from typing import Optional, Tuple
 from discord import Interaction
+from discord import app_commands
 from discord.app_commands import CheckFailure
 from utils.checks_interaction import is_owner_or_admin_interaction
 import config
@@ -118,3 +119,28 @@ def requires_admin():
         is_admin, _ = await validate_admin(interaction, raise_on_fail=True)
         return is_admin
     return predicate
+
+
+def requires_owner():
+    """
+    Decorator factory for app_commands that require owner access only (not admin).
+    
+    Usage:
+        @app_commands.command(name="owner_command")
+        @requires_owner()
+        async def owner_command(interaction: Interaction):
+            ...
+    """
+    async def predicate(interaction: Interaction) -> bool:
+        try:
+            app_info = await interaction.client.application_info()
+            if interaction.user.id == app_info.owner.id:
+                return True
+        except Exception:
+            pass
+        owner_ids = getattr(interaction.client, "owner_ids", None) or []
+        config_owner_ids = getattr(config, "OWNER_IDS", [])
+        if interaction.user.id in owner_ids or interaction.user.id in config_owner_ids:
+            return True
+        raise CheckFailure("This command is restricted to bot owners only.")
+    return app_commands.check(predicate)

@@ -32,6 +32,8 @@ backup_database.py
 MIGRATION_README.md
 
 # Temporary development files
+check_config.py
+RECOVERY.md
 multi_guild_audit_prompt.md
 test_guild_settings.py
 migrate_bot_settings.sql
@@ -53,3 +55,4 @@ public/
 # Documentation (internal overview)
 BOT_OVERVIEW.md
 .alphapy_functionality.md
+docs/premium-local-insert.md

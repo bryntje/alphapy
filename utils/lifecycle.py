@@ -120,6 +120,7 @@ class StartupManager:
         
         cog_extensions = [
             "cogs.onboarding",
+            "cogs.join_roles",
             "cogs.reaction_roles",
             "cogs.slash_utils",
             "cogs.dataquery",
@@ -147,17 +148,19 @@ class StartupManager:
             "cogs.verification",
         ]
         
-        loaded_count = 0
+        loaded: list[str] = []
         for extension in cog_extensions:
             try:
                 await self.bot.load_extension(extension)
-                loaded_count += 1
-                logger.debug(f"  ✅ Loaded {extension}")
+                loaded.append(extension)
             except Exception as e:
-                logger.error(f"  ❌ Failed to load {extension}: {e}")
+                logger.error(f"  Failed to load {extension}: {e}")
                 # Continue loading other cogs even if one fails
         
-        logger.info(f"✅ Phase 3 complete: Loaded {loaded_count}/{len(cog_extensions)} cogs")
+        logger.info(f"✅ Phase 3 complete: Loaded {len(loaded)}/{len(cog_extensions)} cogs")
+        if len(loaded) < len(cog_extensions):
+            failed = [e for e in cog_extensions if e not in loaded]
+            logger.warning(f"  Not loaded: {', '.join(failed)}")
     
     async def _phase_sync(self) -> None:
         """Phase 4: Sync command tree."""

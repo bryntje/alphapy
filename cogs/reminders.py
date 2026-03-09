@@ -29,7 +29,9 @@ from utils.logger import logger, log_with_guild, log_guild_action, log_database_
 class ReminderCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None  # Use connection pool instead of single connection
+        self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("reminders", {"DATABASE_URL": config.DATABASE_URL or ""})
         settings = getattr(bot, "settings", None)
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -87,25 +89,16 @@ class ReminderCog(commands.Cog):
 
     async def _connect_database(self) -> None:
         try:
-            from utils.db_helpers import create_db_pool
-            pool = await create_db_pool(config.DATABASE_URL or "", name="reminders", min_size=1, max_size=10)
+            pool = await self._db_manager.ensure_pool()
             log_database_event("DB_CONNECTED", details="Reminders database pool created")
         except Exception as e:
             log_database_event("DB_CONNECT_ERROR", details=f"Failed to create pool: {e}")
             raise
 
-        # Store the pool first
-        if self.db:
-            try:
-                await self.db.close()
-            except Exception:
-                pass
-
         self.db = pool
 
-        # Perform all setup operations in a single connection
         try:
-            async with acquire_safe(pool) as conn:
+            async with self._db_manager.connection() as conn:
                 # Create table
                 await conn.execute(
                     """
@@ -158,12 +151,13 @@ class ReminderCog(commands.Cog):
             return False
 
     async def _handle_connection_lost(self, error: Exception) -> None:
-        logger.warning(f"⚠️ Reminder DB-verbinding verbroken: {error}")
-        if self.db:
+        logger.warning(f"Reminder DB connection lost: {error}")
+        if self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
+            self._db_manager._pool = None
         self.db = None
 
     @app_commands.command(name="add_reminder", description="Schedule a recurring or one-off reminder via form or message link.")
@@ -193,7 +187,7 @@ class ReminderCog(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         if not interaction.guild:
-            await interaction.followup.send("❌ Dit commando werkt alleen in een server.", ephemeral=True)
+            await interaction.followup.send("This command only works in a server.", ephemeral=True)
             return
 
         if not self._is_enabled(interaction.guild.id):
@@ -407,6 +401,138 @@ class ReminderCog(commands.Cog):
             ephemeral=True
         )
 
+    @app_commands.command(
+        name="add_live_session",
+        description="(Premium) Add a recurring live session reminder with fixed message.",
+    )
+    @app_commands.describe(
+        days="Days of the week (e.g. mon,wed,fri)",
+        time="Time in HH:MM format (session start)",
+        channel="Channel where the reminder should be sent (optional if default is set)",
+        image_url="(Premium) Image or banner URL for the reminder",
+        image="(Premium) Image attachment for the reminder",
+    )
+    async def add_live_session(
+        self,
+        interaction: discord.Interaction,
+        days: str,
+        time: str,
+        channel: Optional[discord.TextChannel] = None,
+        image_url: Optional[str] = None,
+        image: Optional[discord.Attachment] = None,
+    ):
+        await interaction.response.defer(thinking=True, ephemeral=True)
+
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        if not self._is_enabled(interaction.guild.id):
+            await interaction.followup.send("⚠️ Reminders are currently disabled.", ephemeral=True)
+            return
+
+        resolved_image_url: Optional[str] = (image.url if image else None) or (image_url.strip() if image_url and image_url.strip() else None)
+        if resolved_image_url:
+            from utils.premium_guard import is_premium, premium_required_message
+            if not await is_premium(interaction.user.id, interaction.guild.id):
+                await interaction.followup.send(
+                    premium_required_message("Live session presets with images"),
+                    ephemeral=True,
+                )
+                return
+            key = (interaction.user.id, interaction.guild.id)
+            now_ts = time_module.time()
+            timestamps = self._image_reminder_timestamps.get(key, [])
+            recent = [t for t in timestamps if t > now_ts - 3600]
+            if len(recent) >= 3:
+                await interaction.followup.send(
+                    "You can add at most 3 reminders with images per hour. Try again later.",
+                    ephemeral=True,
+                )
+                return
+
+        if not await self._ensure_connection():
+            await interaction.followup.send("⛔ Database not connected. Please try again later.", ephemeral=True)
+            return
+
+        if channel is None:
+            default_channel_id = self._get_default_channel_id(interaction.guild.id)
+            if default_channel_id:
+                resolved = self.bot.get_channel(default_channel_id)
+                if resolved is None:
+                    try:
+                        resolved = await self.bot.fetch_channel(default_channel_id)
+                    except Exception:
+                        resolved = None
+                if isinstance(resolved, discord.TextChannel):
+                    channel = resolved
+            if channel is None:
+                await interaction.followup.send(
+                    "❌ No channel specified and no default channel set for reminders.",
+                    ephemeral=True,
+                )
+                return
+
+        time_obj = parse_time_string(time)
+        if time_obj is None:
+            await interaction.followup.send("❌ Invalid time format. Use HH:MM (e.g., 19:30).", ephemeral=True)
+            return
+
+        days_list = parse_days_string(days)
+        if not days_list:
+            await interaction.followup.send("❌ Invalid days. Use e.g. mon,wed,fri.", ephemeral=True)
+            return
+
+        reminder_offset = self._get_reminder_offset(interaction.guild.id)
+        event_dt = datetime.combine(datetime.now(BRUSSELS_TZ).date(), time_obj)
+        reminder_dt = event_dt - timedelta(minutes=reminder_offset)
+        reminder_time_obj = reminder_dt.time()
+        call_time_obj = time_obj
+
+        guild_id = interaction.guild.id
+        channel_id = int(channel.id)
+        created_by = int(interaction.user.id)
+        name = "Live session"
+
+        if not self.db:
+            await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
+            return
+
+        try:
+            async with acquire_safe(self.db) as conn:
+                await conn.execute(
+                    """INSERT INTO reminders (guild_id, name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time, image_url)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
+                    guild_id,
+                    name,
+                    channel_id,
+                    reminder_time_obj,
+                    call_time_obj,
+                    days_list,
+                    "Live session starting now!",
+                    created_by,
+                    None,
+                    None,
+                    None,
+                    resolved_image_url,
+                )
+            if resolved_image_url:
+                rkey = (interaction.user.id, interaction.guild.id)
+                now_ts = time_module.time()
+                ts_list = self._image_reminder_timestamps.get(rkey, [])
+                ts_list = [t for t in ts_list if t > now_ts - 3600]
+                ts_list.append(now_ts)
+                self._image_reminder_timestamps[rkey] = ts_list[-100:]
+        except Exception as e:
+            logger.exception("Error creating live session reminder")
+            await interaction.followup.send(f"❌ Error creating live session: {e}", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            f"✅ **Live session** reminder added to {channel.mention} at **{time}** on **{days}**. Message: \"Live session starting now!\"",
+            ephemeral=True,
+        )
+
     @app_commands.command(name="reminder_list", description="📋 View your active reminders")
     async def reminder_list(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
@@ -414,7 +540,7 @@ class ReminderCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         if not self._is_enabled(interaction.guild.id):
-            await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
+            await interaction.followup.send("Reminders are currently disabled.", ephemeral=True)
             return
         if not await self._ensure_connection():
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
@@ -570,14 +696,14 @@ class ReminderCog(commands.Cog):
             await interaction.followup.send(f"⚠️ Error fetching reminders: `{e}`")
 
     @app_commands.command(name="reminder_delete", description="🗑️ Delete a reminder by ID")
-    @app_commands.describe(reminder_id="Het ID van de reminder die je wil verwijderen")
+    @app_commands.describe(reminder_id="The ID of the reminder you want to delete")
     async def reminder_delete(self, interaction: discord.Interaction, reminder_id: int) -> None:
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild:
-            await interaction.followup.send("❌ Dit commando werkt alleen in een server.", ephemeral=True)
+            await interaction.followup.send("This command only works in a server.", ephemeral=True)
             return
         if not self._is_enabled(interaction.guild.id):
-            await interaction.followup.send("⚠️ Reminders staan momenteel uit.", ephemeral=True)
+            await interaction.followup.send("Reminders are currently disabled.", ephemeral=True)
             return
         if not await self._ensure_connection():
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
@@ -593,7 +719,7 @@ class ReminderCog(commands.Cog):
                 row = await conn.fetchrow("SELECT * FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)
                 
                 if not row:
-                    await interaction.followup.send(f"❌ Geen reminder gevonden met ID `{reminder_id}`.")
+                    await interaction.followup.send(f"No reminder found with ID `{reminder_id}`.", ephemeral=True)
                     return
 
                 await conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)

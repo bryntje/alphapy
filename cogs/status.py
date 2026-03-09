@@ -14,6 +14,7 @@ from asyncpg import exceptions as pg_exceptions
 import config
 from utils.validators import validate_admin
 from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.database_helpers import DatabaseManager
 from utils.embed_builder import EmbedBuilder
 from utils.command_metadata import (
     get_category_for_cog,
@@ -24,8 +25,8 @@ from utils.command_metadata import (
 )
 from typing import Optional, Dict, Any, List, cast
 
-# Database pool for command_stats (shared across status commands)
-_status_db_pool: Optional[asyncpg.Pool] = None
+# Database for command_stats (shared across status commands)
+_status_db = DatabaseManager("status", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 
 BOOT_TIME = datetime.now(BRUSSELS_TZ)
 
@@ -44,18 +45,23 @@ async def version_cmd(interaction: discord.Interaction):
 
 @app_commands.command(name="release", description="Show release notes for the current version")
 async def release_cmd(interaction: discord.Interaction):
+    await interaction.response.defer()
     try:
-        base = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(base, "changelog.md")
-        notes = await _read_release_notes(path, __version__)
+        notes, releases_url = await _get_release_notes(__version__)
         if not notes:
-            await interaction.response.send_message(f"No notes found for v{__version__}.", ephemeral=True)
+            await interaction.followup.send(f"No notes found for v{__version__}.")
             return
-        embed = EmbedBuilder.info(title=f"Release notes v{__version__}", description=notes)
+        footer_link = ""
+        if releases_url:
+            footer_link = f"\n\n*Read full release notes on [GitHub]({releases_url}).*"
+        max_desc = 4096 - len(footer_link)
+        description = _truncate_release_notes_md(notes, max_desc) + footer_link
+        embed = EmbedBuilder.info(title=f"Release notes v{__version__}", description=description)
         embed.set_footer(text=f"{CODENAME}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed)
     except Exception as e:
-        await interaction.response.send_message(f"Failed to read release notes: {e}", ephemeral=True)
+        logger.exception("release_cmd failed")
+        await interaction.followup.send(f"Failed to read release notes: {e}")
 
 @app_commands.command(name="health", description="Show configuration and system status")
 async def health_cmd(interaction: discord.Interaction):
@@ -384,30 +390,18 @@ async def command_stats_cmd(
             return
     
     await interaction.response.defer(ephemeral=True)
-    
-    # Use connection pool instead of direct connection
-    global _status_db_pool
-    
-    # Initialize pool if needed
-    if not is_pool_healthy(_status_db_pool):
-        try:
-            from utils.db_helpers import create_db_pool
-            _status_db_pool = await create_db_pool(
-                config.DATABASE_URL,
-                name="status",
-                min_size=1,
-                max_size=5,
-                command_timeout=10.0
-            )
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ Failed to connect to database: {e}",
-                ephemeral=True
-            )
-            return
-    
+
     try:
-        async with acquire_safe(_status_db_pool) as conn:
+        pool = await _status_db.ensure_pool()
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Failed to connect to database: {e}",
+            ephemeral=True
+        )
+        return
+
+    try:
+        async with acquire_safe(pool) as conn:
             # Build query
             where_clause = "WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL"
             params: list[Any] = [str(days)]
@@ -500,12 +494,12 @@ async def command_stats_cmd(
         )
     except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
         # Connection error - reset pool and try to reconnect next time
-        if _status_db_pool:
+        if _status_db._pool:
             try:
-                await _status_db_pool.close()
+                await _status_db._pool.close()
             except Exception:
                 pass
-            _status_db_pool = None
+            _status_db._pool = None
         await interaction.followup.send(
             f"❌ Database connection error. Please try again in a moment.",
             ephemeral=True
@@ -600,9 +594,9 @@ async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed
 
     db_ok = "✅"
     # Use existing pool if available, otherwise quick direct connection check
-    if is_pool_healthy(_status_db_pool):
+    if is_pool_healthy(_status_db._pool):
         try:
-            async with acquire_safe(_status_db_pool) as conn:
+            async with acquire_safe(_status_db._pool) as conn:
                 await conn.fetchval("SELECT 1")
         except Exception:
             db_ok = "🛑"
@@ -621,7 +615,144 @@ async def _build_health_embed(interaction: discord.Interaction) -> discord.Embed
     embed.add_field(name="Invites", value=invites_enabled, inline=True)
     embed.add_field(name="GDPR", value=gdpr_enabled, inline=True)
     embed.add_field(name="Uptime", value=_format_uptime(BOOT_TIME), inline=True)
+
+    # System and cache metrics (optional)
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        cpu_percent = process.cpu_percent(interval=None)
+        embed.add_field(name="Memory", value=f"{memory_mb:.1f} MB", inline=True)
+        embed.add_field(name="CPU", value=f"{cpu_percent:.1f}%", inline=True)
+    except Exception:
+        pass
+    try:
+        from utils.premium_guard import get_premium_cache_size
+        cache_size = get_premium_cache_size()
+        embed.add_field(name="Premium cache", value=f"{cache_size} entries (TTL 5 min)", inline=True)
+    except Exception:
+        pass
+
     return embed
+
+def _drop_dangling_last_header(text: str) -> str:
+    """If text ends with a bare '## ...' section header (no content after it), drop that header."""
+    lines = text.split("\n")
+    # Strip trailing blank lines
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines:
+        return ""
+    last = lines[-1].strip()
+    if last.startswith("## "):
+        # Drop the header and any new trailing blanks
+        lines = lines[:-1]
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return "\n".join(lines).rstrip()
+    return "\n".join(lines).rstrip()
+
+
+def _truncate_release_notes_md(text: str, max_len: int) -> str:
+    """Truncate markdown to max_len by whole sections (##) or paragraphs, never mid-sentence."""
+    if not text:
+        return ""
+    # Special-case: when GitHub body ends with a tiny "## Improved\nRead full release notes on GitHub."
+    # section, drop that block so the command's own footer link is the only one shown.
+    cleaned = text.rstrip()
+    # Normalise level-3 headings to level-2 so both '## ' and '### ' work with the same logic.
+    if cleaned.startswith("### "):
+        cleaned = "## " + cleaned[4:]
+    cleaned = cleaned.replace("\n### ", "\n## ")
+    marker_header = "\n## Improved"
+    marker_tail = "Read full release notes on GitHub."
+    if cleaned.endswith(marker_tail):
+        header_idx = cleaned.rfind(marker_header)
+        if header_idx != -1:
+            text = cleaned[:header_idx].rstrip()
+        else:
+            text = cleaned
+    else:
+        text = cleaned
+
+    if len(text) <= max_len:
+        # Even when not truncating for length, avoid ending on an empty '## ...' section.
+        return _drop_dangling_last_header(text).strip()
+    # Split by level-2 headers (## ) so we keep full sections
+    parts = text.split("\n## ")
+    if len(parts) == 1:
+        # No ## headers: try paragraphs
+        paras = text.split("\n\n")
+        out: List[str] = []
+        for p in paras:
+            if len("\n\n".join(out) + ("\n\n" if out else "") + p) <= max_len:
+                out.append(p)
+            else:
+                break
+        if out:
+            return "\n\n".join(out).strip()
+        # Single paragraph or very long line: cut at last newline before limit
+        if len(text) <= max_len:
+            return text.strip()
+        cut = text[: max_len + 1].rfind("\n")
+        if cut > max_len // 2:
+            return text[:cut].strip()
+        return text[:max_len - 3].rstrip() + "..."
+    # Rebuild sections: first part may be intro (no ## prefix), rest get "## " back
+    built: List[str] = []
+    for i, block in enumerate(parts):
+        seg = ("## " + block).strip() if i > 0 else block.strip()
+        if not seg:
+            continue
+        combined = "\n\n".join(built) + ("\n\n" + seg if built else seg)
+        if len(combined) <= max_len:
+            built.append(seg)
+        else:
+            break
+    if not built:
+        return text[: max_len - 3].rstrip() + "..."
+    result = "\n\n".join(built).strip()
+    # Also clean up any dangling final '## ...' header after truncation
+    return _drop_dangling_last_header(result).strip()
+
+
+async def _fetch_github_release_notes(repo: str, version: str) -> Optional[str]:
+    """Fetch release notes body from GitHub API for tag v{version}. Returns None on failure."""
+    tag = f"v{version}" if not version.startswith("v") else version
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                return (data.get("body") or "").strip() or None
+    except Exception as e:
+        logger.debug("GitHub release fetch failed: %s", e)
+        return None
+
+
+async def _get_release_notes(version: str) -> tuple[str, Optional[str]]:
+    """Return (notes_text, releases_url). Uses GitHub if configured, else local changelog.md."""
+    repo = getattr(config, "GITHUB_REPO", "").strip() or None
+    releases_url = f"https://github.com/{repo}/releases/tag/v{version}" if repo else None
+    if repo:
+        logger.info("Release notes: fetching from GitHub repo=%s tag=v%s", repo, version)
+        notes = await _fetch_github_release_notes(repo, version)
+        if notes:
+            logger.info("Release notes: using GitHub (v%s)", version)
+            return notes, releases_url
+        logger.info("Release notes: GitHub fetch failed or empty, falling back to local changelog")
+    else:
+        logger.info("Release notes: GITHUB_REPO not set, using local changelog")
+    # Fallback: local changelog
+    base = os.path.dirname(os.path.dirname(__file__))
+    path = os.path.join(base, "changelog.md")
+    local = await _read_release_notes(path, version)
+    if local:
+        logger.info("Release notes: using local changelog %s", path)
+    return local or "", releases_url
+
 
 async def _read_release_notes(changelog_path: str, version: str) -> str:
     try:

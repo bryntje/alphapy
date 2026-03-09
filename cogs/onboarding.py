@@ -93,6 +93,8 @@ class Onboarding(commands.Cog):
         ]
 
         self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("onboarding", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 
     async def get_guild_questions(self, guild_id: int) -> list:
         """Load questions for a specific guild from database, or use defaults if none configured."""
@@ -369,12 +371,11 @@ class Onboarding(commands.Cog):
         await self._ensure_pool()
 
     async def _connect_pool(self) -> None:
-        from utils.db_helpers import create_db_pool
         dsn = config.DATABASE_URL
         if not dsn:
             raise RuntimeError("DATABASE_URL is not configured")
-        pool = await create_db_pool(dsn, name="onboarding")
-        async with acquire_safe(pool) as conn:
+        pool = await self._db_manager.ensure_pool()
+        async with self._db_manager.connection() as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS onboarding (
                     guild_id BIGINT NOT NULL,
@@ -621,6 +622,23 @@ class Onboarding(commands.Cog):
                             "error": str(e)
                         }
                     )
+
+            # Always remove join role after onboarding completion, if configured
+            try:
+                join_role_id = self.bot.settings.get("onboarding", "join_role_id", guild_id)
+            except Exception:
+                join_role_id = 0
+            if join_role_id and join_role_id != 0:
+                try:
+                    join_role = interaction.guild.get_role(int(join_role_id))
+                    member = interaction.user if isinstance(interaction.user, discord.Member) else interaction.guild.get_member(interaction.user.id)
+                    if member is None:
+                        member = await interaction.guild.fetch_member(interaction.user.id)
+                    if join_role and member and any(r.id == join_role.id for r in member.roles):
+                        await member.remove_roles(join_role, reason="Replace join role with onboarding completion role")
+                        logger.info(f"Join role {join_role.name} removed from {interaction.user.display_name} after onboarding completion")
+                except Exception as e:
+                    logger.warning(f"Onboarding: could not remove join role after completion: {e}")
 
             # Build and send a log embed to the log channel
             log_embed = EmbedBuilder.success(

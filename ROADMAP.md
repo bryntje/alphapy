@@ -1,6 +1,8 @@
-# 🧬 Innersync • Alphapy Roadmap (Phase 2)
+# 🧬 Innersync • Alphapy Roadmap v3.0.0 "Enterprise Ready"
 
-This document outlines the planned work after v1.3.0 (TicketBot). **Phase 1.5 (Multi-Guild Support) is now complete!** 🎉
+**Major Release v3.0.0 Complete!** 🎉 Enterprise-grade Discord bot with complete monetization, security framework, and production infrastructure.
+
+This document outlines the evolution from v3.0.0 forward.
 
 ## ✅ COMPLETED: Multi-Guild Architecture + Advanced Onboarding (Phase 1.5)
 
@@ -119,7 +121,7 @@ Transform the extensive slash command configuration system into a user-friendly 
 ### M2 — Ticket Status Model & Workflows
 - New statuses: `open`, `claimed`, `waiting_for_user`, `escalated`, `closed`
 - UI:
-  - Add “Wait for user” and “Escalate” buttons (staff-only)
+  - Add "Wait for user" and "Escalate" buttons (staff-only)
   - Visual chip in the ticket embed to reflect status
   - Optional escalation target role/channel
 - DB:
@@ -134,7 +136,7 @@ Transform the extensive slash command configuration system into a user-friendly 
 - Goal: assistant provides draft replies in the ticket channel
 - Source: small doc set (local `data/faq/*.md` + `faq_entries` + pinned context)
 - Flow:
-  - Button “💬 Suggest reply” (staff-only) → ephemeral draft
+  - Button "💬 Suggest reply" (staff-only) → ephemeral draft
   - Staff can edit and post; bot never auto-sends without approval
 - Implementation:
   - Add `gpt/rag_index.py` (build small in-memory index per boot)

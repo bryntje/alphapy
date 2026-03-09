@@ -253,6 +253,10 @@ The following environment variables are required/optional for bot operation:
 - `BOT_TOKEN`: Discord bot token
 - `DATABASE_URL`: PostgreSQL connection string
 
+### Optional - Local testing (separate dev bot)
+- `BOT_TOKEN_TEST`: Discord token for a separate test/dev bot. Used only when `USE_TEST_BOT=1`.
+- `USE_TEST_BOT`: Set to `1` (or any non-empty value) to run the bot with `BOT_TOKEN_TEST` instead of `BOT_TOKEN`. Use this for local testing without touching the production bot.
+
 ### Optional - Google Cloud (for Drive integration)
 - `GOOGLE_PROJECT_ID`: GCP project ID for Secret Manager (production)
 - `GOOGLE_SECRET_NAME`: Secret name in Secret Manager (default: "alphapy-google-credentials")

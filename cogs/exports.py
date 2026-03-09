@@ -1,5 +1,3 @@
-import io
-import csv
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 import discord
@@ -15,41 +13,33 @@ except ImportError:
 from utils.validators import validate_admin
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.logger import logger
+from utils.csv_helpers import create_csv_buffer, create_discord_file_from_buffer
 
 
 class Exports(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: Optional[asyncpg.Pool] = None
+        from utils.database_helpers import DatabaseManager
+        self._db_manager = DatabaseManager("exports", {"DATABASE_URL": config.DATABASE_URL})
         self.bot.loop.create_task(self._setup())
 
     async def _setup(self) -> None:
         try:
-            from utils.db_helpers import create_db_pool
-            self.db = await create_db_pool(
-                config.DATABASE_URL,
-                name="exports",
-                min_size=1,
-                max_size=5,
-                command_timeout=10.0
-            )
+            self.db = await self._db_manager.ensure_pool()
         except Exception as e:
-            logger.error(f"❌ Exports: DB pool creation error: {e}")
-            if self.db:
-                try:
-                    await self.db.close()
-                except Exception:
-                    pass
-                self.db = None
+            logger.error(f"Exports: DB pool creation error: {e}")
+            self.db = None
 
     async def cog_unload(self):
         """Called when the cog is unloaded - close the database pool."""
-        if self.db:
+        if self._db_manager._pool:
             try:
-                await self.db.close()
+                await self._db_manager._pool.close()
             except Exception:
                 pass
-            self.db = None
+            self._db_manager._pool = None
+        self.db = None
 
     @app_commands.command(name="export_tickets", description="Export tickets as CSV (admin)")
     @app_commands.describe(scope="Optional: 7d, 30d, all (default: all)")
@@ -80,15 +70,10 @@ class Exports(commands.Cog):
             logger.error(f"Database error in export_tickets: {e}")
             await interaction.followup.send(f"❌ Error exporting tickets: {e}", ephemeral=True)
             return
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow(["id","user_id","username","status","created_at","updated_at","claimed_by","channel_id"])
-        for r in rows:
-            writer.writerow([
-                r.get("id"), r.get("user_id"), r.get("username"), r.get("status"),
-                r.get("created_at"), r.get("updated_at"), r.get("claimed_by"), r.get("channel_id")
-            ])
-        data = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename=f"tickets_{scope or 'all'}.csv")
+        csv_rows = [dict(r) for r in rows]
+        fieldnames = ["id", "user_id", "username", "status", "created_at", "updated_at", "claimed_by", "channel_id"]
+        buf = create_csv_buffer(csv_rows, fieldnames=fieldnames)
+        data = create_discord_file_from_buffer(buf, f"tickets_{scope or 'all'}.csv")
         await interaction.followup.send(content=f"✅ Exported {len(rows)} tickets (scope={scope}).", file=data, ephemeral=True)
 
     @app_commands.command(name="export_faq", description="Export FAQ entries as CSV (admin)")
@@ -112,12 +97,18 @@ class Exports(commands.Cog):
             logger.error(f"Database error in export_faq: {e}")
             await interaction.followup.send(f"❌ Error exporting FAQ: {e}", ephemeral=True)
             return
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow(["id","title","summary","keywords","created_at"])
+        csv_rows = []
         for r in rows:
-            writer.writerow([r.get("id"), r.get("title"), r.get("summary"), ";".join(r.get("keywords") or []), r.get("created_at")])
-        data = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename="faq.csv")
+            csv_rows.append({
+                "id": r.get("id"),
+                "title": r.get("title"),
+                "summary": r.get("summary"),
+                "keywords": ";".join(r.get("keywords") or []),
+                "created_at": r.get("created_at"),
+            })
+        fieldnames = ["id", "title", "summary", "keywords", "created_at"]
+        buf = create_csv_buffer(csv_rows, fieldnames=fieldnames)
+        data = create_discord_file_from_buffer(buf, "faq.csv")
         await interaction.followup.send(content=f"✅ Exported {len(rows)} FAQ entries.", file=data, ephemeral=True)
 
 
