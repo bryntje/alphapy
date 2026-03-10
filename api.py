@@ -1784,6 +1784,9 @@ class GuildSettingsResponse(BaseModel):
     invites: Dict[str, Any] = {}
     gdpr: Dict[str, Any] = {}
     automod: Dict[str, Any] = {}
+    onboarding: Dict[str, Any] = {}
+    ticketbot: Dict[str, Any] = {}
+    verification: Dict[str, Any] = {}
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -1899,7 +1902,10 @@ async def get_guild_settings(
                 'gpt': {},
                 'invites': {},
                 'gdpr': {},
-                'automod': {}
+                'automod': {},
+                'onboarding': {},
+                'ticketbot': {},
+                'verification': {}
             }
 
             for row in rows:
@@ -1909,11 +1915,16 @@ async def get_guild_settings(
 
                 # Convert string values back to appropriate types
                 if scope in settings:
-                    if key in ['allow_everyone_mentions', 'enabled', 'log_actions', 'log_to_database']:
+                    if key in ['allow_everyone_mentions', 'enabled', 'log_actions', 'log_to_database', 'gpt_fallback_enabled', 'non_embed_enabled', 'process_bot_messages']:
                         settings[scope][key] = value.lower() == 'true'
-                    elif key in ['embed_watcher_offset_hours', 'max_tokens', 'log_channel_id']:
+                    elif key in ['embed_watcher_offset_hours', 'max_tokens', 'log_channel_id', 'reminder_offset_minutes', 'category_id', 'staff_role_id', 'escalation_role_id', 'idle_days_threshold', 'auto_close_days_threshold', 'completion_role_id', 'join_role_id', 'verified_role_id']:
                         try:
                             settings[scope][key] = int(value)
+                        except ValueError:
+                            settings[scope][key] = value
+                    elif key in ['temperature']:
+                        try:
+                            settings[scope][key] = float(value)
                         except ValueError:
                             settings[scope][key] = value
                     else:
