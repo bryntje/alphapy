@@ -2685,54 +2685,71 @@ async def update_automod_rule(
 
     try:
         async with db_pool.acquire() as conn:
-            # Build update query dynamically
-            updates = []
-            values = []
-            param_count = 1
-            
+            # Fetch linked action_id so we can update both rule and action records
+            row_ids = await conn.fetchrow(
+                "SELECT id, action_id FROM automod_rules WHERE guild_id = $1 AND id = $2",
+                guild_id,
+                rule_id,
+            )
+            if not row_ids:
+                raise HTTPException(status_code=404, detail="Rule not found")
+
+            action_id = row_ids["action_id"]
+
+            # Update rule fields
             if update.name is not None:
-                updates.append(f"name = ${param_count}")
-                values.append(update.name)
-                param_count += 1
-            
+                await conn.execute(
+                    "UPDATE automod_rules SET name = $1, updated_at = NOW() WHERE guild_id = $2 AND id = $3",
+                    update.name,
+                    guild_id,
+                    rule_id,
+                )
+
             if update.enabled is not None:
-                updates.append(f"enabled = ${param_count}")
-                values.append(update.enabled)
-                param_count += 1
-            
+                await conn.execute(
+                    "UPDATE automod_rules SET enabled = $1, updated_at = NOW() WHERE guild_id = $2 AND id = $3",
+                    update.enabled,
+                    guild_id,
+                    rule_id,
+                )
+
             if update.config is not None:
-                updates.append(f"config = ${param_count}")
                 import json
-                values.append(json.dumps(update.config))
-                param_count += 1
-            
-            if update.action_type is not None:
-                updates.append(f"action_type = ${param_count}")
-                values.append(update.action_type)
-                param_count += 1
-            
-            if update.action_config is not None:
-                updates.append(f"config = ${param_count}")
-                import json
-                values.append(json.dumps(update.action_config))
-                param_count += 1
-            
-            if update.severity is not None:
-                updates.append(f"severity = ${param_count}")
-                values.append(update.severity)
-                param_count += 1
-            
-            if updates:
-                updates.append(f"updated_at = NOW()")
-                values.extend([guild_id, rule_id])
-                param_count += 2
-                
-                # Update rule
-                await conn.execute(f"""
-                    UPDATE automod_rules 
-                    SET {', '.join(updates)}
-                    WHERE guild_id = ${param_count-1} AND id = ${param_count}
-                """, *values)
+
+                await conn.execute(
+                    "UPDATE automod_rules SET config = $1, updated_at = NOW() WHERE guild_id = $2 AND id = $3",
+                    json.dumps(update.config),
+                    guild_id,
+                    rule_id,
+                )
+
+            # Update action fields on the linked automod_actions row
+            if action_id:
+                if update.action_type is not None:
+                    await conn.execute(
+                        "UPDATE automod_actions SET action_type = $1 WHERE guild_id = $2 AND id = $3",
+                        update.action_type,
+                        guild_id,
+                        action_id,
+                    )
+
+                if update.action_config is not None:
+                    import json
+
+                    await conn.execute(
+                        "UPDATE automod_actions SET config = $1 WHERE guild_id = $2 AND id = $3",
+                        json.dumps(update.action_config),
+                        guild_id,
+                        action_id,
+                    )
+
+                if update.severity is not None:
+                    await conn.execute(
+                        "UPDATE automod_actions SET severity = $1 WHERE guild_id = $2 AND id = $3",
+                        update.severity,
+                        guild_id,
+                        action_id,
+                    )
             
             # Fetch updated rule
             row = await conn.fetchrow("""
