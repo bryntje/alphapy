@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any
 import asyncpg
 from discord.ext import commands
 
-from utils.db_helpers import acquire_safe
+from utils.db_helpers import acquire_safe, get_bot_db_pool
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class AutoModAnalytics:
     def _get_pool(self) -> Optional[asyncpg.Pool]:
         if not self.bot:
             return None
-        return getattr(self.bot, "db_pool", None)
+        return get_bot_db_pool(self.bot)
     
     async def get_rule_effectiveness(self, guild_id: int, rule_id: int, days: int = 30) -> Dict[str, Any]:
         """

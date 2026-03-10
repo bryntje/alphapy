@@ -152,6 +152,25 @@ async def create_db_pool(
         raise
 
 
+def get_bot_db_pool(bot) -> Optional[PoolT]:
+    """
+    Get the main database pool from bot's SettingsService.
+    
+    This is the standardized way to access the database pool across the codebase.
+    It abstracts away the internal structure of SettingsService.
+    
+    Args:
+        bot: The Discord bot instance
+        
+    Returns:
+        Optional[PoolT]: The database pool if available, None otherwise
+    """
+    settings_service = getattr(bot, "settings", None)
+    if settings_service and hasattr(settings_service, "_pool"):
+        return settings_service._pool
+    return None
+
+
 async def close_all_pools() -> None:
     """
     Close all registered database pools.

@@ -30,6 +30,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Set start_time for uptime tracking
 setattr(bot, "start_time", time.time())
 
+# Database pool access is handled by utils.db_helpers.get_bot_db_pool()
+# This provides consistent database access across the codebase
+
 settings_service = SettingsService(getattr(config, "DATABASE_URL", None))
 settings_service.register(
     SettingDefinition(
@@ -588,6 +591,15 @@ async def on_guild_join(guild: discord.Guild):
         from utils.fyi_tips import send_fyi_if_first
         await send_fyi_if_first(bot, guild.id, "first_guild_join", channel_id_override=channel.id)
 
+
+# Add database pool property for auto-moderation and other features
+@property
+def db_pool(self):
+    """Get the main database pool from SettingsService."""
+    settings_service = getattr(self, "settings", None)
+    if settings_service and hasattr(settings_service, "_pool"):
+        return settings_service._pool
+    return None
 
 async def setup_hook():
     from utils.lifecycle import StartupManager

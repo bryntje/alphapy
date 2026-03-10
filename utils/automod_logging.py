@@ -13,7 +13,7 @@ import asyncpg
 import discord
 from discord.ext import commands
 
-from utils.db_helpers import acquire_safe
+from utils.db_helpers import acquire_safe, get_bot_db_pool
 from utils.logger import logger
 
 log = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class AutoModLogger:
     def _get_pool(self) -> Optional[asyncpg.Pool]:
         if not self.bot:
             return None
-        pool = getattr(self.bot, "db_pool", None)
+        pool = get_bot_db_pool(self.bot)
         return pool
         
     async def log_violation(self, guild_id: int, user_id: int, message_id: Optional[int],

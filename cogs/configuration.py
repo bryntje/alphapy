@@ -108,6 +108,13 @@ class Configuration(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.rule_processor = RuleProcessor(bot)
+        
+        # Validate database pool availability
+        from utils.db_helpers import get_bot_db_pool
+        if get_bot_db_pool(bot) is None:
+            from utils.logger import logger
+            logger.warning("⚠️ Database pool not available - auto-moderation features will be limited")
+        
         settings = getattr(bot, "settings", None)
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -2374,9 +2381,10 @@ class Configuration(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        pool = getattr(self.bot, "db_pool", None)
+        from utils.db_helpers import get_bot_db_pool
+        pool = get_bot_db_pool(self.bot)
         if not pool:
-            await interaction.followup.send("❌ Database not available.", ephemeral=True)
+            await interaction.followup.send("❌ Database temporarily unavailable. Please try again later.", ephemeral=True)
             return
 
         query_parts = ["SELECT user_id, rule_id, action_taken, timestamp FROM automod_logs WHERE guild_id = $1"]
@@ -2455,9 +2463,10 @@ class Configuration(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        pool = getattr(self.bot, "db_pool", None)
+        from utils.db_helpers import get_bot_db_pool
+        pool = get_bot_db_pool(self.bot)
         if not pool:
-            await interaction.followup.send("❌ Database not available.", ephemeral=True)
+            await interaction.followup.send("❌ Database temporarily unavailable. Please try again later.", ephemeral=True)
             return
 
         try:

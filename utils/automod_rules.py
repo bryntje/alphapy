@@ -17,7 +17,7 @@ import discord
 from discord.ext import commands
 import asyncpg
 
-from utils.db_helpers import acquire_safe
+from utils.db_helpers import acquire_safe, get_bot_db_pool
 from utils.logger import logger
 
 log = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ class RuleProcessor:
     async def load_rules(self):
         """Load all rules from database into cache."""
         try:
-            pool = getattr(self.bot, 'db_pool', None) if self.bot else None
+            pool = getattr(self.bot, 'get_db_pool', lambda: None)() if self.bot else None
             if not pool:
                 log.debug("No database pool available for rule loading - will load on first use")
                 return
@@ -104,7 +104,7 @@ class RuleProcessor:
     async def _refresh_guild_rules(self, guild_id: int):
         """Refresh rules for a specific guild."""
         try:
-            pool = getattr(self.bot, 'db_pool', None) if hasattr(self, 'bot') else None
+            pool = get_bot_db_pool(self.bot) if self.bot else None
             if not pool:
                 return
                 
@@ -376,9 +376,9 @@ Be conservative - only flag clear violations."""
                          action_type: str, action_config: Dict, created_by: int, is_premium: bool = False) -> int:
         """Create a new auto-mod rule."""
         try:
-            pool = getattr(self.bot, 'db_pool', None) if hasattr(self, 'bot') else None
+            pool = get_bot_db_pool(self.bot) if self.bot else None
             if not pool:
-                raise ValueError("Database not available")
+                raise ValueError("Database temporarily unavailable. Please try again later.")
                 
             async with acquire_safe(pool) as conn:
                 # First create the action
@@ -579,3 +579,16 @@ Be conservative - only flag clear violations."""
         except Exception as e:
             log.error(f"Error updating auto-mod rule {rule_id} for guild {guild_id}: {e}")
             raise
+    
+    async def check_database_health(self) -> bool:
+        """Check if database is available."""
+        try:
+            pool = get_bot_db_pool(self.bot) if self.bot else None
+            if not pool:
+                return False
+            async with pool.acquire() as conn:
+                await conn.execute("SELECT 1")
+            return True
+        except Exception as e:
+            log.error(f"Database health check failed: {e}")
+            return False
