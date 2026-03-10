@@ -2602,6 +2602,8 @@ async def get_automod_rules(
             
             return rules
             
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod rules for guild {guild_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch auto-mod rules")
@@ -2664,6 +2666,8 @@ async def create_automod_rule(
             else:
                 raise HTTPException(status_code=500, detail="Failed to create rule")
                 
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to create auto-mod rule for guild {guild_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to create auto-mod rule")
@@ -2771,6 +2775,8 @@ async def update_automod_rule(
             else:
                 raise HTTPException(status_code=404, detail="Rule not found")
                 
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to update auto-mod rule {rule_id} for guild {guild_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to update auto-mod rule")
@@ -2821,6 +2827,8 @@ async def delete_automod_rule(
             
             return {"success": True}
             
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to delete auto-mod rule {rule_id} for guild {guild_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to delete auto-mod rule")
@@ -2891,6 +2899,8 @@ async def get_automod_stats(
                 top_violated_rules=[dict(row) for row in top_rules]
             )
             
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod stats for guild {guild_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch auto-mod stats")
@@ -2953,6 +2963,8 @@ async def get_automod_violations(
             
             return violations
             
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod violations for guild {guild_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch auto-mod violations")
@@ -2994,6 +3006,8 @@ async def get_automod_settings(
             
             return AutoModSettings(**settings)
             
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod settings for guild {guild_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch auto-mod settings")
@@ -3028,6 +3042,8 @@ async def update_automod_settings(
             
             return {"success": True}
             
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to update auto-mod settings for guild {guild_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to update auto-mod settings")
