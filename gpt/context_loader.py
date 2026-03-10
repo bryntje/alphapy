@@ -37,36 +37,13 @@ def _sanitize_reflection_field(value: object, max_chars: int = _REFLECTION_TEXT_
 
 
 async def _get_app_reflections_pool() -> Optional[PoolT]:
-    """Lazy-create pool for app_reflections queries (bot context)."""
-    global _app_reflections_pool
-    if _app_reflections_pool is not None and not _app_reflections_pool.is_closing():
-        return _app_reflections_pool
-    async with _app_reflections_pool_lock:
-        # Double-check: another coroutine may have created the pool while we waited
-        if _app_reflections_pool is not None and not _app_reflections_pool.is_closing():
-            return _app_reflections_pool
-        try:
-            from utils.db_helpers import create_db_pool
-
-            try:
-                import config_local as config  # type: ignore
-            except ImportError:
-                import config  # type: ignore
-
-            dsn = getattr(config, "DATABASE_URL", None) or ""
-            if not dsn:
-                return None
-            _app_reflections_pool = await create_db_pool(
-                dsn,
-                name="context_loader_app_reflections",
-                min_size=1,
-                max_size=5,
-                command_timeout=10.0,
-            )
-            return _app_reflections_pool
-        except Exception as e:
-            logger.debug("Could not create app_reflections pool for context: %s", e)
-            return None
+    """Get the shared pool from api.py instead of creating a new one."""
+    try:
+        from api import app
+        return app.state.db_pool
+    except (ImportError, AttributeError) as e:
+        logger.debug("Could not access shared db_pool from api: %s", e)
+        return None
 
 
 async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
