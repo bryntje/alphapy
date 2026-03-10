@@ -19,9 +19,6 @@ from utils.sanitizer import safe_prompt
 
 logger = logging.getLogger(__name__)
 
-# Pool for app_reflections (PostgreSQL); created on first use
-_app_reflections_pool: Optional[PoolT] = None
-_app_reflections_pool_lock = asyncio.Lock()
 _REFLECTION_TEXT_MAX_CHARS = 2048
 _REFLECTION_DATE_MAX_CHARS = 128
 
