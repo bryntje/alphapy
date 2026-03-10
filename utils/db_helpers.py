@@ -7,7 +7,7 @@ handling and reconnection logic.
 """
 
 from contextlib import asynccontextmanager
-from typing import Optional, AsyncGenerator, Callable, Any, List
+from typing import Optional, TypeVar, AsyncGenerator, Callable, Any, List
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 from utils.logger import logger
@@ -18,12 +18,13 @@ PoolT = asyncpg.Pool
 # Registry of all created pools for centralized cleanup
 _registered_pools: List[asyncpg.Pool] = []
 
+T = TypeVar('T')
 
 @asynccontextmanager
 async def acquire_safe(
     pool: Optional[asyncpg.Pool],
     on_error: Optional[Callable[[Exception], Any]] = None
-) -> AsyncGenerator[asyncpg.Connection, None]:
+) -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
     """
     Safe pool acquire with automatic error handling and reconnection.
     
@@ -32,7 +33,7 @@ async def acquire_safe(
         on_error: Optional callback function to handle connection errors
         
     Yields:
-        asyncpg.Connection: A database connection from the pool
+        asyncpg.pool.PoolConnectionProxy: A database connection from the pool
         
     Raises:
         RuntimeError: If pool is None or closing
