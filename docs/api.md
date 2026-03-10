@@ -10,7 +10,9 @@ All API endpoints are prefixed with `/api` unless otherwise noted.
 
 - **Health & Status**: Basic health checks and monitoring (`/api/health`, `/api/health/history`)
 - **Metrics & Analytics**: Dashboard metrics and command analytics (`/api/dashboard/metrics`, `/top-commands`)
-- **Dashboard Configuration**: Web dashboard endpoints for managing settings, onboarding, etc. (requires Supabase JWT)
+- **Dashboard Configuration**: Web dashboard endpoints for managing settings, onboarding, auto-moderation (requires Supabase JWT)
+- **Auto-Moderation**: Complete auto-moderation rule management with analytics (`/api/dashboard/{guild_id}/automod/*`)
+- **Onboarding Management**: Questions, rules, and flow configuration (`/api/dashboard/{guild_id}/onboarding/*`)
 - **Reminder Management**: User-facing reminder CRUD operations (requires API key + user ID)
 - **Exports**: CSV export endpoints for tickets and FAQ
 - **Webhooks**: Incoming webhooks from Core-API (app-reflections, revoke-reflection); validated via `X-Webhook-Signature`
@@ -24,12 +26,19 @@ All API endpoints are prefixed with `/api` unless otherwise noted.
 
 Most endpoints require authentication via:
 - **API Key**: Pass in `X-API-Key` header
+- **Supabase JWT**: Pass in `Authorization: Bearer <token>` header for dashboard endpoints
 - **User ID**: Pass in `X-User-Id` header (for user-specific endpoints)
 
 Example:
 ```bash
 curl -H "X-API-Key: your_api_key" -H "X-User-Id: 123456789" \
   https://your-bot-url/api/reminders/123456789
+```
+
+Dashboard endpoints example:
+```bash
+curl -H "Authorization: Bearer supabase_token" \
+  https://your-bot-url/api/dashboard/123456789/settings
 ```
 
 ## Endpoints
@@ -247,22 +256,60 @@ Get all settings for a specific guild, organized by category.
 ```json
 {
   "system": {
-    "log_channel_id": "123456789",
-    "rules_channel_id": "987654321"
+    "log_channel_id": 123456789,
+    "rules_channel_id": 987654321,
+    "log_level": "verbose"
   },
   "reminders": {
-    "default_channel_id": "111222333",
+    "enabled": true,
+    "default_channel_id": 111222333,
     "allow_everyone_mentions": false
   },
   "embedwatcher": {
-    "announcements_channel_id": "444555666"
+    "announcements_channel_id": 444555666,
+    "reminder_offset_minutes": 60,
+    "gpt_fallback_enabled": true,
+    "non_embed_enabled": false,
+    "process_bot_messages": false
   },
   "gpt": {
     "model": "grok-3",
     "temperature": 0.7
   },
-  "invites": {},
-  "gdpr": {}
+  "invites": {
+    "enabled": true,
+    "announcement_channel_id": 123456789,
+    "with_inviter_template": "{member} joined! {inviter} now has {count} invites.",
+    "no_inviter_template": "{member} joined, but no inviter data found."
+  },
+  "gdpr": {
+    "enabled": true,
+    "channel_id": 123456789
+  },
+  "automod": {
+    "enabled": false,
+    "log_channel_id": 123456789,
+    "log_actions": true,
+    "log_to_database": true
+  },
+  "onboarding": {
+    "enabled": true,
+    "mode": "rules_with_questions",
+    "completion_role_id": 123456789,
+    "join_role_id": 987654321
+  },
+  "ticketbot": {
+    "category_id": 123456789,
+    "staff_role_id": 987654321,
+    "escalation_role_id": 555666777,
+    "idle_days_threshold": 5,
+    "auto_close_days_threshold": 14
+  },
+  "verification": {
+    "verified_role_id": 123456789,
+    "category_id": 987654321,
+    "vision_model": "grok-3"
+  }
 }
 ```
 
@@ -319,15 +366,23 @@ Get all onboarding questions for a guild.
 
 Save or update an onboarding question.
 
-**Authentication:** Required (Supabase JWT token)
+**Authentication:** Required (Supabase JWT token + guild admin access)
 
 **Request Body:** Same structure as GET response
+
+#### `PUT /api/dashboard/{guild_id}/onboarding/questions/{question_id}`
+
+Update an onboarding question.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Request Body:** Same structure as GET response (all fields optional except `question_type`)
 
 #### `DELETE /api/dashboard/{guild_id}/onboarding/questions/{question_id}`
 
 Delete an onboarding question.
 
-**Authentication:** Required (Supabase JWT token)
+**Authentication:** Required (Supabase JWT token + guild admin access)
 
 #### `GET /api/dashboard/{guild_id}/onboarding/rules`
 
@@ -356,25 +411,38 @@ Get all onboarding rules for a guild.
 
 Save or update an onboarding rule.
 
-**Authentication:** Required (Supabase JWT token)
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+#### `PUT /api/dashboard/{guild_id}/onboarding/rules/{rule_id}`
+
+Update an onboarding rule.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
 
 #### `DELETE /api/dashboard/{guild_id}/onboarding/rules/{rule_id}`
 
 Delete an onboarding rule.
 
-**Authentication:** Required (Supabase JWT token)
+**Authentication:** Required (Supabase JWT token + guild admin access)
 
 #### `POST /api/dashboard/{guild_id}/onboarding/reorder`
 
 Reorder onboarding questions and rules.
 
-**Authentication:** Required (Supabase JWT token)
+**Authentication:** Required (Supabase JWT token + guild admin access)
 
 **Request Body:**
 ```json
 {
   "questions": [1, 3, 2],
   "rules": [2, 1]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true
 }
 ```
 
@@ -419,11 +487,200 @@ Rollback a setting to a previous value.
 }
 ```
 
+### Auto-Moderation Management
+
+#### `GET /api/dashboard/{guild_id}/automod/rules`
+
+List all auto-moderation rules for a guild.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "guild_id": 123456789,
+    "rule_type": "content",
+    "name": "No Bad Words",
+    "enabled": true,
+    "config": {
+      "content_type": "bad_words",
+      "words": ["spam", "curse"]
+    },
+    "action_type": "warn",
+    "action_config": {
+      "message": "Please watch your language!"
+    },
+    "severity": 1,
+    "created_by": 987654321,
+    "created_at": "2026-01-21T12:00:00Z",
+    "updated_at": "2026-01-21T12:00:00Z",
+    "is_premium": false
+  }
+]
+```
+
+#### `POST /api/dashboard/{guild_id}/automod/rules`
+
+Create a new auto-moderation rule.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Request Body:**
+```json
+{
+  "rule_type": "content",
+  "name": "No Links",
+  "enabled": true,
+  "config": {
+    "content_type": "links",
+    "allow_links": false,
+    "whitelist": ["discord.com"],
+    "blacklist": ["spam.com"]
+  },
+  "action_type": "delete",
+  "action_config": {},
+  "severity": 2
+}
+```
+
+**Response:** Returns the created rule with assigned ID
+
+#### `PUT /api/dashboard/{guild_id}/automod/rules/{rule_id}`
+
+Update an existing auto-moderation rule.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Request Body:**
+```json
+{
+  "name": "Updated Rule Name",
+  "enabled": false,
+  "severity": 3
+}
+```
+
+**Response:** Returns the updated rule
+
+#### `DELETE /api/dashboard/{guild_id}/automod/rules/{rule_id}`
+
+Delete an auto-moderation rule.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+#### `GET /api/dashboard/{guild_id}/automod/stats`
+
+Get auto-moderation statistics and analytics.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Response:**
+```json
+{
+  "total_rules": 5,
+  "enabled_rules": 3,
+  "rules_by_type": {
+    "content": 2,
+    "spam": 1,
+    "links": 1,
+    "mentions": 1
+  },
+  "total_violations": 127,
+  "violations_today": 8,
+  "violations_week": 45,
+  "top_violated_rules": [
+    {
+      "name": "No Bad Words",
+      "rule_type": "content",
+      "violation_count": 23
+    }
+  ]
+}
+```
+
+#### `GET /api/dashboard/{guild_id}/automod/violations`
+
+Get recent auto-moderation violation logs.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Query Parameters:**
+- `limit` (optional, default: 50): Maximum number of violations to return
+- `days` (optional, default: 7): Number of days to look back
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "guild_id": 123456789,
+    "user_id": 987654321,
+    "message_id": 111222333,
+    "channel_id": 444555666,
+    "rule_id": 1,
+    "action_taken": "warn",
+    "message_content": "This message contained bad words",
+    "ai_analysis": null,
+    "context": {},
+    "timestamp": "2026-01-21T12:00:00Z",
+    "moderator_id": null
+  }
+]
+```
+
+#### `GET /api/dashboard/{guild_id}/automod/settings`
+
+Get auto-moderation specific settings.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Response:**
+```json
+{
+  "enabled": false,
+  "log_channel_id": 123456789,
+  "log_actions": true,
+  "log_to_database": true
+}
+```
+
+#### `POST /api/dashboard/{guild_id}/automod/settings`
+
+Update auto-moderation settings.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Request Body:**
+```json
+{
+  "enabled": true,
+  "log_channel_id": 123456789,
+  "log_actions": true,
+  "log_to_database": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
 #### `GET /api/dashboard/logs`
 
 Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard. Requires guild admin access (verified via Supabase profile's Discord ID). Global events (e.g. `BOT_RECONNECT`, `BOT_DISCONNECT`) are included for any guild request.
 
-**Authentication:** Required (Supabase JWT token)
+**Authentication:** Required (Supabase JWT token + guild admin access)
 
 **Query Parameters:**
 - `guild_id` (required): Discord guild ID – user must have admin access to this guild
@@ -588,3 +845,43 @@ Error response format:
 Current API version: **2.4.0** (Lifecycle Manager)
 
 Version information is included in health check responses and can be queried via `/api/health`.
+
+## Data Types Reference
+
+### Settings Categories
+
+- **system**: Log channels, log level
+- **reminders**: Reminder functionality, default channels
+- **embedwatcher**: Embed parsing, reminder offsets
+- **gpt**: AI model configuration
+- **invites**: Invite tracking settings
+- **gdpr**: GDPR compliance settings
+- **automod**: Auto-moderation configuration
+- **onboarding**: User onboarding flow
+- **ticketbot**: Ticket system configuration
+- **verification**: Payment verification setup
+
+### Auto-Moderation Rule Types
+
+- `spam`: Message spam detection
+- `content`: Content filtering (bad words, links, etc.)
+- `regex`: Custom regex patterns (premium)
+- `ai`: AI-powered content analysis (premium)
+- `mentions`: Mention spam detection
+- `caps`: Excessive capitalization
+- `duplicate`: Duplicate message detection
+
+### Auto-Moderation Action Types
+
+- `delete`: Delete message
+- `warn`: Send warning message
+- `mute`: Mute user (premium)
+- `timeout`: Timeout user (premium)
+- `ban`: Ban user (premium)
+
+### Onboarding Question Types
+
+- `text`: Free text input
+- `email`: Email validation
+- `select`: Single choice dropdown
+- `multiselect`: Multiple choice checkboxes
