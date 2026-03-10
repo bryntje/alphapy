@@ -105,7 +105,14 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
-## 💡 Contextual FYI tips
+## � Agent: Status
+- **Path**: `cogs/status.py`
+- **Purpose**: General information and status commands
+- **Commands**: `/version`, `/gptstatus`, `/innersync`, `/release`, `/health`, `/commands`, `/command_stats`
+
+---
+
+## �💡 Contextual FYI tips
 - **Path**: `utils/fyi_tips.py`
 - **Purpose**: One-time context-sensitive tips on first events per guild (24h cooldown)
 - **Phase 1 live**: `first_guild_join`, `first_onboarding_done`, `first_config_wizard_complete`, `first_reminder`, `first_ticket`
