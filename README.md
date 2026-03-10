@@ -68,6 +68,11 @@ Google/Secret Manager: [docs/SECURITY.md](docs/SECURITY.md), [docs/GOOGLE_CREDEN
 
 ## Features (summary)
 
+### System & Information
+
+- **Status commands:** `/innersync` (platform info), `/version`, `/health`, `/gptstatus`, `/release`
+- **Command listing:** `/commands` with categorized display and admin options
+
 ### Reminders
 
 - **One-off:** from embeds (event time) or `/add_reminder`; trigger at T−60 and T0; deleted after send.

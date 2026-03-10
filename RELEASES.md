@@ -29,6 +29,7 @@ This release delivers an enterprise-grade Discord bot with complete monetization
   - Data retention policies (7 years for tax compliance), user data export capabilities
 - **Join Role (temporary):** Assign a role on join; removed after onboarding completion or verification (`onboarding.join_role_id`, `/config onboarding set_join_role`).
 - **Observability:** Dashboard metrics include `premium_metrics` (premium checks, cache hits, transfers, cache size); `/release` command reads release notes from GitHub with link to full notes (`GITHUB_REPO` env).
+- **New `/innersync` Command:** Informational command showing Innersync platform details and official links (Core, App, Pricing) with ephemeral response.
 
 #### Technical Improvements
 - **Command Structure:** `requires_owner()` decorator for true owner-only commands vs admin-accessible features

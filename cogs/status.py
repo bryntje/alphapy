@@ -47,7 +47,7 @@ async def version_cmd(interaction: discord.Interaction):
 async def innersync_cmd(interaction: discord.Interaction):
     embed = EmbedBuilder.info(
         title="🌱 Innersync",
-        description="Innersync is the community and platform behind this server. **Alphapy** is the Discord bot that powers reminders, onboarding, verification, and premium here."
+        description="Innersync is the community and platform behind this bot. **Alphapy** is the Discord bot that powers reminders, onboarding, verification, and premium here."
     )
     
     embed.add_field(

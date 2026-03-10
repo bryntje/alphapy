@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - **App Reflections (plaintext from Core)**: Webhooks `POST /webhooks/app-reflections` and `POST /webhooks/revoke-reflection` to receive and revoke plaintext reflections from the App via Core-API; stored in `app_reflections` and used in `/growthcheckin` (user-self context only; not used for ticket "Suggest reply" for privacy).
 - **Legal page**: `docs/legal.md` (docs.alphapy.innersync.tech/legal/) with company details, enterprise number, and registered office; linked from Terms of Service and Privacy Policy footers.
 - **Config**: `APP_REFLECTIONS_WEBHOOK_SECRET` and `GITHUB_TOKEN` environment variables; documented in [Configuration](docs/configuration.md).
+- **New `/innersync` Command**: Informational command showing Innersync platform details and official links (Core, App, Pricing) with ephemeral response
 
 ### Changed
 - **Privacy**: Reflection context (Supabase + app_reflections) is no longer included in ticket "Suggest reply"; only used for user-self flows (e.g. `/growthcheckin`). (No leaks of user-data have occurred, this was caught before any tickets got made.)
@@ -30,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - **API Metrics**: Dashboard metrics endpoint `/api/dashboard/metrics` now includes an optional `premium_metrics` block with counters for premium checks, cache hits, transfers, and cache size.
 - **Early Bird Founder Program**: Special lifetime tier recognition (€29 instead of €49) with automatic founder role assignment in Innersync guild and custom welcome messaging
 - **Code Quality Assurance**: Automated syntax validation, comprehensive test coverage (15+ premium test cases), and consistent error handling patterns across entire codebase
+
 
 ### Changed
 - **Database Operations**: 14 out of 27 cogs now use universal `DatabaseManager` with `acquire_safe()` for 100% safe database access, eliminating connection errors and improving reliability
