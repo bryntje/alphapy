@@ -149,3 +149,7 @@ This Privacy Policy is provided for informational purposes and does not constitu
 ---
 
 By installing or using Innersync • Alphapy, you acknowledge that you have read and understood this Privacy Policy.
+
+---
+
+**Legal information:** For company details (enterprise number, registered office, contact), see [Legal Information](/legal/).

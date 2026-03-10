@@ -30,6 +30,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Set start_time for uptime tracking
 setattr(bot, "start_time", time.time())
 
+# Database pool access is handled by utils.db_helpers.get_bot_db_pool()
+# This provides consistent database access across the codebase
+
 settings_service = SettingsService(getattr(config, "DATABASE_URL", None))
 settings_service.register(
     SettingDefinition(
@@ -124,6 +127,34 @@ settings_service.register(
         value_type="channel",
         default=0,
         allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="automod",
+        key="enabled",
+        description="Enable auto-moderation for this guild.",
+        value_type="bool",
+        default=False,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="automod",
+        key="log_channel_id",
+        description="Channel for auto-mod violation logs.",
+        value_type="channel",
+        default=0,
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="automod",
+        key="warn_message",
+        description="Default warning message for auto-mod violations.",
+        value_type="string",
+        default="⚠️ Your message violates server rules.",
     )
 )
 settings_service.register(
@@ -559,6 +590,7 @@ async def on_guild_join(guild: discord.Guild):
     if channel:
         from utils.fyi_tips import send_fyi_if_first
         await send_fyi_if_first(bot, guild.id, "first_guild_join", channel_id_override=channel.id)
+
 
 
 async def setup_hook():

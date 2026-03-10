@@ -33,6 +33,8 @@ from utils.operational_logs import get_operational_events, log_operational_event
 from utils import core_ingress as core_ingress_module
 from webhooks.supabase import router as supabase_webhook_router
 from webhooks.reflections import router as reflections_webhook_router
+from webhooks.app_reflections import router as app_reflections_webhook_router
+from webhooks.revoke_reflection import router as revoke_reflection_webhook_router
 from version import CODENAME, __version__
 
 logger = logging.getLogger(__name__)
@@ -122,6 +124,7 @@ COMMAND_STATS_CACHE_TTL = 30  # seconds
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global db_pool
     db_pool = await asyncpg.create_pool(config.DATABASE_URL)
+    app.state.db_pool = db_pool
     logger.info("✅ DB pool created")
     
     # Log MAIN_GUILD_ID configuration
@@ -245,6 +248,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(lifespan=lifespan)
 app.include_router(supabase_webhook_router)
 app.include_router(reflections_webhook_router)
+app.include_router(app_reflections_webhook_router)
+app.include_router(revoke_reflection_webhook_router)
 
 # CORS settings
 _allowed_origins = getattr(config, "ALLOWED_ORIGINS", [])
@@ -1778,6 +1783,10 @@ class GuildSettingsResponse(BaseModel):
     gpt: Dict[str, Any] = {}
     invites: Dict[str, Any] = {}
     gdpr: Dict[str, Any] = {}
+    automod: Dict[str, Any] = {}
+    onboarding: Dict[str, Any] = {}
+    ticketbot: Dict[str, Any] = {}
+    verification: Dict[str, Any] = {}
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -1892,7 +1901,11 @@ async def get_guild_settings(
                 'embedwatcher': {},
                 'gpt': {},
                 'invites': {},
-                'gdpr': {}
+                'gdpr': {},
+                'automod': {},
+                'onboarding': {},
+                'ticketbot': {},
+                'verification': {}
             }
 
             for row in rows:
@@ -1902,11 +1915,16 @@ async def get_guild_settings(
 
                 # Convert string values back to appropriate types
                 if scope in settings:
-                    if key in ['allow_everyone_mentions']:
+                    if key in ['allow_everyone_mentions', 'enabled', 'log_actions', 'log_to_database', 'gpt_fallback_enabled', 'non_embed_enabled', 'process_bot_messages']:
                         settings[scope][key] = value.lower() == 'true'
-                    elif key in ['embed_watcher_offset_hours', 'max_tokens']:
+                    elif key in ['embed_watcher_offset_hours', 'max_tokens', 'log_channel_id', 'reminder_offset_minutes', 'category_id', 'staff_role_id', 'escalation_role_id', 'idle_days_threshold', 'auto_close_days_threshold', 'completion_role_id', 'join_role_id', 'verified_role_id']:
                         try:
                             settings[scope][key] = int(value)
+                        except ValueError:
+                            settings[scope][key] = value
+                    elif key in ['temperature']:
+                        try:
+                            settings[scope][key] = float(value)
                         except ValueError:
                             settings[scope][key] = value
                     else:
@@ -2439,6 +2457,76 @@ class OperationalLogsResponse(BaseModel):
     logs: List[Dict[str, Any]]
 
 
+# Auto-Moderation Management Endpoints (Web Configuration Interface)
+# ---------------------------------------------------------------------------
+
+class AutoModRule(BaseModel):
+    id: Optional[int] = None
+    guild_id: int
+    rule_type: str  # 'spam', 'content', 'regex', 'ai', 'mentions', 'caps', 'duplicate'
+    name: str
+    enabled: bool = True
+    config: Dict[str, Any]
+    action_type: str  # 'delete', 'warn', 'mute', 'timeout', 'ban'
+    action_config: Dict[str, Any]
+    severity: int = 1
+    created_by: Optional[int] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    is_premium: bool = False
+
+
+class AutoModRuleCreate(BaseModel):
+    rule_type: str
+    name: str
+    enabled: bool = True
+    config: Dict[str, Any]
+    action_type: str
+    action_config: Dict[str, Any]
+    severity: int = 1
+
+
+class AutoModRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    config: Optional[Dict[str, Any]] = None
+    action_type: Optional[str] = None
+    action_config: Optional[Dict[str, Any]] = None
+    severity: Optional[int] = None
+
+
+class AutoModStats(BaseModel):
+    total_rules: int
+    enabled_rules: int
+    rules_by_type: Dict[str, int]
+    total_violations: int
+    violations_today: int
+    violations_week: int
+    top_violated_rules: List[Dict[str, Any]]
+
+
+class AutoModViolation(BaseModel):
+    id: int
+    guild_id: int
+    user_id: int
+    message_id: Optional[int]
+    channel_id: Optional[int]
+    rule_id: Optional[int]
+    action_taken: str
+    message_content: Optional[str]
+    ai_analysis: Optional[Dict[str, Any]]
+    context: Optional[Dict[str, Any]]
+    timestamp: str
+    moderator_id: Optional[int]
+
+
+class AutoModSettings(BaseModel):
+    enabled: bool = False
+    log_channel_id: Optional[int] = None
+    log_actions: bool = True
+    log_to_database: bool = True
+
+
 @router.get("/dashboard/logs", response_model=OperationalLogsResponse)
 async def get_dashboard_logs(
     guild_id: int,
@@ -2455,6 +2543,510 @@ async def get_dashboard_logs(
         types_list = [t.strip() for t in event_types.split(",") if t.strip()]
     logs = get_operational_events(guild_id=guild_id, limit=limit, event_types=types_list)
     return OperationalLogsResponse(logs=logs)
+
+
+# Auto-Moderation Management Endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/dashboard/{guild_id}/automod/rules", response_model=List[AutoModRule])
+async def get_automod_rules(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get all auto-moderation rules for a guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        # Import here to avoid circular imports
+        from utils.automod_rules import RuleProcessor
+        from utils.db_helpers import get_bot_db_pool
+        
+        # Get bot instance for RuleProcessor
+        # Note: In production, you'd need to inject the bot instance properly
+        # For now, we'll query the database directly
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT 
+                    r.id, r.guild_id, r.rule_type, r.name, r.enabled, r.config,
+                    r.created_by, r.created_at, r.updated_at, r.is_premium,
+                    a.action_type, a.config as action_config, a.severity
+                FROM automod_rules r
+                LEFT JOIN automod_actions a ON r.action_id = a.id
+                WHERE r.guild_id = $1
+                ORDER BY a.severity DESC, r.created_at DESC
+            """, guild_id)
+            
+            rules = []
+            for row in rows:
+                rule_dict = dict(row)
+                # Parse JSON config if needed
+                if rule_dict.get('config') and isinstance(rule_dict['config'], str):
+                    try:
+                        import json
+                        rule_dict['config'] = json.loads(rule_dict['config'])
+                    except (ValueError, TypeError):
+                        pass
+                
+                if rule_dict.get('action_config') and isinstance(rule_dict['action_config'], str):
+                    try:
+                        import json
+                        rule_dict['action_config'] = json.loads(rule_dict['action_config'])
+                    except (ValueError, TypeError):
+                        pass
+                
+                rules.append(AutoModRule(**rule_dict))
+            
+            return rules
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[ERROR] Failed to get auto-mod rules for guild {guild_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod rules")
+
+
+@router.post("/dashboard/{guild_id}/automod/rules", response_model=AutoModRule)
+async def create_automod_rule(
+    guild_id: int,
+    rule: AutoModRuleCreate,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Create a new auto-moderation rule."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        # Get user's Discord ID
+        user_id = await get_discord_id_for_user(auth_user_id)
+        if not user_id:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if user has premium for premium features
+        is_premium = False  # TODO: Implement premium check
+        
+        async with db_pool.acquire() as conn:
+            # Create action first
+            import json
+            action_id = await conn.fetchval("""
+                INSERT INTO automod_actions (guild_id, action_type, config, is_premium, created_by)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+            """, guild_id, rule.action_type, json.dumps(rule.action_config), is_premium, user_id)
+            
+            # Create rule
+            rule_id = await conn.fetchval("""
+                INSERT INTO automod_rules (guild_id, rule_type, name, enabled, config, action_id, created_by, is_premium)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id
+            """, guild_id, rule.rule_type, rule.name, rule.enabled, json.dumps(rule.config), action_id, user_id, is_premium)
+            
+            # Fetch the complete rule with action
+            row = await conn.fetchrow("""
+                SELECT 
+                    r.id, r.guild_id, r.rule_type, r.name, r.enabled, r.config,
+                    r.created_by, r.created_at, r.updated_at, r.is_premium,
+                    a.action_type, a.config as action_config, a.severity
+                FROM automod_rules r
+                LEFT JOIN automod_actions a ON r.action_id = a.id
+                WHERE r.id = $1
+            """, rule_id)
+            
+            if row:
+                rule_dict = dict(row)
+                rule_dict['config'] = json.loads(rule_dict['config'])
+                rule_dict['action_config'] = json.loads(rule_dict['action_config'])
+                return AutoModRule(**rule_dict)
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create rule")
+                
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[ERROR] Failed to create auto-mod rule for guild {guild_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to create auto-mod rule")
+
+
+@router.put("/dashboard/{guild_id}/automod/rules/{rule_id}", response_model=AutoModRule)
+async def update_automod_rule(
+    guild_id: int,
+    rule_id: int,
+    update: AutoModRuleUpdate,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Update an existing auto-moderation rule."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Fetch linked action_id so we can update both rule and action records
+            row_ids = await conn.fetchrow(
+                "SELECT id, action_id FROM automod_rules WHERE guild_id = $1 AND id = $2",
+                guild_id,
+                rule_id,
+            )
+            if not row_ids:
+                raise HTTPException(status_code=404, detail="Rule not found")
+
+            action_id = row_ids["action_id"]
+
+            # Update rule fields
+            if update.name is not None:
+                await conn.execute(
+                    "UPDATE automod_rules SET name = $1, updated_at = NOW() WHERE guild_id = $2 AND id = $3",
+                    update.name,
+                    guild_id,
+                    rule_id,
+                )
+
+            if update.enabled is not None:
+                await conn.execute(
+                    "UPDATE automod_rules SET enabled = $1, updated_at = NOW() WHERE guild_id = $2 AND id = $3",
+                    update.enabled,
+                    guild_id,
+                    rule_id,
+                )
+
+            if update.config is not None:
+                import json
+
+                await conn.execute(
+                    "UPDATE automod_rules SET config = $1, updated_at = NOW() WHERE guild_id = $2 AND id = $3",
+                    json.dumps(update.config),
+                    guild_id,
+                    rule_id,
+                )
+
+            # Update action fields on the linked automod_actions row
+            if action_id:
+                if update.action_type is not None:
+                    await conn.execute(
+                        "UPDATE automod_actions SET action_type = $1 WHERE guild_id = $2 AND id = $3",
+                        update.action_type,
+                        guild_id,
+                        action_id,
+                    )
+
+                if update.action_config is not None:
+                    import json
+
+                    await conn.execute(
+                        "UPDATE automod_actions SET config = $1 WHERE guild_id = $2 AND id = $3",
+                        json.dumps(update.action_config),
+                        guild_id,
+                        action_id,
+                    )
+
+                if update.severity is not None:
+                    await conn.execute(
+                        "UPDATE automod_actions SET severity = $1 WHERE guild_id = $2 AND id = $3",
+                        update.severity,
+                        guild_id,
+                        action_id,
+                    )
+            
+            # Fetch updated rule
+            row = await conn.fetchrow("""
+                SELECT 
+                    r.id, r.guild_id, r.rule_type, r.name, r.enabled, r.config,
+                    r.created_by, r.created_at, r.updated_at, r.is_premium,
+                    a.action_type, a.config as action_config, a.severity
+                FROM automod_rules r
+                LEFT JOIN automod_actions a ON r.action_id = a.id
+                WHERE r.guild_id = $1 AND r.id = $2
+            """, guild_id, rule_id)
+            
+            if row:
+                rule_dict = dict(row)
+                import json
+                rule_dict['config'] = json.loads(rule_dict['config'])
+                rule_dict['action_config'] = json.loads(rule_dict['action_config'])
+                return AutoModRule(**rule_dict)
+            else:
+                raise HTTPException(status_code=404, detail="Rule not found")
+                
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[ERROR] Failed to update auto-mod rule {rule_id} for guild {guild_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to update auto-mod rule")
+
+
+@router.delete("/dashboard/{guild_id}/automod/rules/{rule_id}")
+async def delete_automod_rule(
+    guild_id: int,
+    rule_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Delete an auto-moderation rule."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Get rule row first so we can distinguish between "rule not found"
+            # and "rule exists but has no linked action".
+            row = await conn.fetchrow(
+                "SELECT action_id FROM automod_rules WHERE guild_id = $1 AND id = $2",
+                guild_id,
+                rule_id,
+            )
+
+            if not row:
+                raise HTTPException(status_code=404, detail="Rule not found")
+
+            action_id = row["action_id"]
+
+            # Delete rule
+            await conn.execute(
+                "DELETE FROM automod_rules WHERE guild_id = $1 AND id = $2",
+                guild_id,
+                rule_id,
+            )
+
+            # Delete linked action if present
+            if action_id:
+                await conn.execute(
+                    "DELETE FROM automod_actions WHERE guild_id = $1 AND id = $2",
+                    guild_id,
+                    action_id,
+                )
+            
+            return {"success": True}
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[ERROR] Failed to delete auto-mod rule {rule_id} for guild {guild_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to delete auto-mod rule")
+
+
+@router.get("/dashboard/{guild_id}/automod/stats", response_model=AutoModStats)
+async def get_automod_stats(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get auto-moderation statistics for a guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Get rule stats
+            rule_stats = await conn.fetchrow("""
+                SELECT 
+                    COUNT(*) as total_rules,
+                    COUNT(*) FILTER (WHERE enabled = true) as enabled_rules
+                FROM automod_rules 
+                WHERE guild_id = $1
+            """, guild_id)
+            
+            # Get rules by type
+            rules_by_type = await conn.fetch("""
+                SELECT rule_type, COUNT(*) as count
+                FROM automod_rules 
+                WHERE guild_id = $1
+                GROUP BY rule_type
+            """, guild_id)
+            
+            # Get violation stats
+            violation_stats = await conn.fetchrow("""
+                SELECT 
+                    COUNT(*) as total_violations,
+                    COUNT(*) FILTER (WHERE timestamp >= NOW() - interval '1 day') as violations_today,
+                    COUNT(*) FILTER (WHERE timestamp >= NOW() - interval '7 days') as violations_week
+                FROM automod_logs 
+                WHERE guild_id = $1
+            """, guild_id)
+            
+            # Get top violated rules
+            top_rules = await conn.fetch("""
+                SELECT 
+                    r.name,
+                    r.rule_type,
+                    COUNT(*) as violation_count
+                FROM automod_logs l
+                JOIN automod_rules r ON l.rule_id = r.id
+                WHERE l.guild_id = $1 AND l.timestamp >= NOW() - interval '7 days'
+                GROUP BY r.id, r.name, r.rule_type
+                ORDER BY violation_count DESC
+                LIMIT 5
+            """, guild_id)
+            
+            return AutoModStats(
+                total_rules=rule_stats['total_rules'] or 0,
+                enabled_rules=rule_stats['enabled_rules'] or 0,
+                rules_by_type={row['rule_type']: row['count'] for row in rules_by_type},
+                total_violations=violation_stats['total_violations'] or 0,
+                violations_today=violation_stats['violations_today'] or 0,
+                violations_week=violation_stats['violations_week'] or 0,
+                top_violated_rules=[dict(row) for row in top_rules]
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[ERROR] Failed to get auto-mod stats for guild {guild_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod stats")
+
+
+@router.get("/dashboard/{guild_id}/automod/violations", response_model=List[AutoModViolation])
+async def get_automod_violations(
+    guild_id: int,
+    limit: int = 50,
+    days: int = 7,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get recent auto-moderation violations for a guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    # Safety clamp to avoid overly large responses
+    limit = min(limit, 200)
+
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT 
+                    id, guild_id, user_id, message_id, channel_id, rule_id,
+                    action_taken, message_content, ai_analysis, context,
+                    timestamp, moderator_id
+                FROM automod_logs 
+                WHERE guild_id = $1
+                  AND timestamp >= NOW() - ($2::text || ' days')::interval
+                ORDER BY timestamp DESC
+                LIMIT $3
+            """, guild_id, days, limit)
+            
+            violations = []
+            for row in rows:
+                violation_dict = dict(row)
+                # Parse JSON fields if needed
+                if violation_dict.get('ai_analysis') and isinstance(violation_dict['ai_analysis'], str):
+                    try:
+                        import json
+                        violation_dict['ai_analysis'] = json.loads(violation_dict['ai_analysis'])
+                    except (ValueError, TypeError):
+                        pass
+                
+                if violation_dict.get('context') and isinstance(violation_dict['context'], str):
+                    try:
+                        import json
+                        violation_dict['context'] = json.loads(violation_dict['context'])
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Format timestamp
+                if violation_dict.get('timestamp'):
+                    violation_dict['timestamp'] = violation_dict['timestamp'].isoformat()
+                
+                violations.append(AutoModViolation(**violation_dict))
+            
+            return violations
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[ERROR] Failed to get auto-mod violations for guild {guild_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod violations")
+
+
+@router.get("/dashboard/{guild_id}/automod/settings", response_model=AutoModSettings)
+async def get_automod_settings(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get auto-moderation settings for a guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Get automod settings from bot_settings table
+            rows = await conn.fetch("""
+                SELECT key, value
+                FROM bot_settings
+                WHERE guild_id = $1 AND scope = 'automod'
+            """, guild_id)
+            
+            settings = {}
+            for row in rows:
+                key = row['key']
+                value = row['value']
+                
+                # Convert boolean values
+                if key in ['enabled', 'log_actions', 'log_to_database']:
+                    settings[key] = value.lower() == 'true'
+                elif key == 'log_channel_id':
+                    settings[key] = int(value) if value.isdigit() else None
+                else:
+                    settings[key] = value
+            
+            return AutoModSettings(**settings)
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[ERROR] Failed to get auto-mod settings for guild {guild_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod settings")
+
+
+@router.post("/dashboard/{guild_id}/automod/settings")
+async def update_automod_settings(
+    guild_id: int,
+    settings: AutoModSettings,
+    auth_user_id: str = Depends(get_authenticated_user_id)
+):
+    """Update auto-moderation settings for a guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Update each setting
+            for key, value in settings.dict().items():
+                # Convert value to string for storage
+                str_value = str(value).lower() if isinstance(value, bool) else str(value)
+                
+                await conn.execute("""
+                    INSERT INTO bot_settings (guild_id, scope, key, value)
+                    VALUES ($1, 'automod', $2, $3)
+                    ON CONFLICT (guild_id, scope, key) 
+                    DO UPDATE SET value = EXCLUDED.value
+                """, guild_id, key, str_value)
+            
+            return {"success": True}
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[ERROR] Failed to update auto-mod settings for guild {guild_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to update auto-mod settings")
 
 
 app.include_router(router)

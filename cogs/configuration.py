@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List, Literal, Optional, Tuple, cast
+import re
+from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -9,6 +10,8 @@ from utils.fyi_tips import FYI_KEYS as FYI_TIPS_KEYS
 from utils.db_helpers import acquire_safe
 from utils.embed_builder import EmbedBuilder
 from utils.settings_service import SettingsService, SettingDefinition
+from utils.automod_rules import RuleProcessor, RuleType, ActionType
+from utils.premium_guard import guild_has_premium
 from utils.logger import log_with_guild, log_guild_action, logger
 from utils.timezone import BRUSSELS_TZ
 from cogs.reaction_roles import StartOnboardingView
@@ -97,8 +100,21 @@ class Configuration(commands.Cog):
         description="Verification settings",
         parent=config,
     )
+    automod_group = app_commands.Group(
+        name="automod",
+        description="Auto-moderation settings",
+        parent=config,
+    )
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.rule_processor = RuleProcessor(bot)
+        
+        # Validate database pool availability
+        from utils.db_helpers import get_bot_db_pool
+        if get_bot_db_pool(bot) is None:
+            from utils.logger import logger
+            logger.warning("⚠️ Database pool not available - auto-moderation features will be limited")
+        
         settings = getattr(bot, "settings", None)
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -1529,6 +1545,960 @@ class Configuration(commands.Cog):
         modal = ReorderQuestionsModal(onboarding_cog, interaction.guild.id, questions)
         await interaction.response.send_modal(modal)
 
+    @automod_group.command(name="show", description="Show auto-moderation settings")
+    @requires_admin()
+    async def automod_show(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        items = self.settings.list_scope("automod", interaction.guild.id)
+        if not items:
+            await interaction.followup.send("⚠️ No auto-moderation settings registered.", ephemeral=True)
+            return
+        lines = ["🛡️ **Auto-moderation settings**"]
+        for definition, value, overridden in items:
+            status = "✅ override" if overridden else "🔹 default"
+            formatted = self._format_value(definition, value)
+            lines.append(f"{status} — `{definition.key}` → {formatted}")
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    @automod_group.command(name="enable", description="Enable auto-moderation")
+    @requires_admin()
+    async def automod_enable(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.set("automod", "enabled", True, guild_id=interaction.guild.id, updated_by=interaction.user.id)
+        await interaction.followup.send("✅ Auto-moderation enabled for this server.", ephemeral=True)
+        log_guild_action(interaction.guild.id, "Auto-moderation enabled", user=str(interaction.user))
+
+    @automod_group.command(name="disable", description="Disable auto-moderation")
+    @requires_admin()
+    async def automod_disable(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.set("automod", "enabled", False, guild_id=interaction.guild.id, updated_by=interaction.user.id)
+        await interaction.followup.send("⚠️ Auto-moderation disabled for this server.", ephemeral=True)
+        log_guild_action(interaction.guild.id, "Auto-moderation disabled", user=str(interaction.user))
+
+    @automod_group.command(name="set_log_channel", description="Set auto-moderation log channel")
+    @requires_admin()
+    async def automod_set_log_channel(
+        self, interaction: discord.Interaction, channel: discord.TextChannel
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.set("automod", "log_channel_id", channel.id, guild_id=interaction.guild.id, updated_by=interaction.user.id)
+        await interaction.followup.send(f"✅ Auto-moderation log channel set to {channel.mention}.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation log channel set to {channel.mention}", user=str(interaction.user))
+
+    @automod_group.command(name="reset_log_channel", description="Reset auto-moderation log channel to default")
+    @requires_admin()
+    async def automod_reset_log_channel(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.clear("automod", "log_channel_id", guild_id=interaction.guild.id, updated_by=interaction.user.id)
+        await interaction.followup.send("✅ Auto-moderation log channel reset to default.", ephemeral=True)
+        log_guild_action(interaction.guild.id, "Auto-moderation log channel reset", user=str(interaction.user))
+
+    def _normalize_automod_action_type(self, action_type: str) -> Optional[str]:
+        normalized = action_type.lower().strip()
+        if normalized in {
+            ActionType.DELETE.value,
+            ActionType.WARN.value,
+            ActionType.MUTE.value,
+            ActionType.TIMEOUT.value,
+            ActionType.BAN.value,
+        }:
+            return normalized
+        return None
+
+    def _is_advanced_action(self, action_type: str) -> bool:
+        return action_type in {ActionType.TIMEOUT.value, ActionType.BAN.value}
+
+    async def _check_advanced_action_premium(
+        self,
+        interaction: discord.Interaction,
+        action_type: str,
+    ) -> bool:
+        if not interaction.guild:
+            return False
+        if not self._is_advanced_action(action_type):
+            return True
+        has_premium = await guild_has_premium(interaction.guild.id)
+        if has_premium:
+            return True
+        await interaction.response.send_message(
+            "❌ Timeout and ban actions require an active premium subscription for this guild.",
+            ephemeral=True,
+        )
+        return False
+
+    def _validate_rule_update_fields(
+        self,
+        rule_type: str,
+        config: Dict[str, Any],
+        requested_fields: Dict[str, bool],
+    ) -> Optional[str]:
+        if rule_type == RuleType.SPAM.value:
+            spam_type = str(config.get("spam_type", "frequency"))
+            if spam_type == "frequency":
+                allowed = {"max_messages", "time_window_seconds"}
+            elif spam_type == "duplicate":
+                allowed = {"max_duplicates"}
+            elif spam_type == "caps":
+                allowed = {"min_length", "max_caps_ratio"}
+            else:
+                allowed = set()
+        elif rule_type == RuleType.CONTENT.value:
+            content_type = str(config.get("content_type", "bad_words"))
+            if content_type == "bad_words":
+                allowed = {"words"}
+            elif content_type == "links":
+                allowed = {"allow_links", "whitelist", "blacklist"}
+            elif content_type == "mentions":
+                allowed = {"max_mentions"}
+            else:
+                allowed = set()
+        elif rule_type == RuleType.REGEX.value:
+            allowed = {"patterns"}
+        else:
+            allowed = set()
+
+        invalid = sorted([name for name, present in requested_fields.items() if present and name not in allowed])
+        if invalid:
+            return f"❌ These fields are not valid for this rule type/config: {', '.join(invalid)}."
+        return None
+
+    @automod_group.command(name="add_spam_rule", description="Add a spam frequency rule")
+    @requires_admin()
+    async def automod_add_spam_rule(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        max_messages: app_commands.Range[int, 2, 30] = 5,
+        time_window_seconds: app_commands.Range[int, 5, 300] = 60,
+        action_type: str = "warn",
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        normalized_action = self._normalize_automod_action_type(action_type)
+        if not normalized_action:
+            await interaction.response.send_message(
+                "❌ Invalid action type. Use: delete, warn, mute, timeout, or ban.",
+                ephemeral=True,
+            )
+            return
+        if not await self._check_advanced_action_premium(interaction, normalized_action):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        rule_config = {
+            "spam_type": "frequency",
+            "max_messages": int(max_messages),
+            "time_window": int(time_window_seconds),
+        }
+        action_config: Dict[str, Any] = {}
+        if normalized_action == ActionType.MUTE.value:
+            action_config = {"duration_minutes": 10}
+        if normalized_action == ActionType.TIMEOUT.value:
+            action_config = {"duration_minutes": 30}
+
+        rule_id = await self.rule_processor.create_rule(
+            guild_id=interaction.guild.id,
+            rule_type=RuleType.SPAM.value,
+            name=name,
+            config=rule_config,
+            action_type=normalized_action,
+            action_config=action_config,
+            created_by=interaction.user.id,
+            is_premium=False,
+        )
+        await interaction.followup.send(
+            f"✅ Spam rule created with ID `{rule_id}`.",
+            ephemeral=True,
+        )
+        log_guild_action(interaction.guild.id, f"Auto-moderation spam rule created: {name}", user=str(interaction.user))
+
+    @automod_group.command(name="add_badwords_rule", description="Add a bad-words content rule")
+    @requires_admin()
+    async def automod_add_badwords_rule(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        words: str,
+        action_type: str = "delete",
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        normalized_action = self._normalize_automod_action_type(action_type)
+        if not normalized_action:
+            await interaction.response.send_message(
+                "❌ Invalid action type. Use: delete, warn, mute, timeout, or ban.",
+                ephemeral=True,
+            )
+            return
+        if not await self._check_advanced_action_premium(interaction, normalized_action):
+            return
+
+        parsed_words = [w.strip().lower() for w in words.split(",") if w.strip()]
+        if not parsed_words:
+            await interaction.response.send_message(
+                "❌ Please provide at least one word (comma-separated).",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        rule_config = {
+            "content_type": "bad_words",
+            "words": parsed_words,
+        }
+        action_config: Dict[str, Any] = {}
+        if normalized_action == ActionType.MUTE.value:
+            action_config = {"duration_minutes": 10}
+        if normalized_action == ActionType.TIMEOUT.value:
+            action_config = {"duration_minutes": 30}
+
+        rule_id = await self.rule_processor.create_rule(
+            guild_id=interaction.guild.id,
+            rule_type=RuleType.CONTENT.value,
+            name=name,
+            config=rule_config,
+            action_type=normalized_action,
+            action_config=action_config,
+            created_by=interaction.user.id,
+            is_premium=False,
+        )
+        await interaction.followup.send(
+            f"✅ Bad-words rule created with ID `{rule_id}` ({len(parsed_words)} words).",
+            ephemeral=True,
+        )
+        log_guild_action(interaction.guild.id, f"Auto-moderation bad-words rule created: {name}", user=str(interaction.user))
+
+    @automod_group.command(name="add_links_rule", description="Add a link filtering rule")
+    @requires_admin()
+    async def automod_add_links_rule(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        allow_links: bool = False,
+        whitelist: Optional[str] = None,
+        blacklist: Optional[str] = None,
+        action_type: str = "delete",
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        normalized_action = self._normalize_automod_action_type(action_type)
+        if not normalized_action:
+            await interaction.response.send_message(
+                "❌ Invalid action type. Use: delete, warn, mute, timeout, or ban.",
+                ephemeral=True,
+            )
+            return
+        if not await self._check_advanced_action_premium(interaction, normalized_action):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        whitelist_domains = [d.strip().lower() for d in (whitelist or "").split(",") if d.strip()]
+        blacklist_domains = [d.strip().lower() for d in (blacklist or "").split(",") if d.strip()]
+        rule_config = {
+            "content_type": "links",
+            "allow_links": allow_links,
+            "whitelist": whitelist_domains,
+            "blacklist": blacklist_domains,
+        }
+        action_config: Dict[str, Any] = {}
+        if normalized_action == ActionType.MUTE.value:
+            action_config = {"duration_minutes": 10}
+        if normalized_action == ActionType.TIMEOUT.value:
+            action_config = {"duration_minutes": 30}
+
+        rule_id = await self.rule_processor.create_rule(
+            guild_id=interaction.guild.id,
+            rule_type=RuleType.CONTENT.value,
+            name=name,
+            config=rule_config,
+            action_type=normalized_action,
+            action_config=action_config,
+            created_by=interaction.user.id,
+            is_premium=False,
+        )
+        await interaction.followup.send(f"✅ Links rule created with ID `{rule_id}`.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation links rule created: {name}", user=str(interaction.user))
+
+    @automod_group.command(name="add_mentions_rule", description="Add a mention spam rule")
+    @requires_admin()
+    async def automod_add_mentions_rule(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        max_mentions: app_commands.Range[int, 1, 30] = 5,
+        action_type: str = "warn",
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        normalized_action = self._normalize_automod_action_type(action_type)
+        if not normalized_action:
+            await interaction.response.send_message(
+                "❌ Invalid action type. Use: delete, warn, mute, timeout, or ban.",
+                ephemeral=True,
+            )
+            return
+        if not await self._check_advanced_action_premium(interaction, normalized_action):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        rule_config = {
+            "content_type": "mentions",
+            "max_mentions": int(max_mentions),
+        }
+        action_config: Dict[str, Any] = {}
+        if normalized_action == ActionType.MUTE.value:
+            action_config = {"duration_minutes": 10}
+        if normalized_action == ActionType.TIMEOUT.value:
+            action_config = {"duration_minutes": 30}
+
+        rule_id = await self.rule_processor.create_rule(
+            guild_id=interaction.guild.id,
+            rule_type=RuleType.CONTENT.value,
+            name=name,
+            config=rule_config,
+            action_type=normalized_action,
+            action_config=action_config,
+            created_by=interaction.user.id,
+            is_premium=False,
+        )
+        await interaction.followup.send(f"✅ Mentions rule created with ID `{rule_id}`.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation mentions rule created: {name}", user=str(interaction.user))
+
+    @automod_group.command(name="add_caps_rule", description="Add an excessive caps spam rule")
+    @requires_admin()
+    async def automod_add_caps_rule(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        min_length: app_commands.Range[int, 5, 500] = 10,
+        max_caps_ratio: app_commands.Range[float, 0.5, 1.0] = 0.7,
+        action_type: str = "warn",
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        normalized_action = self._normalize_automod_action_type(action_type)
+        if not normalized_action:
+            await interaction.response.send_message(
+                "❌ Invalid action type. Use: delete, warn, mute, timeout, or ban.",
+                ephemeral=True,
+            )
+            return
+        if not await self._check_advanced_action_premium(interaction, normalized_action):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        rule_config = {
+            "spam_type": "caps",
+            "min_length": int(min_length),
+            "max_caps_ratio": float(max_caps_ratio),
+        }
+        action_config: Dict[str, Any] = {}
+        if normalized_action == ActionType.MUTE.value:
+            action_config = {"duration_minutes": 10}
+        if normalized_action == ActionType.TIMEOUT.value:
+            action_config = {"duration_minutes": 30}
+
+        rule_id = await self.rule_processor.create_rule(
+            guild_id=interaction.guild.id,
+            rule_type=RuleType.SPAM.value,
+            name=name,
+            config=rule_config,
+            action_type=normalized_action,
+            action_config=action_config,
+            created_by=interaction.user.id,
+            is_premium=False,
+        )
+        await interaction.followup.send(f"✅ Caps rule created with ID `{rule_id}`.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation caps rule created: {name}", user=str(interaction.user))
+
+    @automod_group.command(name="add_duplicate_rule", description="Add a duplicate-message spam rule")
+    @requires_admin()
+    async def automod_add_duplicate_rule(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        max_duplicates: app_commands.Range[int, 2, 10] = 3,
+        action_type: str = "warn",
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        normalized_action = self._normalize_automod_action_type(action_type)
+        if not normalized_action:
+            await interaction.response.send_message(
+                "❌ Invalid action type. Use: delete, warn, mute, timeout, or ban.",
+                ephemeral=True,
+            )
+            return
+        if not await self._check_advanced_action_premium(interaction, normalized_action):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        rule_config = {
+            "spam_type": "duplicate",
+            "max_duplicates": int(max_duplicates),
+        }
+        action_config: Dict[str, Any] = {}
+        if normalized_action == ActionType.MUTE.value:
+            action_config = {"duration_minutes": 10}
+        if normalized_action == ActionType.TIMEOUT.value:
+            action_config = {"duration_minutes": 30}
+
+        rule_id = await self.rule_processor.create_rule(
+            guild_id=interaction.guild.id,
+            rule_type=RuleType.SPAM.value,
+            name=name,
+            config=rule_config,
+            action_type=normalized_action,
+            action_config=action_config,
+            created_by=interaction.user.id,
+            is_premium=False,
+        )
+        await interaction.followup.send(f"✅ Duplicate rule created with ID `{rule_id}`.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation duplicate rule created: {name}", user=str(interaction.user))
+
+    @automod_group.command(name="add_regex_rule", description="Add a regex content rule (premium)")
+    @requires_admin()
+    async def automod_add_regex_rule(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        patterns: str,
+        action_type: str = "delete",
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        has_premium = await guild_has_premium(interaction.guild.id)
+        if not has_premium:
+            await interaction.response.send_message(
+                "❌ Regex rules require an active premium subscription for this guild.",
+                ephemeral=True,
+            )
+            return
+
+        normalized_action = self._normalize_automod_action_type(action_type)
+        if not normalized_action:
+            await interaction.response.send_message(
+                "❌ Invalid action type. Use: delete, warn, mute, timeout, or ban.",
+                ephemeral=True,
+            )
+            return
+        if not await self._check_advanced_action_premium(interaction, normalized_action):
+            return
+
+        parsed_patterns = [p.strip() for p in patterns.split(",") if p.strip()]
+        if not parsed_patterns:
+            await interaction.response.send_message(
+                "❌ Please provide at least one regex pattern (comma-separated).",
+                ephemeral=True,
+            )
+            return
+
+        for pattern in parsed_patterns:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                await interaction.response.send_message(
+                    f"❌ Invalid regex pattern `{pattern}`: {exc}",
+                    ephemeral=True,
+                )
+                return
+
+        await interaction.response.defer(ephemeral=True)
+        rule_config = {"patterns": parsed_patterns}
+        action_config: Dict[str, Any] = {}
+        if normalized_action == ActionType.MUTE.value:
+            action_config = {"duration_minutes": 10}
+        if normalized_action == ActionType.TIMEOUT.value:
+            action_config = {"duration_minutes": 30}
+
+        rule_id = await self.rule_processor.create_rule(
+            guild_id=interaction.guild.id,
+            rule_type=RuleType.REGEX.value,
+            name=name,
+            config=rule_config,
+            action_type=normalized_action,
+            action_config=action_config,
+            created_by=interaction.user.id,
+            is_premium=True,
+        )
+        await interaction.followup.send(
+            f"✅ Regex rule created with ID `{rule_id}` ({len(parsed_patterns)} patterns).",
+            ephemeral=True,
+        )
+        log_guild_action(interaction.guild.id, f"Auto-moderation regex rule created: {name}", user=str(interaction.user))
+
+    @automod_group.command(name="add_ai_rule", description="Add an AI-powered content rule (premium)")
+    @requires_admin()
+    async def automod_add_ai_rule(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        policy: str,
+        action_type: str = "delete",
+        threshold: app_commands.Range[float, 0.5, 1.0] = 0.7,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        has_premium = await guild_has_premium(interaction.guild.id)
+        if not has_premium:
+            await interaction.response.send_message(
+                "❌ AI moderation rules require an active premium subscription for this guild.",
+                ephemeral=True,
+            )
+            return
+
+        normalized_action = self._normalize_automod_action_type(action_type)
+        if not normalized_action:
+            await interaction.response.send_message(
+                "❌ Invalid action type. Use: delete, warn, mute, timeout, or ban.",
+                ephemeral=True,
+            )
+            return
+        if not await self._check_advanced_action_premium(interaction, normalized_action):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        rule_config = {
+            "policy": policy,
+            "threshold": threshold,
+        }
+        action_config: Dict[str, Any] = {}
+        if normalized_action == ActionType.MUTE.value:
+            action_config = {"duration_minutes": 10}
+        if normalized_action == ActionType.TIMEOUT.value:
+            action_config = {"duration_minutes": 30}
+
+        rule_id = await self.rule_processor.create_rule(
+            guild_id=interaction.guild.id,
+            rule_type=RuleType.AI.value,
+            name=name,
+            config=rule_config,
+            action_type=normalized_action,
+            action_config=action_config,
+            created_by=interaction.user.id,
+            is_premium=True,
+        )
+        await interaction.followup.send(
+            f"✅ AI moderation rule created with ID `{rule_id}`.\n"
+            f"Policy: {policy}\nThreshold: {threshold}",
+            ephemeral=True,
+        )
+        log_guild_action(interaction.guild.id, f"Auto-moderation AI rule created: {name}", user=str(interaction.user))
+
+    @automod_group.command(name="rules", description="List all auto-moderation rules")
+    @requires_admin()
+    async def automod_rules(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        rows = await self.rule_processor.list_rules(interaction.guild.id)
+        if not rows:
+            await interaction.followup.send("ℹ️ No auto-moderation rules configured yet.", ephemeral=True)
+            return
+
+        lines = ["🛡️ **Auto-moderation rules**"]
+        for row in rows[:25]:
+            status = "✅" if row.get("enabled") else "🚫"
+            lines.append(
+                f"{status} `#{row.get('id')}` {row.get('name')} — "
+                f"type: `{row.get('rule_type')}` | action: `{row.get('action_type')}`"
+            )
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    @automod_group.command(name="delete_rule", description="Delete an auto-moderation rule by ID")
+    @requires_admin()
+    async def automod_delete_rule(self, interaction: discord.Interaction, rule_id: int) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        deleted = await self.rule_processor.delete_rule(interaction.guild.id, rule_id)
+        if not deleted:
+            await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
+            return
+
+        await interaction.followup.send(f"✅ Rule `{rule_id}` deleted.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation rule deleted: {rule_id}", user=str(interaction.user))
+
+    @automod_group.command(name="enable_rule", description="Enable an auto-moderation rule by ID")
+    @requires_admin()
+    async def automod_enable_rule(self, interaction: discord.Interaction, rule_id: int) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        updated = await self.rule_processor.update_rule(
+            guild_id=interaction.guild.id,
+            rule_id=rule_id,
+            enabled=True,
+        )
+        if not updated:
+            await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
+            return
+
+        await interaction.followup.send(f"✅ Rule `{rule_id}` enabled.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation rule enabled: {rule_id}", user=str(interaction.user))
+
+    @automod_group.command(name="disable_rule", description="Disable an auto-moderation rule by ID")
+    @requires_admin()
+    async def automod_disable_rule(self, interaction: discord.Interaction, rule_id: int) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        updated = await self.rule_processor.update_rule(
+            guild_id=interaction.guild.id,
+            rule_id=rule_id,
+            enabled=False,
+        )
+        if not updated:
+            await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
+            return
+
+        await interaction.followup.send(f"✅ Rule `{rule_id}` disabled.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation rule disabled: {rule_id}", user=str(interaction.user))
+
+    @automod_group.command(name="edit_rule", description="Edit an auto-moderation rule")
+    @requires_admin()
+    async def automod_edit_rule(
+        self,
+        interaction: discord.Interaction,
+        rule_id: int,
+        name: Optional[str] = None,
+        enabled: Optional[bool] = None,
+        action_type: Optional[str] = None,
+        max_messages: Optional[app_commands.Range[int, 2, 30]] = None,
+        time_window_seconds: Optional[app_commands.Range[int, 5, 300]] = None,
+        max_mentions: Optional[app_commands.Range[int, 1, 30]] = None,
+        max_duplicates: Optional[app_commands.Range[int, 2, 10]] = None,
+        min_length: Optional[app_commands.Range[int, 5, 500]] = None,
+        max_caps_ratio: Optional[app_commands.Range[float, 0.5, 1.0]] = None,
+        words: Optional[str] = None,
+        patterns: Optional[str] = None,
+        allow_links: Optional[bool] = None,
+        whitelist: Optional[str] = None,
+        blacklist: Optional[str] = None,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        if (
+            name is None
+            and enabled is None
+            and action_type is None
+            and max_messages is None
+            and time_window_seconds is None
+            and max_mentions is None
+            and max_duplicates is None
+            and min_length is None
+            and max_caps_ratio is None
+            and words is None
+            and patterns is None
+            and allow_links is None
+            and whitelist is None
+            and blacklist is None
+        ):
+            await interaction.response.send_message(
+                "❌ Provide at least one field to update.",
+                ephemeral=True,
+            )
+            return
+
+        normalized_action: Optional[str] = None
+        if action_type is not None:
+            normalized_action = self._normalize_automod_action_type(action_type)
+            if not normalized_action:
+                await interaction.response.send_message(
+                    "❌ Invalid action_type. Use: delete, warn, mute, timeout, or ban.",
+                    ephemeral=True,
+                )
+                return
+            if not await self._check_advanced_action_premium(interaction, normalized_action):
+                return
+
+        await interaction.response.defer(ephemeral=True)
+        current_rule = await self.rule_processor.get_rule(interaction.guild.id, rule_id)
+        if not current_rule:
+            await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
+            return
+
+        requested_fields = {
+            "max_messages": max_messages is not None,
+            "time_window_seconds": time_window_seconds is not None,
+            "max_mentions": max_mentions is not None,
+            "max_duplicates": max_duplicates is not None,
+            "min_length": min_length is not None,
+            "max_caps_ratio": max_caps_ratio is not None,
+            "words": words is not None,
+            "patterns": patterns is not None,
+            "allow_links": allow_links is not None,
+            "whitelist": whitelist is not None,
+            "blacklist": blacklist is not None,
+        }
+        invalid_msg = self._validate_rule_update_fields(
+            str(current_rule.get("rule_type", "")),
+            dict(current_rule.get("config") or {}),
+            requested_fields,
+        )
+        if invalid_msg:
+            await interaction.followup.send(invalid_msg, ephemeral=True)
+            return
+
+        new_config = dict(current_rule.get("config") or {})
+        config_changed = False
+        if max_messages is not None:
+            new_config["max_messages"] = int(max_messages)
+            config_changed = True
+        if time_window_seconds is not None:
+            new_config["time_window"] = int(time_window_seconds)
+            config_changed = True
+        if max_mentions is not None:
+            new_config["max_mentions"] = int(max_mentions)
+            config_changed = True
+        if max_duplicates is not None:
+            new_config["max_duplicates"] = int(max_duplicates)
+            config_changed = True
+        if min_length is not None:
+            new_config["min_length"] = int(min_length)
+            config_changed = True
+        if max_caps_ratio is not None:
+            new_config["max_caps_ratio"] = float(max_caps_ratio)
+            config_changed = True
+        if words is not None:
+            parsed_words = [w.strip().lower() for w in words.split(",") if w.strip()]
+            if not parsed_words:
+                await interaction.followup.send("❌ `words` must include at least one comma-separated value.", ephemeral=True)
+                return
+            new_config["words"] = parsed_words
+            config_changed = True
+        if patterns is not None:
+            parsed_patterns = [p.strip() for p in patterns.split(",") if p.strip()]
+            if not parsed_patterns:
+                await interaction.followup.send("❌ `patterns` must include at least one comma-separated regex.", ephemeral=True)
+                return
+            for pattern in parsed_patterns:
+                try:
+                    re.compile(pattern)
+                except re.error as exc:
+                    await interaction.followup.send(
+                        f"❌ Invalid regex pattern `{pattern}`: {exc}",
+                        ephemeral=True,
+                    )
+                    return
+            new_config["patterns"] = parsed_patterns
+            config_changed = True
+        if allow_links is not None:
+            new_config["allow_links"] = allow_links
+            config_changed = True
+        if whitelist is not None:
+            new_config["whitelist"] = [d.strip().lower() for d in whitelist.split(",") if d.strip()]
+            config_changed = True
+        if blacklist is not None:
+            new_config["blacklist"] = [d.strip().lower() for d in blacklist.split(",") if d.strip()]
+            config_changed = True
+
+        updated = await self.rule_processor.update_rule(
+            guild_id=interaction.guild.id,
+            rule_id=rule_id,
+            name=name,
+            enabled=enabled,
+            action_type=normalized_action,
+            config=new_config if config_changed else None,
+        )
+        if not updated:
+            await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
+            return
+
+        updates: List[str] = []
+        if name is not None:
+            updates.append(f"name=`{name}`")
+        if enabled is not None:
+            updates.append(f"enabled=`{enabled}`")
+        if normalized_action is not None:
+            updates.append(f"action_type=`{normalized_action}`")
+        if config_changed:
+            updates.append("config=`updated`")
+        updates_text = ", ".join(updates) if updates else "updated"
+
+        await interaction.followup.send(
+            f"✅ Rule `{rule_id}` updated: {updates_text}.",
+            ephemeral=True,
+        )
+        log_guild_action(interaction.guild.id, f"Auto-moderation rule updated: {rule_id}", user=str(interaction.user))
+
+    @automod_group.command(name="logs", description="Show recent auto-moderation logs with optional filters")
+    @requires_admin()
+    async def automod_logs(
+        self,
+        interaction: discord.Interaction,
+        limit: app_commands.Range[int, 1, 25] = 10,
+        user_id: Optional[str] = None,
+        rule_id: Optional[int] = None,
+        action_type: Optional[str] = None,
+        days: app_commands.Range[int, 1, 90] = 7,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        from utils.db_helpers import get_bot_db_pool
+        pool = get_bot_db_pool(self.bot)
+        if not pool:
+            await interaction.followup.send("❌ Database temporarily unavailable. Please try again later.", ephemeral=True)
+            return
+
+        query_parts = ["SELECT user_id, rule_id, action_taken, timestamp FROM automod_logs WHERE guild_id = $1"]
+        params: List[Any] = [interaction.guild.id]
+        param_idx = 2
+
+        if user_id:
+            try:
+                uid = int(user_id)
+                query_parts.append(f"AND user_id = ${param_idx}")
+                params.append(uid)
+                param_idx += 1
+            except ValueError:
+                await interaction.followup.send("❌ Invalid user_id format.", ephemeral=True)
+                return
+
+        if rule_id is not None:
+            query_parts.append(f"AND rule_id = ${param_idx}")
+            params.append(rule_id)
+            param_idx += 1
+
+        if action_type:
+            query_parts.append(f"AND action_taken = ${param_idx}")
+            params.append(action_type.lower())
+            param_idx += 1
+
+        query_parts.append(f"AND timestamp > NOW() - (${param_idx}::text || ' days')::interval")
+        params.append(days)
+        param_idx += 1
+
+        query_parts.append("ORDER BY timestamp DESC")
+        query_parts.append(f"LIMIT ${param_idx}")
+        params.append(int(limit))
+
+        query = " ".join(query_parts)
+
+        try:
+            async with acquire_safe(pool) as conn:
+                rows = await conn.fetch(query, *params)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to load logs: {e}", ephemeral=True)
+            return
+
+        if not rows:
+            await interaction.followup.send("ℹ️ No auto-moderation logs found matching filters.", ephemeral=True)
+            return
+
+        lines = ["📜 **Recent auto-moderation logs**"]
+        filter_desc = []
+        if user_id:
+            filter_desc.append(f"user={user_id}")
+        if rule_id is not None:
+            filter_desc.append(f"rule={rule_id}")
+        if action_type:
+            filter_desc.append(f"action={action_type}")
+        filter_desc.append(f"last {days}d")
+        lines.append(f"_Filters: {', '.join(filter_desc)}_\n")
+
+        for row in rows:
+            ts = row["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if row.get("timestamp") else "unknown-time"
+            lines.append(
+                f"`{ts}` user=`{row.get('user_id')}` rule=`{row.get('rule_id')}` action=`{row.get('action_taken')}`"
+            )
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    @automod_group.command(name="set_severity", description="Set rule priority/severity (higher = processed first)")
+    @requires_admin()
+    async def automod_set_severity(
+        self,
+        interaction: discord.Interaction,
+        rule_id: int,
+        severity: app_commands.Range[int, 1, 10],
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        from utils.db_helpers import get_bot_db_pool
+        pool = get_bot_db_pool(self.bot)
+        if not pool:
+            await interaction.followup.send("❌ Database temporarily unavailable. Please try again later.", ephemeral=True)
+            return
+
+        try:
+            async with acquire_safe(pool) as conn:
+                rule_row = await conn.fetchrow(
+                    "SELECT id, action_id FROM automod_rules WHERE guild_id = $1 AND id = $2",
+                    interaction.guild.id,
+                    rule_id,
+                )
+                if not rule_row:
+                    await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
+                    return
+
+                await conn.execute(
+                    "UPDATE automod_actions SET severity = $1 WHERE id = $2",
+                    severity,
+                    rule_row["action_id"],
+                )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to update severity: {e}", ephemeral=True)
+            return
+
+        if hasattr(self, "rule_processor") and self.rule_processor:
+            if interaction.guild.id in self.rule_processor._rules_cache:
+                del self.rule_processor._rules_cache[interaction.guild.id]
+
+        await interaction.followup.send(
+            f"✅ Rule `{rule_id}` severity set to `{severity}` (higher = higher priority).",
+            ephemeral=True,
+        )
+        log_guild_action(interaction.guild.id, f"Auto-moderation rule severity updated: {rule_id} → {severity}", user=str(interaction.user))
+
     def _format_value(self, definition: SettingDefinition, value: Any) -> str:
         if value is None:
             return "—"
@@ -1964,7 +2934,6 @@ class ReorderQuestionsModal(discord.ui.Modal, title="Reorder Questions"):
         except Exception as e:
             logger.exception(f"❌ Error reordering questions: {e}")
             await interaction.followup.send(f"❌ Failed to reorder questions: {e}", ephemeral=True)
-
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Configuration(bot))

@@ -10,6 +10,16 @@ MAX_OPERATIONAL_EVENTS = 100
 _operational_events: Deque[Dict[str, Any]] = deque(maxlen=MAX_OPERATIONAL_EVENTS)
 
 
+def _normalize_event_type_and_details(event_type: str, details: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    valid_event_types = {e.value for e in EventType}
+    if event_type in valid_event_types:
+        return event_type, details
+
+    normalized_details = dict(details)
+    normalized_details["original_event_type"] = event_type
+    return EventType.SETTINGS_CHANGED.value, normalized_details
+
+
 def _push_to_core_ingress(event: Dict[str, Any]) -> None:
     """Fire-and-forget: enqueue event for Core-API ingress (no await, non-blocking)."""
     try:
@@ -55,12 +65,17 @@ def log_operational_event(
     # Convert enum to string if needed
     event_type_str = event_type.value if isinstance(event_type, EventType) else event_type
     
+    normalized_event_type, normalized_details = _normalize_event_type_and_details(
+        event_type_str,
+        details or {},
+    )
+
     event = {
         "timestamp": datetime.now(timezone.utc),
-        "event_type": event_type_str,
+        "event_type": normalized_event_type,
         "guild_id": guild_id,
         "message": message,
-        "details": details or {},
+        "details": normalized_details,
     }
     _operational_events.appendleft(event)
     _push_to_core_ingress(event)

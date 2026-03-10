@@ -7,20 +7,24 @@ handling and reconnection logic.
 """
 
 from contextlib import asynccontextmanager
-from typing import Optional, AsyncGenerator, Callable, Any, List
+from typing import Optional, TypeVar, AsyncGenerator, Callable, Any, List
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 from utils.logger import logger
 
+# Type alias for pools created by create_db_pool (so callers can hint without importing asyncpg)
+PoolT = asyncpg.Pool
+
 # Registry of all created pools for centralized cleanup
 _registered_pools: List[asyncpg.Pool] = []
 
+T = TypeVar('T')
 
 @asynccontextmanager
 async def acquire_safe(
     pool: Optional[asyncpg.Pool],
     on_error: Optional[Callable[[Exception], Any]] = None
-) -> AsyncGenerator[asyncpg.Connection, None]:
+) -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
     """
     Safe pool acquire with automatic error handling and reconnection.
     
@@ -29,7 +33,7 @@ async def acquire_safe(
         on_error: Optional callback function to handle connection errors
         
     Yields:
-        asyncpg.Connection: A database connection from the pool
+        asyncpg.pool.PoolConnectionProxy: A database connection from the pool
         
     Raises:
         RuntimeError: If pool is None or closing
@@ -108,7 +112,7 @@ async def create_db_pool(
     max_size: int = 10,
     command_timeout: float = 10.0,
     **kwargs
-) -> asyncpg.Pool:
+) -> PoolT:
     """
     Create a database connection pool with consistent configuration.
     
@@ -146,6 +150,25 @@ async def create_db_pool(
     except Exception as e:
         logger.error(f"❌ Failed to create database pool '{name}': {e}")
         raise
+
+
+def get_bot_db_pool(bot) -> Optional[PoolT]:
+    """
+    Get the main database pool from bot's SettingsService.
+    
+    This is the standardized way to access the database pool across the codebase.
+    It abstracts away the internal structure of SettingsService.
+    
+    Args:
+        bot: The Discord bot instance
+        
+    Returns:
+        Optional[PoolT]: The database pool if available, None otherwise
+    """
+    settings_service = getattr(bot, "settings", None)
+    if settings_service and hasattr(settings_service, "_pool"):
+        return settings_service._pool
+    return None
 
 
 async def close_all_pools() -> None:

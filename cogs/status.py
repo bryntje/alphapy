@@ -43,6 +43,31 @@ async def version_cmd(interaction: discord.Interaction):
         f"Innersync • Alphapy version: v{__version__} — {CODENAME}", ephemeral=True
     )
 
+@app_commands.command(name="innersync", description="Show Innersync info and official links")
+async def innersync_cmd(interaction: discord.Interaction):
+    embed = EmbedBuilder.info(
+        title="🌱 Innersync",
+        description="Innersync is the community and platform behind this bot. **Alphapy** is the Discord bot that powers reminders, onboarding, verification, and premium here."
+    )
+    
+    embed.add_field(
+        name="Core",
+        value="[core.innersync.tech](https://core.innersync.tech)",
+        inline=True
+    )
+    embed.add_field(
+        name="App", 
+        value="[app.innersync.tech](https://app.innersync.tech)",
+        inline=True
+    )
+    embed.add_field(
+        name="Pricing",
+        value="[pricing.alphapy.innersync.tech](https://pricing.alphapy.innersync.tech)",
+        inline=True
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @app_commands.command(name="release", description="Show release notes for the current version")
 async def release_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -515,6 +540,7 @@ async def command_stats_cmd(
 async def setup(bot: commands.Bot):
     bot.tree.add_command(gptstatus)
     bot.tree.add_command(version_cmd)
+    bot.tree.add_command(innersync_cmd)
     bot.tree.add_command(release_cmd)
     bot.tree.add_command(health_cmd)
     bot.tree.add_command(commands_list_cmd)

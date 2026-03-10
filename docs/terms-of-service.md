@@ -164,3 +164,7 @@ Questions about these Terms? Contact the project maintainer at `support@innersyn
 ---
 
 By installing or using Innersync • Alphapy, you confirm that you have read, understood, and agree to these Terms.
+
+---
+
+**Legal information:** For company details (enterprise number, registered office, contact), see [Legal Information](/legal/).

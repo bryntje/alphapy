@@ -44,7 +44,7 @@ bot_instance: Optional[commands.Bot] = None
 
 # --- Grok Fallback & Retry Queue ---
 FALLBACK_MESSAGE = "I'm temporarily unavailable. Please try again in a few minutes."
-_gpt_retry_queue: list = []  # List of dicts: {messages, user_id, model, guild_id, retry_count, timestamp}
+_gpt_retry_queue: list = []  # List of dicts: {messages, user_id, model, guild_id, include_reflections, retry_count, timestamp}
 MAX_RETRY_QUEUE_SIZE = 50
 MAX_RETRIES = 5
 _retry_task: Optional[asyncio.Task] = None
@@ -140,19 +140,20 @@ async def log_to_channel(message: str, level: str = "info", guild_id: Optional[i
         logger.error(f"🚨 Failed to send Grok log embed: {e}")
 
 
-def _add_to_retry_queue(messages, user_id, model, guild_id):
+def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflections: bool = True):
     """Add a failed Grok request to the retry queue."""
     global _gpt_retry_queue
-    
+
     # Limit queue size (drop oldest if full)
     if len(_gpt_retry_queue) >= MAX_RETRY_QUEUE_SIZE:
         _gpt_retry_queue.pop(0)
-    
+
     _gpt_retry_queue.append({
         "messages": messages,
         "user_id": user_id,
         "model": model,
         "guild_id": guild_id,
+        "include_reflections": include_reflections,
         "retry_count": 0,
         "timestamp": datetime.utcnow(),
     })
@@ -190,7 +191,8 @@ async def _retry_gpt_requests():
                         user_id=item["user_id"],
                         model=item["model"],
                         guild_id=item["guild_id"],
-                        _is_retry=True
+                        _is_retry=True,
+                        include_reflections=item.get("include_reflections", True),
                     )
                     logger.debug(f"✅ Grok retry succeeded for user {item['user_id']}")
                     # Success - don't re-queue
@@ -354,7 +356,9 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
         
         # If retryable and not already a retry attempt, add to queue and return fallback message
         if is_retryable and not _is_retry:
-            _add_to_retry_queue(messages, user_id, model or _default_model, guild_id)
+            _add_to_retry_queue(
+                messages, user_id, model or _default_model, guild_id, include_reflections
+            )
             logger.warning(f"⚠️ Grok error (retryable): {error_type}. Returning fallback message and queuing for retry.")
             return FALLBACK_MESSAGE
         

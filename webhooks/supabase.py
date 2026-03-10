@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import json
 import logging
 from typing import Any, Dict, Optional
@@ -8,33 +6,11 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 import config
 from utils.supabase_client import SupabaseConfigurationError, upsert_profile
+from webhooks.common import validate_webhook_signature
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks/supabase", tags=["supabase"])
-
-
-def _validate_signature(body: bytes, signature: Optional[str]) -> None:
-    """Validate Supabase webhook signature if a secret is configured."""
-    secret = config.SUPABASE_WEBHOOK_SECRET
-    if not secret:
-        return
-    if not signature:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Supabase signature header.",
-        )
-
-    provided = signature
-    if signature.startswith("sha256="):
-        provided = signature.split("=", 1)[1]
-
-    computed = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(provided, computed):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Supabase signature.",
-        )
 
 
 def _extract_user_id(payload: Dict[str, Any]) -> Optional[str]:
@@ -51,7 +27,13 @@ async def supabase_auth_webhook(request: Request) -> Dict[str, str]:
         or request.headers.get("x-supabase-signature")
         or request.headers.get("x-signature")
     )
-    _validate_signature(body, signature)
+    validate_webhook_signature(
+        body,
+        signature,
+        getattr(config, "SUPABASE_WEBHOOK_SECRET", None),
+        missing_detail="Missing Supabase signature header.",
+        invalid_detail="Invalid Supabase signature.",
+    )
 
     try:
         payload = json.loads(body.decode("utf-8"))

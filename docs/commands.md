@@ -366,6 +366,18 @@ AI-powered leadership guidance for challenges, team growth, or doubts.
 
 ## System
 
+### `/innersync`
+Show Innersync info and official links.
+
+**Response:** Informational embed with:
+- Brief description of Innersync and Alphapy
+- Links to Core, App, and Pricing platforms
+- Ephemeral response (visible only to the user)
+
+**Permissions:** Public
+
+---
+
 ### `/gptstatus`
 Check the status of the Grok/LLM API.
 
