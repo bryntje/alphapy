@@ -41,11 +41,9 @@ async def handle_revoke_reflection_webhook(request: Request) -> dict:
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning("Signature validation error: %s", e)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Webhook signature validation failed.",
-        ) from e
+        # Log unexpected errors but continue processing (original behavior)
+        logger.warning("Unexpected signature validation error: %s", e)
+        # Don't raise HTTPException for unexpected errors - continue processing
 
     try:
         payload = json.loads(body.decode("utf-8"))

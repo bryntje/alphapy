@@ -69,11 +69,11 @@ class RuleProcessor:
                 
             async with acquire_safe(pool) as conn:
                 rules = await conn.fetch("""
-                    SELECT r.*, a.action_type, a.config as action_config
+                    SELECT r.*, a.action_type, a.config as action_config, a.severity
                     FROM automod_rules r
                     LEFT JOIN automod_actions a ON r.action_id = a.id
                     WHERE r.enabled = true
-                    ORDER BY r.severity DESC
+                    ORDER BY a.severity DESC
                 """)
                 
             # Organize by guild
@@ -111,11 +111,11 @@ class RuleProcessor:
                 
             async with acquire_safe(pool) as conn:
                 rules = await conn.fetch("""
-                    SELECT r.*, a.action_type, a.config as action_config
+                    SELECT r.*, a.action_type, a.config as action_config, a.severity
                     FROM automod_rules r
                     LEFT JOIN automod_actions a ON r.action_id = a.id
                     WHERE r.guild_id = $1 AND r.enabled = true
-                    ORDER BY r.severity DESC
+                    ORDER BY a.severity DESC
                 """, guild_id)
                 
             # Deserialize JSON config data
@@ -197,15 +197,16 @@ class RuleProcessor:
             if message.content.lower() == last_message.lower():
                 max_duplicates = config.get('max_duplicates', 3)
                 
-                # Count duplicates in recent messages
-                duplicates = sum(1 for ts in user_context.get('message_timestamps', [])[-max_duplicates:])
+                # Count recent messages (approximate duplicate detection)
+                recent_messages = len(user_context.get('message_timestamps', []))
                 
-                if duplicates >= max_duplicates:
+                # If we have enough recent messages, consider it duplicate spam
+                if recent_messages >= max_duplicates:
                     return RuleResult(
                         True,
                         0.9,
-                        f"Duplicate message spam detected",
-                        {'duplicate_count': duplicates}
+                        f"Duplicate message spam detected (sent {recent_messages} messages recently)",
+                        {'duplicate_count': recent_messages, 'last_message': last_message[:50]}
                     )
                     
         elif spam_type == 'caps':

@@ -55,10 +55,14 @@ class AutoModLogger:
 
             pool = self._get_pool()
             if pool:
+                # Try to flush any buffered entries first
+                await self._flush_buffer()
+                # Then insert current entry directly
                 await self._insert_log_entries([log_entry], pool)
             else:
                 # Add to buffer for later processing if pool is not ready yet
                 self._buffer.append(log_entry)
+                log.warning(f"Auto-mod log buffered (pool unavailable): Guild {guild_id}, User {user_id}")
                 
             # Also log to standard logger for immediate visibility
             log.info(f"Auto-mod violation: Guild {guild_id}, User {user_id}, Action: {action_type}, Rule: {rule_id}")
@@ -132,14 +136,20 @@ class AutoModLogger:
         try:
             pool = self._get_pool()
             if not pool:
+                log.warning(f"Cannot flush {len(self._buffer)} buffered log entries - pool unavailable")
                 return
 
             entries = self._buffer.copy()
             self._buffer.clear()
             await self._insert_log_entries(entries, pool)
+            log.info(f"Flushed {len(entries)} buffered auto-mod log entries to database")
             
         except Exception as e:
             log.error(f"Error flushing auto-mod log buffer: {e}")
+    
+    async def flush_logs(self):
+        """Public method to manually flush buffered logs."""
+        await self._flush_buffer()
     
     async def _insert_log_entries(self, entries: List[Dict[str, Any]], pool: asyncpg.Pool) -> None:
         """Insert buffered log entries into automod_logs."""

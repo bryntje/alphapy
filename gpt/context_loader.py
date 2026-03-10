@@ -9,6 +9,7 @@ Loads recent reflections from:
 from __future__ import annotations
 
 import asyncio
+import asyncpg
 import json
 import logging
 from typing import Optional
@@ -34,75 +35,90 @@ def _sanitize_reflection_field(value: object, max_chars: int = _REFLECTION_TEXT_
 
 
 async def _get_app_reflections_pool() -> Optional[PoolT]:
-    """Get the shared pool from api.py instead of creating a new one."""
+    """Get a database pool for app_reflections (avoid circular import with api.py)."""
     try:
-        from api import app
-        return app.state.db_pool
-    except (ImportError, AttributeError) as e:
-        logger.debug("Could not access shared db_pool from api: %s", e)
+        import config
+        if not hasattr(config, 'DATABASE_URL') or not config.DATABASE_URL:
+            logger.debug("No DATABASE_URL configured for app_reflections")
+            return None
+        
+        # Create pool with same settings as api.py
+        pool = await asyncpg.create_pool(
+            config.DATABASE_URL,
+            min_size=1,
+            max_size=5,  # Smaller pool for occasional context loading
+            command_timeout=10.0
+        )
+        return pool
+    except Exception as e:
+        logger.debug("Failed to create app_reflections pool: %s", e)
         return None
 
 
-async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> str:
+async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> tuple[str, int]:
     """
     Load recent reflections from app_reflections (plaintext from App via Core webhook).
-    Returns formatted context string or empty string.
+    Returns tuple of (formatted context string, actual count of valid reflections).
     """
     try:
         pool = await _get_app_reflections_pool()
         if not pool:
-            return ""
+            return "", 0
         discord_id_int = int(discord_id)
         from utils.db_helpers import acquire_safe
 
-        async with acquire_safe(pool) as conn:
-            rows = await conn.fetch(
-                """
-                SELECT plaintext_content, created_at
-                FROM app_reflections
-                WHERE user_id = $1
-                  AND created_at >= NOW() - interval '30 days'
-                ORDER BY created_at DESC
-                LIMIT $2
-                """,
-                discord_id_int,
-                limit,
-            )
-        if not rows:
-            return ""
-        blocks: list[str] = []
-        display_idx = 0
-        for row in rows:
-            content = row["plaintext_content"]
-            created = row["created_at"]
-            date_str = created.strftime("%Y-%m-%d") if created else ""
-            # JSONB may be returned as str by asyncpg when no custom codec is used
-            if isinstance(content, str):
-                try:
-                    content = json.loads(content)
-                except (ValueError, TypeError):
+        try:
+            async with acquire_safe(pool) as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT plaintext_content, created_at
+                    FROM app_reflections
+                    WHERE user_id = $1
+                      AND created_at >= NOW() - interval '30 days'
+                    ORDER BY created_at DESC
+                    LIMIT $2
+                    """,
+                    discord_id_int,
+                    limit,
+                )
+            if not rows:
+                return "", 0
+            blocks: list[str] = []
+            display_idx = 0
+            for row in rows:
+                content = row["plaintext_content"]
+                created = row["created_at"]
+                date_str = created.strftime("%Y-%m-%d") if created else ""
+                # JSONB may be returned as str by asyncpg when no custom codec is used
+                if isinstance(content, str):
+                    try:
+                        content = json.loads(content)
+                    except (ValueError, TypeError):
+                        continue
+                if not isinstance(content, dict):
                     continue
-            if not isinstance(content, dict):
-                continue
-            display_idx += 1
-            blocks.append(f"Reflection {display_idx} ({date_str}):")
-            for key in ("reflection_text", "reflection", "mantra", "thoughts", "future_message"):
-                val = content.get(key)
-                safe_val = _sanitize_reflection_field(val)
-                if safe_val:
-                    label = key.replace("_", " ").title()
-                    blocks.append(f"  {label}: {safe_val}")
-            date_val = content.get("date")
-            safe_date = _sanitize_reflection_field(date_val, max_chars=_REFLECTION_DATE_MAX_CHARS)
-            if safe_date:
-                blocks.append(f"  Date: {safe_date}")
-            blocks.append("")
-        if not blocks:
-            return ""
-        return "Recent reflections from the App (shared via webhook):\n\n" + "\n".join(blocks).strip()
+                display_idx += 1
+                blocks.append(f"Reflection {display_idx} ({date_str}):")
+                for key in ("reflection_text", "reflection", "mantra", "thoughts", "future_message"):
+                    val = content.get(key)
+                    safe_val = _sanitize_reflection_field(val)
+                    if safe_val:
+                        label = key.replace("_", " ").title()
+                        blocks.append(f"  {label}: {safe_val}")
+                date_val = content.get("date")
+                safe_date = _sanitize_reflection_field(date_val, max_chars=_REFLECTION_DATE_MAX_CHARS)
+                if safe_date:
+                    blocks.append(f"  Date: {safe_date}")
+                blocks.append("")
+            if not blocks:
+                return "", 0
+            return "Recent reflections from the App (shared via webhook):\n\n" + "\n".join(blocks).strip(), display_idx
+        finally:
+            # Always close the pool to avoid resource leaks
+            await pool.close()
     except Exception as e:
         logger.debug("Failed to load app_reflections for discord_id=%s: %s", discord_id, e)
-        return ""
+        return "", 0
 
 
 async def load_user_reflections(
@@ -166,6 +182,7 @@ async def load_user_reflections(
                     )
                     if reflection_rows:
                         context_parts = ["Recent reflections from the user:", ""]
+                        valid_count = 0
                         for idx, reflection in enumerate(reflection_rows, 1):
                             date_str = _sanitize_reflection_field(
                                 reflection.get("date", ""),
@@ -175,24 +192,39 @@ async def load_user_reflections(
                             mantra = _sanitize_reflection_field(reflection.get("mantra"))
                             thoughts = _sanitize_reflection_field(reflection.get("thoughts"))
                             future_message = _sanitize_reflection_field(reflection.get("future_message"))
-                            context_parts.append(f"Reflection {idx} ({date_str}):")
-                            if reflection_text:
-                                context_parts.append(f"  Reflection: {reflection_text}")
-                            if mantra:
-                                context_parts.append(f"  Mantra: {mantra}")
-                            if thoughts:
-                                context_parts.append(f"  Thoughts: {thoughts}")
-                            if future_message:
-                                context_parts.append(f"  Future message: {future_message}")
-                            context_parts.append("")
-                        context_str = "\n".join(context_parts)
-                        loaded_count = len(reflection_rows)
-                        logger.debug(
-                            "Loaded %s Supabase reflections for user_id=%s (discord_id=%s)",
-                            len(reflection_rows),
-                            user_id,
-                            discord_id,
-                        )
+                            
+                            # Only count reflections that have actual content
+                            has_content = bool(reflection_text or mantra or thoughts or future_message)
+                            if has_content:
+                                valid_count += 1
+                                context_parts.append(f"Reflection {valid_count} ({date_str}):")
+                                if reflection_text:
+                                    context_parts.append(f"  Reflection: {reflection_text}")
+                                if mantra:
+                                    context_parts.append(f"  Mantra: {mantra}")
+                                if thoughts:
+                                    context_parts.append(f"  Thoughts: {thoughts}")
+                                if future_message:
+                                    context_parts.append(f"  Future message: {future_message}")
+                                context_parts.append("")
+                        
+                        if valid_count > 0:
+                            context_str = "\n".join(context_parts)
+                            loaded_count = valid_count  # Use actual valid count, not raw row count
+                            logger.debug(
+                                "Loaded %s valid Supabase reflections for user_id=%s (discord_id=%s) from %s raw rows",
+                                valid_count,
+                                user_id,
+                                discord_id,
+                                len(reflection_rows),
+                            )
+                        else:
+                            logger.debug(
+                                "No valid Supabase reflections found for user_id=%s (discord_id=%s) from %s raw rows",
+                                user_id,
+                                discord_id,
+                                len(reflection_rows),
+                            )
                     else:
                         logger.debug("No shared reflections found for user_id=%s", user_id)
     except Exception as e:
@@ -207,14 +239,22 @@ async def load_user_reflections(
     # enforce the global limit across both sources.
     remaining_limit = max(limit - loaded_count, 0)
     if remaining_limit > 0:
-        app_context = await _load_app_reflections(discord_id, limit=remaining_limit)
+        app_context, app_count = await _load_app_reflections(discord_id, limit=remaining_limit)
         if app_context:
             context_str = f"{context_str}\n\n{app_context}".strip() if context_str else app_context
+            loaded_count += app_count  # Add actual count from app reflections
+            logger.debug(
+                "Loaded %s app reflections for discord_id=%s, total now: %s",
+                app_count,
+                discord_id,
+                loaded_count,
+            )
     else:
         logger.debug(
-            "Skipping app_reflections for discord_id=%s because limit=%s is already reached",
+            "Skipping app_reflections for discord_id=%s because limit=%s is already reached (loaded: %s)",
             discord_id,
             limit,
+            loaded_count,
         )
 
     return context_str or ""

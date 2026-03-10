@@ -62,6 +62,15 @@ class AutoModeration(commands.Cog):
         # Don't load rules immediately - wait for database pool to be ready
         # Rules will be loaded on first use via get_active_rules method
         
+    async def cog_unload(self):
+        """Cleanup when cog is unloaded."""
+        try:
+            # Flush any buffered log entries before shutdown
+            await self.mod_logger.flush_logs()
+            logger.info("AutoModeration cog unloaded - log buffer flushed")
+        except Exception as e:
+            logger.error(f"Error flushing logs during cog unload: {e}")
+        
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Handle incoming messages for auto-moderation."""
@@ -104,6 +113,11 @@ class AutoModeration(commands.Cog):
             
         # Update spam tracking
         self._update_spam_tracker(guild_id, user_id, time.time())
+        
+        # Update message cache for duplicate detection
+        if guild_id not in self._message_cache:
+            self._message_cache[guild_id] = {}
+        self._message_cache[guild_id][user_id] = message.content
         
         # Process each rule
         for rule in rules:
@@ -358,3 +372,5 @@ class AutoModeration(commands.Cog):
 async def setup(bot: commands.Bot):
     """Setup the AutoModeration cog."""
     await bot.add_cog(AutoModeration(bot))
+
+

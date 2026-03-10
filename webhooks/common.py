@@ -53,7 +53,9 @@ def validate_webhook_signature(
     if signature.startswith("sha256="):
         provided = signature.split("=", 1)[1]
 
-    computed = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    # Use HMAC constructor for clarity (hmac.new is also valid)
+    hmac_obj = hmac.HMAC(secret.encode("utf-8"), body, hashlib.sha256)
+    computed = hmac_obj.hexdigest()
     if not hmac.compare_digest(provided, computed):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
