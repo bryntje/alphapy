@@ -46,7 +46,11 @@ async def handle_reflection_webhook(request: Request) -> Dict[str, str]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning("Signature validation error (non-critical): %s", e)
+        logger.warning("Signature validation error: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Webhook signature validation failed.",
+        ) from e
     
     try:
         payload = json.loads(body.decode("utf-8"))
