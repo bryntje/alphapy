@@ -63,8 +63,66 @@ class AutoModLogger:
             # Also log to standard logger for immediate visibility
             log.info(f"Auto-mod violation: Guild {guild_id}, User {user_id}, Action: {action_type}, Rule: {rule_id}")
             
+            # Log to Discord channel if configured
+            await self._log_to_discord_channel(guild_id, user_id, action_type, rule_id, message_content, channel_id)
+            
         except Exception as e:
             log.error(f"Error logging auto-mod violation: {e}")
+    
+    async def _log_to_discord_channel(self, guild_id: int, user_id: int, action_type: str, rule_id: int, 
+                                    message_content: Optional[str], channel_id: Optional[int]):
+        """Log auto-mod violation to Discord log channel."""
+        try:
+            if not self.bot:
+                return
+                
+            # Get log channel from settings
+            settings = getattr(self.bot, "settings", None)
+            if not settings:
+                return
+                
+            log_channel_id = settings.get("system", "log_channel_id", guild_id)
+            if not log_channel_id or log_channel_id == 0:
+                return
+                
+            log_channel = self.bot.get_channel(log_channel_id)
+            if not isinstance(log_channel, (discord.TextChannel, discord.Thread)):
+                return
+                
+            # Create embed for log entry
+            embed = discord.Embed(
+                title="⚠️ Auto-Moderation Violation",
+                color=discord.Color.orange(),
+                timestamp=datetime.utcnow()
+            )
+            
+            # Get user info
+            user = self.bot.get_user(user_id)
+            user_mention = user.mention if user else f"<@{user_id}>"
+            
+            # Get channel info
+            channel = self.bot.get_channel(channel_id) if channel_id else None
+            if isinstance(channel, (discord.TextChannel, discord.Thread)):
+                channel_mention = channel.mention
+            else:
+                channel_mention = "Unknown"
+            
+            embed.add_field(name="User", value=user_mention, inline=True)
+            embed.add_field(name="Action", value=action_type.upper(), inline=True)
+            embed.add_field(name="Rule ID", value=str(rule_id), inline=True)
+            embed.add_field(name="Channel", value=channel_mention, inline=True)
+            
+            if message_content:
+                # Truncate long messages
+                content = message_content[:200] + "..." if len(message_content) > 200 else message_content
+                embed.add_field(name="Message Content", value=f"```{content}```", inline=False)
+                
+            embed.set_footer(text=f"Guild ID: {guild_id}")
+            
+            await log_channel.send(embed=embed)
+            
+        except Exception as e:
+            log.error(f"Error logging to Discord channel: {e}")
             
     async def _flush_buffer(self):
         """Flush the log buffer to database."""

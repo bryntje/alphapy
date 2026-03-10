@@ -5,6 +5,7 @@ Handles rule evaluation, configuration, and execution logic for the auto-mod sys
 """
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -117,7 +118,29 @@ class RuleProcessor:
                     ORDER BY r.severity DESC
                 """, guild_id)
                 
-            self._rules_cache[guild_id] = [dict(rule) for rule in rules]
+            # Deserialize JSON config data
+            processed_rules = []
+            for rule in rules:
+                rule_dict = dict(rule)
+                # Deserialize config JSON
+                if rule_dict.get('config') and isinstance(rule_dict['config'], str):
+                    try:
+                        rule_dict['config'] = json.loads(rule_dict['config'])
+                    except json.JSONDecodeError as e:
+                        log.error(f"Failed to deserialize rule config: {e}")
+                        rule_dict['config'] = {}
+                
+                # Deserialize action_config JSON
+                if rule_dict.get('action_config') and isinstance(rule_dict['action_config'], str):
+                    try:
+                        rule_dict['action_config'] = json.loads(rule_dict['action_config'])
+                    except json.JSONDecodeError as e:
+                        log.error(f"Failed to deserialize action config: {e}")
+                        rule_dict['action_config'] = {}
+                
+                processed_rules.append(rule_dict)
+            
+            self._rules_cache[guild_id] = processed_rules
             
         except Exception as e:
             log.error(f"Error refreshing rules for guild {guild_id}: {e}")
@@ -386,14 +409,14 @@ Be conservative - only flag clear violations."""
                     INSERT INTO automod_actions (guild_id, action_type, config, is_premium, created_by)
                     VALUES ($1, $2, $3, $4, $5)
                     RETURNING id
-                """, guild_id, action_type, action_config, is_premium, created_by)
+                """, guild_id, action_type, json.dumps(action_config), is_premium, created_by)
                 
                 # Then create the rule
                 rule_id = await conn.fetchval("""
                     INSERT INTO automod_rules (guild_id, rule_type, name, config, action_id, created_by, is_premium)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                     RETURNING id
-                """, guild_id, rule_type, name, config, action_id, created_by, is_premium)
+                """, guild_id, rule_type, name, json.dumps(config), action_id, created_by, is_premium)
                 
                 # Clear cache for this guild
                 if guild_id in self._rules_cache:
@@ -520,9 +543,9 @@ Be conservative - only flag clear violations."""
     ) -> bool:
         """Update core properties of an auto-mod rule."""
         try:
-            pool = getattr(self.bot, "db_pool", None) if hasattr(self, "bot") else None
+            pool = get_bot_db_pool(self.bot) if self.bot else None
             if not pool:
-                raise ValueError("Database not available")
+                raise ValueError("Database temporarily unavailable. Please try again later.")
 
             async with acquire_safe(pool) as conn:
                 row = await conn.fetchrow(
@@ -560,7 +583,7 @@ Be conservative - only flag clear violations."""
                 if config is not None:
                     await conn.execute(
                         "UPDATE automod_rules SET config = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
-                        config,
+                        json.dumps(config),
                         rule_id,
                         guild_id,
                     )
@@ -568,7 +591,7 @@ Be conservative - only flag clear violations."""
                 if action_config is not None and row["action_id"]:
                     await conn.execute(
                         "UPDATE automod_actions SET config = $1 WHERE id = $2 AND guild_id = $3",
-                        action_config,
+                        json.dumps(action_config),
                         row["action_id"],
                         guild_id,
                     )

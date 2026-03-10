@@ -64,13 +64,19 @@ class AutoModeration(commands.Cog):
         
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """Process incoming messages for auto-moderation."""
-        # Skip bot messages and DMs
-        if message.author.bot or not message.guild:
+        """Handle incoming messages for auto-moderation."""
+        # Skip bot messages
+        if message.author.bot:
             return
             
+        # Skip DMs
+        if not message.guild:
+            return
+            
+        guild_id = message.guild.id
+            
         # Check if auto-mod is enabled for this guild
-        automod_enabled = self.settings.get("automod", "enabled", guild_id=message.guild.id)
+        automod_enabled = self.settings.get("automod", "enabled", guild_id=guild_id)
         if not automod_enabled:
             return
             
