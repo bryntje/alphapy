@@ -133,7 +133,21 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
-## 📥 Agent: App Reflections (Plaintext from Core)
+## �️ Agent: AutoModeration
+- **Path**: `cogs/automod.py`, `cogs/automod_config.py`, `utils/automod_rules.py`, `utils/automod_logging.py`
+- **Purpose**: Automated content moderation with configurable rules and actions
+- **Triggers**: `on_message` → rule evaluation → action execution
+- **Storage**: PostgreSQL (automod_rules, automod_actions, automod_logs, automod_stats, automod_user_history)
+- **Rule Types**: Spam detection (frequency, duplicates, caps), content filtering (bad words, links, mentions), regex patterns, AI-powered analysis
+- **Actions**: Message deletion, warnings, mutes, timeouts, bans
+- **Premium**: AI-powered content analysis, custom regex patterns, advanced actions (timeout, ban), analytics dashboard
+- **Configuration**: Interactive setup via `/automod create_rule` with modal and button interfaces
+- **Logging**: Comprehensive violation logging with context, appeal system, and performance metrics
+- **Integration**: Works with existing premium guard system and configuration framework
+
+---
+
+## �📥 Agent: App Reflections (Plaintext from Core)
 - **Path**: `webhooks/app_reflections.py`, `webhooks/revoke_reflection.py`, `gpt/context_loader.py`
 - **Purpose**: Receive plaintext reflections from App via Core-API webhook; store in `app_reflections`; use in `/growthcheckin` (and other user-self flows). Not used for ticket "Suggest reply" (privacy: reflections stay out of admin-only, ephemeral ticket actions).
 - **Data flow**: Shared reflections are decrypted client-side in the App, then sent as plaintext to Core-API, which forwards them to Alphapy (and/or Supabase). Alphapy never receives or decrypts encrypted content.
