@@ -85,7 +85,7 @@ class AutoModLogger:
             if not settings:
                 return
                 
-            log_channel_id = settings.get("system", "log_channel_id", guild_id)
+            log_channel_id = settings.get("automod", "log_channel_id", guild_id)
             if not log_channel_id or log_channel_id == 0:
                 return
                 
@@ -158,6 +158,14 @@ class AutoModLogger:
 
         async with acquire_safe(pool) as conn:
             for entry in entries:
+                ai_analysis = entry.get("ai_analysis")
+                if isinstance(ai_analysis, (dict, list)):
+                    ai_analysis = json.dumps(ai_analysis)
+
+                context = entry.get("context")
+                if isinstance(context, (dict, list)):
+                    context = json.dumps(context)
+
                 await conn.execute(
                     """
                     INSERT INTO automod_logs
@@ -171,8 +179,8 @@ class AutoModLogger:
                     entry.get("rule_id"),
                     entry.get("action_taken"),
                     entry.get("message_content"),
-                    entry.get("ai_analysis"),
-                    entry.get("context"),
+                    ai_analysis,
+                    context,
                     entry.get("timestamp") or datetime.utcnow(),
                 )
             

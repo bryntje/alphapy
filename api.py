@@ -2886,6 +2886,9 @@ async def get_automod_violations(
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
+    # Safety clamp to avoid overly large responses
+    limit = min(limit, 200)
+
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch("""
@@ -2894,9 +2897,10 @@ async def get_automod_violations(
                     action_taken, message_content, ai_analysis, context,
                     timestamp, moderator_id
                 FROM automod_logs 
-                WHERE guild_id = $1 AND timestamp >= NOW() - interval '{days} days'
+                WHERE guild_id = $1
+                  AND timestamp >= NOW() - ($2::text || ' days')::interval
                 ORDER BY timestamp DESC
-                LIMIT $2
+                LIMIT $3
             """, guild_id, days, limit)
             
             violations = []

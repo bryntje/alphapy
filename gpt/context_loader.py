@@ -236,7 +236,10 @@ async def load_user_reflections(
         )
 
     # Always try app_reflections (plaintext from App via Core webhook), but
-    # enforce the global limit across both sources.
+    # enforce the global limit across both sources. loaded_count is the number
+    # of reflections that actually produced context (valid_count from Supabase,
+    # app_count from app_reflections), not raw row counts, so remaining_limit
+    # correctly leaves room for app reflections when some rows were empty/invalid.
     remaining_limit = max(limit - loaded_count, 0)
     if remaining_limit > 0:
         app_context, app_count = await _load_app_reflections(discord_id, limit=remaining_limit)

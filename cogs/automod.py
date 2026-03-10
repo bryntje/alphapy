@@ -113,12 +113,7 @@ class AutoModeration(commands.Cog):
             
         # Update spam tracking
         self._update_spam_tracker(guild_id, user_id, time.time())
-        
-        # Update message cache for duplicate detection
-        if guild_id not in self._message_cache:
-            self._message_cache[guild_id] = {}
-        self._message_cache[guild_id][user_id] = message.content
-        
+
         # Process each rule
         for rule in rules:
             try:
@@ -128,6 +123,12 @@ class AutoModeration(commands.Cog):
                     break  # Stop after first violation to avoid multiple actions
             except Exception as e:
                 logger.error(f"Error evaluating rule {rule.get('id', 'unknown')}: {e}")
+
+        # Update message cache for duplicate detection after evaluation,
+        # so user context reflects the previous message when rules run.
+        if guild_id not in self._message_cache:
+            self._message_cache[guild_id] = {}
+        self._message_cache[guild_id][user_id] = message.content
                 
     def _update_spam_tracker(self, guild_id: int, user_id: int, timestamp: float):
         """Update spam tracking data for a user."""
@@ -199,6 +200,13 @@ class AutoModeration(commands.Cog):
             await self._action_mute_user(message, action_config)
         elif action_type == ActionType.TIMEOUT.value:
             await self._action_timeout_user(message, action_config)
+        elif action_type == ActionType.BAN.value:
+            await self._action_ban_user(message, action_config)
+        else:
+            logger.warning(
+                f"Unknown auto-mod action type '{action_type}' "
+                f"for rule {rule.get('id')}"
+            )
             
         # Update user history
         await self._update_user_history(guild_id, user_id, rule.get('rule_type'))
@@ -275,6 +283,33 @@ class AutoModeration(commands.Cog):
             logger.warning(f"Cannot timeout user {message.author.id} - missing permissions")
         except Exception as e:
             logger.error(f"Error timing out user {message.author.id}: {e}")
+            
+    async def _action_ban_user(self, message: discord.Message, config: Dict):
+        """Ban the user from the guild."""
+        try:
+            guild = message.guild
+            if not guild:
+                logger.warning("Guild is None in _action_ban_user")
+                return
+            
+            member = message.author
+            if not isinstance(member, discord.Member):
+                logger.warning(f"Cannot ban user {member.id} - not a guild member")
+                return
+            
+            # Optional configuration
+            delete_message_seconds = config.get('delete_message_seconds')
+            reason = config.get('reason', 'Auto-moderation ban')
+            
+            ban_kwargs: Dict[str, Any] = {'reason': reason}
+            if isinstance(delete_message_seconds, int) and delete_message_seconds > 0:
+                ban_kwargs['delete_message_seconds'] = delete_message_seconds
+            
+            await guild.ban(member, **ban_kwargs)
+        except discord.Forbidden:
+            logger.warning(f"Cannot ban user {message.author.id} - missing permissions")
+        except Exception as e:
+            logger.error(f"Error banning user {message.author.id}: {e}")
             
     async def _update_user_history(self, guild_id: int, user_id: int, rule_type: Optional[str]):
         """Update user's violation history."""

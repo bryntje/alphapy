@@ -49,12 +49,14 @@ def validate_webhook_signature(
             detail=missing_detail,
         )
 
-    provided = signature
-    if signature.startswith("sha256="):
-        provided = signature.split("=", 1)[1]
+    provided = signature.strip()
+    if provided.lower().startswith("sha256="):
+        provided = provided.split("=", 1)[1].strip()
+    provided = provided.lower()
 
-    # Use HMAC constructor for clarity (hmac.new is also valid)
-    hmac_obj = hmac.HMAC(secret.encode("utf-8"), body, hashlib.sha256)
+    hmac_obj = hmac.HMAC(
+        secret.encode("utf-8"), body, digestmod=hashlib.sha256
+    )
     computed = hmac_obj.hexdigest()
     if not hmac.compare_digest(provided, computed):
         raise HTTPException(
