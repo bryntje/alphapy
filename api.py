@@ -2791,26 +2791,33 @@ async def delete_automod_rule(
 
     try:
         async with db_pool.acquire() as conn:
-            # Get action_id first
-            action_id = await conn.fetchval(
+            # Get rule row first so we can distinguish between "rule not found"
+            # and "rule exists but has no linked action".
+            row = await conn.fetchrow(
                 "SELECT action_id FROM automod_rules WHERE guild_id = $1 AND id = $2",
-                guild_id, rule_id
+                guild_id,
+                rule_id,
             )
-            
-            if not action_id:
+
+            if not row:
                 raise HTTPException(status_code=404, detail="Rule not found")
-            
+
+            action_id = row["action_id"]
+
             # Delete rule
             await conn.execute(
                 "DELETE FROM automod_rules WHERE guild_id = $1 AND id = $2",
-                guild_id, rule_id
+                guild_id,
+                rule_id,
             )
-            
-            # Delete action
-            await conn.execute(
-                "DELETE FROM automod_actions WHERE id = $1",
-                action_id
-            )
+
+            # Delete linked action if present
+            if action_id:
+                await conn.execute(
+                    "DELETE FROM automod_actions WHERE guild_id = $1 AND id = $2",
+                    guild_id,
+                    action_id,
+                )
             
             return {"success": True}
             

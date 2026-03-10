@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 _REFLECTION_TEXT_MAX_CHARS = 2048
 _REFLECTION_DATE_MAX_CHARS = 128
 
+_app_reflections_pool: Optional[PoolT] = None
+
 
 def _sanitize_reflection_field(value: object, max_chars: int = _REFLECTION_TEXT_MAX_CHARS) -> str:
     """Normalize reflection content before injecting into LLM context."""
@@ -35,23 +37,36 @@ def _sanitize_reflection_field(value: object, max_chars: int = _REFLECTION_TEXT_
 
 
 async def _get_app_reflections_pool() -> Optional[PoolT]:
-    """Get a database pool for app_reflections (avoid circular import with api.py)."""
+    """Get or create a shared database pool for app_reflections.
+
+    This is intentionally cached at module level so that every user-self flow
+    (e.g. /growthcheckin) does *not* pay the cost of creating and tearing down
+    a brand-new asyncpg pool for a single query.
+    """
+    global _app_reflections_pool
+
+    # Reuse existing pool when available
+    if _app_reflections_pool is not None and not _app_reflections_pool._closed:
+        return _app_reflections_pool
+
     try:
         import config
-        if not hasattr(config, 'DATABASE_URL') or not config.DATABASE_URL:
+
+        if not getattr(config, "DATABASE_URL", None):
             logger.debug("No DATABASE_URL configured for app_reflections")
             return None
-        
-        # Create pool with same settings as api.py
-        pool = await asyncpg.create_pool(
+
+        # Create pool with same settings as api.py (but smaller max_size)
+        _app_reflections_pool = await asyncpg.create_pool(
             config.DATABASE_URL,
             min_size=1,
             max_size=5,  # Smaller pool for occasional context loading
-            command_timeout=10.0
+            command_timeout=10.0,
         )
-        return pool
+        return _app_reflections_pool
     except Exception as e:
         logger.debug("Failed to create app_reflections pool: %s", e)
+        _app_reflections_pool = None
         return None
 
 
@@ -64,58 +79,59 @@ async def _load_app_reflections(discord_id: int | str, limit: int = 5) -> tuple[
         pool = await _get_app_reflections_pool()
         if not pool:
             return "", 0
+
         discord_id_int = int(discord_id)
         from utils.db_helpers import acquire_safe
 
-        try:
-            async with acquire_safe(pool) as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT plaintext_content, created_at
-                    FROM app_reflections
-                    WHERE user_id = $1
-                      AND created_at >= NOW() - interval '30 days'
-                    ORDER BY created_at DESC
-                    LIMIT $2
-                    """,
-                    discord_id_int,
-                    limit,
-                )
-            if not rows:
-                return "", 0
-            blocks: list[str] = []
-            display_idx = 0
-            for row in rows:
-                content = row["plaintext_content"]
-                created = row["created_at"]
-                date_str = created.strftime("%Y-%m-%d") if created else ""
-                # JSONB may be returned as str by asyncpg when no custom codec is used
-                if isinstance(content, str):
-                    try:
-                        content = json.loads(content)
-                    except (ValueError, TypeError):
-                        continue
-                if not isinstance(content, dict):
+        async with acquire_safe(pool) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT plaintext_content, created_at
+                FROM app_reflections
+                WHERE user_id = $1
+                  AND created_at >= NOW() - interval '30 days'
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                discord_id_int,
+                limit,
+            )
+        if not rows:
+            return "", 0
+        blocks: list[str] = []
+        display_idx = 0
+        for row in rows:
+            content = row["plaintext_content"]
+            created = row["created_at"]
+            date_str = created.strftime("%Y-%m-%d") if created else ""
+            # JSONB may be returned as str by asyncpg when no custom codec is used
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except (ValueError, TypeError):
                     continue
-                display_idx += 1
-                blocks.append(f"Reflection {display_idx} ({date_str}):")
-                for key in ("reflection_text", "reflection", "mantra", "thoughts", "future_message"):
-                    val = content.get(key)
-                    safe_val = _sanitize_reflection_field(val)
-                    if safe_val:
-                        label = key.replace("_", " ").title()
-                        blocks.append(f"  {label}: {safe_val}")
-                date_val = content.get("date")
-                safe_date = _sanitize_reflection_field(date_val, max_chars=_REFLECTION_DATE_MAX_CHARS)
-                if safe_date:
-                    blocks.append(f"  Date: {safe_date}")
-                blocks.append("")
-            if not blocks:
-                return "", 0
-            return "Recent reflections from the App (shared via webhook):\n\n" + "\n".join(blocks).strip(), display_idx
-        finally:
-            # Always close the pool to avoid resource leaks
-            await pool.close()
+            if not isinstance(content, dict):
+                continue
+            display_idx += 1
+            blocks.append(f"Reflection {display_idx} ({date_str}):")
+            for key in ("reflection_text", "reflection", "mantra", "thoughts", "future_message"):
+                val = content.get(key)
+                safe_val = _sanitize_reflection_field(val)
+                if safe_val:
+                    label = key.replace("_", " ").title()
+                    blocks.append(f"  {label}: {safe_val}")
+            date_val = content.get("date")
+            safe_date = _sanitize_reflection_field(date_val, max_chars=_REFLECTION_DATE_MAX_CHARS)
+            if safe_date:
+                blocks.append(f"  Date: {safe_date}")
+            blocks.append("")
+        if not blocks:
+            return "", 0
+        return (
+            "Recent reflections from the App (shared via webhook):\n\n"
+            + "\n".join(blocks).strip(),
+            display_idx,
+        )
     except Exception as e:
         logger.debug("Failed to load app_reflections for discord_id=%s: %s", discord_id, e)
         return "", 0
