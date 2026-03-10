@@ -279,7 +279,8 @@ class AutoModeration(commands.Cog):
     async def _update_user_history(self, guild_id: int, user_id: int, rule_type: Optional[str]):
         """Update user's violation history."""
         try:
-            pool = getattr(self.bot, 'db_pool', None)
+            from utils.db_helpers import get_bot_db_pool
+            pool = get_bot_db_pool(self.bot)
             if not pool:
                 return
                 

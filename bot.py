@@ -592,14 +592,6 @@ async def on_guild_join(guild: discord.Guild):
         await send_fyi_if_first(bot, guild.id, "first_guild_join", channel_id_override=channel.id)
 
 
-# Add database pool property for auto-moderation and other features
-@property
-def db_pool(self):
-    """Get the main database pool from SettingsService."""
-    settings_service = getattr(self, "settings", None)
-    if settings_service and hasattr(settings_service, "_pool"):
-        return settings_service._pool
-    return None
 
 async def setup_hook():
     from utils.lifecycle import StartupManager

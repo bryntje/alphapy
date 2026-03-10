@@ -62,7 +62,7 @@ class RuleProcessor:
     async def load_rules(self):
         """Load all rules from database into cache."""
         try:
-            pool = getattr(self.bot, 'get_db_pool', lambda: None)() if self.bot else None
+            pool = get_bot_db_pool(self.bot) if self.bot else None
             if not pool:
                 log.debug("No database pool available for rule loading - will load on first use")
                 return
@@ -264,19 +264,30 @@ class RuleProcessor:
                     if domain:
                         domain = domain.group(1)
                         
-                        if whitelist and not any(allowed in domain for allowed in whitelist):
+                        # If whitelist exists, only allow whitelisted domains
+                        if whitelist:
+                            if not any(allowed in domain for allowed in whitelist):
+                                return RuleResult(
+                                    True,
+                                    0.8,
+                                    f"Unwhitelisted link detected: {domain}",
+                                    {'url': url, 'domain': domain}
+                                )
+                        # If blacklist exists, block blacklisted domains
+                        elif blacklist:
+                            if any(blocked in domain for blocked in blacklist):
+                                return RuleResult(
+                                    True,
+                                    0.9,
+                                    f"Blacklisted link detected: {domain}",
+                                    {'url': url, 'domain': domain}
+                                )
+                        # No whitelist or blacklist - block all links
+                        else:
                             return RuleResult(
                                 True,
-                                0.8,
-                                f"Unallowed link detected: {domain}",
-                                {'url': url, 'domain': domain}
-                            )
-                            
-                        if blacklist and any(blocked in domain for blocked in blacklist):
-                            return RuleResult(
-                                True,
-                                0.9,
-                                f"Blacklisted link detected: {domain}",
+                                0.7,
+                                f"Link detected: {domain}",
                                 {'url': url, 'domain': domain}
                             )
                                 
@@ -432,7 +443,7 @@ Be conservative - only flag clear violations."""
     async def list_rules(self, guild_id: int) -> List[Dict[str, Any]]:
         """List all auto-mod rules for a guild."""
         try:
-            pool = getattr(self.bot, "db_pool", None) if hasattr(self, "bot") else None
+            pool = get_bot_db_pool(self.bot) if self.bot else None
             if not pool:
                 raise ValueError("Database not available")
 
@@ -465,7 +476,7 @@ Be conservative - only flag clear violations."""
     async def get_rule(self, guild_id: int, rule_id: int) -> Optional[Dict[str, Any]]:
         """Get one auto-mod rule for a guild."""
         try:
-            pool = getattr(self.bot, "db_pool", None) if hasattr(self, "bot") else None
+            pool = get_bot_db_pool(self.bot) if self.bot else None
             if not pool:
                 raise ValueError("Database not available")
 
@@ -498,7 +509,7 @@ Be conservative - only flag clear violations."""
     async def delete_rule(self, guild_id: int, rule_id: int) -> bool:
         """Delete an auto-mod rule (and its linked action) from a guild."""
         try:
-            pool = getattr(self.bot, "db_pool", None) if hasattr(self, "bot") else None
+            pool = get_bot_db_pool(self.bot) if self.bot else None
             if not pool:
                 raise ValueError("Database not available")
 
