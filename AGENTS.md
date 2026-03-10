@@ -133,21 +133,37 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
-## �️ Agent: AutoModeration
-- **Path**: `cogs/automod.py`, `cogs/automod_config.py`, `utils/automod_rules.py`, `utils/automod_logging.py`
+## 🛡️ Agent: AutoModeration
+- **Path**: `cogs/automod.py`, `cogs/configuration.py`, `utils/automod_rules.py`, `utils/automod_logging.py`, `utils/automod_analytics.py`
 - **Purpose**: Automated content moderation with configurable rules and actions
 - **Triggers**: `on_message` → rule evaluation → action execution
 - **Storage**: PostgreSQL (automod_rules, automod_actions, automod_logs, automod_stats, automod_user_history)
-- **Rule Types**: Spam detection (frequency, duplicates, caps), content filtering (bad words, links, mentions), regex patterns, AI-powered analysis
-- **Actions**: Message deletion, warnings, mutes, timeouts, bans
-- **Premium**: AI-powered content analysis, custom regex patterns, advanced actions (timeout, ban), analytics dashboard
-- **Configuration**: Interactive setup via `/automod create_rule` with modal and button interfaces
-- **Logging**: Comprehensive violation logging with context, appeal system, and performance metrics
-- **Integration**: Works with existing premium guard system and configuration framework
+- **Rule Types**: 
+  - Spam detection: frequency, duplicates, caps
+  - Content filtering: bad words, links, mentions
+  - Regex patterns (premium)
+  - AI-powered analysis (premium, Grok integration)
+- **Actions**: Message deletion, warnings, mutes, timeouts (premium), bans (premium)
+- **Premium Features**:
+  - Advanced actions (timeout, ban)
+  - Regex rule patterns
+  - AI-powered content analysis with Grok (custom policies, confidence thresholds)
+  - Analytics dashboard (scaffolding)
+- **Configuration Commands** (`/config automod`):
+  - `show`, `enable`, `disable`
+  - `set_log_channel`, `reset_log_channel`
+  - `add_spam_rule`, `add_badwords_rule`, `add_links_rule`, `add_mentions_rule`, `add_caps_rule`, `add_duplicate_rule`, `add_regex_rule`, `add_ai_rule`
+  - `rules`, `edit_rule`, `delete_rule`, `enable_rule`, `disable_rule`
+  - `set_severity` (rule priority management, 1-10)
+  - `logs` (with filters: user_id, rule_id, action_type, days)
+- **Status Command**: `/automod status`
+- **Logging**: Comprehensive violation logging with context, appeal system (scaffolding), and performance metrics
+- **Analytics**: `AutoModAnalytics` service for rule effectiveness and guild overview metrics (low-priority scaffolding)
+- **Integration**: Works with existing premium guard system, settings service, and operational logs
 
 ---
 
-## �📥 Agent: App Reflections (Plaintext from Core)
+## �� Agent: App Reflections (Plaintext from Core)
 - **Path**: `webhooks/app_reflections.py`, `webhooks/revoke_reflection.py`, `gpt/context_loader.py`
 - **Purpose**: Receive plaintext reflections from App via Core-API webhook; store in `app_reflections`; use in `/growthcheckin` (and other user-self flows). Not used for ticket "Suggest reply" (privacy: reflections stay out of admin-only, ephemeral ticket actions).
 - **Data flow**: Shared reflections are decrypted client-side in the App, then sent as plaintext to Core-API, which forwards them to Alphapy (and/or Supabase). Alphapy never receives or decrypts encrypted content.
@@ -161,3 +177,4 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ## Shared References
 - **Embed styling**: see `EMBEDS.md`
 - **Database pools, command tracking & infra**: see `ARCHITECTURE.md`
+- **Auto-moderation implementation details**: see `changelog.md` (latest release notes)

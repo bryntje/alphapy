@@ -128,6 +128,34 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="automod",
+        key="enabled",
+        description="Enable auto-moderation for this guild.",
+        value_type="bool",
+        default=False,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="automod",
+        key="log_channel_id",
+        description="Channel for auto-mod violation logs.",
+        value_type="channel",
+        default=0,
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="automod",
+        key="warn_message",
+        description="Default warning message for auto-mod violations.",
+        value_type="string",
+        default="⚠️ Your message violates server rules.",
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="embedwatcher",
         key="non_embed_enabled",
         description="Enable parsing of non-embed messages (plain text messages) for reminders.",

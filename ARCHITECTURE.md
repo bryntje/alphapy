@@ -12,12 +12,14 @@
 - `cogs/verification.py`: AI vision payment verification
 - `cogs/ticketbot.py`: support tickets with GPT summary + FAQ proposal
 - `cogs/premium.py`: tier guard + transfer
+- `cogs/automod.py` + `configuration.py` (automod_group): automated content moderation with rule engine
 - `api.py`: dashboard endpoints + telemetry ingest job (subsystem='alphapy')
-- `utils/`: lifecycle, db_helpers, sanitizer, embed_builder, command_tracker, fyi_tips
+- `utils/`: lifecycle, db_helpers, sanitizer, embed_builder, command_tracker, fyi_tips, automod_rules, automod_logging, automod_analytics
 
 ## Database Architecture
 - Multiple asyncpg pools (FastAPI + per-cog dedicated)
-- Central `bot_settings` + `audit_logs` + feature tables (reminders, onboarding, support_tickets, etc.)
+- Central `bot_settings` + `audit_logs` + feature tables (reminders, onboarding, support_tickets, automod_rules, automod_logs, etc.)
+- Auto-moderation: 5 tables (`automod_actions`, `automod_rules`, `automod_logs`, `automod_stats`, `automod_user_history`) with indexes for performance
 - Command tracking via batch queue in the bot event loop
 - See `docs/database-schema.md` for full tables
 

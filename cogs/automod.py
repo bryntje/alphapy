@@ -23,8 +23,21 @@ from utils.logger import log_with_guild, logger
 from utils.validators import validate_admin
 from utils.automod_rules import RuleProcessor, RuleType, ActionType
 from utils.automod_logging import AutoModLogger
+from utils.response_helpers import ResponseHelper, send_db_error, send_generic_error
+from utils.embed_builder import EmbedBuilder
+from utils.operational_logs import log_operational_event, EventType
 
 logger = logging.getLogger(__name__)
+
+
+def requires_admin():
+    """Check decorator for admin permissions."""
+    async def predicate(interaction: discord.Interaction) -> bool:
+        is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
+        if is_admin:
+            return True
+        raise app_commands.CheckFailure("You need administrator permissions for this command.")
+    return app_commands.check(predicate)
 
 
 class AutoModeration(commands.Cog):
@@ -33,14 +46,21 @@ class AutoModeration(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.rule_processor = RuleProcessor(bot)
-        self.mod_logger = AutoModLogger()
+        self.mod_logger = AutoModLogger(bot)
         self._spam_tracker: Dict[int, Dict[int, List[float]]] = {}  # guild_id -> user_id -> timestamps
         self._message_cache: Dict[int, Dict[int, str]] = {}  # guild_id -> user_id -> last_message
+        
+        # Get settings service
+        settings = getattr(bot, "settings", None)
+        if settings is None or not hasattr(settings, 'get'):
+            raise RuntimeError("SettingsService not available on bot instance")
+        self.settings = settings
         
     async def cog_load(self):
         """Initialize the auto-mod system."""
         logger.info("Loading AutoModeration cog...")
-        await self.rule_processor.load_rules()
+        # Don't load rules immediately - wait for database pool to be ready
+        # Rules will be loaded on first use via get_active_rules method
         
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -49,8 +69,13 @@ class AutoModeration(commands.Cog):
         if message.author.bot or not message.guild:
             return
             
+        # Check if auto-mod is enabled for this guild
+        automod_enabled = self.settings.get("automod", "enabled", guild_id=message.guild.id)
+        if not automod_enabled:
+            return
+            
         # Skip if user has administrator permissions
-        if message.author.guild_permissions.administrator:
+        if isinstance(message.author, discord.Member) and message.author.guild_permissions.administrator:
             return
             
         try:
@@ -60,6 +85,9 @@ class AutoModeration(commands.Cog):
             
     async def _process_message(self, message: discord.Message):
         """Process a single message through all active rules."""
+        if not message.guild:
+            return
+            
         guild_id = message.guild.id
         user_id = message.author.id
         
@@ -104,8 +132,11 @@ class AutoModeration(commands.Cog):
             'message_timestamps': self._spam_tracker.get(guild_id, {}).get(user_id, [])
         }
         
-    async def _handle_violation(self, message: discord.Message, rule: Dict, result: Any):
+    async def _handle_violation(self, message: discord.Message, rule: Dict[str, Any], result):
         """Handle a rule violation by executing the configured action."""
+        if not message.guild:
+            return
+            
         guild_id = message.guild.id
         user_id = message.author.id
         
@@ -119,6 +150,21 @@ class AutoModeration(commands.Cog):
             action_type=rule.get('action_type') or 'unknown',  # Default to 'unknown' if None
             message_content=message.content,
             context=result.context
+        )
+        
+        # Log operational event for auto-mod action
+        log_operational_event(
+            EventType.SETTINGS_CHANGED,
+            f"Auto-mod violation: {rule.get('action_type', 'unknown')} action taken",
+            guild_id=guild_id,
+            details={
+                'user_id': user_id,
+                'rule_id': rule.get('id'),
+                'rule_type': rule.get('rule_type'),
+                'action_type': rule.get('action_type'),
+                'channel_id': message.channel.id,
+                'message_id': message.id
+            }
         )
         
         # Execute the action
@@ -167,14 +213,14 @@ class AutoModeration(commands.Cog):
     async def _action_mute_user(self, message: discord.Message, config: Dict):
         """Mute the user (requires configured mute role)."""
         try:
-            mute_role_id = config.get('mute_role_id')
-            if not mute_role_id:
-                logger.warning(f"No mute role configured for guild {message.guild.id}")
-                return
-                
             guild = message.guild
             if not guild:
                 logger.warning("Guild is None in _action_mute_user")
+                return
+                
+            mute_role_id = config.get('mute_role_id')
+            if not mute_role_id:
+                logger.warning(f"No mute role configured for guild {guild.id}")
                 return
                 
             mute_role = guild.get_role(mute_role_id)
@@ -231,15 +277,11 @@ class AutoModeration(commands.Cog):
         except Exception as e:
             logger.error(f"Error updating user history: {e}")
             
-    # Slash commands for configuration
-    automod_group = app_commands.Group(
-        name="automod",
-        description="Manage auto-moderation settings",
-        default_permissions=discord.Permissions(administrator=True),
-        guild_only=True
-    )
+    # Auto-moderation commands (following Alphapy patterns)
+    automod = app_commands.Group(name="automod", description="Auto-moderation settings")
     
-    @automod_group.command(name="status", description="Check auto-moderation status")
+    @automod.command(name="status", description="Check auto-moderation status")
+    @requires_admin()
     async def automod_status(self, interaction: discord.Interaction):
         """Show current auto-moderation status."""
         if not interaction.guild:
@@ -247,18 +289,33 @@ class AutoModeration(commands.Cog):
             return
             
         guild_id = interaction.guild.id
+        await interaction.response.defer(ephemeral=True)
         
         try:
             rules = await self.rule_processor.get_active_rules(guild_id)
             premium_status = await guild_has_premium(guild_id)
+            automod_enabled = self.settings.get("automod", "enabled", guild_id=guild_id)
             
-            embed = discord.Embed(
-                title="🛡️ Auto-Moderation Status",
-                color=discord.Color.blue()
+            embed = EmbedBuilder.info(
+                title="Auto-Moderation Status",
+                fields=[
+                    {
+                        'name': 'Status',
+                        'value': '✅ Enabled' if automod_enabled else '❌ Disabled',
+                        'inline': True
+                    },
+                    {
+                        'name': 'Active Rules',
+                        'value': str(len(rules)),
+                        'inline': True
+                    },
+                    {
+                        'name': 'Premium Features',
+                        'value': '✅ Enabled' if premium_status else '❌ Disabled',
+                        'inline': True
+                    }
+                ]
             )
-            
-            embed.add_field(name="Active Rules", value=str(len(rules)), inline=True)
-            embed.add_field(name="Premium Features", value="✅ Enabled" if premium_status else "❌ Disabled", inline=True)
             
             # Count rules by type
             rule_counts = {}
@@ -270,14 +327,26 @@ class AutoModeration(commands.Cog):
                 rules_text = "\n".join([f"• {rule_type}: {count}" for rule_type, count in rule_counts.items()])
                 embed.add_field(name="Rules by Type", value=rules_text, inline=False)
                 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+            # Log operational event
+            log_operational_event(
+                EventType.SETTINGS_CHANGED,
+                f"Auto-mod status checked for guild {guild_id}",
+                guild_id=guild_id,
+                details={
+                    'rules_count': len(rules), 
+                    'premium': premium_status,
+                    'enabled': automod_enabled
+                }
+            )
             
         except Exception as e:
             logger.error(f"Error in automod status command: {e}")
-            await interaction.response.send_message(
-                "❌ Error retrieving auto-mod status.", 
-                ephemeral=True
-            )
+            try:
+                await interaction.followup.send("❌ Failed to retrieve auto-mod status.", ephemeral=True)
+            except Exception:
+                pass
 
 
 async def setup(bot: commands.Bot):

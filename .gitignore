@@ -10,6 +10,8 @@ venv/
 .venv/
 # Log files
 *.log
+
+.windsurf/
 .cursor/
 platform_context.md
 

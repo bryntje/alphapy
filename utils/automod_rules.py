@@ -63,7 +63,7 @@ class RuleProcessor:
         try:
             pool = getattr(self.bot, 'db_pool', None) if self.bot else None
             if not pool:
-                log.warning("No database pool available for rule loading")
+                log.debug("No database pool available for rule loading - will load on first use")
                 return
                 
             async with acquire_safe(pool) as conn:
@@ -295,10 +295,82 @@ class RuleProcessor:
         return RuleResult(False, 0.0, "No regex matches", {})
         
     async def _evaluate_ai_rule(self, rule: Dict, message: discord.Message, user_context: Dict[str, Any]) -> RuleResult:
-        """Evaluate AI-powered rules (premium feature)."""
-        # This will be implemented in Phase 2 with Grok integration
-        # For now, return no violation
-        return RuleResult(False, 0.0, "AI rules not yet implemented", {})
+        """Evaluate AI-powered rules using Grok (premium feature)."""
+        try:
+            from gpt.helpers import ask_gpt
+            
+            config = rule.get('config', {})
+            policy = config.get('policy', 'Detect toxic, harmful, or inappropriate content')
+            threshold = config.get('threshold', 0.7)
+            
+            # Build AI prompt for content analysis
+            analysis_prompt = f"""Analyze the following message for moderation purposes.
+
+Policy: {policy}
+
+Message content: \"{message.content}\"
+
+Respond with a JSON object containing:
+- "violates": true/false
+- "confidence": 0.0-1.0 (how confident you are)
+- "reason": brief explanation
+- "category": type of violation (e.g., "toxicity", "spam", "harassment", "none")
+
+Be conservative - only flag clear violations."""
+            
+            messages = [
+                {"role": "system", "content": "You are a content moderation assistant. Analyze messages objectively and respond only with valid JSON."},
+                {"role": "user", "content": analysis_prompt}
+            ]
+            
+            # Call Grok (without reflections for privacy)
+            response = await ask_gpt(
+                messages,
+                user_id=message.author.id,
+                model="grok-beta",
+                guild_id=message.guild.id if message.guild else None,
+                include_reflections=False
+            )
+            
+            if not response:
+                log.warning("AI moderation: empty response from Grok")
+                return RuleResult(False, 0.0, "AI analysis unavailable", {})
+            
+            # Parse JSON response
+            import json
+            try:
+                # Extract JSON from response (handle markdown code blocks)
+                response_text = response.strip()
+                if response_text.startswith('```'):
+                    # Remove markdown code block markers
+                    lines = response_text.split('\n')
+                    response_text = '\n'.join(lines[1:-1]) if len(lines) > 2 else response_text
+                    response_text = response_text.replace('```json', '').replace('```', '').strip()
+                
+                analysis = json.loads(response_text)
+                violates = analysis.get('violates', False)
+                confidence = float(analysis.get('confidence', 0.0))
+                reason = analysis.get('reason', 'AI flagged content')
+                category = analysis.get('category', 'unknown')
+                
+                if violates and confidence >= threshold:
+                    return RuleResult(
+                        True,
+                        confidence,
+                        f"AI detected {category}: {reason}",
+                        {'category': category, 'ai_reason': reason, 'confidence': confidence}
+                    )
+                else:
+                    return RuleResult(False, confidence, f"AI analysis: {reason}", {'category': category})
+                    
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                log.error(f"AI moderation: failed to parse response: {e}")
+                return RuleResult(False, 0.0, "AI analysis parse error", {'error': str(e)})
+                
+        except Exception as e:
+            log.error(f"AI moderation error: {e}")
+            # Fail open - don't block on AI errors
+            return RuleResult(False, 0.0, f"AI error: {str(e)}", {'error': str(e)})
         
     async def create_rule(self, guild_id: int, rule_type: str, name: str, config: Dict, 
                          action_type: str, action_config: Dict, created_by: int, is_premium: bool = False) -> int:
@@ -331,4 +403,179 @@ class RuleProcessor:
                 
         except Exception as e:
             log.error(f"Error creating auto-mod rule: {e}")
+            raise
+
+    async def list_rules(self, guild_id: int) -> List[Dict[str, Any]]:
+        """List all auto-mod rules for a guild."""
+        try:
+            pool = getattr(self.bot, "db_pool", None) if hasattr(self, "bot") else None
+            if not pool:
+                raise ValueError("Database not available")
+
+            async with acquire_safe(pool) as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        r.id,
+                        r.guild_id,
+                        r.rule_type,
+                        r.name,
+                        r.enabled,
+                        r.config,
+                        r.is_premium,
+                        r.created_at,
+                        a.action_type
+                    FROM automod_rules r
+                    LEFT JOIN automod_actions a ON r.action_id = a.id
+                    WHERE r.guild_id = $1
+                    ORDER BY r.created_at DESC
+                    """,
+                    guild_id,
+                )
+
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error listing auto-mod rules for guild {guild_id}: {e}")
+            raise
+
+    async def get_rule(self, guild_id: int, rule_id: int) -> Optional[Dict[str, Any]]:
+        """Get one auto-mod rule for a guild."""
+        try:
+            pool = getattr(self.bot, "db_pool", None) if hasattr(self, "bot") else None
+            if not pool:
+                raise ValueError("Database not available")
+
+            async with acquire_safe(pool) as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        r.id,
+                        r.guild_id,
+                        r.rule_type,
+                        r.name,
+                        r.enabled,
+                        r.config,
+                        r.is_premium,
+                        r.created_at,
+                        a.action_type,
+                        a.config AS action_config
+                    FROM automod_rules r
+                    LEFT JOIN automod_actions a ON r.action_id = a.id
+                    WHERE r.guild_id = $1 AND r.id = $2
+                    """,
+                    guild_id,
+                    rule_id,
+                )
+            return dict(row) if row else None
+        except Exception as e:
+            log.error(f"Error getting auto-mod rule {rule_id} for guild {guild_id}: {e}")
+            raise
+
+    async def delete_rule(self, guild_id: int, rule_id: int) -> bool:
+        """Delete an auto-mod rule (and its linked action) from a guild."""
+        try:
+            pool = getattr(self.bot, "db_pool", None) if hasattr(self, "bot") else None
+            if not pool:
+                raise ValueError("Database not available")
+
+            async with acquire_safe(pool) as conn:
+                row = await conn.fetchrow(
+                    "SELECT action_id FROM automod_rules WHERE id = $1 AND guild_id = $2",
+                    rule_id,
+                    guild_id,
+                )
+                if not row:
+                    return False
+
+                action_id = row["action_id"]
+                await conn.execute(
+                    "DELETE FROM automod_rules WHERE id = $1 AND guild_id = $2",
+                    rule_id,
+                    guild_id,
+                )
+                if action_id:
+                    await conn.execute(
+                        "DELETE FROM automod_actions WHERE id = $1 AND guild_id = $2",
+                        action_id,
+                        guild_id,
+                    )
+
+            self._rules_cache.pop(guild_id, None)
+            self._cache_updated.pop(guild_id, None)
+            return True
+        except Exception as e:
+            log.error(f"Error deleting auto-mod rule {rule_id} for guild {guild_id}: {e}")
+            raise
+
+    async def update_rule(
+        self,
+        guild_id: int,
+        rule_id: int,
+        *,
+        name: Optional[str] = None,
+        enabled: Optional[bool] = None,
+        action_type: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None,
+        action_config: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Update core properties of an auto-mod rule."""
+        try:
+            pool = getattr(self.bot, "db_pool", None) if hasattr(self, "bot") else None
+            if not pool:
+                raise ValueError("Database not available")
+
+            async with acquire_safe(pool) as conn:
+                row = await conn.fetchrow(
+                    "SELECT id, action_id FROM automod_rules WHERE id = $1 AND guild_id = $2",
+                    rule_id,
+                    guild_id,
+                )
+                if not row:
+                    return False
+
+                if name is not None:
+                    await conn.execute(
+                        "UPDATE automod_rules SET name = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
+                        name,
+                        rule_id,
+                        guild_id,
+                    )
+
+                if enabled is not None:
+                    await conn.execute(
+                        "UPDATE automod_rules SET enabled = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
+                        enabled,
+                        rule_id,
+                        guild_id,
+                    )
+
+                if action_type is not None and row["action_id"]:
+                    await conn.execute(
+                        "UPDATE automod_actions SET action_type = $1 WHERE id = $2 AND guild_id = $3",
+                        action_type,
+                        row["action_id"],
+                        guild_id,
+                    )
+
+                if config is not None:
+                    await conn.execute(
+                        "UPDATE automod_rules SET config = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3",
+                        config,
+                        rule_id,
+                        guild_id,
+                    )
+
+                if action_config is not None and row["action_id"]:
+                    await conn.execute(
+                        "UPDATE automod_actions SET config = $1 WHERE id = $2 AND guild_id = $3",
+                        action_config,
+                        row["action_id"],
+                        guild_id,
+                    )
+
+            self._rules_cache.pop(guild_id, None)
+            self._cache_updated.pop(guild_id, None)
+            return True
+        except Exception as e:
+            log.error(f"Error updating auto-mod rule {rule_id} for guild {guild_id}: {e}")
             raise

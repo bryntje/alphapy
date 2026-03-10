@@ -147,7 +147,6 @@ class StartupManager:
             "cogs.migrations",
             "cogs.verification",
             "cogs.automod",
-            "cogs.automod_config",
         ]
         
         loaded: list[str] = []

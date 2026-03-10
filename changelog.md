@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Auto-Moderation System**: Comprehensive automated content moderation with configurable rules and actions
+  - **Database**: Migration 009 adds 5 tables (`automod_actions`, `automod_rules`, `automod_logs`, `automod_stats`, `automod_user_history`) with indexes for performance
+  - **Rule Types**: Spam detection (frequency, duplicates, caps), content filtering (bad words, links, mentions), regex patterns (premium), AI-powered analysis with Grok (premium)
+  - **Actions**: Message deletion, warnings, mutes, timeouts (premium), bans (premium)
+  - **Configuration Commands** (`/config automod`): `show`, `enable`, `disable`, `set_log_channel`, `reset_log_channel`, `add_spam_rule`, `add_badwords_rule`, `add_links_rule`, `add_mentions_rule`, `add_caps_rule`, `add_duplicate_rule`, `add_regex_rule`, `add_ai_rule`, `rules`, `edit_rule`, `delete_rule`, `enable_rule`, `disable_rule`, `set_severity`, `logs` (with filters: user_id, rule_id, action_type, days)
+  - **Status Command**: `/automod status` shows current configuration and active rules count
+  - **Premium Gating**: Advanced actions (timeout, ban), regex rules, and AI moderation require guild premium subscription
+  - **Logging**: DB-backed violation logging with context, appeal system (scaffolding), performance metrics via `AutoModLogger`, and AI analysis results
+  - **Analytics**: `AutoModAnalytics` service for rule effectiveness and guild overview metrics (low-priority scaffolding)
+  - **Integration**: Works with existing premium guard system, settings service, and operational logs; event type normalization prevents Core ingress 422 errors
+  - **Testing**: Automated tests in `tests/test_automod_rules.py` for evaluators and CRUD operations
+  - **Modules**: `cogs/automod.py`, `cogs/configuration.py` (automod_group), `utils/automod_rules.py`, `utils/automod_logging.py`, `utils/automod_analytics.py`
 - **App Reflections (plaintext from Core)**: Webhooks `POST /webhooks/app-reflections` and `POST /webhooks/revoke-reflection` to receive and revoke plaintext reflections from the App via Core-API; stored in `app_reflections` and used in `/growthcheckin` (user-self context only; not used for ticket "Suggest reply" for privacy).
 - **Legal page**: `docs/legal.md` (docs.alphapy.innersync.tech/legal/) with company details, enterprise number, and registered office; linked from Terms of Service and Privacy Policy footers.
 - **Config**: `APP_REFLECTIONS_WEBHOOK_SECRET` and `GITHUB_TOKEN` environment variables; documented in [Configuration](docs/configuration.md).
@@ -13,6 +25,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **Privacy**: Reflection context (Supabase + app_reflections) is no longer included in ticket "Suggest reply"; only used for user-self flows (e.g. `/growthcheckin`). (No leaks of user-data have occurred, this was caught before any tickets got made.)
 - **Removed**: Release guard (GitHub 3.0.0 check) from app-reflections webhook; it was a personal sanity check, not needed in production.
+- **Auto-Moderation**: Removed duplicate `cogs/automod_config.py` (modal-based approach) in favor of unified `/config automod` command structure
 
 ### Fixed
 - (No changes yet)

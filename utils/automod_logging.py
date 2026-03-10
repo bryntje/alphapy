@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any
 
 import asyncpg
 import discord
+from discord.ext import commands
 
 from utils.db_helpers import acquire_safe
 from utils.logger import logger
@@ -21,10 +22,17 @@ log = logging.getLogger(__name__)
 class AutoModLogger:
     """Specialized logging system for auto-moderation events."""
     
-    def __init__(self):
+    def __init__(self, bot: Optional[commands.Bot] = None):
+        self.bot = bot
         self._buffer: List[Dict] = []
         self._buffer_size = 50
         self._last_flush = 0
+    
+    def _get_pool(self) -> Optional[asyncpg.Pool]:
+        if not self.bot:
+            return None
+        pool = getattr(self.bot, "db_pool", None)
+        return pool
         
     async def log_violation(self, guild_id: int, user_id: int, message_id: Optional[int],
                            channel_id: Optional[int], rule_id: int, action_type: str,
@@ -44,15 +52,13 @@ class AutoModLogger:
                 'context': context,
                 'timestamp': datetime.utcnow()
             }
-            
-            # Add to buffer for batch processing
-            self._buffer.append(log_entry)
-            
-            # Flush if buffer is full or it's been more than 30 seconds
-            import time
-            if (len(self._buffer) >= self._buffer_size or 
-                time.time() - self._last_flush > 30):
-                await self._flush_buffer()
+
+            pool = self._get_pool()
+            if pool:
+                await self._insert_log_entries([log_entry], pool)
+            else:
+                # Add to buffer for later processing if pool is not ready yet
+                self._buffer.append(log_entry)
                 
             # Also log to standard logger for immediate visibility
             log.info(f"Auto-mod violation: Guild {guild_id}, User {user_id}, Action: {action_type}, Rule: {rule_id}")
@@ -66,25 +72,81 @@ class AutoModLogger:
             return
             
         try:
-            # Get database pool from global context or pass it in
-            # For now, we'll need to modify this to work with the existing architecture
+            pool = self._get_pool()
+            if not pool:
+                return
+
             entries = self._buffer.copy()
             self._buffer.clear()
-            self._last_flush = 0
-            
-            # This would need to be called with a database pool
-            # await self._insert_log_entries(entries)
+            await self._insert_log_entries(entries, pool)
             
         except Exception as e:
             log.error(f"Error flushing auto-mod log buffer: {e}")
+    
+    async def _insert_log_entries(self, entries: List[Dict[str, Any]], pool: asyncpg.Pool) -> None:
+        """Insert buffered log entries into automod_logs."""
+        if not entries:
+            return
+
+        async with acquire_safe(pool) as conn:
+            for entry in entries:
+                await conn.execute(
+                    """
+                    INSERT INTO automod_logs
+                    (guild_id, user_id, message_id, channel_id, rule_id, action_taken, message_content, ai_analysis, context, timestamp)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    """,
+                    entry.get("guild_id"),
+                    entry.get("user_id"),
+                    entry.get("message_id"),
+                    entry.get("channel_id"),
+                    entry.get("rule_id"),
+                    entry.get("action_taken"),
+                    entry.get("message_content"),
+                    entry.get("ai_analysis"),
+                    entry.get("context"),
+                    entry.get("timestamp") or datetime.utcnow(),
+                )
             
     async def get_violation_history(self, guild_id: int, user_id: Optional[int] = None,
                                   limit: int = 100, days: int = 30) -> List[Dict]:
         """Get violation history for a guild or specific user."""
         try:
-            # This would need database access
-            # For now, return empty list
-            return []
+            pool = self._get_pool()
+            if not pool:
+                return []
+
+            async with acquire_safe(pool) as conn:
+                if user_id is not None:
+                    rows = await conn.fetch(
+                        """
+                        SELECT *
+                        FROM automod_logs
+                        WHERE guild_id = $1 AND user_id = $2
+                          AND timestamp > NOW() - ($3::text || ' days')::interval
+                        ORDER BY timestamp DESC
+                        LIMIT $4
+                        """,
+                        guild_id,
+                        user_id,
+                        days,
+                        limit,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        """
+                        SELECT *
+                        FROM automod_logs
+                        WHERE guild_id = $1
+                          AND timestamp > NOW() - ($2::text || ' days')::interval
+                        ORDER BY timestamp DESC
+                        LIMIT $3
+                        """,
+                        guild_id,
+                        days,
+                        limit,
+                    )
+            return [dict(row) for row in rows]
             
         except Exception as e:
             log.error(f"Error getting violation history: {e}")
@@ -93,27 +155,128 @@ class AutoModLogger:
     async def get_statistics(self, guild_id: int, days: int = 7) -> Dict[str, Any]:
         """Get moderation statistics for a guild."""
         try:
-            # This would need database access
-            # For now, return empty stats
+            pool = self._get_pool()
+            if not pool:
+                return {
+                    'total_violations': 0,
+                    'unique_users': 0,
+                    'top_rules': [],
+                    'daily_breakdown': {}
+                }
+
+            async with acquire_safe(pool) as conn:
+                total_violations = await conn.fetchval(
+                    """
+                    SELECT COUNT(*)
+                    FROM automod_logs
+                    WHERE guild_id = $1
+                      AND timestamp > NOW() - ($2::text || ' days')::interval
+                    """,
+                    guild_id,
+                    days,
+                ) or 0
+
+                unique_users = await conn.fetchval(
+                    """
+                    SELECT COUNT(DISTINCT user_id)
+                    FROM automod_logs
+                    WHERE guild_id = $1
+                      AND timestamp > NOW() - ($2::text || ' days')::interval
+                    """,
+                    guild_id,
+                    days,
+                ) or 0
+
+                top_rules_rows = await conn.fetch(
+                    """
+                    SELECT COALESCE(rule_id, 0) AS rule_id, COUNT(*) AS count
+                    FROM automod_logs
+                    WHERE guild_id = $1
+                      AND timestamp > NOW() - ($2::text || ' days')::interval
+                    GROUP BY rule_id
+                    ORDER BY count DESC
+                    LIMIT 5
+                    """,
+                    guild_id,
+                    days,
+                )
+
+                daily_rows = await conn.fetch(
+                    """
+                    SELECT DATE(timestamp) AS day, COUNT(*) AS count
+                    FROM automod_logs
+                    WHERE guild_id = $1
+                      AND timestamp > NOW() - ($2::text || ' days')::interval
+                    GROUP BY day
+                    ORDER BY day ASC
+                    """,
+                    guild_id,
+                    days,
+                )
+
             return {
-                'total_violations': 0,
-                'unique_users': 0,
-                'top_rules': [],
-                'daily_breakdown': {}
+                'total_violations': int(total_violations),
+                'unique_users': int(unique_users),
+                'top_rules': [
+                    {"rule_id": int(row["rule_id"]), "count": int(row["count"])}
+                    for row in top_rules_rows
+                ],
+                'daily_breakdown': {
+                    str(row["day"]): int(row["count"]) for row in daily_rows
+                }
             }
             
         except Exception as e:
             log.error(f"Error getting moderation statistics: {e}")
             return {}
             
-    async def create_appeal(self, guild_id: int, user_id: int, log_id: int, reason: str):
+    async def create_appeal(self, guild_id: int, user_id: int, log_id: int, reason: str) -> bool:
         """Create an appeal for a moderation action."""
         try:
-            # This would need database access
+            pool = self._get_pool()
+            if not pool:
+                log.warning("No pool available for appeal creation")
+                return False
+
+            async with acquire_safe(pool) as conn:
+                await conn.execute(
+                    """
+                    UPDATE automod_logs
+                    SET appeal_status = 'pending'
+                    WHERE id = $1 AND guild_id = $2 AND user_id = $3
+                    """,
+                    log_id,
+                    guild_id,
+                    user_id,
+                )
             log.info(f"Appeal created: Guild {guild_id}, User {user_id}, Log {log_id}")
-            
+            return True
         except Exception as e:
             log.error(f"Error creating appeal: {e}")
+            return False
+    
+    async def get_pending_appeals(self, guild_id: int) -> List[Dict[str, Any]]:
+        """Get all pending appeals for a guild (placeholder for future implementation)."""
+        try:
+            pool = self._get_pool()
+            if not pool:
+                return []
+
+            async with acquire_safe(pool) as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, user_id, rule_id, action_taken, timestamp, appeal_status
+                    FROM automod_logs
+                    WHERE guild_id = $1 AND appeal_status = 'pending'
+                    ORDER BY timestamp DESC
+                    LIMIT 25
+                    """,
+                    guild_id,
+                )
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting pending appeals: {e}")
+            return []
             
     def format_log_entry(self, entry: Dict) -> str:
         """Format a log entry for display."""
