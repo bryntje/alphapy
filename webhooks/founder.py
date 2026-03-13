@@ -111,7 +111,8 @@ async def handle_founder_webhook(request: Request) -> Dict[str, str]:
         future = asyncio.run_coroutine_threadsafe(
             _send_founder_dm(user_id, message), loop
         )
-        sent = future.result(timeout=10.0)
+        # Await the result without blocking the event loop; wait_for raises asyncio.TimeoutError
+        sent = await asyncio.wait_for(asyncio.wrap_future(future), timeout=10.0)
     except asyncio.TimeoutError:
         logger.warning("Founder webhook: timeout sending DM to user %s", user_id)
         raise HTTPException(
