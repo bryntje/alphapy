@@ -77,6 +77,9 @@ MAIN_GUILD_ID = int(os.getenv("MAIN_GUILD_ID", "0"))  # Set to 0 to disable filt
 # Premium tier
 PREMIUM_CHECKOUT_URL = os.getenv("PREMIUM_CHECKOUT_URL", "")
 PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
+# Webhook secrets for Core → Alphapy callbacks (optional; fall back to APP_REFLECTIONS_WEBHOOK_SECRET / WEBHOOK_SECRET)
+PREMIUM_INVALIDATE_WEBHOOK_SECRET = os.getenv("PREMIUM_INVALIDATE_WEBHOOK_SECRET")
+FOUNDER_WEBHOOK_SECRET = os.getenv("FOUNDER_WEBHOOK_SECRET")
 
 # GitHub (for /release notes and "read full" link). Optional; when unset, /release uses local changelog.
 GITHUB_REPO = (os.getenv("GITHUB_REPO") or "").strip().rstrip("/")
