@@ -9,6 +9,7 @@ from utils.premium_guard import (
     premium_required_message,
     is_premium,
     get_active_premium_guild,
+    invalidate_premium_cache,
     _get_cached,
     _set_cache,
 )
@@ -72,6 +73,37 @@ class TestPremiumCache:
 
     def test_get_cached_miss_returns_none(self):
         assert _get_cached(99999, 88888) is None
+
+
+class TestInvalidatePremiumCache:
+    """Tests for invalidate_premium_cache (webhook-driven cache invalidation)."""
+
+    def test_clears_single_user_guild_entry(self):
+        _set_cache(100, 200, True)
+        assert _get_cached(100, 200) is True
+        invalidate_premium_cache(100, 200)
+        assert _get_cached(100, 200) is None
+
+    def test_clears_all_entries_for_user_when_guild_id_none(self):
+        _set_cache(50, 1, True)
+        _set_cache(50, 2, False)
+        assert _get_cached(50, 1) is True
+        assert _get_cached(50, 2) is False
+        invalidate_premium_cache(50, None)
+        assert _get_cached(50, 1) is None
+        assert _get_cached(50, 2) is None
+
+    def test_does_not_clear_other_users_when_clearing_one_guild(self):
+        _set_cache(10, 20, True)
+        _set_cache(11, 20, True)
+        invalidate_premium_cache(10, 20)
+        assert _get_cached(10, 20) is None
+        assert _get_cached(11, 20) is True
+
+    def test_idempotent_when_key_not_in_cache(self):
+        invalidate_premium_cache(999, 888)
+        invalidate_premium_cache(999, None)
+        assert _get_cached(999, 888) is None
 
 
 class TestGetActivePremiumGuild:

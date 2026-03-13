@@ -85,8 +85,34 @@ def get_reflections_webhook_secret() -> Optional[str]:
     )
 
 
+def get_premium_invalidate_secret() -> Optional[str]:
+    """Secret for premium-invalidate webhook (Core notifies on subscription change)."""
+    import config
+
+    return (
+        getattr(config, "PREMIUM_INVALIDATE_WEBHOOK_SECRET", None)
+        or getattr(config, "APP_REFLECTIONS_WEBHOOK_SECRET", None)
+        or getattr(config, "WEBHOOK_SECRET", None)
+        or getattr(config, "SUPABASE_WEBHOOK_SECRET", None)
+    )
+
+
+def get_founder_webhook_secret() -> Optional[str]:
+    """Secret for founder webhook (Core notifies for early-bird founder welcome DM)."""
+    import config
+
+    return (
+        getattr(config, "FOUNDER_WEBHOOK_SECRET", None)
+        or getattr(config, "APP_REFLECTIONS_WEBHOOK_SECRET", None)
+        or getattr(config, "WEBHOOK_SECRET", None)
+        or getattr(config, "SUPABASE_WEBHOOK_SECRET", None)
+    )
+
+
 __all__ = [
     "validate_webhook_signature",
     "get_app_reflections_secret",
     "get_reflections_webhook_secret",
+    "get_premium_invalidate_secret",
+    "get_founder_webhook_secret",
 ]

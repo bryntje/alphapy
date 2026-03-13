@@ -285,6 +285,10 @@ The following environment variables are required/optional for bot operation:
 ### Optional - App reflections (Core-API webhooks)
 - `APP_REFLECTIONS_WEBHOOK_SECRET`: Secret for HMAC validation of `POST /webhooks/app-reflections` and `POST /webhooks/revoke-reflection`. If unset, falls back to `WEBHOOK_SECRET` or `SUPABASE_WEBHOOK_SECRET`.
 
+### Optional - Premium / Founder webhooks (Core → Alphapy)
+- `PREMIUM_INVALIDATE_WEBHOOK_SECRET`: Secret for `POST /webhooks/premium-invalidate` (cache invalidation on subscription change). Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`.
+- `FOUNDER_WEBHOOK_SECRET`: Secret for `POST /webhooks/founder` (founder welcome DM). Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`.
+
 ### Optional - GitHub
 - `GITHUB_TOKEN`: Optional token for GitHub API (e.g. `/release`, repo links when `GITHUB_REPO` is set) to avoid rate limits.
 

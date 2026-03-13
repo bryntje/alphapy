@@ -74,6 +74,22 @@ def _clear_cache_for_user(user_id: int) -> None:
         del _cache[k]
 
 
+def invalidate_premium_cache(user_id: int, guild_id: Optional[int] = None) -> None:
+    """
+    Invalidate premium cache so the next is_premium() check refetches from Core/DB.
+
+    Called by the premium-invalidate webhook when Core notifies of a subscription
+    change (payment, cancellation, expiry). If guild_id is None, clears all
+    entries for this user; otherwise clears only (user_id, guild_id).
+    """
+    if guild_id is not None:
+        key = (user_id, guild_id)
+        if key in _cache:
+            del _cache[key]
+    else:
+        _clear_cache_for_user(user_id)
+
+
 def get_premium_cache_size() -> int:
     """Return the number of entries in the premium in-memory cache (for status/health display)."""
     return len(_cache)

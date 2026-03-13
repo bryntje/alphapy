@@ -35,6 +35,8 @@ from webhooks.supabase import router as supabase_webhook_router
 from webhooks.reflections import router as reflections_webhook_router
 from webhooks.app_reflections import router as app_reflections_webhook_router
 from webhooks.revoke_reflection import router as revoke_reflection_webhook_router
+from webhooks.premium_invalidate import router as premium_invalidate_webhook_router
+from webhooks.founder import router as founder_webhook_router
 from version import CODENAME, __version__
 
 logger = logging.getLogger(__name__)
@@ -250,6 +252,8 @@ app.include_router(supabase_webhook_router)
 app.include_router(reflections_webhook_router)
 app.include_router(app_reflections_webhook_router)
 app.include_router(revoke_reflection_webhook_router)
+app.include_router(premium_invalidate_webhook_router)
+app.include_router(founder_webhook_router)
 
 # CORS settings
 _allowed_origins = getattr(config, "ALLOWED_ORIGINS", [])

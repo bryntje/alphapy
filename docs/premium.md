@@ -26,6 +26,8 @@ Payment and webhooks (Stripe/Lemon Squeezy) are out of scope for the initial rel
 | `PREMIUM_CACHE_TTL_SECONDS` | TTL in seconds for the in-memory premium cache (default: 300). |
 | `CORE_API_URL` | When set, the guard calls `POST {CORE_API_URL}/premium/verify` first (see below). |
 | `ALPHAPY_SERVICE_KEY` | API key for Core-API premium verify. |
+| `PREMIUM_INVALIDATE_WEBHOOK_SECRET` | Optional. Secret for `POST /webhooks/premium-invalidate` (Core notifies on subscription change). Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`. |
+| `FOUNDER_WEBHOOK_SECRET` | Optional. Secret for `POST /webhooks/founder` (founder welcome DM). Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`. |
 
 ## Guard behaviour
 
@@ -33,6 +35,17 @@ Payment and webhooks (Stripe/Lemon Squeezy) are out of scope for the initial rel
 2. **Core-API** – If `CORE_API_URL` and `ALPHAPY_SERVICE_KEY` are set, the guard sends `POST {CORE_API_URL}/premium/verify` with body `{"user_id": int, "guild_id": int}` and header `X-API-Key: ALPHAPY_SERVICE_KEY`. Response is expected as `{"premium": true|false, "tier": "monthly"|"yearly"|"lifetime"|null}`. On 2xx and `premium: true`, the user is treated as premium.
 3. **Local fallback** – If Core is not configured or the request fails, the guard queries the local `premium_subs` table: `status = 'active'` and (`expires_at IS NULL` OR `expires_at > NOW()`).
 4. **Fail closed** – On any error (timeout, DB failure), the guard returns `False`.
+
+## Webhooks (Core → Alphapy)
+
+When Core (or your payment backend) needs to notify Alphapy of changes, it can call:
+
+- **Premium cache invalidate** – `POST /webhooks/premium-invalidate`  
+  Body: `{"user_id": <discord user id>, "guild_id": <optional>}`. Clears the in-memory premium cache so the next `is_premium()` refetches from Core/DB. Use after payment, cancellation, or expiry. Signature: `X-Webhook-Signature` (HMAC-SHA256 of body with `PREMIUM_INVALIDATE_WEBHOOK_SECRET` or fallback).
+- **Founder welcome** – `POST /webhooks/founder`  
+  Body: `{"user_id": <discord user id>, "message": "<optional custom text>"}`. Sends a welcome DM to the user (e.g. after early-bird founder purchase). Signature: `X-Webhook-Signature` (HMAC-SHA256 with `FOUNDER_WEBHOOK_SECRET` or fallback).
+
+Base URL is your Alphapy API (e.g. `https://alphapy.innersync.tech`). If the API is mounted under a path prefix (e.g. `/api`), use `https://<host>/api/webhooks/premium-invalidate` and `https://<host>/api/webhooks/founder`.
 
 ## Core-API contract (for later implementation)
 

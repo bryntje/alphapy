@@ -85,7 +85,8 @@ def test_rule_crud_with_mocked_db(monkeypatch):
 
         monkeypatch.setattr("utils.automod_rules.acquire_safe", fake_acquire_safe)
 
-        bot = SimpleNamespace(db_pool=pool)
+        # get_bot_db_pool(bot) reads bot.settings._pool, not bot.db_pool
+        bot = SimpleNamespace(settings=SimpleNamespace(_pool=pool))
         processor = RuleProcessor(bot=cast(commands.Bot, bot))
 
         # Ensure cache invalidation paths are covered

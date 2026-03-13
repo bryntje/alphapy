@@ -52,11 +52,14 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ---
 
 ## ⚡ Agent: Premium
-- **Path**: `cogs/premium.py`, `utils/premium_guard.py`
+- **Path**: `cogs/premium.py`, `utils/premium_guard.py`, `webhooks/premium_invalidate.py`, `webhooks/founder.py`
 - **Purpose**: Tier UX and access control (used by reminders, growth, embed watcher, onboarding)
 - **Model**: One active subscription per user, applied to one guild, transferable via `/premium_transfer`
 - **Commands**: `/premium`, `/premium_check`, `/my_premium`, `/premium_transfer`
-- **Guard**: `is_premium()` with Core-API fallback + local cache + TTL
+- **Guard**: `is_premium()` with Core-API fallback + local cache + TTL; `invalidate_premium_cache(user_id, guild_id?)` for webhook-driven invalidation
+- **Webhooks (Core → Alphapy)**:
+  - `POST /webhooks/premium-invalidate`: payload `user_id`, optional `guild_id`. Clears premium cache so next check refetches from Core/DB. HMAC via `X-Webhook-Signature`; optional `PREMIUM_INVALIDATE_WEBHOOK_SECRET`.
+  - `POST /webhooks/founder`: payload `user_id`, optional `message`. Sends founder welcome DM. HMAC via `X-Webhook-Signature`; optional `FOUNDER_WEBHOOK_SECRET`.
 
 ---
 
