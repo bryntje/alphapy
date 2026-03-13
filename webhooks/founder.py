@@ -5,14 +5,12 @@ is activated so Alphapy can send a welcome DM to the user.
 
 import asyncio
 import json
-import logging
 from typing import Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from utils.logger import logger
 from webhooks.common import get_founder_webhook_secret, validate_webhook_signature
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks/founder", tags=["founder"])
 
@@ -119,6 +117,8 @@ async def handle_founder_webhook(request: Request) -> Dict[str, str]:
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Timeout sending DM.",
         ) from None
+    except asyncio.CancelledError:
+        raise  # Let request cancellation propagate
     except Exception as e:
         logger.exception("Founder webhook: error sending DM: %s", e)
         raise HTTPException(

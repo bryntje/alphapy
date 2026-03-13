@@ -8,10 +8,8 @@ Fail closed: on error returns False.
 
 from __future__ import annotations
 
-import logging
 import threading
 import time
-from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
 
 import asyncpg
@@ -23,8 +21,7 @@ except ImportError:
     import config  # type: ignore
 
 from utils.db_helpers import acquire_safe, create_db_pool
-
-logger = logging.getLogger(__name__)
+from utils.logger import logger
 
 CORE_VERIFY_TIMEOUT = 5.0
 _DEFAULT_CACHE_TTL = 300  # seconds
