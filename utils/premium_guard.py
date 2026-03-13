@@ -8,9 +8,8 @@ Fail closed: on error returns False.
 
 from __future__ import annotations
 
-import logging
+import threading
 import time
-from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
 
 import asyncpg
@@ -22,14 +21,15 @@ except ImportError:
     import config  # type: ignore
 
 from utils.db_helpers import acquire_safe, create_db_pool
-
-logger = logging.getLogger(__name__)
+from utils.logger import logger
 
 CORE_VERIFY_TIMEOUT = 5.0
 _DEFAULT_CACHE_TTL = 300  # seconds
 
 # (user_id, guild_id) -> (is_premium: bool, expires_at: float)
+# Lock protects _cache across bot thread (is_premium/_set_cache) and webhook thread (invalidate_premium_cache).
 _cache: dict[Tuple[int, int], Tuple[bool, float]] = {}
+_cache_lock = threading.Lock()
 _pool: Optional[asyncpg.Pool] = None
 
 # Optional counters for observability (incremented in is_premium)
@@ -53,25 +53,28 @@ def _cache_ttl_seconds() -> int:
 
 def _get_cached(user_id: int, guild_id: int) -> Optional[bool]:
     key = (user_id, guild_id)
-    if key not in _cache:
-        return None
-    is_premium, expires_at = _cache[key]
-    if time.monotonic() > expires_at:
-        del _cache[key]
-        return None
-    return is_premium
+    with _cache_lock:
+        if key not in _cache:
+            return None
+        is_premium, expires_at = _cache[key]
+        if time.monotonic() > expires_at:
+            del _cache[key]
+            return None
+        return is_premium
 
 
 def _set_cache(user_id: int, guild_id: int, is_premium: bool) -> None:
     ttl = _cache_ttl_seconds()
-    _cache[(user_id, guild_id)] = (is_premium, time.monotonic() + ttl)
+    with _cache_lock:
+        _cache[(user_id, guild_id)] = (is_premium, time.monotonic() + ttl)
 
 
 def _clear_cache_for_user(user_id: int) -> None:
     """Remove all cache entries for this user (e.g. after transfer)."""
-    keys_to_del = [k for k in _cache if k[0] == user_id]
-    for k in keys_to_del:
-        del _cache[k]
+    with _cache_lock:
+        keys_to_del = [k for k in _cache if k[0] == user_id]
+        for k in keys_to_del:
+            del _cache[k]
 
 
 def invalidate_premium_cache(user_id: int, guild_id: Optional[int] = None) -> None:
@@ -81,18 +84,19 @@ def invalidate_premium_cache(user_id: int, guild_id: Optional[int] = None) -> No
     Called by the premium-invalidate webhook when Core notifies of a subscription
     change (payment, cancellation, expiry). If guild_id is None, clears all
     entries for this user; otherwise clears only (user_id, guild_id).
+    Thread-safe: safe to call from webhook thread while bot thread uses cache.
     """
     if guild_id is not None:
-        key = (user_id, guild_id)
-        if key in _cache:
-            del _cache[key]
+        with _cache_lock:
+            _cache.pop((user_id, guild_id), None)
     else:
         _clear_cache_for_user(user_id)
 
 
 def get_premium_cache_size() -> int:
     """Return the number of entries in the premium in-memory cache (for status/health display)."""
-    return len(_cache)
+    with _cache_lock:
+        return len(_cache)
 
 
 async def _ensure_pool() -> Optional[asyncpg.Pool]:
@@ -173,13 +177,15 @@ async def _check_local_db(user_id: int, guild_id: int) -> bool:
 
 def get_premium_guard_stats() -> Dict[str, Any]:
     """Return current premium guard counters for observability (same process only)."""
+    with _cache_lock:
+        cache_size = len(_cache)
     return {
         "premium_checks_total": _stats_total,
         "premium_checks_core_api": _stats_core_api,
         "premium_checks_local": _stats_local,
         "premium_cache_hits": _stats_cache_hits,
         "premium_transfers_count": _stats_transfers,
-        "premium_cache_size": len(_cache),
+        "premium_cache_size": cache_size,
     }
 
 
