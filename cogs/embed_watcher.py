@@ -951,29 +951,28 @@ class EmbedReminderWatcher(commands.Cog):
             current_date_str = current_date.strftime("%d/%m/%Y")
             current_weekday = current_date.strftime("%A")
             
-            prompt = f"""Extract event information from this Discord embed. Today is {current_date_str} ({current_weekday}).
+            prompt = f"""You are a precise datetime extractor for Discord event announcements. Today is {current_date_str} ({current_weekday}).
 
-Return ONLY valid JSON with these exact keys:
-{{
-    "date": "DD/MM/YYYY or empty string if recurring",
-    "time": "HH:MM in 24h format",
-    "days": "comma-separated weekday numbers (0=Monday, 6=Sunday) or empty string if one-off",
-    "location": "location string or empty string"
-}}
-
-IMPORTANT: Handle relative dates like "This Wednesday", "Next Friday", "Tomorrow", "Today" by converting them to DD/MM/YYYY format based on today's date ({current_date_str}).
-
-Examples:
-- "This Wednesday" when today is Monday → calculate the date of the upcoming Wednesday
-- "Next Friday" → calculate the date of Friday next week
-- "Tomorrow" → {current_date + timedelta(days=1):%d/%m/%Y}
-- "Today" → {current_date_str}
-
-Embed text:
-{safe_embed_text}
-
-If you cannot extract clear date/time information, return {{"error": "cannot_parse"}}.
-Return ONLY the JSON, no other text."""
+                        Rule #1: When only a weekday + time is given (e.g. "Wednesday 19:30", "Wednesday at 7:30pm") → ALWAYS take the NEXT upcoming occurrence of that weekday from today.
+                           - If today is Monday → Wednesday = the Wednesday coming up this week ({(current_date + timedelta(days=(2 - current_date.weekday() + 7) % 7)).strftime('%d/%m/%Y')})
+                           - Do NOT jump to next week unless "next week", "following week", "next Wednesday" is explicitly said.
+                        
+                        Rule #2: If a concrete date is present (18/03, March 18, 18 March) → use that date + time.
+                        Rule #3: For recurring events (e.g. "every Wednesday") → keep "date" empty, fill "days".
+                        
+                        Output ONLY valid JSON, nothing else:
+                        {{
+                          "date": "DD/MM/YYYY" or "" if recurring,
+                          "time": "HH:MM" in 24h format,
+                          "days": "0,2,4" or "" (0=Monday, 2=Wednesday, etc.),
+                          "location": "string" or ""
+                        }}
+                        
+                        If truly impossible to extract: {{"error": "cannot_parse"}}
+                        
+                        Embed text:
+                        {safe_embed_text}
+                        """
 
             # Call Grok with structured prompt (temperature from guild settings)
             response = await ask_gpt(
