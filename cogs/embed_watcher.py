@@ -395,6 +395,32 @@ class EmbedReminderWatcher(commands.Cog):
                     weekday = str(dt.weekday())
                     days_list = [weekday]  # Store weekday for one-off events too
                 else:
+                    # At this point we have a time but no explicit/relative date and no days.
+                    # Before giving up, try the Grok fallback once more with full context.
+                    if self._is_gpt_fallback_enabled(guild_id):
+                        gpt_parsed = await self._parse_with_gpt_fallback(embed, guild_id)
+                        if gpt_parsed and gpt_parsed.get("datetime"):
+                            dt_gpt = gpt_parsed.get("datetime")
+                            if dt_gpt:
+                                reminder_time = dt_gpt - timedelta(minutes=self._get_reminder_offset(guild_id))
+                            else:
+                                reminder_time = None
+                            if not dt_gpt or not reminder_time:
+                                logger.warning("⚠️ Grok fallback returned invalid datetime in days/recurrence phase")
+                                await self._log_failed_parse(embed, guild_id)
+                                return None
+                            days_list = gpt_parsed.get("days", [])
+                            location_from_gpt = gpt_parsed.get("location", "-")
+                            logger.info(f"✅ Grok fallback parsing (no date/days) succeeded for embed: {embed.title}")
+                            return {
+                                "datetime": dt_gpt,
+                                "reminder_time": reminder_time,
+                                "location": location_from_gpt,
+                                "title": embed.title or "-",
+                                "description": embed.description or "-",
+                                "days": days_list,
+                            }
+
                     logger.warning("⚠️ No date and no days specified → reminder not created.")
                     return None
 
