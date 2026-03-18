@@ -507,9 +507,9 @@ class ReminderCog(commands.Cog):
                 rkey = (interaction.user.id, interaction.guild.id)
                 now_ts = time_module.time()
                 ts_list = self._image_reminder_timestamps.get(rkey, [])
-                ts_list = [t for t in ts_list if t > now_ts - 3600]
+                ts_list = [t for t in ts_list if t > now_ts - config.IMAGE_REMINDER_RATE_LIMIT_WINDOW]
                 ts_list.append(now_ts)
-                self._image_reminder_timestamps[rkey] = ts_list[-100:]
+                self._image_reminder_timestamps[rkey] = ts_list[-config.IMAGE_REMINDER_RATE_LIMIT_COUNT:]
         except Exception as e:
             logger.exception("Error creating live session reminder")
             await interaction.followup.send(f"❌ Error creating live session: {e}", ephemeral=True)
