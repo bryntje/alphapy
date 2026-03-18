@@ -2632,8 +2632,9 @@ async def create_automod_rule(
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Check if user has premium for premium features
-        is_premium = False  # TODO: Implement premium check
+        # Rule metadata reflects guild entitlement, not the caller's personal subscription
+        from utils.premium_guard import guild_has_premium
+        is_premium = await guild_has_premium(guild_id)
         
         async with db_pool.acquire() as conn:
             # Create action first

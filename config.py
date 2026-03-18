@@ -89,3 +89,7 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 # Admin And Owner
 OWNER_IDS = [367270193585455104]
 ADMIN_ROLE_ID = [1160511689289125925]
+
+# Image reminder rate limiting
+IMAGE_REMINDER_RATE_LIMIT_WINDOW = int(os.getenv("IMAGE_REMINDER_RATE_LIMIT_WINDOW", "3600"))  # seconds
+IMAGE_REMINDER_RATE_LIMIT_COUNT = int(os.getenv("IMAGE_REMINDER_RATE_LIMIT_COUNT", "100"))  # max entries per user/guild

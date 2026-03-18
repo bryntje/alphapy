@@ -11,7 +11,7 @@ from utils.timezone import BRUSSELS_TZ
 import re
 from datetime import timedelta
 from utils.validators import validate_admin, validate_owner_or_admin
-from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
 from utils.settings_helpers import CachedSettingsHelper
 from utils.embed_builder import EmbedBuilder
 from utils.parsers import parse_days_string, parse_time_string, format_days_for_display
@@ -30,8 +30,6 @@ class ReminderCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: Optional[asyncpg.Pool] = None
-        from utils.database_helpers import DatabaseManager
-        self._db_manager = DatabaseManager("reminders", {"DATABASE_URL": config.DATABASE_URL or ""})
         settings = getattr(bot, "settings", None)
         if settings is None or not hasattr(settings, 'get'):
             raise RuntimeError("SettingsService not available on bot instance")
@@ -42,7 +40,6 @@ class ReminderCog(commands.Cog):
         self.bot.loop.create_task(self.setup())
 
     async def setup(self) -> None:
-        await self.bot.wait_until_ready()
         await self.bot.wait_until_ready()
         try:
             await self._connect_database()
@@ -88,17 +85,14 @@ class ReminderCog(commands.Cog):
             log_with_guild(f"Could not send reminders log embed: {e}", guild_id, "error")
 
     async def _connect_database(self) -> None:
-        try:
-            pool = await self._db_manager.ensure_pool()
-            log_database_event("DB_CONNECTED", details="Reminders database pool created")
-        except Exception as e:
-            log_database_event("DB_CONNECT_ERROR", details=f"Failed to create pool: {e}")
-            raise
-
+        pool = get_bot_db_pool(self.bot)
+        if pool is None:
+            raise RuntimeError("Bot database pool not available")
         self.db = pool
+        log_database_event("DB_CONNECTED", details="Reminders using shared bot database pool")
 
         try:
-            async with self._db_manager.connection() as conn:
+            async with acquire_safe(self.db) as conn:
                 # Create table
                 await conn.execute(
                     """
@@ -143,22 +137,15 @@ class ReminderCog(commands.Cog):
     async def _ensure_connection(self) -> bool:
         if is_pool_healthy(self.db):
             return True
-        try:
-            await self._connect_database()
+        pool = get_bot_db_pool(self.bot)
+        if pool and is_pool_healthy(pool):
+            self.db = pool
             return True
-        except Exception as e:
-            logger.error(f"❌ Reminder DB reconnect failed: {e}")
-            return False
+        logger.error("❌ Reminder DB: shared pool not available or unhealthy")
+        return False
 
     async def _handle_connection_lost(self, error: Exception) -> None:
-        logger.warning(f"Reminder DB connection lost: {error}")
-        if self._db_manager._pool:
-            try:
-                await self._db_manager._pool.close()
-            except Exception:
-                pass
-            self._db_manager._pool = None
-        self.db = None
+        logger.warning(f"Reminder DB connection lost (shared pool will self-heal): {error}")
 
     @app_commands.command(name="add_reminder", description="Schedule a recurring or one-off reminder via form or message link.")
     @app_checks.cooldown(5, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 5 per minuut per guild+user
@@ -208,7 +195,7 @@ class ReminderCog(commands.Cog):
             key = (interaction.user.id, interaction.guild.id)
             now_ts = time_module.time()
             timestamps = self._image_reminder_timestamps.get(key, [])
-            recent = [t for t in timestamps if t > now_ts - 3600]
+            recent = [t for t in timestamps if t > now_ts - config.IMAGE_REMINDER_RATE_LIMIT_WINDOW]
             if len(recent) >= 3:
                 await interaction.followup.send(
                     "You can add at most 3 reminders with images per hour. Try again later.",
@@ -368,9 +355,9 @@ class ReminderCog(commands.Cog):
                     rkey = (interaction.user.id, interaction.guild.id)
                     now_ts = time_module.time()
                     ts_list = self._image_reminder_timestamps.get(rkey, [])
-                    ts_list = [t for t in ts_list if t > now_ts - 3600]
+                    ts_list = [t for t in ts_list if t > now_ts - config.IMAGE_REMINDER_RATE_LIMIT_WINDOW]
                     ts_list.append(now_ts)
-                    self._image_reminder_timestamps[rkey] = ts_list[-100:]
+                    self._image_reminder_timestamps[rkey] = ts_list[-config.IMAGE_REMINDER_RATE_LIMIT_COUNT:]
         except RuntimeError as e:
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
             return
@@ -443,7 +430,7 @@ class ReminderCog(commands.Cog):
             key = (interaction.user.id, interaction.guild.id)
             now_ts = time_module.time()
             timestamps = self._image_reminder_timestamps.get(key, [])
-            recent = [t for t in timestamps if t > now_ts - 3600]
+            recent = [t for t in timestamps if t > now_ts - config.IMAGE_REMINDER_RATE_LIMIT_WINDOW]
             if len(recent) >= 3:
                 await interaction.followup.send(
                     "You can add at most 3 reminders with images per hour. Try again later.",
@@ -520,9 +507,9 @@ class ReminderCog(commands.Cog):
                 rkey = (interaction.user.id, interaction.guild.id)
                 now_ts = time_module.time()
                 ts_list = self._image_reminder_timestamps.get(rkey, [])
-                ts_list = [t for t in ts_list if t > now_ts - 3600]
+                ts_list = [t for t in ts_list if t > now_ts - config.IMAGE_REMINDER_RATE_LIMIT_WINDOW]
                 ts_list.append(now_ts)
-                self._image_reminder_timestamps[rkey] = ts_list[-100:]
+                self._image_reminder_timestamps[rkey] = ts_list[-config.IMAGE_REMINDER_RATE_LIMIT_COUNT:]
         except Exception as e:
             logger.exception("Error creating live session reminder")
             await interaction.followup.send(f"❌ Error creating live session: {e}", ephemeral=True)
@@ -964,6 +951,12 @@ class ReminderCog(commands.Cog):
         if not is_pool_healthy(self.db):
             logger.debug("⛔ Database pool not available or closing, skipping reminder check.")
             return
+
+        # Sweep stale entries from the rate-limit dict to prevent unbounded growth
+        sweep_cutoff = time_module.time() - config.IMAGE_REMINDER_RATE_LIMIT_WINDOW
+        stale_keys = [k for k, v in self._image_reminder_timestamps.items() if not any(t > sweep_cutoff for t in v)]
+        for k in stale_keys:
+            del self._image_reminder_timestamps[k]
 
         now = datetime.now(BRUSSELS_TZ).replace(second=0, microsecond=0)
         current_time_str = now.strftime("%H:%M:%S")

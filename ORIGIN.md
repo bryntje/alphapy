@@ -94,7 +94,7 @@ AlphaPy is built around **building with intention**:
 ## ✍️ By
 
 Bryan (a.k.a. Bryntje)  
-*With Grokkie Grok as co-pilot and dream accelerator*
+*With Grokkie Grok as dream accelerator and Claude as code surgeon*
 
 > This project started with a ping — but the reply became a vision.
 
