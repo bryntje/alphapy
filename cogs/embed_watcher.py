@@ -11,7 +11,7 @@ from utils.logger import logger
 from utils.timezone import BRUSSELS_TZ
 from utils.settings_service import SettingsService
 from utils.settings_helpers import CachedSettingsHelper
-from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
 from utils.embed_builder import EmbedBuilder
 from utils.parsers import parse_days_string, format_days_for_display
 from utils.sanitizer import safe_embed_text
@@ -75,24 +75,15 @@ class EmbedReminderWatcher(commands.Cog):
         return format_days_for_display(days_list) or "—"
 
     async def setup_db(self) -> None:
-        try:
-            from utils.database_helpers import DatabaseManager
-            self._db_manager = DatabaseManager("embed_watcher", {"DATABASE_URL": config.DATABASE_URL or ""})
-            self.db = await self._db_manager.ensure_pool()
-        except Exception as e:
-            logger.error(f"EmbedWatcher: DB pool creation error: {e}")
+        pool = get_bot_db_pool(self.bot)
+        if pool is None:
+            logger.error("EmbedWatcher: shared DB pool not available")
             self.db = None
+        else:
+            self.db = pool
 
     async def cog_unload(self) -> None:
-        """Called when the cog is unloaded - close the database pool."""
-        manager = getattr(self, "_db_manager", None)
-        pool = getattr(manager, "_pool", None) if manager is not None else None
-        if pool is not None:
-            try:
-                await pool.close()
-            except Exception:
-                pass
-            manager._pool = None  # type: ignore[assignment]
+        """Called when the cog is unloaded - clear local pool reference only (pool is shared)."""
         self.db = None
 
     @commands.Cog.listener()
