@@ -13,6 +13,7 @@ from typing import Dict, Optional
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request, status
 
+from utils.dashboard_webhooks import forward_reflection
 from webhooks.common import get_app_reflections_secret, validate_webhook_signature
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,7 @@ async def handle_app_reflection_webhook(request: Request) -> Dict[str, str]:
         user_id,
         reflection_id,
     )
+    forward_reflection(payload)
     return {"status": "acknowledged", "reflection_id": reflection_id}
 
 
