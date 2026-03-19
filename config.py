@@ -81,6 +81,12 @@ PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
 PREMIUM_INVALIDATE_WEBHOOK_SECRET = os.getenv("PREMIUM_INVALIDATE_WEBHOOK_SECRET")
 FOUNDER_WEBHOOK_SECRET = os.getenv("FOUNDER_WEBHOOK_SECRET")
 
+# Alphapy dashboard (separate Next.js control panel for bot configuration)
+DASHBOARD_BASE_URL = (os.getenv("DASHBOARD_BASE_URL") or "").rstrip("/")
+# HMAC secrets for outbound signed webhooks from bot → dashboard
+REFLECTION_WEBHOOK_SECRET = os.getenv("REFLECTION_WEBHOOK_SECRET")
+GDPR_WEBHOOK_SECRET = os.getenv("GDPR_WEBHOOK_SECRET")
+
 # GitHub (for /release notes and "read full" link). Optional; when unset, /release uses local changelog.
 GITHUB_REPO = (os.getenv("GITHUB_REPO") or "").strip().rstrip("/")
 # Optional: token for GitHub API (e.g. /release, repo links) to avoid rate limits

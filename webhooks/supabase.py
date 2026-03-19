@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Request, status
 
 import config
+from utils.dashboard_webhooks import forward_supabase_auth
 from utils.supabase_client import SupabaseConfigurationError, upsert_profile
 from webhooks.common import validate_webhook_signature
 
@@ -95,4 +96,5 @@ async def supabase_auth_webhook(request: Request) -> Dict[str, str]:
             user_id,
         )
 
+    forward_supabase_auth(payload)
     return {"status": "acknowledged"}

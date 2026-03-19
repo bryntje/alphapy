@@ -11,6 +11,7 @@ from typing import Optional
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request, status
 
+from utils.dashboard_webhooks import forward_revoke_reflection
 from webhooks.common import get_app_reflections_secret, validate_webhook_signature
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,7 @@ async def handle_revoke_reflection_webhook(request: Request) -> dict:
         reflection_id,
         count,
     )
+    forward_revoke_reflection(payload)
     return {"status": "deleted", "count": count}
 
 
