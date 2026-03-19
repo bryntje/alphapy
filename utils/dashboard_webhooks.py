@@ -51,11 +51,11 @@ async def _post(path: str, payload: Dict[str, Any], secret: str, header_name: st
     if not base_url or not secret:
         return
 
-    body = json.dumps(payload).encode("utf-8")
-    signature = sign_payload(body, secret)
     url = f"{base_url}{path}"
 
     try:
+        body = json.dumps(payload).encode("utf-8")
+        signature = sign_payload(body, secret)
         async with httpx.AsyncClient(timeout=_DASHBOARD_TIMEOUT) as client:
             response = await client.post(
                 url,
