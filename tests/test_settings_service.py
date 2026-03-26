@@ -53,3 +53,19 @@ def test_in_memory_settings_roundtrip():
         assert service.is_overridden("test", "flag") is False
 
     asyncio.run(run())
+
+
+def test_decode_value_int_unwraps_quoted_json_string():
+    """DB may contain JSON string snowflakes; decode must not fail on extra quotes."""
+    service = SettingsService(dsn=None)
+    definition = SettingDefinition(
+        scope="test",
+        key="channel_id",
+        description="Channel",
+        value_type="int",
+        default=0,
+    )
+    snowflake = 1439453572822466600
+    assert service._decode_value(snowflake, definition) == snowflake
+    assert service._decode_value(f'"{snowflake}"', definition) == snowflake
+    assert service._decode_value(f"'{snowflake}'", definition) == snowflake
