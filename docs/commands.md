@@ -252,6 +252,83 @@ When onboarding uses questions, users also complete two fixed steps: personaliza
 
 ---
 
+## Custom Commands
+
+Guild admins can define automated message responses triggered by specific message patterns. Supports four trigger types and dynamic variable substitution.
+
+### `/cc add`
+Create a new custom command.
+
+**Parameters:**
+- `name` (required): Unique slug for this command (e.g. `hello`)
+- `trigger_type` (required): `exact` / `starts_with` / `contains` / `regex`
+- `trigger` (required): The text or regex pattern to match (max 200 chars)
+- `response` (required): The response to send (max 1900 chars, supports variables)
+- `case_sensitive` (optional): Match case-sensitively (default: false)
+- `delete_trigger` (optional): Delete the triggering message (default: false)
+- `reply_to_user` (optional): Reply to the message instead of a plain send (default: true)
+
+**Response variables:**
+- `{user}` — mention the member
+- `{user.name}` — display name
+- `{server}` — server name
+- `{channel}` — channel mention
+- `{uses}` — how many times this command has been triggered
+- `{random:a|b|c}` — random pick from pipe-delimited options
+
+**Limits:** Max 50 commands per server. Invalid regex is rejected at creation.
+
+**Permissions:** Administrator
+
+---
+
+### `/cc edit`
+Edit the trigger and response of an existing command via a Discord Modal.
+
+**Parameters:**
+- `name` (required): Name of the command to edit
+
+**Permissions:** Administrator
+
+---
+
+### `/cc delete`
+Delete a custom command (shows a confirmation button).
+
+**Parameters:**
+- `name` (required): Name of the command to delete
+
+**Permissions:** Administrator
+
+---
+
+### `/cc list`
+List all custom commands for this server (name, trigger type, trigger preview, use count, enabled status).
+
+**Permissions:** Administrator
+
+---
+
+### `/cc view`
+Show full details of a specific custom command (trigger, response, options, use count).
+
+**Parameters:**
+- `name` (required): Name of the command to view
+
+**Permissions:** Administrator
+
+---
+
+### `/cc toggle`
+Enable or disable a custom command.
+
+**Parameters:**
+- `name` (required): Name of the command to toggle
+
+**Permissions:** Administrator
+
+---
+
 ## FAQ
 
 ### `/faq list`
