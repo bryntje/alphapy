@@ -67,14 +67,40 @@ def _resolve_response(template: str, message: discord.Message, uses: int) -> str
 
     result = re.sub(r"\{random:([^}]+)\}", pick_random, result)
 
-    # Simple substitutions
-    result = result.replace("{user}", message.author.mention)
+    # Longer placeholders must run before `{user}` so `{user.name}` is not corrupted.
     result = result.replace("{user.name}", message.author.display_name)
+    result = result.replace("{user}", message.author.mention)
     result = result.replace("{server}", message.guild.name if message.guild else "")
     result = result.replace("{channel}", message.channel.mention)
     result = result.replace("{uses}", str(uses))
 
     return result
+
+
+# Stay under Discord's 4096-char embed description limit (margin for safety).
+_CC_LIST_PAGE_DESC_MAX = 3900
+
+
+def _paginate_list_lines(lines: list[str], max_chars: int = _CC_LIST_PAGE_DESC_MAX) -> list[str]:
+    """Split line strings into page bodies; each joined page is at most max_chars."""
+    if not lines:
+        return []
+
+    pages: list[str] = []
+    chunk: list[str] = []
+    size = 0
+    for line in lines:
+        add = len(line) + (1 if chunk else 0)
+        if chunk and size + add > max_chars:
+            pages.append("\n".join(chunk))
+            chunk = [line]
+            size = len(line)
+        else:
+            chunk.append(line)
+            size += add
+    if chunk:
+        pages.append("\n".join(chunk))
+    return pages
 
 
 def _trigger_matches(trigger_type: str, trigger_value: str, content: str, case_sensitive: bool) -> bool:
@@ -589,13 +615,21 @@ class CustomCommandsCog(commands.Cog):
                 f"{status} **{safe_embed_text(row['name'])}** — {icon} `{trigger_preview}` ({row['uses']} uses)"
             )
 
-        description = "\n".join(lines)
-        embed = EmbedBuilder.info(
-            f"Custom Commands ({len(rows)}/{MAX_COMMANDS_PER_GUILD})",
-            description,
-            footer="Use /cc view <name> for details",
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        pages = _paginate_list_lines(lines)
+        total_pages = len(pages)
+        base_title = f"Custom Commands ({len(rows)}/{MAX_COMMANDS_PER_GUILD})"
+        for i, description in enumerate(pages):
+            title = f"{base_title} · Page {i + 1}/{total_pages}" if total_pages > 1 else base_title
+            footer = (
+                f"Page {i + 1}/{total_pages} · Use /cc view <name> for details"
+                if total_pages > 1
+                else "Use /cc view <name> for details"
+            )
+            embed = EmbedBuilder.info(title, description, footer=footer)
+            if i == 0:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
     @cc.command(name="view", description="View details of a specific custom command.")
     @app_commands.describe(name="Name of the command to view")
