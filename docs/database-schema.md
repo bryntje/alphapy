@@ -371,6 +371,37 @@ Historical health check data for trend analysis.
 
 ---
 
+### `custom_commands`
+
+Guild-defined automated message responses with configurable trigger patterns.
+
+**Columns:**
+- `id` (SERIAL PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL): Discord guild ID
+- `name` (TEXT, NOT NULL): Unique slug per guild (e.g. `hello`)
+- `trigger_type` (TEXT, NOT NULL): `exact`, `starts_with`, `contains`, or `regex`
+- `trigger_value` (TEXT, NOT NULL): The pattern to match (max 200 chars)
+- `response` (TEXT, NOT NULL): Response template (max 1900 chars, supports dynamic variables)
+- `enabled` (BOOLEAN, DEFAULT true)
+- `case_sensitive` (BOOLEAN, DEFAULT false)
+- `delete_trigger` (BOOLEAN, DEFAULT false): Delete triggering message on match
+- `reply_to_user` (BOOLEAN, DEFAULT true): Reply vs plain send
+- `uses` (INTEGER, DEFAULT 0): Total number of times this command has fired
+- `created_by` (BIGINT): User ID who created the command
+- `created_at` (TIMESTAMPTZ)
+- `updated_at` (TIMESTAMPTZ)
+
+**Primary Key:** `id`
+
+**Unique constraint:** `(guild_id, name)`
+
+**Indexes:**
+- `idx_custom_commands_guild_enabled` on `(guild_id, enabled)`
+
+**Migration:** `010_add_custom_commands`
+
+---
+
 ## Database Connection Architecture
 
 The bot uses `asyncpg` connection pools for all database operations, providing:
