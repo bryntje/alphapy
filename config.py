@@ -60,7 +60,8 @@ GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Fallback for l
 TELEMETRY_INGEST_INTERVAL = int(os.getenv("TELEMETRY_INGEST_INTERVAL", "45"))  # seconds
 
 # Core-API ingress (neural plane centralisation)
-# When set, telemetry and operational events are sent to Core instead of direct Supabase
+# When set, telemetry and operational events are sent to Core instead of direct Supabase.
+# Use the Core API origin (e.g. https://core.innersync.tech), not a Next.js site such as api.innersync.tech.
 CORE_API_URL = (os.getenv("CORE_API_URL") or "").rstrip("/")
 ALPHAPY_SERVICE_KEY = os.getenv("ALPHAPY_SERVICE_KEY")
 

@@ -14,6 +14,14 @@ import config
 logger = logging.getLogger(__name__)
 
 CORE_INGRESS_TIMEOUT = 10.0
+
+
+def _ingress_error_suffix(status_code: int, text: str) -> str:
+    """Hint when the base URL is almost certainly wrong (e.g. Next.js 404 page)."""
+    sample = (text or "").lstrip()[:200]
+    if status_code == 404 and sample.startswith("<!"):
+        return " — check CORE_API_URL points to the Core API base, not a website or dashboard."
+    return ""
 MAX_OPERATIONAL_EVENTS_QUEUE = 200
 
 # Queue for operational events when Core is configured; drained by telemetry/ingress loop
@@ -54,9 +62,10 @@ async def post_telemetry(payload: Dict[str, Any] | List[Dict[str, Any]]) -> bool
                 logger.debug("Core ingress telemetry POST succeeded")
                 return True
             logger.warning(
-                "Core ingress telemetry failed: status=%s body=%s",
+                "Core ingress telemetry failed: status=%s body=%s%s",
                 response.status_code,
                 response.text[:500],
+                _ingress_error_suffix(response.status_code, response.text),
             )
             return False
     except Exception as exc:
@@ -103,9 +112,10 @@ async def flush_operational_events_queue() -> None:
                 logger.debug("Core ingress operational-events POST succeeded (count=%d)", len(events))
             else:
                 logger.warning(
-                    "Core ingress operational-events failed: status=%s body=%s",
+                    "Core ingress operational-events failed: status=%s body=%s%s",
                     response.status_code,
                     response.text[:500],
+                    _ingress_error_suffix(response.status_code, response.text),
                 )
                 # Re-queue on failure (up to max size)
                 for e in events:

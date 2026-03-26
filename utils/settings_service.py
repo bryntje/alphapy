@@ -12,6 +12,14 @@ from utils.operational_logs import log_operational_event, EventType
 SettingListener = Callable[[Any], Coroutine[Any, Any, None]]
 
 
+def _unwrap_quoted_scalar_str(value: str) -> str:
+    """Strip redundant quote layers from settings loaded as JSON strings (e.g. '\"123\"')."""
+    s = value.strip()
+    while len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
+        s = s[1:-1].strip()
+    return s
+
+
 @dataclass(frozen=True)
 class SettingDefinition:
     scope: str
@@ -498,11 +506,17 @@ class SettingsService:
 
         expected_type = definition.value_type
         if expected_type == "int":
-            return int(stored)
+            if type(stored) is int:
+                return stored
+            return int(_unwrap_quoted_scalar_str(str(stored)))
         if expected_type == "float":
-            return float(stored)
+            if isinstance(stored, (int, float)) and not isinstance(stored, bool):
+                return float(stored)
+            return float(_unwrap_quoted_scalar_str(str(stored)))
         if expected_type in {"channel", "role"}:
-            return int(stored)
+            if type(stored) is int:
+                return stored
+            return int(_unwrap_quoted_scalar_str(str(stored)))
         if expected_type == "bool":
             if isinstance(stored, bool):
                 return stored

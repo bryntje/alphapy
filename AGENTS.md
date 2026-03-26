@@ -166,6 +166,26 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
+## 💬 Agent: Custom Commands
+- **Path**: `cogs/custom_commands.py`
+- **Purpose**: Guild-defined automated message responses triggered by message patterns
+- **Triggers**: `on_message` → trigger evaluation → response send + optional message delete
+- **Storage**: PostgreSQL (`custom_commands` table)
+- **Trigger types**: `exact`, `starts_with`, `contains`, `regex`
+- **Response variables**: `{user}`, `{user.name}`, `{server}`, `{channel}`, `{uses}`, `{random:a|b|c}`
+- **Caching**: Per-guild TTL cache (60 s) to avoid per-message DB hits; invalidated on add/edit/delete/toggle
+- **Limits**: Max 50 commands per guild; trigger max 200 chars; response max 1900 chars; regex validated at creation
+- **Management Commands** (`/cc`):
+  - `add` — create a command (trigger type, pattern, response, options)
+  - `edit` — edit trigger/response via Discord Modal
+  - `delete` — delete with confirmation button
+  - `list` — paginated list with status, type, trigger preview, use count
+  - `view` — full detail embed for one command
+  - `toggle` — enable / disable
+- **Permissions**: All `/cc` commands require Administrator
+
+---
+
 ## �� Agent: App Reflections (Plaintext from Core)
 - **Path**: `webhooks/app_reflections.py`, `webhooks/revoke_reflection.py`, `gpt/context_loader.py`
 - **Purpose**: Receive plaintext reflections from App via Core-API webhook; store in `app_reflections`; use in `/growthcheckin` (and other user-self flows). Not used for ticket "Suggest reply" (privacy: reflections stay out of admin-only, ephemeral ticket actions).
