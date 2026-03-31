@@ -162,7 +162,7 @@ class TestUrlFilter:
         text = "Check https://example.com and javascript:alert('xss')"
         result = url_filter(text, allow_http=True)
         # Should keep http/https but remove javascript:
-        assert "https://example.com" in result
+        assert result == "Check https://example.com and"
         assert "javascript:" not in result.lower()
     
     def test_url_filter_empty(self):

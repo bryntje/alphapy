@@ -45,7 +45,7 @@ def _ensure_drive():
         credentials_json = None
 
         if config.GOOGLE_PROJECT_ID:
-            logger.info(f"🔐 Attempting to load Google credentials from Secret Manager (secret: {secret_name})")
+            logger.info("🔐 Attempting to load Google credentials from Secret Manager")
             result = get_secret(secret_name, config.GOOGLE_PROJECT_ID, return_source=True)
             credentials_json, source = result  # type: ignore[misc]
             if credentials_json and source == "secret_manager":

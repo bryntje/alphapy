@@ -513,7 +513,7 @@ async def get_health_history(
         return {"error": "health_check_history table not initialized"}
     except Exception as exc:
         logger.error(f"Failed to get health history: {exc}")
-        return {"error": str(exc)}
+        return {"error": "Failed to fetch health history"}
 
 
 @app.get("/top-commands")
@@ -576,7 +576,7 @@ async def get_top_commands(
             }
     except Exception as exc:
         logger.error(f"Failed to get top commands: {exc}")
-        return {"error": str(exc)}
+        return {"error": "Failed to fetch top commands"}
 
 
 # ---------------------------------------------------------------------------
