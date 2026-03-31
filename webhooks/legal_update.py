@@ -76,6 +76,8 @@ async def handle_legal_update_webhook(request: Request) -> Dict[str, str]:
             detail="Missing required field: documents (must contain 'tos' and/or 'pp').",
         )
 
+    from gpt.helpers import bot_instance
+
     import config
 
     main_guild_id = getattr(config, "MAIN_GUILD_ID", 0)
@@ -83,9 +85,8 @@ async def handle_legal_update_webhook(request: Request) -> Dict[str, str]:
         logger.warning("legal-update webhook received but MAIN_GUILD_ID is not configured.")
         return {"status": "skipped", "reason": "MAIN_GUILD_ID not configured"}
 
-    bot = getattr(request.app.state, "bot", None)
-    if bot is None:
-        logger.error("legal-update webhook: bot not available on app state.")
+    if bot_instance is None:
+        logger.error("legal-update webhook: bot not available.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Bot not ready.",
@@ -110,7 +111,7 @@ async def handle_legal_update_webhook(request: Request) -> Dict[str, str]:
         )
         return {"status": "skipped", "reason": "no target channel configured"}
 
-    channel = bot.get_channel(channel_id)
+    channel = bot_instance.get_channel(channel_id)
     if channel is None:
         logger.warning(
             "legal-update webhook: channel %s not found (guild %s).", channel_id, main_guild_id
