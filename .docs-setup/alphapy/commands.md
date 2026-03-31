@@ -1,0 +1,647 @@
+# Command Reference
+
+Complete reference for all Discord slash commands available in the Alphapy bot.
+
+## Command Categories
+
+- [Core Utilities](#core-utilities)
+- [Reminders](#reminders)
+- [Tickets](#tickets)
+- [Verification](#verification)
+- [Configuration](#configuration)
+- [AI Features](#ai-features)
+- [FAQ](#faq)
+- [System](#system)
+- [Admin](#admin)
+
+---
+
+## Core Utilities
+
+### `/sendto`
+Send a message to a specific channel with support for newlines.
+
+**Parameters:**
+- `channel` (required): The channel where the message should be sent
+- `message` (required): The message to send. Use `\n` for a new line.
+
+**Example:**
+```
+/sendto channel:#general message:"Hello\ncommunity!"
+```
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/embed`
+Create and send a simple embed to a channel.
+
+**Parameters:**
+- `channel` (required): The channel where the embed should be sent
+
+**Behavior:** Opens a modal to create the embed with title, description, footer, and color fields.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/clean`
+Delete messages from a channel.
+
+**Parameters:**
+- `limit` (required): Number of messages to delete (max 100)
+
+**Permissions:** Owner/Admin
+
+---
+
+## Reminders
+
+### `/add_reminder`
+Schedule a recurring or one-off reminder via form or message link.
+
+**Parameters:**
+- `name` (required): Name of the reminder
+- `channel` (optional): Channel where reminder should be sent (uses default if not set)
+- `time` (required): Time in HH:MM format
+- `days` (optional): Days of the week (e.g., "Monday, Wednesday, Friday")
+- `message` (optional): Reminder message content
+- `location` (optional): Event location
+- `message_link` (optional): Link to a message/embed to parse details from
+
+**Examples:**
+```
+/add_reminder name:"Weekly Standup" time:"09:00" days:"Monday, Wednesday, Friday" message:"Daily standup meeting"
+/add_reminder name:"Event" time:"19:30" message_link:"https://discord.com/channels/..."
+```
+
+### `/add_live_session`
+Create a recurring "live session" reminder with a fixed message ("Live session starting now!"). Optional image (Premium required for images).
+
+**Parameters:**
+- `days` (required): Days of the week (e.g. "mon,wed,fri")
+- `time` (required): Time in HH:MM format
+- `channel` (optional): Channel for the reminder (uses default if not set)
+- `image_url` (optional): Image URL for the reminder (Premium)
+- `image` (optional): Image attachment (Premium; same rate limit as image reminders)
+
+---
+
+### `/reminder_list`
+View your active reminders.
+
+**Parameters:**
+- `user` (optional): View reminders for a specific user (admin only)
+
+**Response:** Lists all active reminders with ID, name, time, days, and channel.
+
+---
+
+### `/reminder_edit`
+Edit an existing reminder.
+
+**Parameters:**
+- `reminder_id` (required): ID of the reminder to edit
+
+**Behavior:** Opens a modal with pre-filled fields (name, time, days, message, channel_id) that can be edited.
+
+**Permissions:** Owner/Admin or reminder creator
+
+---
+
+### `/reminder_delete`
+Delete a reminder by ID.
+
+**Parameters:**
+- `reminder_id` (required): ID of the reminder to delete
+
+**Permissions:** Owner/Admin or reminder creator
+
+---
+
+## Tickets
+
+### `/ticket`
+Create a support ticket (private channel per ticket).
+
+**Parameters:**
+- `description` (required): Short description of your issue
+
+**Behavior:** Creates a private channel under the configured ticket category with restricted access (requester + staff role). In the ticket channel, staff can use **Claim** and **Close** buttons (not slash commands) to manage the ticket.
+
+---
+
+### `/ticket_panel_post`
+Post a persistent "Create ticket" panel (admins only).
+
+**Behavior:** Posts an embed with a "Create ticket" button that users can click to create tickets.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/ticket_stats`
+Show ticket statistics (admins only).
+
+**Behavior:** Shows interactive buttons to view stats for 7 days, 30 days, or all time.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/ticket_status`
+Update a ticket status (admins only).
+
+**Parameters:**
+- `ticket_id` (required): ID of the ticket
+- `status` (required): New status (open, claimed, waiting_for_user, escalated, closed, archived)
+
+**Permissions:** Owner/Admin
+
+---
+
+## Configuration
+
+### `/config`
+Manage bot settings (multi-scope configuration system).
+
+- **`/config start`** – Start the interactive server setup. The bot guides you step-by-step through the main settings (log channel, rules channel, onboarding, embed watcher, invites, GDPR, ticket category, staff role). Choose a channel or role from the dropdown or click **Skip**. All prompts in English.
+
+**Subcommands:**
+
+#### System Settings
+- `/config system show` - Show current system settings
+- `/config system set_log_channel <#channel>` - Set log channel
+- `/config system set_rules_channel <#channel>` - Set rules and onboarding channel (welcome + Start button)
+- `/config system reset_log_channel` - Reset log channel
+- `/config system reset_rules_channel` - Reset rules and onboarding channel
+
+#### Embed Watcher Settings
+- `/config embedwatcher show` - Show current settings
+- `/config embedwatcher set_announcements <#channel>` - Set channel to monitor for announcement embeds
+- `/config embedwatcher reset_announcements` - Reset announcements channel
+- `/config embedwatcher set_offset <minutes>` - Set reminder offset (default: 60)
+- `/config embedwatcher reset_offset` - Reset offset to default
+- `/config embedwatcher set_non_embed` - Enable/disable parsing of non-embed messages
+- `/config embedwatcher reset_non_embed` - Reset non-embed setting
+- `/config embedwatcher set_process_bot_messages` - Enable/disable processing bot's own messages
+- `/config embedwatcher reset_process_bot_messages` - Reset process_bot_messages to default
+
+#### Reminder Settings
+- `/config reminders show` - Show current settings
+- `/config reminders enable|disable` - Enable/disable reminders
+- `/config reminders set_default_channel <#channel>` - Set default reminder channel
+- `/config reminders reset_default_channel` - Reset default reminder channel
+- `/config reminders set_everyone <true|false>` - Allow or disallow @everyone mentions in reminders
+
+#### TicketBot Settings
+- `/config ticketbot show` - Show current settings
+- `/config ticketbot set_category <#category>` - Set ticket category
+- `/config ticketbot reset_category` - Reset ticket category
+- `/config ticketbot set_staff_role @<role>` - Set staff role
+- `/config ticketbot reset_staff_role` - Reset staff role
+- `/config ticketbot set_escalation_role @<role>` - Set escalation role
+- `/config ticketbot reset_escalation_role` - Reset escalation role
+
+#### Grok / AI Settings
+- `/config gpt show` - Show current settings
+- `/config gpt set_model <model-name>` - Set AI model (e.g. grok-3)
+- `/config gpt reset_model` - Reset model to default
+- `/config gpt set_temperature <0.0-2.0>` - Set AI creativity level
+- `/config gpt reset_temperature` - Reset temperature to default
+
+#### Invites Settings
+- `/config invites show` - Show current settings
+- `/config invites enable|disable` - Enable/disable invite tracking
+- `/config invites set_channel <#channel>` - Set invite announcement channel
+- `/config invites reset_channel` - Reset invite channel
+- `/config invites set_template <variant> <template>` - Set invite message (variant: with inviter / without inviter)
+- `/config invites reset_template <variant>` - Reset template to default (variant: with / without inviter)
+
+#### GDPR Settings
+- `/config gdpr show` - Show current settings
+- `/config gdpr enable|disable` - Enable/disable GDPR features
+- `/config gdpr set_channel <#channel>` - Set GDPR channel
+- `/config gdpr reset_channel` - Reset GDPR channel
+
+#### Onboarding Settings
+- `/config onboarding show` - Show current onboarding configuration
+- `/config onboarding enable|disable` - Enable/disable onboarding
+- `/config onboarding set_mode <mode>` - Set mode (Disabled, Rules Only, Rules + Questions, Questions Only)
+- `/config onboarding add_question <step> <question> [question_type] [required]` - Add a question (step 1–20; types: select, multiselect, text, email)
+- `/config onboarding delete_question <step>` - Delete question at position
+- `/config onboarding reset_questions` - Reset to default (empty) questions
+- `/config onboarding add_rule <rule_order> <title> <description> [thumbnail_url] [image_url]` - Add a rule (position 1–20; optional image URLs)
+- `/config onboarding delete_rule <rule_order>` - Delete rule at position
+- `/config onboarding reset_rules` - Reset to empty rules
+- `/config onboarding set_role <#role>` - Set completion role
+- `/config onboarding reset_role` - Remove completion role
+- `/config onboarding set_join_role <@role>` - Set temporary join role assigned immediately when a user joins (removed after onboarding or verification)
+- `/config onboarding reset_join_role` - Remove join role configuration
+- `/config onboarding panel_post [channel]` - Post onboarding panel with Start button (optional channel; uses current if omitted)
+- `/config onboarding reorder` - Reorder questions (opens modal to enter question IDs in desired order)
+
+#### FYI (contextual tips – admin testing)
+- `/config fyi reset <key>` - Clear an FYI flag so the next natural trigger will send that tip again (for testing). Key is chosen from a fixed list (e.g. `first_onboarding_done`, `first_guild_join`).
+- `/config fyi send <key>` - Force-send the FYI for that key to the log channel now and mark it as sent (for testing or "show me again").
+
+When onboarding uses questions, users also complete two fixed steps: personalization opt-in and preferred language; stored in onboarding responses for use by reminders and other cogs.
+
+**Permissions:** Administrator (all `/config` commands)
+
+---
+
+## Custom Commands
+
+Guild admins can define automated message responses triggered by specific message patterns. Supports four trigger types and dynamic variable substitution.
+
+### `/cc add`
+Create a new custom command.
+
+**Parameters:**
+- `name` (required): Unique slug for this command (e.g. `hello`)
+- `trigger_type` (required): `exact` / `starts_with` / `contains` / `regex`
+- `trigger` (required): The text or regex pattern to match (max 200 chars)
+- `response` (required): The response to send (max 1900 chars, supports variables)
+- `case_sensitive` (optional): Match case-sensitively (default: false)
+- `delete_trigger` (optional): Delete the triggering message (default: false)
+- `reply_to_user` (optional): Reply to the message instead of a plain send (default: true)
+
+**Response variables:**
+- `{user}` — mention the member
+- `{user.name}` — display name
+- `{server}` — server name
+- `{channel}` — channel mention
+- `{uses}` — how many times this command has been triggered
+- `{random:a|b|c}` — random pick from pipe-delimited options
+
+**Limits:** Max 50 commands per server. Invalid regex is rejected at creation.
+
+**Permissions:** Administrator
+
+---
+
+### `/cc edit`
+Edit the trigger and response of an existing command via a Discord Modal.
+
+**Parameters:**
+- `name` (required): Name of the command to edit
+
+**Permissions:** Administrator
+
+---
+
+### `/cc delete`
+Delete a custom command (shows a confirmation button).
+
+**Parameters:**
+- `name` (required): Name of the command to delete
+
+**Permissions:** Administrator
+
+---
+
+### `/cc list`
+List all custom commands for this server (name, trigger type, trigger preview, use count, enabled status).
+
+**Permissions:** Administrator
+
+---
+
+### `/cc view`
+Show full details of a specific custom command (trigger, response, options, use count).
+
+**Parameters:**
+- `name` (required): Name of the command to view
+
+**Permissions:** Administrator
+
+---
+
+### `/cc toggle`
+Enable or disable a custom command.
+
+**Parameters:**
+- `name` (required): Name of the command to toggle
+
+**Permissions:** Administrator
+
+---
+
+## FAQ
+
+### `/faq list`
+Show the latest FAQ entries (last 10).
+
+**Parameters:**
+- `public` (optional): Post in channel instead of ephemeral (default: false)
+
+**Response:** Embed with last 10 FAQ entries (title and summary). Pagination buttons to browse.
+
+**Permissions:** Public
+
+---
+
+### `/faq view`
+View a single FAQ entry by ID.
+
+**Parameters:**
+- `id` (required): FAQ entry ID
+- `public` (optional): Post in channel instead of ephemeral (default: false)
+
+**Permissions:** Public
+
+---
+
+### `/faq search`
+Search FAQ entries by keywords.
+
+**Parameters:**
+- `query` (required): Your question or keywords
+- `public` (optional): Post in channel instead of ephemeral (default: false)
+
+**Response:** Up to 5 matching FAQ entries.
+
+**Permissions:** Public
+
+---
+
+### `/faq add`
+Add a new FAQ entry (admin only).
+
+**Behavior:** Opens a modal to enter title, summary, and optional keywords.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/faq edit`
+Edit an existing FAQ entry (admin only).
+
+**Parameters:**
+- `id` (required): FAQ entry ID
+
+**Behavior:** Opens a modal to edit title, summary, and keywords.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/faq reload`
+Reload the FAQ index (admin only). Use after bulk changes or imports.
+
+**Permissions:** Owner/Admin
+
+---
+
+## AI Features
+
+### `/growthcheckin`
+Grok-powered check-in for goals, obstacles, and emotions.
+
+**Behavior:** Opens a modal with questions about goals, obstacles, and feelings. Responses are processed by Grok and stored for reflection.
+
+---
+
+### `/learn_topic`
+Hybrid topic search using local knowledge base + Drive content.
+
+**Parameters:**
+- `topic` (required): Topic to learn about
+
+**Behavior:** Searches local `.md` files and Google Drive content, then generates a comprehensive explanation using Grok.
+
+---
+
+### `/create_caption`
+Generate social media captions based on topic and style.
+
+**Parameters:**
+- `topic` (required): Topic for the caption
+- `style` (optional): Caption style/tone
+
+**Behavior:** Generates a caption using Grok based on the provided topic and style.
+
+---
+
+### `/lotquiz`
+Test your risk management across 3 forex scenarios.
+
+**Behavior:** Interactive quiz that presents 3 trading scenarios and evaluates risk management decisions.
+
+---
+
+### `/leaderhelp`
+AI-powered leadership guidance for challenges, team growth, or doubts.
+
+**Behavior:** Opens a view to choose a challenge type (e.g., disengaged team, burnout, dropoff, self-doubt) or ask a custom question. Responses are generated by Grok.
+
+**Permissions:** Public (with cooldown)
+
+---
+
+## System
+
+### `/innersync`
+Show Innersync info and official links.
+
+**Response:** Informational embed with:
+- Brief description of Innersync and Alphapy
+- Links to Core, App, and Pricing platforms
+- Ephemeral response (visible only to the user)
+
+**Permissions:** Public
+
+---
+
+### `/gptstatus`
+Check the status of the Grok/LLM API.
+
+**Response:** Shows last success time, error count, average latency, token usage, and current model.
+
+---
+
+### `/version`
+Show bot version and codename.
+
+**Response:** Current version (e.g., "2.4.0 - Lifecycle Manager")
+
+---
+
+### `/release`
+Show release notes for the current version.
+
+**Response:** Release notes from `RELEASES.md`
+
+---
+
+### `/health`
+Show system status and configuration.
+
+**Response:** Bot status, database status, guild count, and configuration overview.
+
+---
+
+### `/commands`
+List all available bot commands.
+
+**Parameters:**
+- `include_admin` (optional, default: False): Include admin-only commands in the list
+- `public` (optional, default: False): Post in channel instead of ephemeral
+
+**Response:** Nicely formatted embed listing commands by category.
+
+---
+
+### `/command_stats`
+Show command usage statistics (admin only).
+
+**Parameters:**
+- `days` (optional, default: 7): Number of days to look back
+- `limit` (optional, default: 10): Maximum number of commands to show
+- `guild_only` (optional, default: True): Show stats for current server only, or all servers (owner only)
+
+**Response:** Rich embed showing top commands by usage, total commands executed, period, and scope.
+
+**Permissions:** Administrator (or bot owner for all-server stats)
+
+**Example:**
+```
+/command_stats days:7 limit:10 guild_only:True
+```
+
+---
+
+## Admin
+
+### `/migrate`
+Database migration management (admins only).
+
+**Parameters:**
+- `action` (required): Action to perform (`status`, `upgrade`, `downgrade`, `history`)
+
+**Examples:**
+```
+/migrate action:status
+/migrate action:upgrade
+/migrate action:history
+```
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/migrate_status`
+Check database migration status (alias for `/migrate status`).
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/reload`
+Reload a specific extension (owner only).
+
+**Parameters:**
+- `extension` (required): Name of the extension to reload (e.g., "cogs.reminders")
+
+**Permissions:** Owner only
+
+---
+
+### `/export_onboarding`
+Export onboarding data as CSV (owner only).
+
+**Response:** CSV file download with all onboarding responses.
+
+**Permissions:** Owner only
+
+---
+
+### `/export_tickets`
+Export tickets as CSV (admins only).
+
+**Response:** CSV file download with all ticket data.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/export_faq`
+Export FAQ entries as CSV (admins only).
+
+**Response:** CSV file download with all FAQ entries.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/inviteleaderboard`
+Show invite leaderboard.
+
+**Response:** Leaderboard of users with highest invite counts.
+
+---
+
+### `/setinvites`
+Manually set invite count for a user.
+
+**Parameters:**
+- `user` (required): User to set invites for
+- `count` (required): Number of invites
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/resetinvites`
+Reset invite count for a user to 0.
+
+**Parameters:**
+- `user` (required): User to reset invites for
+
+**Permissions:** Owner/Admin
+
+---
+
+## Verification
+
+### `/verification_panel_post`
+Post a verification panel with a **Start verification** button.
+
+**Behavior:**
+- Posts an embed that explains the verification flow and provides a button.
+- When a user clicks **Start verification**, the bot creates a private `verify-*` channel in the configured verification category with access for that user and staff.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/verification_close`
+Close a verification channel after manual review.
+
+**Behavior:**
+- Can only be used inside a verification channel (under the configured verification category).
+- Marks the related `verification_tickets` row as `closed_manual`, locks the channel (read-only for the user, hidden for others), and attempts to rename it with a `-closed` suffix.
+- Posts a closing embed in the channel and logs the action in the guild log channel.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/debug_parse_embed`
+Parse the last embed in the channel for testing.
+
+**Behavior:** Attempts to parse the last embed message in the channel and shows the parsed result.
+
+**Permissions:** Owner/Admin
+
+---
+
+## Permission Levels
+
+- **Public**: Available to all users
+- **Admin**: Requires administrator permissions or admin role
+- **Owner**: Bot owner only (configured in `config.py`)
+
+Most commands respect Discord's permission system and guild-specific admin roles configured via `/config` commands.

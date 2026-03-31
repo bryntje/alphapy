@@ -1,0 +1,44 @@
+name: Sync Alphapy docs
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'docs/**'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout innersync-tech/docs
+        uses: actions/checkout@v4
+        with:
+          repository: innersync-tech/docs
+          token: ${{ secrets.DOCS_SYNC_TOKEN }}
+          path: central-docs
+
+      - name: Checkout bryntje/alphapy
+        uses: actions/checkout@v4
+        with:
+          path: alphapy
+
+      - name: Sync alphapy docs
+        run: |
+          rsync -av --delete alphapy/docs/ central-docs/alphapy/ \
+            --exclude=terms-of-service.md \
+            --exclude=privacy-policy.md \
+            --exclude=pricing.md \
+            --exclude=legal.md \
+            --exclude=_config.yml \
+            --exclude=CNAME
+
+      - name: Commit and push
+        working-directory: central-docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add alphapy/
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "chore: sync alphapy docs from bryntje/alphapy"
+          git push
