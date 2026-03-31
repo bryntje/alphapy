@@ -3,7 +3,7 @@ name: Notify legal update
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - 'docs/terms-of-service.md'
       - 'docs/privacy-policy.md'
