@@ -186,6 +186,16 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
+## ⚖️ Agent: Legal Update Notifications
+- **Path**: `webhooks/legal_update.py`, `.github/workflows/notify-legal-update.yml`
+- **Purpose**: Automatically notify the main guild when Terms of Service or Privacy Policy documents change on master. A GitHub Action detects changes to `docs/terms-of-service.md` or `docs/privacy-policy.md`, extracts version dates, and fires `POST /webhooks/legal-update`.
+- **Webhooks**:
+  - `POST /webhooks/legal-update`: payload `documents` (array of `"tos"` / `"pp"`), `tos_version`, `pp_version`. Posts rich embeds in the configured channel. HMAC via `X-Webhook-Signature`; optional `LEGAL_UPDATE_WEBHOOK_SECRET`.
+- **Channel resolution**: uses `LEGAL_UPDATES_CHANNEL_ID` env var; falls back to `system.log_channel_id` for `MAIN_GUILD_ID`.
+- **Config**: `LEGAL_UPDATE_WEBHOOK_SECRET`, `LEGAL_UPDATES_CHANNEL_ID` (see `docs/configuration.md`)
+
+---
+
 ## �� Agent: App Reflections (Plaintext from Core)
 - **Path**: `webhooks/app_reflections.py`, `webhooks/revoke_reflection.py`, `gpt/context_loader.py`
 - **Purpose**: Receive plaintext reflections from App via Core-API webhook; store in `app_reflections`; use in `/growthcheckin` (and other user-self flows). Not used for ticket "Suggest reply" (privacy: reflections stay out of admin-only, ephemeral ticket actions).
