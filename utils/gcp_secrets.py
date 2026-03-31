@@ -39,7 +39,7 @@ def _get_from_cache(secret_name: str) -> Optional[str]:
     """Retrieve secret from cache if valid."""
     if _is_cache_valid(secret_name):
         value, _ = _secret_cache[secret_name]
-        logger.debug(f"Retrieved secret '{secret_name}' from cache")
+        logger.debug("Retrieved credential from cache")
         return value
     return None
 
@@ -48,7 +48,7 @@ def _store_in_cache(secret_name: str, value: str) -> None:
     """Store secret in cache with TTL."""
     expiry = time.time() + CACHE_TTL
     _secret_cache[secret_name] = (value, expiry)
-    logger.debug(f"Cached secret '{secret_name}' (expires in {CACHE_TTL}s)")
+    logger.debug(f"Cached credential value (expires in {CACHE_TTL}s)")
 
 
 def _fetch_from_secret_manager(secret_name: str, project_id: str) -> Optional[str]:
@@ -79,18 +79,15 @@ def _fetch_from_secret_manager(secret_name: str, project_id: str) -> Optional[st
         client = secretmanager.SecretManagerServiceClient()
         name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
         
-        logger.info(f"Fetching secret '{secret_name}' from Secret Manager (project: {project_id})")
+        logger.info("Fetching credential from Secret Manager")
         response = client.access_secret_version(request={"name": name})
         secret_value = response.payload.data.decode("UTF-8")
         
-        logger.info(f"✅ Successfully retrieved secret '{secret_name}' from Secret Manager")
+        logger.info("✅ Successfully retrieved credential from Secret Manager")
         return secret_value
         
-    except Exception as e:
-        logger.error(
-            f"Failed to fetch secret '{secret_name}' from Secret Manager: {e}",
-            exc_info=True
-        )
+    except Exception:
+        logger.error("Failed to fetch credential from Secret Manager", exc_info=True)
         return None
 
 
@@ -132,14 +129,11 @@ def get_secret(
                 if return_source:
                     return (secret_value, "secret_manager")
                 return secret_value
+            logger.debug("Secret Manager unavailable; falling back to environment variable")
+        except Exception:
             logger.debug(
-                f"Secret Manager unavailable or secret '{secret_name}' not found, "
-                "falling back to environment variable"
-            )
-        except Exception as e:
-            logger.debug(
-                f"Secret Manager error for '{secret_name}': {e}, "
-                "falling back to environment variable"
+                "Secret Manager error; falling back to environment variable",
+                exc_info=True,
             )
 
     # Fallback to environment variable
@@ -150,13 +144,13 @@ def get_secret(
         env_var_name = secret_name.upper().replace("-", "_")
     env_value = os.getenv(env_var_name)
     if env_value:
-        logger.info(f"Using environment variable for secret '{secret_name}'")
+        logger.info("Using environment variable for credential")
         _store_in_cache(secret_name, env_value)
         if return_source:
             return (env_value, "env")
         return env_value
 
-    logger.warning(f"Secret '{secret_name}' not found in Secret Manager or environment variables")
+    logger.warning("Credential not found in Secret Manager or environment variables")
     if return_source:
         return (None, None)
     return None
@@ -171,7 +165,7 @@ def clear_cache(secret_name: Optional[str] = None) -> None:
     """
     if secret_name:
         _secret_cache.pop(secret_name, None)
-        logger.debug(f"Cleared cache for secret '{secret_name}'")
+        logger.debug("Cleared cache for credential")
     else:
         _secret_cache.clear()
         logger.debug("Cleared all secret caches")

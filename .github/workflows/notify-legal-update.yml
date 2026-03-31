@@ -8,6 +8,9 @@ on:
       - 'docs/terms-of-service.md'
       - 'docs/privacy-policy.md'
 
+permissions:
+  contents: read
+
 jobs:
   notify:
     runs-on: ubuntu-latest

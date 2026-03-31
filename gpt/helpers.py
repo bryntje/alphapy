@@ -232,7 +232,7 @@ else:
 _api_key_missing = not _api_key
 if _api_key_missing:
     logger.warning(
-        f"⚠️ {_api_key_name} is missing. Set this in your .env or config_local.py to use AI commands."
+        "⚠️ AI provider credentials are missing. Set the required environment variable in .env or config_local.py to use AI commands."
     )
     llm_client = None
 else:
