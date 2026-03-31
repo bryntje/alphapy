@@ -465,7 +465,7 @@ Check the status of the Grok/LLM API.
 ### `/version`
 Show bot version and codename.
 
-**Response:** Current version (e.g., "2.4.0 - Lifecycle Manager")
+**Response:** Current version (e.g., "3.1.0 - Enterprise Ready")
 
 ---
 

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+---
+
+## [3.1.0] - 2026-03-31
+
+### Added
 - **Auto-Moderation System**: Comprehensive automated content moderation with configurable rules and actions
   - **Database**: Migration 009 adds 5 tables (`automod_actions`, `automod_rules`, `automod_logs`, `automod_stats`, `automod_user_history`) with indexes for performance
   - **Rule Types**: Spam detection (frequency, duplicates, caps), content filtering (bad words, links, mentions), regex patterns (premium), AI-powered analysis with Grok (premium)
@@ -21,7 +31,7 @@ All notable changes to this project will be documented in this file.
 - **Legal page**: `docs/legal.md` (docs.alphapy.innersync.tech/legal/) with company details, enterprise number, and registered office; linked from Terms of Service and Privacy Policy footers.
 - **Config**: `APP_REFLECTIONS_WEBHOOK_SECRET` and `GITHUB_TOKEN` environment variables; documented in [Configuration](docs/configuration.md).
 - **New `/innersync` Command**: Informational command showing Innersync platform details and official links (Core, App, Pricing) with ephemeral response
-- **Legal Update Notifications**: Automated Discord notifications when Terms of Service or Privacy Policy documents change on master. A GitHub Action (`notify-legal-update.yml`) detects changes to `docs/terms-of-service.md` / `docs/privacy-policy.md`, extracts version dates, and triggers `POST /webhooks/legal-update`. The bot posts a rich embed in the configured channel of the main guild (`LEGAL_UPDATES_CHANNEL_ID`, falls back to `system.log_channel_id`). HMAC-secured via `LEGAL_UPDATE_WEBHOOK_SECRET`.
+- **Legal Update Notifications**: Automated Discord notifications when Terms of Service or Privacy Policy documents change on main. A GitHub Action (`notify-legal-update.yml`) detects changes to `docs/terms-of-service.md` / `docs/privacy-policy.md`, extracts version dates, and triggers `POST /webhooks/legal-update`. The bot posts a rich embed in the configured channel of the main guild (`LEGAL_UPDATES_CHANNEL_ID`, falls back to `system.log_channel_id`). HMAC-secured via `LEGAL_UPDATE_WEBHOOK_SECRET`.
 
 ### Changed
 - **Privacy**: Reflection context (Supabase + app_reflections) is no longer included in ticket "Suggest reply"; only used for user-self flows (e.g. `/growthcheckin`). (No leaks of user-data have occurred, this was caught before any tickets got made.)
@@ -30,8 +40,6 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - (No changes yet)
-
----
 
 ## [3.0.0] - 2026-03-09
 
