@@ -1,0 +1,74 @@
+name: Notify legal update
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'docs/terms-of-service.md'
+      - 'docs/privacy-policy.md'
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed documents and extract versions
+        id: detect
+        run: |
+          CHANGED=$(git diff --name-only "${{ github.event.before }}" HEAD)
+          DOCS=()
+          TOS_VERSION=""
+          PP_VERSION=""
+
+          if echo "$CHANGED" | grep -q "docs/terms-of-service.md"; then
+            DOCS+=("\"tos\"")
+            TOS_VERSION=$(grep -m1 'Last updated' docs/terms-of-service.md | grep -oP '\d{4}-\d{2}-\d{2}' || echo "")
+          fi
+
+          if echo "$CHANGED" | grep -q "docs/privacy-policy.md"; then
+            DOCS+=("\"pp\"")
+            PP_VERSION=$(grep -m1 'Last updated' docs/privacy-policy.md | grep -oP '\d{4}-\d{2}-\d{2}' || echo "")
+          fi
+
+          if [ ${#DOCS[@]} -eq 0 ]; then
+            echo "No legal documents changed — skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          DOCS_JSON="[$(IFS=,; echo "${DOCS[*]}")]"
+          echo "documents=$DOCS_JSON" >> $GITHUB_OUTPUT
+          echo "tos_version=$TOS_VERSION" >> $GITHUB_OUTPUT
+          echo "pp_version=$PP_VERSION" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Build and send webhook
+        if: steps.detect.outputs.skip == 'false'
+        env:
+          ALPHAPY_BASE_URL: ${{ secrets.ALPHAPY_BASE_URL }}
+          LEGAL_UPDATE_WEBHOOK_SECRET: ${{ secrets.LEGAL_UPDATE_WEBHOOK_SECRET }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --argjson documents '${{ steps.detect.outputs.documents }}' \
+            --arg tos_version '${{ steps.detect.outputs.tos_version }}' \
+            --arg pp_version '${{ steps.detect.outputs.pp_version }}' \
+            '{documents: $documents, tos_version: $tos_version, pp_version: $pp_version}')
+
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$LEGAL_UPDATE_WEBHOOK_SECRET" | awk '{print $2}')
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${ALPHAPY_BASE_URL}/webhooks/legal-update" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Signature: $SIGNATURE" \
+            -d "$PAYLOAD")
+
+          echo "Response: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "Webhook failed with status $HTTP_STATUS"
+            exit 1
+          fi

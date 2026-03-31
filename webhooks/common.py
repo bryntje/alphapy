@@ -109,10 +109,22 @@ def get_founder_webhook_secret() -> Optional[str]:
     )
 
 
+def get_legal_update_webhook_secret() -> Optional[str]:
+    """Secret for legal-update webhook (GitHub Action notifies on PP/ToS change)."""
+    import config
+
+    return (
+        getattr(config, "LEGAL_UPDATE_WEBHOOK_SECRET", None)
+        or getattr(config, "APP_REFLECTIONS_WEBHOOK_SECRET", None)
+        or getattr(config, "WEBHOOK_SECRET", None)
+    )
+
+
 __all__ = [
     "validate_webhook_signature",
     "get_app_reflections_secret",
     "get_reflections_webhook_secret",
     "get_premium_invalidate_secret",
     "get_founder_webhook_secret",
+    "get_legal_update_webhook_secret",
 ]
