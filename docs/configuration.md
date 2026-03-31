@@ -62,7 +62,7 @@ Alternatively, run the following commands in order:
 /config verification set_verified_role @Verified
 
 # Optional: override vision-capable model for this guild
-/config verification set_vision_model gpt-4o
+/config verification set_vision_model grok-4
 ```
 
 ### 3. Optional Settings
@@ -215,7 +215,7 @@ Key is chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`)
 **Notes:**
 - `verified_role_id` is the role granted after successful AI verification.
 - `category_id` must be a category where the bot can create private verification channels.
-- `vision_model` can be used to select a specific vision-capable model (e.g. `gpt-4o`, `grok-2-vision-latest`); if unset, the default model from `/config gpt` / `LLM_PROVIDER` is used.
+- `vision_model` can be used to select a specific vision-capable model (e.g. `grok-4`, `grok-2-vision-latest`); if unset, the default model from `/config gpt` / `LLM_PROVIDER` is used.
 
 ## Template Placeholders
 
