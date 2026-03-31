@@ -817,6 +817,26 @@ Deletes a previously stored reflection when the user revokes consent in the App.
 
 **Response:** `200` with `{"status": "deleted", "count": 1}` (or `count: 0` if no row matched).
 
+### `POST /webhooks/legal-update`
+
+Triggered by a GitHub Action when `docs/terms-of-service.md` or `docs/privacy-policy.md` changes on master. Posts a formatted embed in the configured channel of the main guild (`MAIN_GUILD_ID`).
+
+**Headers:** `X-Webhook-Signature` (HMAC-SHA256; secret: `LEGAL_UPDATE_WEBHOOK_SECRET`, falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`)
+
+**Request body:**
+```json
+{
+  "documents": ["tos", "pp"],
+  "tos_version": "2026-03-31",
+  "pp_version": "2026-03-31"
+}
+```
+
+- `documents` (required): array of keys — `"tos"` (Terms of Service) and/or `"pp"` (Privacy Policy)
+- `tos_version` / `pp_version`: effective date string extracted from the document header (format `YYYY-MM-DD`)
+
+**Response:** `200` with `{"status": "acknowledged", "sent": "tos, pp"}`. Returns `{"status": "skipped", "reason": "..."}` if `MAIN_GUILD_ID` is not set or no target channel is configured.
+
 ## Error Responses
 
 All endpoints may return standard HTTP error codes:
