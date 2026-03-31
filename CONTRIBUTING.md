@@ -10,10 +10,10 @@ By participating in this project, you agree to uphold our [Code of Conduct](CODE
 
 ## Branch and pull request workflow
 
-- **`master` is protected.** Do not push directly to `master`.
+- **`main` is protected.** Do not push directly to `main`.
 - Work on a **feature or fix branch** (e.g. `feature/your-feature`, `fix/bug-name`).
-- Open a **pull request** into `master` when ready.
-- If your branch was already merged or deleted on the remote, create a new branch from an up-to-date `master` and move your changes there (e.g. cherry-pick or re-apply), then open a new PR.
+- Open a **pull request** into `main` when ready.
+- If your branch was already merged or deleted on the remote, create a new branch from an up-to-date `main` and move your changes there (e.g. cherry-pick or re-apply), then open a new PR.
 
 ## Setting up locally
 
@@ -41,7 +41,7 @@ When you add or change commands, config, or API endpoints, update the relevant d
 
 1. Run tests: `pytest tests/ -v`.
 2. Ensure new or changed behaviour is documented (AGENTS.md, docs, and optionally [changelog.md](changelog.md)).
-3. Open a PR from your branch to `master` with a clear description of the change.
+3. Open a PR from your branch to `main` with a clear description of the change.
 4. Address any review feedback.
 
 ## Where to look for more

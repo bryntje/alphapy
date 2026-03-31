@@ -819,7 +819,7 @@ Deletes a previously stored reflection when the user revokes consent in the App.
 
 ### `POST /webhooks/legal-update`
 
-Triggered by a GitHub Action when `docs/terms-of-service.md` or `docs/privacy-policy.md` changes on master. Posts a formatted embed in the configured channel of the main guild (`MAIN_GUILD_ID`).
+Triggered by a GitHub Action when `docs/terms-of-service.md` or `docs/privacy-policy.md` changes on main. Posts a formatted embed in the configured channel of the main guild (`MAIN_GUILD_ID`).
 
 **Headers:** `X-Webhook-Signature` (HMAC-SHA256; secret: `LEGAL_UPDATE_WEBHOOK_SECRET`, falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`)
 

@@ -3,7 +3,7 @@ name: Bot CI
 on:
   push:
     branches: 
-      - master
+      - main
       - 'feature/**'
       - 'dev/**'
 

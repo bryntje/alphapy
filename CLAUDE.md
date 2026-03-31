@@ -81,7 +81,7 @@ Premium is per-user, applied to one guild. `utils/premium_guard.py` exposes `is_
 - **Embeds**: Follow embed styling from `AGENTS.md` (colors, timestamps, footers, field limits). Always pass user-supplied content through `safe_embed_text()`.
 - **Database**: Use `acquire_safe` from `db_helpers.py`; parameterized queries only; no raw string interpolation in SQL.
 - **Admin commands**: Use `validate_admin` / permission checks for any admin-only commands.
-- **Branches**: `master` is protected — work on `feature/` or `fix/` branches and open PRs.
+- **Branches**: `main` is protected — work on `feature/` or `fix/` branches and open PRs.
 
 ## Key reference docs
 
