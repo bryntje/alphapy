@@ -1,8 +1,18 @@
-# 🧬 Innersync • Alphapy Roadmap v3.0.0 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.1.0 "Enterprise Ready"
 
-**Major Release v3.0.0 Complete!** 🎉 Enterprise-grade Discord bot with complete monetization, security framework, and production infrastructure.
+**Release v3.1.0 Complete!** 🎉 Expanded with advanced moderation, legal-update automation, and privacy-aware app-reflection ingestion.
 
-This document outlines the evolution from v3.0.0 forward.
+This document outlines the evolution from v3.1.0 forward.
+
+## ✅ COMPLETED: Auto-Moderation + Legal/App Reflection Integrations (v3.1.0)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Recent platform extensions shipped in v3.1.0:
+- **Auto-Moderation**: full `/config automod` command suite, moderation rule engine, DB-backed logs/stats/history, premium-gated advanced actions and AI analysis
+- **Legal update automation**: workflow + webhook flow for Terms/Privacy updates (`POST /webhooks/legal-update`) with signed payload handling
+- **App reflections integration**: inbound reflection/revoke webhooks with privacy-safe context usage (user-self flows only; excluded from ticket suggestion flow)
+- **Operational cleanup**: branch naming/docs alignment to `main`, and tightened release hygiene around version references
 
 ## ✅ COMPLETED: Multi-Guild Architecture + Advanced Onboarding (Phase 1.5)
 

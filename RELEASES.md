@@ -4,6 +4,35 @@ All notable releases of Alphapy will be documented in this file.
 
 ---
 
+## [3.1.0] - 2026-03-31 - "Enterprise Ready"
+
+### Minor Release: Auto-Moderation, App Reflections, and Legal Notifications
+
+This release expands moderation capabilities, improves privacy-aware reflection context handling, and adds automated legal update notifications.
+
+#### What's New
+- **Auto-Moderation System:**
+  - New moderation engine with configurable rule types and actions (`/config automod ...`)
+  - Rule coverage for spam, bad words, links, mentions, caps, duplicate content, regex (premium), and AI moderation (premium)
+  - Database-backed moderation logs, stats, and user history with migration-backed schema
+- **App Reflections Webhooks:**
+  - New endpoints: `POST /webhooks/app-reflections` and `POST /webhooks/revoke-reflection`
+  - Shared reflections are now available for user-self AI flows (such as `/growthcheckin`) without leaking into ticket admin suggestions
+- **Legal Update Notifications:**
+  - New webhook `POST /webhooks/legal-update` and workflow automation to post legal update embeds when ToS or Privacy docs change
+- **New `/innersync` Command:**
+  - Informational command with official Innersync platform links
+
+#### Security & Reliability
+- Reflection privacy boundary tightened: ticket "Suggest reply" excludes reflection context
+- Legal and reflection webhook handling follows HMAC signature validation patterns
+
+#### Developer Experience
+- Version references updated to `3.1.0` in docs
+- Changelog reorganized with a fresh `[Unreleased]` section
+
+---
+
 ## [3.0.0] - 2026-03-09 - "Enterprise Ready"
 
 ### 🎉 Major Release: Premium Monetization, Security Framework & Production Infrastructure
