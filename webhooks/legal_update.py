@@ -99,8 +99,8 @@ async def handle_legal_update_webhook(request: Request) -> Dict[str, str]:
         try:
             from utils.settings_service import SettingsService
 
-            settings = SettingsService(request.app.state.db_pool)
-            value = await settings.get(main_guild_id, "system", "log_channel_id")
+            settings = SettingsService(config.DATABASE_URL)
+            value = settings.get("system", "log_channel_id", main_guild_id)
             channel_id = int(value) if value else 0
         except Exception as e:
             logger.warning("legal-update: could not resolve fallback channel: %s", e)

@@ -15,12 +15,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Detect changed documents and extract versions
         id: detect
         run: |
-          CHANGED=$(git diff --name-only HEAD^ HEAD)
+          CHANGED=$(git diff --name-only "${{ github.event.before }}" HEAD)
           DOCS=()
           TOS_VERSION=""
           PP_VERSION=""
