@@ -289,6 +289,10 @@ The following environment variables are required/optional for bot operation:
 - `PREMIUM_INVALIDATE_WEBHOOK_SECRET`: Secret for `POST /webhooks/premium-invalidate` (cache invalidation on subscription change). Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`.
 - `FOUNDER_WEBHOOK_SECRET`: Secret for `POST /webhooks/founder` (founder welcome DM). Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`.
 
+### Optional - Legal update notifications
+- `LEGAL_UPDATE_WEBHOOK_SECRET`: Secret for `POST /webhooks/legal-update` (GitHub Action notifies on PP/ToS change). Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`.
+- `LEGAL_UPDATES_CHANNEL_ID`: Channel ID in the main guild where legal update embeds are posted. Falls back to `system.log_channel_id` for `MAIN_GUILD_ID` if unset.
+
 ### Optional - GitHub
 - `GITHUB_TOKEN`: Optional token for GitHub API (e.g. `/release`, repo links when `GITHUB_REPO` is set) to avoid rate limits.
 

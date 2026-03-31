@@ -81,6 +81,10 @@ PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
 # Webhook secrets for Core → Alphapy callbacks (optional; fall back to APP_REFLECTIONS_WEBHOOK_SECRET / WEBHOOK_SECRET)
 PREMIUM_INVALIDATE_WEBHOOK_SECRET = os.getenv("PREMIUM_INVALIDATE_WEBHOOK_SECRET")
 FOUNDER_WEBHOOK_SECRET = os.getenv("FOUNDER_WEBHOOK_SECRET")
+# Legal update webhook (GitHub Action → Alphapy). Notifies main guild when PP/ToS changes.
+LEGAL_UPDATE_WEBHOOK_SECRET = os.getenv("LEGAL_UPDATE_WEBHOOK_SECRET")
+# Channel in the main guild to post legal update embeds. Falls back to system.log_channel_id if unset.
+LEGAL_UPDATES_CHANNEL_ID = int(os.getenv("LEGAL_UPDATES_CHANNEL_ID", "0"))
 
 # Alphapy dashboard (separate Next.js control panel for bot configuration)
 DASHBOARD_BASE_URL = (os.getenv("DASHBOARD_BASE_URL") or "").rstrip("/")
