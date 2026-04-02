@@ -1,0 +1,296 @@
+"""
+Tests for critical API endpoints.
+
+Uses a minimal FastAPI app with the main router to avoid importing the full
+api.py startup logic. Dependencies (API key, auth, guild admin) are overridden
+via app.dependency_overrides; db_pool is patched at the module level.
+"""
+
+from datetime import time
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+import api as api_module
+from api import (
+    get_authenticated_user_id,
+    router,
+    verify_api_key,
+    verify_guild_admin_access,
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+GUILD_ID = 111111111111111111
+USER_ID = "999999999999999999"
+
+
+def make_app(auth_user: str = USER_ID) -> FastAPI:
+    """Build a fresh FastAPI instance with auth/api-key deps bypassed."""
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[verify_api_key] = lambda: None
+    app.dependency_overrides[get_authenticated_user_id] = lambda: auth_user
+    return app
+
+
+def _fake_record(**kwargs):
+    """Return a dict that behaves like an asyncpg Record for these tests."""
+    defaults = {
+        "id": 1,
+        "name": "Test Reminder",
+        "time": time(10, 0),
+        "call_time": None,
+        "days": ["monday"],
+        "message": "Hello",
+        "channel_id": 123,
+        "location": None,
+        "event_time": None,
+        "created_by": USER_ID,
+    }
+    defaults.update(kwargs)
+
+    class _Record(dict):
+        def get(self, key, default=None):
+            return super().get(key, default)
+
+    return _Record(defaults)
+
+
+def _mock_pool(*rows):
+    """Return a mock db_pool whose acquire() yields a connection returning rows."""
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(return_value=list(rows))
+    conn.execute = AsyncMock(return_value=None)
+    conn.__aenter__ = AsyncMock(return_value=conn)
+    conn.__aexit__ = AsyncMock(return_value=False)
+
+    pool = MagicMock()
+    pool.acquire = MagicMock(return_value=conn)
+    return pool, conn
+
+
+# ---------------------------------------------------------------------------
+# GET /api/reminders/{user_id}
+# ---------------------------------------------------------------------------
+
+
+class TestGetUserReminders:
+    """Tests for GET /api/reminders/{user_id}."""
+
+    def test_happy_path_returns_reminder_list(self):
+        pool, _ = _mock_pool(_fake_record())
+        app = make_app(USER_ID)
+        with patch.object(api_module, "db_pool", pool):
+            client = TestClient(app)
+            response = client.get(f"/api/reminders/{USER_ID}")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "Test Reminder"
+        assert data[0]["user_id"] == USER_ID
+
+    def test_empty_list_when_no_reminders(self):
+        pool, _ = _mock_pool()  # no rows
+        app = make_app(USER_ID)
+        with patch.object(api_module, "db_pool", pool):
+            client = TestClient(app)
+            response = client.get(f"/api/reminders/{USER_ID}")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_returns_503_when_db_unavailable(self):
+        app = make_app(USER_ID)
+        with patch.object(api_module, "db_pool", None):
+            client = TestClient(app)
+            response = client.get(f"/api/reminders/{USER_ID}")
+        assert response.status_code == 503
+
+    def test_returns_403_when_user_id_mismatch(self):
+        """Authenticated user can only access their own reminders."""
+        app = make_app(auth_user="other_user")
+        client = TestClient(app)
+        response = client.get(f"/api/reminders/{USER_ID}")
+        assert response.status_code == 403
+
+    def test_returns_401_without_auth(self):
+        """Without auth override the dependency raises 401."""
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[verify_api_key] = lambda: None
+        # No get_authenticated_user_id override → real dependency raises 401
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(f"/api/reminders/{USER_ID}")
+        assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/reminders
+# ---------------------------------------------------------------------------
+
+
+class TestAddReminder:
+    """Tests for POST /api/reminders."""
+
+    _valid_payload = {
+        "id": 1,
+        "name": "Daily standup",
+        "time": "09:00",
+        "days": ["monday", "tuesday"],
+        "message": "Time to sync",
+        "channel_id": 456,
+        "user_id": USER_ID,
+    }
+
+    def test_creates_reminder_and_returns_success(self):
+        pool, conn = _mock_pool()
+        app = make_app(USER_ID)
+        with patch.object(api_module, "db_pool", pool):
+            client = TestClient(app)
+            response = client.post("/api/reminders", json=self._valid_payload)
+        assert response.status_code == 200
+        assert response.json() == {"success": True}
+        conn.execute.assert_awaited_once()
+
+    def test_returns_503_when_db_unavailable(self):
+        app = make_app(USER_ID)
+        with patch.object(api_module, "db_pool", None):
+            client = TestClient(app)
+            response = client.post("/api/reminders", json=self._valid_payload)
+        assert response.status_code == 503
+
+    def test_returns_403_when_user_id_mismatch(self):
+        """user_id in payload must match authenticated user."""
+        app = make_app(auth_user="someone_else")
+        pool, _ = _mock_pool()
+        with patch.object(api_module, "db_pool", pool):
+            client = TestClient(app)
+            response = client.post("/api/reminders", json=self._valid_payload)
+        assert response.status_code == 403
+
+    def test_returns_422_for_missing_required_fields(self):
+        app = make_app(USER_ID)
+        client = TestClient(app)
+        response = client.post("/api/reminders", json={"name": "incomplete"})
+        assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET /api/dashboard/settings/{guild_id}
+# ---------------------------------------------------------------------------
+
+
+class TestGetGuildSettings:
+    """Tests for GET /api/dashboard/settings/{guild_id}."""
+
+    def test_requires_auth(self):
+        """Endpoint must return 401 when not authenticated."""
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[verify_api_key] = lambda: None
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(f"/api/dashboard/settings/{GUILD_ID}")
+        assert response.status_code == 401
+
+    def test_returns_503_when_db_unavailable(self):
+        app = make_app(USER_ID)
+        with (
+            patch.object(api_module, "db_pool", None),
+            patch("api.verify_guild_admin_access", new=AsyncMock()),
+        ):
+            client = TestClient(app)
+            response = client.get(f"/api/dashboard/settings/{GUILD_ID}")
+        assert response.status_code == 503
+
+    def test_returns_settings_for_guild(self):
+        pool, conn = _mock_pool()
+        conn.fetch = AsyncMock(return_value=[
+            {"scope": "system", "key": "log_channel_id", "value": "123"},
+            {"scope": "embedwatcher", "key": "enabled", "value": "true"},
+        ])
+        app = make_app(USER_ID)
+        with (
+            patch.object(api_module, "db_pool", pool),
+            patch("api.verify_guild_admin_access", new=AsyncMock()),
+        ):
+            client = TestClient(app)
+            response = client.get(f"/api/dashboard/settings/{GUILD_ID}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["system"]["log_channel_id"] == 123
+        assert data["embedwatcher"]["enabled"] is True
+
+    def test_non_admin_gets_403(self):
+        """verify_guild_admin_access raises 403 for non-admins."""
+        from fastapi import HTTPException
+
+        app = make_app(USER_ID)
+        with (
+            patch.object(api_module, "db_pool", MagicMock()),
+            patch(
+                "api.verify_guild_admin_access",
+                new=AsyncMock(side_effect=HTTPException(status_code=403, detail="Forbidden")),
+            ),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get(f"/api/dashboard/settings/{GUILD_ID}")
+        assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# GET /api/dashboard/{guild_id}/automod/rules
+# ---------------------------------------------------------------------------
+
+
+class TestGetAutomodRules:
+    """Tests for GET /api/dashboard/{guild_id}/automod/rules."""
+
+    def test_requires_auth(self):
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[verify_api_key] = lambda: None
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(f"/api/dashboard/{GUILD_ID}/automod/rules")
+        assert response.status_code == 401
+
+    def test_returns_503_when_db_unavailable(self):
+        app = make_app(USER_ID)
+        with (
+            patch.object(api_module, "db_pool", None),
+            patch("api.verify_guild_admin_access", new=AsyncMock()),
+        ):
+            client = TestClient(app)
+            response = client.get(f"/api/dashboard/{GUILD_ID}/automod/rules")
+        assert response.status_code == 503
+
+    def test_returns_empty_list_when_no_rules(self):
+        pool, conn = _mock_pool()
+        conn.fetch = AsyncMock(return_value=[])
+        app = make_app(USER_ID)
+        with (
+            patch.object(api_module, "db_pool", pool),
+            patch("api.verify_guild_admin_access", new=AsyncMock()),
+        ):
+            client = TestClient(app)
+            response = client.get(f"/api/dashboard/{GUILD_ID}/automod/rules")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_non_admin_gets_403(self):
+        from fastapi import HTTPException
+
+        app = make_app(USER_ID)
+        with (
+            patch.object(api_module, "db_pool", MagicMock()),
+            patch(
+                "api.verify_guild_admin_access",
+                new=AsyncMock(side_effect=HTTPException(status_code=403, detail="Forbidden")),
+            ),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get(f"/api/dashboard/{GUILD_ID}/automod/rules")
+        assert response.status_code == 403
