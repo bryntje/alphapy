@@ -996,7 +996,7 @@ class ReminderCog(commands.Cog):
                 """
                 SELECT id, guild_id, channel_id, name, message, location,
                        origin_channel_id, origin_message_id, event_time, days, call_time,
-                       last_sent_at, image_url
+                       last_sent_at, image_url, sent_message_id
                 FROM reminders
                 WHERE (
                     -- One-off at T−60: reminder komt 1 uur voor event (time kolom = reminder tijd)
@@ -1139,6 +1139,12 @@ class ReminderCog(commands.Cog):
                     continue
 
                 dt = now
+                # Determine if this is the T0 (on-time) send or T-60 (offset) send
+                is_t0_send = False
+                if row.get("event_time"):
+                    event_dt_check = row["event_time"].astimezone(BRUSSELS_TZ)
+                    is_t0_send = (event_dt_check.strftime("%H:%M:%S") == current_time_str)
+
                 # Keep embed title short (Discord limit 256); truncate long names from older reminders
                 name_display = safe_embed_text((row["name"] or "")[:240], 240)
                 embed = EmbedBuilder.success(
@@ -1175,15 +1181,23 @@ class ReminderCog(commands.Cog):
                     link = f"https://discord.com/channels/{row['guild_id']}/{row['origin_channel_id']}/{row['origin_message_id']}"
                     embed.add_field(name="🔗 Original", value=f"[Click here]({link})", inline=False)
                 
-                # Markeer deze embed als auto-reminder om loops te voorkomen
-                embed.set_footer(text="auto-reminder")
+                embed.set_footer(text="🤖 Auto-reminder")
 
                 text_channel = cast(discord.TextChannel, channel)
                 mention_enabled = self._allow_everyone_mentions(row["guild_id"])
                 content = "@everyone" if mention_enabled else None
-                
+
+                # If this is the T0 send, delete the earlier T-60 reminder message
+                if is_t0_send and row.get("sent_message_id"):
+                    try:
+                        prev_msg = await text_channel.fetch_message(int(row["sent_message_id"]))
+                        await prev_msg.delete()
+                        logger.info(f"🗑️ Deleted T-60 reminder message {row['sent_message_id']} (reminder {row['id']})")
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass  # Already deleted or no permissions — not critical
+
                 try:
-                    await text_channel.send(
+                    sent_msg = await text_channel.send(
                         content=content,
                         embed=embed,
                         allowed_mentions=discord.AllowedMentions(everyone=mention_enabled)
@@ -1192,7 +1206,7 @@ class ReminderCog(commands.Cog):
                     # Format date/time for log
                     date_str = event_dt.strftime('%Y-%m-%d') if event_dt else 'N/A'
                     time_str = call_time_obj.strftime('%H:%M') if call_time_obj else 'N/A'
-                    
+
                     await self.send_log_embed(
                         title="📤 Reminder sent",
                         description=(
@@ -1205,15 +1219,24 @@ class ReminderCog(commands.Cog):
                         level="info",
                         guild_id=row["guild_id"],
                     )
-                    # Update idempotency marker only on success
+                    # Update idempotency marker; for T-60 sends also store the message ID
                     try:
                         async with acquire_safe(self.db) as update_conn:
-                            await update_conn.execute(
-                                "UPDATE reminders SET last_sent_at = $1 WHERE id = $2 AND guild_id = $3",
-                                now,
-                                row["id"],
-                                row["guild_id"],
-                            )
+                            if not is_t0_send and row.get("event_time"):
+                                await update_conn.execute(
+                                    "UPDATE reminders SET last_sent_at = $1, sent_message_id = $2 WHERE id = $3 AND guild_id = $4",
+                                    now,
+                                    sent_msg.id,
+                                    row["id"],
+                                    row["guild_id"],
+                                )
+                            else:
+                                await update_conn.execute(
+                                    "UPDATE reminders SET last_sent_at = $1 WHERE id = $2 AND guild_id = $3",
+                                    now,
+                                    row["id"],
+                                    row["guild_id"],
+                                )
                     except Exception:
                         logger.exception("⚠️ Could not update last_sent_at")
                 except discord.Forbidden:
@@ -1255,37 +1278,26 @@ class ReminderCog(commands.Cog):
                         level="error",
                         guild_id=row["guild_id"],
                     )
-                # Eenmalige reminders verwijderen: enkel na T0 (niet na T−60)
-                if row.get("event_time") and not row.get("days"):
-                    # Determine if this send corresponds to T0
-                    event_dt_for_delete = row.get("event_time")
-                    is_t0_send = False
-                    if event_dt_for_delete is not None:
-                        try:
-                            event_dt_for_delete = event_dt_for_delete.astimezone(BRUSSELS_TZ)
-                        except Exception:
-                            pass
-                        event_time_str = event_dt_for_delete.strftime("%H:%M:%S")
-                        is_t0_send = (event_time_str == current_time_str)
-                    if is_t0_send:
-                        try:
-                            async with acquire_safe(self.db) as delete_conn:
-                                await delete_conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", row["id"], row["guild_id"])
-                        except Exception as delete_err:
-                            logger.warning(f"⚠️ Could not delete one-off reminder {row['id']}: {delete_err}")
-                            # Continue - reminder will be cleaned up later
-                        logger.info(f"🗑️ Reminder {row['id']} (one-off) deleted after T0 send.")
-                        await self.send_log_embed(
-                            title="🗑️ Reminder deleted (one-off)",
-                            description=(
-                                f"ID: `{row['id']}`\n"
-                                f"Name: **{row['name']}**\n"
-                                f"Channel: <#{row['channel_id']}>\n"
-                                f"Deleted after T0 at {now.strftime('%Y-%m-%d %H:%M')}"
-                            ),
-                            level="warning",
-                            guild_id=row["guild_id"],
-                        )
+                # Delete one-off reminders from DB after T0 send (not after T-60)
+                if row.get("event_time") and is_t0_send:
+                    try:
+                        async with acquire_safe(self.db) as delete_conn:
+                            await delete_conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", row["id"], row["guild_id"])
+                    except Exception as delete_err:
+                        logger.warning(f"⚠️ Could not delete one-off reminder {row['id']}: {delete_err}")
+                        # Continue - reminder will be cleaned up later
+                    logger.info(f"🗑️ Reminder {row['id']} (one-off) deleted after T0 send.")
+                    await self.send_log_embed(
+                        title="🗑️ Reminder deleted (one-off)",
+                        description=(
+                            f"ID: `{row['id']}`\n"
+                            f"Name: **{row['name']}**\n"
+                            f"Channel: <#{row['channel_id']}>\n"
+                            f"Deleted after T0 at {now.strftime('%Y-%m-%d %H:%M')}"
+                        ),
+                        level="warning",
+                        guild_id=row["guild_id"],
+                    )
 
         except Exception as e:
             if isinstance(e, (pg_exceptions.InterfaceError, pg_exceptions.ConnectionDoesNotExistError, ConnectionResetError)):

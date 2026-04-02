@@ -142,7 +142,7 @@ class EmbedReminderWatcher(commands.Cog):
             
             # ⛔️ Skip reminders that the bot itself has already posted (to avoid loops)
             # Check for auto-reminder footer (from reminder system)
-            if embed.footer and embed.footer.text == "auto-reminder":
+            if embed.footer and "auto-reminder" in (embed.footer.text or "").lower():
                 await self._log_message_processed(message, "skipped", "Auto-reminder tag detected", message.guild.id)
                 return
             
@@ -683,17 +683,15 @@ class EmbedReminderWatcher(commands.Cog):
         title_sanitized = short_title.replace("\n", " ").replace("\r", " ").strip()
         title_sanitized = " ".join(title_sanitized.split())
 
-        # Create reminder name with prefix
-        # Discord reminder name limit is 100 chars, prefix "🤖 Auto - " is 11 chars
-        prefix = "🤖 Auto - "
-        max_title_length = 100 - len(prefix)
+        # Create reminder name from event title (Discord limit 100 chars)
+        max_title_length = 100
         truncated_title = title_sanitized[:max_title_length] if len(title_sanitized) > max_title_length else title_sanitized
-        
+
         # Add ellipsis if truncated
         if len(title_sanitized) > max_title_length:
             truncated_title = truncated_title.rstrip() + "..."
-        
-        name = f"{prefix}{truncated_title}"
+
+        name = truncated_title
         
         # Construct message field: avoid duplication
         # For plain text messages and embeds where title is already in description, use only description
