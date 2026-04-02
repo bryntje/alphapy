@@ -807,8 +807,9 @@ class Onboarding(commands.Cog):
 
 class TextInputModal(discord.ui.Modal):
     def __init__(self, title: str, step: int, answers: dict, onboarding: 'Onboarding', optional: bool = False):
-        # Set the modal title to the question
-        super().__init__(title=title)
+        # Discord limits: modal title ≤ 45 chars, TextInput label ≤ 45 chars
+        _title = title[:42] + "…" if len(title) > 45 else title
+        super().__init__(title=_title)
         self.step = step
         self.answers = answers
         self.onboarding = onboarding
@@ -817,7 +818,7 @@ class TextInputModal(discord.ui.Modal):
         # Add a text input field. You can add extra validation here if needed.
         placeholder = "Type your answer here..." if not optional else "Type your answer here (or leave empty to skip)..."
         self.input_field = discord.ui.TextInput(
-            label=title,
+            label=_title,
             placeholder=placeholder,
             style=discord.TextStyle.short,
             required=not optional  # Make field required only if not optional
