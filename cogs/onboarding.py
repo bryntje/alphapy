@@ -691,7 +691,10 @@ class Onboarding(commands.Cog):
         # Get the current question (guild question)
         q_data = questions[step]
 
-        # If this question requires free text input, send a modal
+        # If this question requires free text input, send a modal.
+        # When coming from a modal submit the interaction is already responded (deferred),
+        # so we cannot call send_modal — Discord forbids modal→modal chaining (type 9 is
+        # not a valid response to interaction type 5). Use TextInputTriggerView instead.
         if q_data.get("input") or q_data.get("type") in ["email", "text"]:
             modal = TextInputModal(
                 title=q_data["question"],
@@ -700,7 +703,12 @@ class Onboarding(commands.Cog):
                 onboarding=self,
                 optional=q_data.get("optional", False)
             )
-            await interaction.response.send_modal(modal)
+            if interaction.response.is_done():
+                embed = EmbedBuilder.info(title="📝 Onboarding Form", description=q_data["question"])
+                trigger_view = TextInputTriggerView(modal=modal)
+                await self._show_onboarding_step(interaction, session, embed, trigger_view)
+            else:
+                await interaction.response.send_modal(modal)
             return
 
         # Build embed and view for the question with options
@@ -805,6 +813,29 @@ class Onboarding(commands.Cog):
             logger.warning(f"get_user_personalization failed for user {user_id} guild {guild_id}: {exc}")
             return default
 
+class TextInputTriggerView(discord.ui.View):
+    """Bridge view: shown when Discord forbids responding to a modal with another modal.
+
+    Discord interaction type 5 (modal submit) cannot be answered with interaction
+    response type 9 (modal). When a text-input question follows a text-input question,
+    this view shows a single button. Clicking it issues a fresh component interaction
+    that CAN open the next modal.
+    """
+
+    def __init__(self, modal: "TextInputModal"):
+        super().__init__(timeout=600)
+        self.modal = modal
+        btn = discord.ui.Button(
+            label="✏️ Type Answer",
+            style=discord.ButtonStyle.primary,
+        )
+        btn.callback = self._open_modal
+        self.add_item(btn)
+
+    async def _open_modal(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(self.modal)
+
+
 class TextInputModal(discord.ui.Modal):
     def __init__(self, title: str, step: int, answers: dict, onboarding: 'Onboarding', optional: bool = False):
         # Discord limits: modal title ≤ 45 chars, TextInput label ≤ 45 chars
@@ -832,8 +863,11 @@ class TextInputModal(discord.ui.Modal):
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.input_field.value
 
-        # Do NOT defer here — send_next_question must own the first response so it can
-        # call send_modal (modal→modal chain) or edit_message (modal→embed step) as needed.
+        # Defer so _show_onboarding_step can edit the session message.
+        # send_next_question detects interaction.response.is_done() and uses the
+        # TextInputTriggerView bridge instead of send_modal when the next step is
+        # also a text-input (Discord forbids modal→modal chaining).
+        await interaction.response.defer(ephemeral=True)
         await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
 
