@@ -570,6 +570,7 @@ class EmbedReminderWatcher(AlphaCog):
                     origin_message_id=origin_message_id,
                     event_time=event_dt,
                     image_url=image_url,
+                    location=location if location and location != "-" else None,
                 )
             
             # Log successful save

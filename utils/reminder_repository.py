@@ -26,19 +26,20 @@ async def create(
     origin_message_id: Optional[int] = None,
     event_time: Optional[Any] = None,
     image_url: Optional[str] = None,
+    location: Optional[str] = None,
 ) -> int:
     """Insert a new reminder and return its id."""
     return await conn.fetchval(
         """
         INSERT INTO reminders
             (guild_id, name, channel_id, time, call_time, days, message,
-             created_by, origin_channel_id, origin_message_id, event_time, image_url)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             created_by, origin_channel_id, origin_message_id, event_time, image_url, location)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING id
         """,
         guild_id, name, channel_id, reminder_time, call_time, days or [],
         message, created_by, origin_channel_id, origin_message_id,
-        event_time, image_url,
+        event_time, image_url, location,
     )
 
 
