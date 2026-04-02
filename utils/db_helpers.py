@@ -67,6 +67,37 @@ async def acquire_safe(
         raise
 
 
+@asynccontextmanager
+async def acquire_transactional(
+    pool: Optional[asyncpg.Pool],
+    on_error: Optional[Callable[[Exception], Any]] = None
+) -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
+    """
+    Safe pool acquire with an open database transaction.
+
+    Wraps acquire_safe with conn.transaction() so that all statements
+    executed inside the block are committed atomically on success, or
+    rolled back automatically on any exception.
+
+    Usage::
+
+        async with acquire_transactional(pool) as conn:
+            await conn.execute("INSERT INTO ...", ...)
+            await conn.execute("UPDATE ...", ...)  # both committed or neither
+
+    Args:
+        pool: The asyncpg connection pool (can be None)
+        on_error: Optional callback passed through to acquire_safe
+
+    Yields:
+        asyncpg.pool.PoolConnectionProxy: A database connection with an
+        active transaction.
+    """
+    async with acquire_safe(pool, on_error=on_error) as conn:
+        async with conn.transaction():
+            yield conn
+
+
 def is_pool_healthy(pool: Optional[asyncpg.Pool]) -> bool:
     """
     Check if a database pool is healthy and ready for use.
