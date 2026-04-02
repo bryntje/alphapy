@@ -62,3 +62,5 @@ docs/premium-local-insert.md
 
 SYSTEM_INTEGRATION_ANALYSIS.md
 ZERO_KNOWLEDGE_CROSS_MODULE_STRATEGY.md
+.gitnexus/
+.claude/
