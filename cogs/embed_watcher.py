@@ -998,7 +998,7 @@ class EmbedReminderWatcher(commands.Cog):
                 embed_text += f"{field.name}: {field.value}\n"
             
             # Sanitize embed text before sending to Grok
-            safe_embed_text = safe_prompt(embed_text)
+            gpt_context = safe_prompt(embed_text)
             
             # Get current date for context
             current_date = datetime.now(BRUSSELS_TZ)
@@ -1026,7 +1026,7 @@ class EmbedReminderWatcher(commands.Cog):
                         If truly impossible to extract: {{"error": "cannot_parse"}}
                         
                         Embed text:
-                        {safe_embed_text}
+                        {gpt_context}
                         """
 
             # Call Grok with structured prompt (temperature from guild settings)
