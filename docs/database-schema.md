@@ -69,6 +69,7 @@ Scheduled reminders (recurring and one-off events).
 - `location` (TEXT): Event location
 - `last_sent_at` (TIMESTAMPTZ): Last send timestamp (for idempotency)
 - `image_url` (TEXT): Optional image or banner URL (Premium feature)
+- `sent_message_id` (BIGINT): Discord message ID of the T-60 offset reminder send; used to delete it when the T0 on-time reminder fires
 
 **Indexes:**
 - `idx_reminders_time` on `time`

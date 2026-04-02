@@ -142,7 +142,7 @@ class EmbedReminderWatcher(commands.Cog):
             
             # ⛔️ Skip reminders that the bot itself has already posted (to avoid loops)
             # Check for auto-reminder footer (from reminder system)
-            if embed.footer and embed.footer.text == "auto-reminder":
+            if embed.footer and "auto-reminder" in (embed.footer.text or "").lower():
                 await self._log_message_processed(message, "skipped", "Auto-reminder tag detected", message.guild.id)
                 return
             
@@ -224,7 +224,13 @@ class EmbedReminderWatcher(commands.Cog):
                     value=message_type.capitalize(),
                     inline=True
                 )
-                if parsed.get('days'):
+                if parsed.get("is_one_off"):
+                    log_embed.add_field(
+                        name="📆 Type",
+                        value="One-off",
+                        inline=True
+                    )
+                elif parsed.get('days'):
                     days_display = self.format_days_for_display(parsed['days'])
                     log_embed.add_field(
                         name="📆 Recurring Days",
@@ -361,6 +367,7 @@ class EmbedReminderWatcher(commands.Cog):
                             "title": embed.title or "-",
                             "description": embed.description or "-",
                             "days": days_list,
+                            "is_one_off": not bool(days_list),
                         }
                 
                 # If Grok fallback also failed or disabled, log the failure
@@ -377,6 +384,32 @@ class EmbedReminderWatcher(commands.Cog):
             # Decide recurrence: only use parse_days when explicitly provided.
             # If we have a concrete date (explicit date or parsed from description),
             # treat it as a one-off (days = []). Otherwise, require explicit days.
+            #
+            # Safety override: if "this [weekday]" or "next [weekday]" appears in the
+            # title/description and matches the day in days_line, that is a strong signal
+            # for a one-off event regardless of the days_line (e.g. a structured embed
+            # that has both a "Days: Wednesday" field AND "This Wednesday's session" in
+            # the title).
+            if days_line and not (had_explicit_date or dt_from_description):
+                full_text_for_check = title_text + " " + (embed.description or "")
+                override_date = self.parse_relative_date(full_text_for_check)
+                if override_date:
+                    # "This Wednesday" / "Next Friday" found — treat as one-off
+                    date_line = override_date
+                    had_explicit_date = True
+                    days_line = None
+                    # Re-parse datetime with the concrete date
+                    dt, tz = self.parse_datetime(date_line, time_line)
+                    if dt is None:
+                        logger.warning("⚠️ Override one-off date parse failed; falling back to recurring")
+                        date_line = None
+                        had_explicit_date = False
+                        days_line = override_date  # restore (won't happen in practice)
+                    else:
+                        logger.info(f"✅ Override: 'this/next [day]' found — treating as one-off ({date_line})")
+
+            is_one_off = had_explicit_date or dt_from_description
+
             if days_line:
                 days_list = parse_days_string(days_line)
             else:
@@ -410,6 +443,7 @@ class EmbedReminderWatcher(commands.Cog):
                                 "title": embed.title or "-",
                                 "description": embed.description or "-",
                                 "days": days_list,
+                                "is_one_off": not bool(days_list),
                             }
 
                     logger.warning("⚠️ No date and no days specified → reminder not created.")
@@ -433,6 +467,7 @@ class EmbedReminderWatcher(commands.Cog):
                 "description": embed.description or "-",
                 "footer": footer_text,  # Include footer for later use
                 "days": days_list,
+                "is_one_off": is_one_off,
             }
         except Exception as e:
             logger.exception(f"❌ Parse error: {e}")
@@ -683,17 +718,15 @@ class EmbedReminderWatcher(commands.Cog):
         title_sanitized = short_title.replace("\n", " ").replace("\r", " ").strip()
         title_sanitized = " ".join(title_sanitized.split())
 
-        # Create reminder name with prefix
-        # Discord reminder name limit is 100 chars, prefix "🤖 Auto - " is 11 chars
-        prefix = "🤖 Auto - "
-        max_title_length = 100 - len(prefix)
+        # Create reminder name from event title (Discord limit 100 chars)
+        max_title_length = 100
         truncated_title = title_sanitized[:max_title_length] if len(title_sanitized) > max_title_length else title_sanitized
-        
+
         # Add ellipsis if truncated
         if len(title_sanitized) > max_title_length:
             truncated_title = truncated_title.rstrip() + "..."
-        
-        name = f"{prefix}{truncated_title}"
+
+        name = truncated_title
         
         # Construct message field: avoid duplication
         # For plain text messages and embeds where title is already in description, use only description
@@ -785,8 +818,12 @@ class EmbedReminderWatcher(commands.Cog):
                     fields=[
                         {"name": "🕒 Reminder Time", "value": f"{trigger_time.strftime('%H:%M')}", "inline": True},
                         {
-                            "name": "📆 Days" if days_arr else "📆 Type",
-                            "value": self.format_days_for_display(days_arr) if days_arr else "One-off event",
+                            "name": "📆 Type" if parsed.get("is_one_off") else ("📆 Recurring Days" if days_arr else "📆 Type"),
+                            "value": (
+                                f"One-off ({event_dt.strftime('%A %d %B %Y')})"
+                                if parsed.get("is_one_off")
+                                else (self.format_days_for_display(days_arr) if days_arr else "One-off event")
+                            ),
                             "inline": True
                         }
                     ]
@@ -970,12 +1007,13 @@ class EmbedReminderWatcher(commands.Cog):
             
             prompt = f"""You are a precise datetime extractor for Discord event announcements. Today is {current_date_str} ({current_weekday}).
 
-                        Rule #1: When only a weekday + time is given (e.g. "Wednesday 19:30", "Wednesday at 7:30pm") → ALWAYS take the NEXT upcoming occurrence of that weekday from today.
+                        Rule #1: "This [weekday]" or "This coming [weekday]" (e.g. "This Wednesday", "This Wednesday's session") → ONE-OFF event on the next upcoming occurrence of that weekday. Fill "date", leave "days" empty.
+                        Rule #2: "Next [weekday]" (e.g. "Next Friday") → ONE-OFF event on the occurrence AFTER the next one. Fill "date", leave "days" empty.
+                        Rule #3: When only a plain weekday + time is given (e.g. "Wednesday 19:30", "Wednesday at 7:30pm") → ALWAYS take the NEXT upcoming occurrence of that weekday from today. Fill "date", leave "days" empty.
                            - If today is Monday → Wednesday = the Wednesday coming up this week ({(current_date + timedelta(days=(2 - current_date.weekday() + 7) % 7)).strftime('%d/%m/%Y')})
                            - Do NOT jump to next week unless "next week", "following week", "next Wednesday" is explicitly said.
-                        
-                        Rule #2: If a concrete date is present (18/03, March 18, 18 March) → use that date + time.
-                        Rule #3: For recurring events (e.g. "every Wednesday") → keep "date" empty, fill "days".
+                        Rule #4: If a concrete date is present (18/03, March 18, 18 March) → use that date + time. Fill "date", leave "days" empty.
+                        Rule #5: ONLY for truly recurring events with explicit recurrence wording (e.g. "every Wednesday", "weekly on Wednesday", "each Friday") → keep "date" empty, fill "days".
                         
                         Output ONLY valid JSON, nothing else:
                         {{
