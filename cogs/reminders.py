@@ -22,6 +22,7 @@ from utils.settings_service import SettingsService
 # from config import GUILD_ID  # Removed - no longer needed for multi-guild support
 from cogs.embed_watcher import parse_embed_for_reminder
 from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
+import utils.reminder_repository as reminder_repo
 
 # All logging timestamps in this module use Brussels time for clarity.
 
@@ -331,24 +332,21 @@ class ReminderCog(commands.Cog):
         guild_id = interaction.guild.id
         try:
             async with acquire_safe(self.db) as conn:
-                await conn.execute(
-                    """INSERT INTO reminders (guild_id, name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time, image_url)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
-                    guild_id,
-                    name,
-                    channel_id,
-                    time_obj,  # reminder tijd (T-60) as time object
-                    call_time_obj,  # event tijd (T0) as time object
-                    days_list if days_list else [],
-                    message,
-                    created_by,
-                    origin_channel_id,
-                    origin_message_id,
-                    event_time,
-                    resolved_image_url,
+                rid = await reminder_repo.create(
+                    conn,
+                    guild_id=guild_id,
+                    name=name,
+                    channel_id=channel_id,
+                    reminder_time=time_obj,
+                    call_time=call_time_obj,
+                    days=days_list,
+                    message=message,
+                    created_by=created_by,
+                    origin_channel_id=origin_channel_id,
+                    origin_message_id=origin_message_id,
+                    event_time=event_time,
+                    image_url=resolved_image_url,
                 )
-                rid_row = await conn.fetchrow("SELECT currval(pg_get_serial_sequence('reminders','id')) AS id")
-                rid = rid_row["id"] if rid_row else None
                 logger.info(f"🟢 Reminder created (ID={rid}): {name} @ {time_obj} days={days_list} channel={channel_id}")
                 # Rate limit tracking: record image reminder for this user/guild
                 if resolved_image_url:
@@ -487,21 +485,17 @@ class ReminderCog(commands.Cog):
 
         try:
             async with acquire_safe(self.db) as conn:
-                await conn.execute(
-                    """INSERT INTO reminders (guild_id, name, channel_id, time, call_time, days, message, created_by, origin_channel_id, origin_message_id, event_time, image_url)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
-                    guild_id,
-                    name,
-                    channel_id,
-                    reminder_time_obj,
-                    call_time_obj,
-                    days_list,
-                    "Live session starting now!",
-                    created_by,
-                    None,
-                    None,
-                    None,
-                    resolved_image_url,
+                await reminder_repo.create(
+                    conn,
+                    guild_id=guild_id,
+                    name=name,
+                    channel_id=channel_id,
+                    reminder_time=reminder_time_obj,
+                    call_time=call_time_obj,
+                    days=days_list,
+                    message="Live session starting now!",
+                    created_by=created_by,
+                    image_url=resolved_image_url,
                 )
             if resolved_image_url:
                 rkey = (interaction.user.id, interaction.guild.id)
@@ -541,29 +535,15 @@ class ReminderCog(commands.Cog):
         is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
 
         guild_id = interaction.guild.id
-        if is_admin:
-            query = """
-                SELECT id, name, time, call_time, days, event_time, location, message, channel_id
-                FROM reminders 
-                WHERE guild_id = $1 
-                ORDER BY COALESCE(call_time, time) ASC, name ASC;
-            """
-            params: List[Any] = [guild_id]
-        else:
-            query = """
-                SELECT id, name, time, call_time, days, event_time, location, message, channel_id
-                FROM reminders
-                WHERE guild_id = $1 AND (created_by = $2 OR channel_id = $3)
-                ORDER BY COALESCE(call_time, time) ASC, name ASC;
-            """
-            params = [guild_id, user_id, channel_id]
-
         try:
             if not self.db:
                 await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
                 return
             async with acquire_safe(self.db) as conn:
-                rows = await conn.fetch(query, *params)
+                if is_admin:
+                    rows = await reminder_repo.list_for_guild(conn, guild_id)
+                else:
+                    rows = await reminder_repo.list_for_user(conn, guild_id, user_id, channel_id)
                 logger.info(f"🔍 Fetched {len(rows)} reminders ({'admin' if is_admin else 'user'})")
 
                 if not rows:
@@ -703,13 +683,13 @@ class ReminderCog(commands.Cog):
         guild_id = interaction.guild.id
         try:
             async with acquire_safe(self.db) as conn:
-                row = await conn.fetchrow("SELECT * FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)
-                
+                row = await reminder_repo.get_by_id(conn, guild_id, reminder_id)
+
                 if not row:
                     await interaction.followup.send(f"No reminder found with ID `{reminder_id}`.", ephemeral=True)
                     return
 
-                await conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", reminder_id, guild_id)
+                await reminder_repo.delete(conn, guild_id, reminder_id)
         except RuntimeError as e:
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
             return
@@ -746,15 +726,9 @@ class ReminderCog(commands.Cog):
         try:
             async with acquire_safe(self.db) as conn:
                 if is_admin:
-                    row = await conn.fetchrow(
-                        "SELECT * FROM reminders WHERE id = $1 AND guild_id = $2",
-                        reminder_id, guild_id
-                    )
+                    row = await reminder_repo.get_by_id(conn, guild_id, reminder_id)
                 else:
-                    row = await conn.fetchrow(
-                        "SELECT * FROM reminders WHERE id = $1 AND guild_id = $2 AND created_by = $3",
-                        reminder_id, guild_id, user_id
-                    )
+                    row = await reminder_repo.get_by_id_for_user(conn, guild_id, reminder_id, user_id)
         except RuntimeError as e:
             await interaction.response.send_message("⛔ Database not connected. Please try again later.", ephemeral=True)
             return
@@ -892,7 +866,7 @@ class ReminderCog(commands.Cog):
             return []
         guild_id = interaction.guild.id
         async with acquire_safe(self.db) as conn:
-            rows = await conn.fetch("SELECT id, name FROM reminders WHERE guild_id = $1 ORDER BY id DESC LIMIT 25", guild_id)
+            rows = await reminder_repo.autocomplete_all(conn, guild_id)
         return [
             app_commands.Choice(name=f"ID {row['id']} – {row['name'][:30]}", value=row["id"])
             for row in rows if current.lower() in str(row["id"]) or current.lower() in row["name"].lower()
@@ -914,16 +888,13 @@ class ReminderCog(commands.Cog):
         
         async with acquire_safe(self.db) as conn:
             if is_admin:
-                rows = await conn.fetch("SELECT id, name FROM reminders WHERE guild_id = $1 ORDER BY id DESC LIMIT 25", guild_id)
+                rows = await reminder_repo.autocomplete_all(conn, guild_id)
             else:
-                rows = await conn.fetch(
-                    "SELECT id, name FROM reminders WHERE guild_id = $1 AND created_by = $2 ORDER BY id DESC LIMIT 25",
-                    guild_id, user_id
-                )
-            return [
-                app_commands.Choice(name=f"ID {row['id']} – {row['name'][:30]}", value=row["id"])
-                for row in rows if current.lower() in str(row["id"]) or current.lower() in row["name"].lower()
-            ]
+                rows = await reminder_repo.autocomplete_for_user(conn, guild_id, user_id)
+        return [
+            app_commands.Choice(name=f"ID {row['id']} – {row['name'][:30]}", value=row["id"])
+            for row in rows if current.lower() in str(row["id"]) or current.lower() in row["name"].lower()
+        ]
 
     def _get_log_channel_id(self, guild_id: int) -> int:
         return self.settings_helper.get_int("system", "log_channel_id", guild_id, fallback=0)
@@ -992,92 +963,15 @@ class ReminderCog(commands.Cog):
                 # Check if current time is 23:xx (for midnight edge case)
                 is_late_night = current_time_obj.hour == 23
                 
-                rows = await conn.fetch(
-                """
-                SELECT id, guild_id, channel_id, name, message, location,
-                       origin_channel_id, origin_message_id, event_time, days, call_time,
-                       last_sent_at, image_url, sent_message_id
-                FROM reminders
-                WHERE (
-                    -- One-off at T−60: reminder komt 1 uur voor event (time kolom = reminder tijd)
-                    -- Handle midnight edge case: reminder at 23:xx for event at 00:xx next day
-                    (
-                        event_time IS NOT NULL
-                        AND time::time = $1::time
-                        AND (
-                            -- Normal case: reminder and event on same calendar day
-                            ((event_time AT TIME ZONE 'Europe/Brussels') - INTERVAL '60 minutes')::date = $2
-                            OR
-                            -- Midnight edge case: reminder at 23:xx, event at 00:xx next day
-                            ($5 = true AND (event_time AT TIME ZONE 'Europe/Brussels')::date = $6)
-                        )
-                    )
-                    OR
-                    -- One-off at T0: event tijd (call_time kolom = event tijd)
-                    (
-                        event_time IS NOT NULL
-                        AND call_time::time = $4::time
-                        AND (event_time AT TIME ZONE 'Europe/Brussels')::date = $2
-                    )
-                    OR
-                    -- Recurring by days: time kolom = reminder tijd (T-60), moet matchen op reminder tijd
-                    -- Check if current_day or any variant matches days array
-                    -- Also handle midnight edge case: if reminder is at 23:xx, check if next day matches
-                    (
-                        event_time IS NULL 
-                        AND time::time = $1::time
-                        AND (
-                            -- Normal case: current day matches
-                            (
-                                $3 = ANY(days)  -- Direct numeric match
-                                OR EXISTS (
-                                    SELECT 1 FROM unnest(days) AS day_val
-                                    WHERE day_val::text IN ('ma', 'maandag', 'monday', 'di', 'dinsdag', 'tuesday', 
-                                                            'wo', 'woe', 'woensdag', 'wednesday', 'do', 'donderdag', 'thursday',
-                                                            'vr', 'vrijdag', 'friday', 'za', 'zaterdag', 'saturday',
-                                                            'zo', 'zondag', 'sunday')
-                                    AND (
-                                        ($3 = '0' AND day_val::text IN ('ma', 'maandag', 'monday'))
-                                        OR ($3 = '1' AND day_val::text IN ('di', 'dinsdag', 'tuesday'))
-                                        OR ($3 = '2' AND day_val::text IN ('wo', 'woe', 'woensdag', 'wednesday'))
-                                        OR ($3 = '3' AND day_val::text IN ('do', 'donderdag', 'thursday'))
-                                        OR ($3 = '4' AND day_val::text IN ('vr', 'vrijdag', 'friday'))
-                                        OR ($3 = '5' AND day_val::text IN ('za', 'zaterdag', 'saturday'))
-                                        OR ($3 = '6' AND day_val::text IN ('zo', 'zondag', 'sunday'))
-                                    )
-                                )
-                            )
-                            OR
-                            -- Midnight edge case: reminder at 23:xx, check if next day matches
-                            -- Example: reminder at Tuesday 23:xx is for Wednesday 00:xx event
-                            (
-                                $5 = true
-                                AND (
-                                    $7 = ANY(days)  -- Direct numeric match for next day
-                                    OR EXISTS (
-                                        SELECT 1 FROM unnest(days) AS day_val
-                                        WHERE day_val::text IN ('ma', 'maandag', 'monday', 'di', 'dinsdag', 'tuesday', 
-                                                                'wo', 'woe', 'woensdag', 'wednesday', 'do', 'donderdag', 'thursday',
-                                                                'vr', 'vrijdag', 'friday', 'za', 'zaterdag', 'saturday',
-                                                                'zo', 'zondag', 'sunday')
-                                        AND (
-                                            ($7 = '0' AND day_val::text IN ('ma', 'maandag', 'monday'))
-                                            OR ($7 = '1' AND day_val::text IN ('di', 'dinsdag', 'tuesday'))
-                                            OR ($7 = '2' AND day_val::text IN ('wo', 'woe', 'woensdag', 'wednesday'))
-                                            OR ($7 = '3' AND day_val::text IN ('do', 'donderdag', 'thursday'))
-                                            OR ($7 = '4' AND day_val::text IN ('vr', 'vrijdag', 'friday'))
-                                            OR ($7 = '5' AND day_val::text IN ('za', 'zaterdag', 'saturday'))
-                                            OR ($7 = '6' AND day_val::text IN ('zo', 'zondag', 'sunday'))
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
+                rows = await reminder_repo.list_active(
+                    conn,
+                    current_time_obj=current_time_obj,
+                    current_date=current_date,
+                    current_day=current_day,
+                    is_late_night=is_late_night,
+                    next_date=next_date,
+                    next_day=next_day,
                 )
-                """,
-                current_time_obj, current_date, current_day, current_time_obj, is_late_night, next_date, next_day
-            )
         except (pg_exceptions.InterfaceError, pg_exceptions.ConnectionDoesNotExistError, ConnectionResetError) as conn_err:
             await self._handle_connection_lost(conn_err)
             try:
@@ -1222,21 +1116,13 @@ class ReminderCog(commands.Cog):
                     # Update idempotency marker; for T-60 sends also store the message ID
                     try:
                         async with acquire_safe(self.db) as update_conn:
-                            if not is_t0_send and row.get("event_time"):
-                                await update_conn.execute(
-                                    "UPDATE reminders SET last_sent_at = $1, sent_message_id = $2 WHERE id = $3 AND guild_id = $4",
-                                    now,
-                                    sent_msg.id,
-                                    row["id"],
-                                    row["guild_id"],
-                                )
-                            else:
-                                await update_conn.execute(
-                                    "UPDATE reminders SET last_sent_at = $1 WHERE id = $2 AND guild_id = $3",
-                                    now,
-                                    row["id"],
-                                    row["guild_id"],
-                                )
+                            await reminder_repo.update_sent_at(
+                                update_conn,
+                                reminder_id=row["id"],
+                                guild_id=row["guild_id"],
+                                last_sent_at=now,
+                                sent_message_id=sent_msg.id if (not is_t0_send and row.get("event_time")) else None,
+                            )
                     except Exception:
                         logger.exception("⚠️ Could not update last_sent_at")
                 except discord.Forbidden:
@@ -1282,7 +1168,7 @@ class ReminderCog(commands.Cog):
                 if row.get("event_time") and is_t0_send:
                     try:
                         async with acquire_safe(self.db) as delete_conn:
-                            await delete_conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", row["id"], row["guild_id"])
+                            await reminder_repo.delete(delete_conn, row["guild_id"], row["id"])
                         logger.info(f"🗑️ Reminder {row['id']} (one-off) deleted after T0 send.")
                         await self.send_log_embed(
                             title="🗑️ Reminder deleted (one-off)",
@@ -1313,93 +1199,26 @@ class ReminderCog(commands.Cog):
                 pass
 
 
-# Voor extern gebruik via FastAPI
+# ---------------------------------------------------------------------------
+# Module-level helpers kept for backwards compatibility with api.py imports.
+# These are thin wrappers around reminder_repository — new code should import
+# from utils.reminder_repository directly.
+# ---------------------------------------------------------------------------
+
 async def get_reminders_for_user(conn: asyncpg.Connection, user_id: str, guild_id: Optional[int] = None):
-    """
-    Get reminders for a specific user.
-    
-    Args:
-        conn: Database connection
-        user_id: Discord user ID
-        guild_id: Optional guild ID to filter by (for multi-guild support)
-    
-    Returns:
-        List of reminder records
-    """
-    if guild_id:
-        query = (
-            """
-            SELECT id, name, time, call_time, days, event_time, message, channel_id, created_by, location
-            FROM reminders
-            WHERE guild_id = $1 AND created_by = $2
-            ORDER BY COALESCE(call_time, time) ASC
-            """
-        )
-        return await conn.fetch(query, guild_id, user_id)
-    else:
-        # Legacy: no guild filtering (for backwards compatibility)
-        query = (
-            """
-            SELECT id, name, time, call_time, days, event_time, message, channel_id, created_by, location
-            FROM reminders
-            WHERE created_by = $1
-            ORDER BY COALESCE(call_time, time) ASC
-            """
-        )
-        return await conn.fetch(query, user_id)
+    return await reminder_repo.get_for_api(conn, user_id, guild_id)
 
 
 async def create_reminder(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:
-    days = data.get("days")
-    if not days:
-        days_list: List[str] = []
-    elif isinstance(days, str):
-        days_list = [days]
-    else:
-        days_list = list(days)
-    await conn.execute(
-        """
-        INSERT INTO reminders (name, channel_id, time, days, message, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        """,
-        data["name"],
-        str(data["channel_id"]),
-        data["time"],
-        days_list,
-        data["message"],
-        data["created_by"]
-    )
+    await reminder_repo.create_for_api(conn, data)
 
 
 async def update_reminder(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:
-    days = data.get("days")
-    if not days:
-        days_list: List[str] = []
-    elif isinstance(days, str):
-        days_list = [days]
-    else:
-        days_list = list(days)
-    await conn.execute(
-        """
-        UPDATE reminders
-        SET name = $1, time = $2, days = $3, message = $4
-        WHERE id = $5 AND created_by = $6
-        """,
-        data["name"],
-        data["time"],
-        days_list,
-        data["message"],
-        data["id"],
-        data["created_by"]
-    )
+    await reminder_repo.update_for_api(conn, data)
 
 
 async def delete_reminder(conn: asyncpg.Connection, reminder_id: int, created_by: str) -> None:
-    await conn.execute(
-        "DELETE FROM reminders WHERE id = $1 AND created_by = $2",
-        reminder_id,
-        created_by
-    )
+    await reminder_repo.delete_by_owner(conn, reminder_id, created_by)
 
 
 class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
@@ -1517,10 +1336,7 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
         # Fetch current reminder to preserve event_time and call_time logic
         try:
             async with acquire_safe(self.cog.db) as conn:
-                current_row = await conn.fetchrow(
-                    "SELECT * FROM reminders WHERE id = $1 AND guild_id = $2",
-                    self.reminder_id, self.guild_id
-                )
+                current_row = await reminder_repo.get_by_id(conn, self.guild_id, self.reminder_id)
                 if not current_row:
                     await interaction.followup.send("❌ Reminder not found.", ephemeral=True)
                     return
@@ -1575,37 +1391,17 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
                 final_message = self.message_input.value.strip() if self.message_input.value else None
                 
                 # Update reminder (time and call_time are TIME columns, so we pass time objects)
-                if channel_id:
-                    await conn.execute(
-                        """
-                        UPDATE reminders
-                        SET name = $1, time = $2, call_time = $3, days = $4, message = $5, channel_id = $6
-                        WHERE id = $7 AND guild_id = $8
-                        """,
-                        self.name_input.value.strip(),
-                        time_obj,  # reminder tijd (T-60) as time object
-                        call_time_obj,  # event tijd (T0) as time object
-                        days_list if days_list else [],
-                        final_message,
-                        channel_id,
-                        self.reminder_id,
-                        self.guild_id
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        UPDATE reminders
-                        SET name = $1, time = $2, call_time = $3, days = $4, message = $5
-                        WHERE id = $6 AND guild_id = $7
-                        """,
-                        self.name_input.value.strip(),
-                        time_obj,  # reminder tijd (T-60) as time object
-                        call_time_obj,  # event tijd (T0) as time object
-                        days_list if days_list else [],
-                        final_message,
-                        self.reminder_id,
-                        self.guild_id
-                    )
+                await reminder_repo.update_fields(
+                    conn,
+                    reminder_id=self.reminder_id,
+                    guild_id=self.guild_id,
+                    name=self.name_input.value.strip(),
+                    reminder_time=time_obj,
+                    call_time=call_time_obj,
+                    days=days_list,
+                    message=final_message,
+                    channel_id=channel_id if channel_id else None,
+                )
         except RuntimeError as e:
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
             return
