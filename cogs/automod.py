@@ -26,6 +26,7 @@ from utils.automod_logging import AutoModLogger
 from utils.response_helpers import ResponseHelper, send_db_error, send_generic_error
 from utils.embed_builder import EmbedBuilder
 from utils.operational_logs import log_operational_event, EventType
+from utils.cog_base import AlphaCog
 
 logger = logging.getLogger(__name__)
 
@@ -40,21 +41,15 @@ def requires_admin():
     return app_commands.check(predicate)
 
 
-class AutoModeration(commands.Cog):
+class AutoModeration(AlphaCog):
     """Main auto-moderation cog with rule processing and enforcement."""
-    
+
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.rule_processor = RuleProcessor(bot)
         self.mod_logger = AutoModLogger(bot)
         self._spam_tracker: Dict[int, Dict[int, List[float]]] = {}  # guild_id -> user_id -> timestamps
         self._message_cache: Dict[int, Dict[int, str]] = {}  # guild_id -> user_id -> last_message
-        
-        # Get settings service
-        settings = getattr(bot, "settings", None)
-        if settings is None or not hasattr(settings, 'get'):
-            raise RuntimeError("SettingsService not available on bot instance")
-        self.settings = settings
         
     async def cog_load(self):
         """Initialize the auto-mod system."""

@@ -2,17 +2,14 @@ import discord
 from discord.ext import commands
 
 from utils.logger import logger, log_with_guild
+from utils.cog_base import AlphaCog
 
 
-class JoinRoleCog(commands.Cog):
+class JoinRoleCog(AlphaCog):
     """Assign a configurable join role when a new member joins a guild."""
 
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
-        settings = getattr(bot, "settings", None)
-        if settings is None or not hasattr(settings, "get"):
-            raise RuntimeError("SettingsService not available on bot instance")
-        self.settings = settings  # type: ignore
+        super().__init__(bot)
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:

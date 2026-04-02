@@ -15,6 +15,7 @@ from utils.premium_guard import guild_has_premium
 from utils.logger import log_with_guild, log_guild_action, logger
 from utils.timezone import BRUSSELS_TZ
 from cogs.reaction_roles import StartOnboardingView
+from utils.cog_base import AlphaCog
 
 SetupValueType = Literal["channel", "channel_category", "role"]
 
@@ -43,7 +44,7 @@ def requires_admin():
             return True
         raise app_commands.CheckFailure("Je hebt onvoldoende rechten voor dit commando.")
     return app_commands.check(predicate)
-class Configuration(commands.Cog):
+class Configuration(AlphaCog):
     config = app_commands.Group(
         name="config",
         description="Manage bot settings",
@@ -106,19 +107,15 @@ class Configuration(commands.Cog):
         parent=config,
     )
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.rule_processor = RuleProcessor(bot)
-        
+
         # Validate database pool availability
         from utils.db_helpers import get_bot_db_pool
         if get_bot_db_pool(bot) is None:
             from utils.logger import logger
             logger.warning("⚠️ Database pool not available - auto-moderation features will be limited")
-        
-        settings = getattr(bot, "settings", None)
-        if settings is None or not hasattr(settings, 'get'):
-            raise RuntimeError("SettingsService not available on bot instance")
-        self.settings = settings  # type: ignore
+
     @config.command(name="scopes", description="Show all available setting scopes")
     @requires_admin()
     async def config_scopes(self, interaction: discord.Interaction) -> None:
