@@ -832,8 +832,8 @@ class TextInputModal(discord.ui.Modal):
         if user_id in self.onboarding.active_sessions:
             self.onboarding.active_sessions[user_id]["answers"][self.step] = self.input_field.value
 
-        # Update the same message with the next question (no separate confirmation)
-        await interaction.response.defer(ephemeral=True)
+        # Do NOT defer here — send_next_question must own the first response so it can
+        # call send_modal (modal→modal chain) or edit_message (modal→embed step) as needed.
         await self.onboarding.send_next_question(interaction, step=self.step + 1, answers=self.answers)
 
 
