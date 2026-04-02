@@ -15,49 +15,21 @@ from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
 from utils.embed_builder import EmbedBuilder
 from utils.parsers import parse_days_string, format_days_for_display
 from utils.sanitizer import safe_embed_text
+from utils.embed_parser import (
+    extract_datetime_from_text,
+    extract_fields_from_lines,
+    parse_datetime as parse_datetime_fields,
+    infer_date_from_time_line,
+    parse_relative_date,
+    parse_days,
+    short_title_for_reminder_name,
+    format_message_paragraphs,
+)
+import utils.reminder_repository as reminder_repo
 import json
 
 
 # All logging timestamps in this module use Brussels time for clarity.
-
-def extract_datetime_from_text(text: str) -> Optional[datetime]:
-    """Parse a free-text date/time, trying numeric and natural language formats."""
-    # Try numeric date like 12/05/2025 or 12-05-25
-    date_match = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", text)
-    time_match = re.search(r"(\d{1,2}[:.]\d{2})", text)
-    current_year = datetime.now(BRUSSELS_TZ).year
-
-    if date_match and time_match:
-        day = int(date_match.group(1))
-        month = int(date_match.group(2))
-        year = date_match.group(3)
-        if year:
-            year = int(year) if len(year) == 4 else 2000 + int(year)
-        else:
-            year = current_year
-        time_str = time_match.group(1).replace(".", ":")
-        try:
-            dt = datetime.strptime(f"{day}/{month}/{year} {time_str}", "%d/%m/%Y %H:%M")
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=BRUSSELS_TZ)
-            return dt
-        except Exception as e:
-            logger.warning(f"⛔️ Date parse failed: {e}")
-
-    # Try natural language date like 12th May
-    date_match = re.search(r"(\d{1,2})(st|nd|rd|th)?\s+([A-Z][a-z]+)", text)
-    if date_match and time_match:
-        day = int(date_match.group(1))
-        month_str = date_match.group(3)
-        time_str = time_match.group(1).replace(".", ":")
-        try:
-            dt = datetime.strptime(f"{day} {month_str} {current_year} {time_str}", "%d %B %Y %H:%M")
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=BRUSSELS_TZ)
-            return dt
-        except Exception as e:
-            logger.warning(f"⛔️ Date parse failed: {e}")
-    return None
 
 
 class EmbedReminderWatcher(commands.Cog):
@@ -474,221 +446,25 @@ class EmbedReminderWatcher(commands.Cog):
             return None
 
     def extract_fields_from_lines(self, lines: List[str]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-        date_line = time_line = location_line = days_line = None
-        for line in lines:
-            lower = line.lower()
-            if "date:" in lower:
-                date_line = line.split(":", 1)[1].strip()
-            elif "time:" in lower:
-                time_line = line.split(":", 1)[1].strip()
-            elif "location:" in lower or "locatie:" in lower:
-                location_line = line.split(":", 1)[1].strip()
-            elif "days:" in lower:
-                days_line = line.split(":", 1)[1].strip()
-        return date_line, time_line, location_line, days_line
+        return extract_fields_from_lines(lines)
 
     def parse_datetime(self, date_line: Optional[str], time_line: Optional[str]) -> Tuple[Optional[datetime], Optional[object]]:
-        if not time_line:
-            logger.warning(f"❌ No valid time found in line: {time_line}")
-            return None, None
-
-        time_match = re.search(r"^.*?(\d{1,2})[:.](\d{2})(?:\s*(CET|CEST))?.*$", time_line)
-        if not time_match:
-            return None, None
-
-        hour = int(time_match.group(1))
-        minute = int(time_match.group(2))
-        _timezone_str = time_match.group(3) or "CET"
-
-        tz = BRUSSELS_TZ
-
-        if date_line:
-            date_line = date_line.strip()
-            numeric = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", date_line)
-            if numeric:
-                day = int(numeric.group(1))
-                month = int(numeric.group(2))
-                year = numeric.group(3)
-                if year:
-                    year = int(year) if len(year) == 4 else 2000 + int(year)
-                else:
-                    year = datetime.now(BRUSSELS_TZ).year
-            else:
-                date_match = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?", date_line)
-                if not date_match:
-                    alt_match = re.search(r"([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?", date_line)
-                    if not alt_match:
-                        return None, None
-                    month_str, day, year = alt_match.groups()
-                else:
-                    day, month_str, year = date_match.groups()
-                day = int(day)
-                year = int(year) if year else datetime.now(BRUSSELS_TZ).year
-                try:
-                    month = datetime.strptime(month_str[:3], "%b").month
-                except ValueError:
-                    month = datetime.strptime(month_str, "%B").month
-            dt = datetime(year, month, day, hour, minute, tzinfo=tz)
-        else:   
-            now = datetime.now(BRUSSELS_TZ)
-            dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-        return dt, tz
+        return parse_datetime_fields(date_line, time_line)
 
     def infer_date_from_time_line(self, time_line: str) -> Optional[str]:
-        numeric = re.search(r"\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b", time_line)
-        if numeric:
-            return numeric.group(1)
-
-        month_day = re.search(
-            r"\b([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:[,\s]+(\d{4}))?",
-            time_line
-        )
-        if month_day:
-            month, day, year = month_day.groups()
-            parts = [day, month]
-            if year:
-                parts.append(year)
-            return " ".join(parts)
-
-        day_month = re.search(
-            r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:[,\s]+(\d{4}))?",
-            time_line
-        )
-        if day_month:
-            day, month, year = day_month.groups()
-            parts = [day, month]
-            if year:
-                parts.append(year)
-            return " ".join(parts)
-
-        return None
+        return infer_date_from_time_line(time_line)
 
     def parse_relative_date(self, text: str) -> Optional[str]:
-        """Parse relative dates like 'This Wednesday', 'Next Friday', 'Tomorrow' etc."""
-        now = datetime.now(BRUSSELS_TZ)
-        text_lower = text.lower()
-        
-        # Day name mapping
-        day_map = {
-            "monday": 0, "maandag": 0, "mon": 0, "ma": 0,
-            "tuesday": 1, "dinsdag": 1, "tue": 1, "di": 1,
-            "wednesday": 2, "woensdag": 2, "wed": 2, "woe": 2, "wo": 2,
-            "thursday": 3, "donderdag": 3, "thu": 3, "do": 3,
-            "friday": 4, "vrijdag": 4, "fri": 4, "vr": 4,
-            "saturday": 5, "zaterdag": 5, "sat": 5, "za": 5,
-            "sunday": 6, "zondag": 6, "sun": 6, "zo": 6,
-        }
-        
-        # Try "This [day]" or "This coming [day]"
-        this_match = re.search(r"\bthis\s+(?:coming\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|mon|tue|wed|thu|fri|sat|sun|ma|di|woe?|do|vr|za|zo)\b", text_lower)
-        if this_match:
-            day_name = this_match.group(1)
-            if day_name in day_map:
-                target_weekday = day_map[day_name]
-                current_weekday = now.weekday()
-                days_ahead = (target_weekday - current_weekday) % 7
-                if days_ahead == 0:
-                    days_ahead = 7  # If today is the day, assume next week
-                target_date = now + timedelta(days=days_ahead)
-                return target_date.strftime("%d/%m/%Y")
-        
-        # Try "Next [day]"
-        next_match = re.search(r"\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|mon|tue|wed|thu|fri|sat|sun|ma|di|woe?|do|vr|za|zo)\b", text_lower)
-        if next_match:
-            day_name = next_match.group(1)
-            if day_name in day_map:
-                target_weekday = day_map[day_name]
-                current_weekday = now.weekday()
-                days_ahead = (target_weekday - current_weekday) % 7
-                if days_ahead == 0:
-                    days_ahead = 7  # If today is the day, assume next week
-                else:
-                    days_ahead += 7  # "Next" means at least one week ahead
-                target_date = now + timedelta(days=days_ahead)
-                return target_date.strftime("%d/%m/%Y")
-        
-        # Try "Tomorrow"
-        if re.search(r"\btomorrow\b", text_lower) or re.search(r"\bmorgen\b", text_lower):
-            target_date = now + timedelta(days=1)
-            return target_date.strftime("%d/%m/%Y")
-        
-        # Try "Today"
-        if re.search(r"\btoday\b", text_lower) or re.search(r"\bvandaag\b", text_lower):
-            return now.strftime("%d/%m/%Y")
-        
-        return None
+        return parse_relative_date(text)
 
     def parse_days(self, days_line: Optional[str], dt: datetime) -> str:
-        """Parse days line and return comma-separated string. Uses centralized parser."""
-        if not days_line:
-            return str(dt.weekday())
-        
-        # Use centralized parser
-        days_list = parse_days_string(days_line)
-        if days_list:
-            return ",".join(sorted(set(days_list)))
-        
-        # Fallback to weekday of provided datetime
-        logger.debug(f"⚠️ Fallback triggered in parse_days — no valid days_line: '{days_line}' → weekday of dt: {dt.strftime('%A')} ({dt.weekday()})")
-        return str(dt.weekday())
+        return parse_days(days_line, dt)
 
     def _short_title_for_reminder_name(self, parsed: dict, max_chars: int = 50) -> str:
-        """
-        Derive a short, clear title for the reminder name. When the embed title is long or
-        duplicates the description (everything in one line), use the first line of the
-        description or the first part of the title so the reminder name stays readable.
-        Kept to ~50 chars so the sent reminder embed title stays concise.
-        """
-        title_val = (parsed.get("title") or "").strip() or "-"
-        desc_val = (parsed.get("description") or "").strip() or ""
-
-        def trim_at_word(text: str, limit: int) -> str:
-            text = text.replace("\n", " ").replace("\r", " ")
-            text = " ".join(text.split())
-            if len(text) <= limit:
-                return text
-            part = text[: limit + 1].rsplit(" ", 1)
-            result = part[0] if part[0] else text[:limit]
-            # When there is no space in the slice, part[0] is the whole slice (limit+1 chars)
-            return result[:limit]
-
-        # Use full title only if it's short and single-line
-        title_one_line = title_val.replace("\n", " ").strip()
-        if len(title_one_line) <= max_chars and "\n" not in title_val:
-            return trim_at_word(title_one_line, max_chars)
-
-        # Prefer first line of description as short title when title is long/repetitive
-        if desc_val and desc_val != "-":
-            first_line = desc_val.split("\n")[0].strip()
-            first_line = " ".join(first_line.split())
-            if first_line and len(first_line) <= max_chars:
-                return first_line
-            if first_line:
-                return trim_at_word(first_line, max_chars)
-
-        # Fallback: first part of title at word boundary
-        return trim_at_word(title_one_line, max_chars)
+        return short_title_for_reminder_name(parsed, max_chars)
 
     def _format_message_paragraphs(self, text: str) -> str:
-        """
-        When the message is one long block (no or few newlines), add paragraph breaks
-        after sentence endings so the reminder description is easier to read.
-        Only applies when the text looks like a single block; preserves existing structure.
-        """
-        if not text or not text.strip():
-            return text
-        # Already has structure: several newlines
-        if text.count("\n") >= 2:
-            return text
-        # One long block: break after sentence end (e.g. ". " before capital) to avoid
-        # breaking abbreviations like "P.M." we only break after lowercase + ". " + uppercase
-        formatted = re.sub(r"([a-z])\.\s+([A-Z])", r"\1.\n\n\2", text)
-        formatted = re.sub(r"([a-z])\?\s+([A-Z])", r"\1?\n\n\2", formatted)
-        formatted = re.sub(r"([a-z])\!\s+([A-Z])", r"\1!\n\n\2", formatted)
-        # Optional: break on " | " so time zones get their own line (e.g. "3 PM EST | 8 PM UK")
-        formatted = re.sub(r"\s+\|\s+", "\n• ", formatted)
-        return formatted.strip()
+        return format_message_paragraphs(text)
 
     async def store_parsed_reminder(
         self,
@@ -784,27 +560,20 @@ class EmbedReminderWatcher(commands.Cog):
             if not is_pool_healthy(self.db):
                 raise RuntimeError("Database connection not available for store_parsed_reminder")
             async with acquire_safe(self.db) as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO reminders (
-                        name, channel_id, days, message, created_by, guild_id,
-                        location, origin_channel_id, origin_message_id,
-                        event_time, time, call_time, image_url
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                    """,
-                    name,
-                    channel,
-                    days_arr,  # geef als array door
-                    message,
-                    created_by,
-                    guild_id,
-                    location,
-                    origin_channel_id,
-                    origin_message_id,
-                    event_dt,
-                    trigger_time,  # reminder time (T-60) as time object
-                    call_time_obj,  # event time (T0) as time object
-                    image_url,
+                await reminder_repo.create(
+                    conn,
+                    guild_id=guild_id,
+                    name=name,
+                    channel_id=channel,
+                    reminder_time=trigger_time,
+                    call_time=call_time_obj,
+                    days=days_arr,
+                    message=message,
+                    created_by=created_by,
+                    origin_channel_id=origin_channel_id,
+                    origin_message_id=origin_message_id,
+                    event_time=event_dt,
+                    image_url=image_url,
                 )
             
             # Log successful save
