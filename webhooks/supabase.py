@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 import config
 from utils.dashboard_webhooks import forward_supabase_auth
+from utils.db_helpers import acquire_safe
 from utils.supabase_client import SupabaseConfigurationError, upsert_profile
 from webhooks.common import validate_webhook_signature
 
@@ -17,6 +18,62 @@ router = APIRouter(prefix="/webhooks/supabase", tags=["supabase"])
 def _extract_user_id(payload: Dict[str, Any]) -> Optional[str]:
     record = payload.get("record") or payload.get("user") or {}
     return record.get("id")
+
+
+def _extract_discord_id(payload: Dict[str, Any]) -> Optional[int]:
+    """Extract the Discord user ID (BIGINT) from a Supabase auth payload."""
+    record = payload.get("record") or payload.get("user") or {}
+    raw_meta = record.get("raw_user_meta_data") or {}
+    if raw_meta.get("provider") == "discord":
+        provider_id = raw_meta.get("provider_id")
+        if provider_id:
+            try:
+                return int(provider_id)
+            except (ValueError, TypeError):
+                pass
+    return None
+
+
+async def _purge_railway_data(pool, discord_id: int, supabase_user_id: str) -> None:
+    """Delete all personal data for a user from Railway PostgreSQL (GDPR erasure)."""
+    tables_to_delete = [
+        ("onboarding", "user_id"),
+        ("support_tickets", "user_id"),
+        ("faq_search_logs", "user_id"),
+        ("audit_logs", "user_id"),
+        ("terms_acceptance", "user_id"),
+        ("automod_logs", "user_id"),
+        ("automod_user_history", "user_id"),
+        ("app_reflections", "user_id"),
+    ]
+    tables_to_anonymize = [
+        ("reminders", "created_by"),
+        ("custom_commands", "created_by"),
+    ]
+
+    async with acquire_safe(pool) as conn:
+        async with conn.transaction():
+            for table, col in tables_to_delete:
+                result = await conn.execute(
+                    f"DELETE FROM {table} WHERE {col} = $1", discord_id  # noqa: S608
+                )
+                logger.info(
+                    "GDPR purge: %s from %s (discord_id=%s)", result, table, discord_id
+                )
+            for table, col in tables_to_anonymize:
+                result = await conn.execute(
+                    f"UPDATE {table} SET {col} = NULL WHERE {col} = $1",  # noqa: S608
+                    discord_id,
+                )
+                logger.info(
+                    "GDPR anonymize: %s in %s (discord_id=%s)", result, table, discord_id
+                )
+
+    logger.info(
+        "GDPR erasure complete: supabase_user_id=%s discord_id=%s",
+        supabase_user_id,
+        discord_id,
+    )
 
 
 @router.post("/auth")
@@ -89,12 +146,28 @@ async def supabase_auth_webhook(request: Request) -> Dict[str, str]:
             )
 
     if event_type in {"USER_DELETED", "USER_DESTROYED"} and user_id:
-        # TODO: purge user data when data ownership contracts are finalised.
-        logger.info(
-            "Supabase user deletion event received for user_id=%s. "
-            "Add data cleanup logic here.",
-            user_id,
-        )
+        discord_id = _extract_discord_id(payload)
+        if discord_id is None:
+            logger.warning(
+                "GDPR erasure requested for supabase_user_id=%s but no Discord ID found "
+                "in payload (non-Discord provider or missing metadata). "
+                "Railway data was not purged.",
+                user_id,
+            )
+        else:
+            pool = getattr(request.app.state, "db_pool", None)
+            if pool is None:
+                logger.error(
+                    "GDPR erasure for discord_id=%s failed: Railway DB pool not available.",
+                    discord_id,
+                )
+            else:
+                try:
+                    await _purge_railway_data(pool, discord_id, user_id)
+                except Exception as exc:
+                    logger.error(
+                        "GDPR erasure failed for discord_id=%s: %s", discord_id, exc
+                    )
 
     forward_supabase_auth(payload)
     return {"status": "acknowledged"}
