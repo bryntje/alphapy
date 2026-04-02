@@ -1883,6 +1883,7 @@ async def get_guild_settings(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get all settings for a specific guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -1950,6 +1951,7 @@ async def update_guild_settings(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Update settings for a specific guild category."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -2034,6 +2036,7 @@ async def get_guild_onboarding_questions(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get all onboarding questions for a specific guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -2077,6 +2080,7 @@ async def save_guild_onboarding_question(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Save or update an onboarding question for a specific guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -2122,6 +2126,7 @@ async def delete_guild_onboarding_question(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Delete an onboarding question for a specific guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -2151,6 +2156,7 @@ async def get_guild_onboarding_rules(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get all onboarding rules for a specific guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -2193,6 +2199,7 @@ async def save_guild_onboarding_rule(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Save or update an onboarding rule for a specific guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -2236,6 +2243,7 @@ async def delete_guild_onboarding_rule(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Delete an onboarding rule for a specific guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -2270,6 +2278,7 @@ async def reorder_onboarding_items(
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Reorder onboarding questions and rules."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
