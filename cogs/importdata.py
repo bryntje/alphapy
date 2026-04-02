@@ -4,7 +4,7 @@ import json
 from discord.ext import commands
 from typing import Optional
 import config
-from utils.logger import log_with_guild
+from utils.logger import logger, log_with_guild
 from utils.db_helpers import acquire_safe
 
 class ImportData(commands.Cog):
@@ -82,7 +82,7 @@ class ImportData(commands.Cog):
                     """,
                     user_id, json.dumps(responses)
                 )
-            print(f'✅ Geïmporteerd: {user_id}')
+            logger.debug("Imported user_id=%s", user_id)
         
         await ctx.send("✅ Import voltooid!")
 
