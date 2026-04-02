@@ -12,6 +12,7 @@ from utils.timezone import BRUSSELS_TZ
 from utils.settings_service import SettingsService
 from utils.settings_helpers import CachedSettingsHelper
 from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
+from utils.cog_base import AlphaCog
 from utils.embed_builder import EmbedBuilder
 from utils.parsers import parse_days_string, format_days_for_display
 from utils.sanitizer import safe_embed_text
@@ -32,15 +33,10 @@ import json
 # All logging timestamps in this module use Brussels time for clarity.
 
 
-class EmbedReminderWatcher(commands.Cog):
+class EmbedReminderWatcher(AlphaCog):
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.db: Optional[asyncpg.Pool] = None
-        settings = getattr(bot, "settings", None)
-        if settings is None or not hasattr(settings, 'get'):
-            raise RuntimeError("SettingsService not available on bot instance")
-        self.settings = settings  # type: ignore
-        self.settings_helper = CachedSettingsHelper(settings)  # type: ignore
     
     def format_days_for_display(self, days_list: List[str]) -> str:
         """Convert day numbers to readable day names using centralized parser."""

@@ -22,9 +22,10 @@ from utils.premium_guard import guild_has_premium
 from utils.settings_helpers import CachedSettingsHelper
 from utils.settings_service import SettingsService
 from utils.timezone import BRUSSELS_TZ
+from utils.cog_base import AlphaCog
 
 
-class VerificationCog(commands.Cog):
+class VerificationCog(AlphaCog):
     """
     Lets guilds run their own payment verification: public area + paid area gated by a verified role.
     Members submit a payment screenshot (for the guild's products/events/access); after AI or manual
@@ -32,17 +33,10 @@ class VerificationCog(commands.Cog):
     """
 
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.db: Optional[asyncpg.Pool] = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("verification", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
-
-        settings = getattr(bot, "settings", None)
-        if not isinstance(settings, SettingsService):
-            raise RuntimeError("SettingsService not available on bot instance")
-
-        self.settings: SettingsService = settings
-        self.settings_helper = CachedSettingsHelper(settings)
 
         # Start async setup without blocking the event loop
         self.bot.loop.create_task(self.setup_db())

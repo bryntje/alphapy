@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any, cast
 from utils.settings_service import SettingsService
 from utils.settings_helpers import CachedSettingsHelper
 from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.cog_base import AlphaCog
 from utils.validators import validate_admin
 from utils.embed_builder import EmbedBuilder
 
@@ -27,7 +28,7 @@ from utils.timezone import BRUSSELS_TZ
 from version import __version__, CODENAME
 
 
-class TicketBot(commands.Cog):
+class TicketBot(AlphaCog):
     """TicketBot MVP
 
     This Cog provides a minimal `/ticket` slash command that lets users
@@ -39,13 +40,8 @@ class TicketBot(commands.Cog):
     """
 
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.db: Optional[asyncpg.Pool] = None
-        settings = getattr(bot, "settings", None)
-        if not isinstance(settings, SettingsService):
-            raise RuntimeError("SettingsService not available on bot instance")
-        self.settings: SettingsService = settings
-        self.settings_helper = CachedSettingsHelper(settings)
         # In-memory cooldown tracking voor suggest_reply button
         self._suggest_reply_cooldowns: Dict[int, float] = {}  # user_id -> last_used_timestamp
         self._max_cooldown_entries = 1000

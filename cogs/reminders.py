@@ -14,6 +14,7 @@ from utils.validators import validate_admin, validate_owner_or_admin
 from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
 from utils.settings_helpers import CachedSettingsHelper
 from utils.embed_builder import EmbedBuilder
+from utils.cog_base import AlphaCog
 from utils.parsers import parse_days_string, parse_time_string, format_days_for_display
 from utils.sanitizer import safe_embed_text
 import time as time_module
@@ -27,15 +28,10 @@ import utils.reminder_repository as reminder_repo
 # All logging timestamps in this module use Brussels time for clarity.
 
 
-class ReminderCog(commands.Cog):
+class ReminderCog(AlphaCog):
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.db: Optional[asyncpg.Pool] = None
-        settings = getattr(bot, "settings", None)
-        if settings is None or not hasattr(settings, 'get'):
-            raise RuntimeError("SettingsService not available on bot instance")
-        self.settings = settings  # type: ignore
-        self.settings_helper = CachedSettingsHelper(settings)  # type: ignore
         # Rate limit: max 3 image reminders per hour per (user_id, guild_id)
         self._image_reminder_timestamps: Dict[Tuple[int, int], List[float]] = {}
         self.bot.loop.create_task(self.setup())

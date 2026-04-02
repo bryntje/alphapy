@@ -8,14 +8,11 @@ from utils.settings_service import SettingsService
 from utils.logger import logger
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
+from utils.cog_base import AlphaCog
 
-class GDPRAnnouncement(commands.Cog):
+class GDPRAnnouncement(AlphaCog):
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
-        settings = getattr(bot, "settings", None)
-        if settings is None or not hasattr(settings, 'get'):
-            raise RuntimeError("SettingsService not available on bot instance")
-        self.settings = settings  # type: ignore
+        super().__init__(bot)
 
     @commands.command(name="postgdpr")
     @commands.is_owner()

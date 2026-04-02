@@ -11,18 +11,15 @@ from utils.settings_service import SettingsService
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger
+from utils.cog_base import AlphaCog
 
-class InviteTracker(commands.Cog):
+class InviteTracker(AlphaCog):
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.invites_cache = {}
         self.db: Optional[asyncpg.Pool] = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("inviteboard", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
-        settings = getattr(bot, "settings", None)
-        if settings is None or not hasattr(settings, 'get'):
-            raise RuntimeError("SettingsService not available on bot instance")
-        self.settings = settings  # type: ignore
         
     @commands.Cog.listener()
     async def on_ready(self):
