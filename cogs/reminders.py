@@ -1283,21 +1283,21 @@ class ReminderCog(commands.Cog):
                     try:
                         async with acquire_safe(self.db) as delete_conn:
                             await delete_conn.execute("DELETE FROM reminders WHERE id = $1 AND guild_id = $2", row["id"], row["guild_id"])
+                        logger.info(f"🗑️ Reminder {row['id']} (one-off) deleted after T0 send.")
+                        await self.send_log_embed(
+                            title="🗑️ Reminder deleted (one-off)",
+                            description=(
+                                f"ID: `{row['id']}`\n"
+                                f"Name: **{row['name']}**\n"
+                                f"Channel: <#{row['channel_id']}>\n"
+                                f"Deleted after T0 at {now.strftime('%Y-%m-%d %H:%M')}"
+                            ),
+                            level="warning",
+                            guild_id=row["guild_id"],
+                        )
                     except Exception as delete_err:
                         logger.warning(f"⚠️ Could not delete one-off reminder {row['id']}: {delete_err}")
-                        # Continue - reminder will be cleaned up later
-                    logger.info(f"🗑️ Reminder {row['id']} (one-off) deleted after T0 send.")
-                    await self.send_log_embed(
-                        title="🗑️ Reminder deleted (one-off)",
-                        description=(
-                            f"ID: `{row['id']}`\n"
-                            f"Name: **{row['name']}**\n"
-                            f"Channel: <#{row['channel_id']}>\n"
-                            f"Deleted after T0 at {now.strftime('%Y-%m-%d %H:%M')}"
-                        ),
-                        level="warning",
-                        guild_id=row["guild_id"],
-                    )
+                        # Continue - reminder will be cleaned up on next loop iteration
 
         except Exception as e:
             if isinstance(e, (pg_exceptions.InterfaceError, pg_exceptions.ConnectionDoesNotExistError, ConnectionResetError)):
