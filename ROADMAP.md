@@ -1,8 +1,20 @@
-# 🧬 Innersync • Alphapy Roadmap v3.1.0 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.1.1 "Enterprise Ready"
 
-**Release v3.1.0 Complete!** 🎉 Expanded with advanced moderation, legal-update automation, and privacy-aware app-reflection ingestion.
+**Release v3.1.1 Complete!** 🎉 Codebase health, security hardening, GDPR data erasure, and test coverage expansion.
 
-This document outlines the evolution from v3.1.0 forward.
+This document outlines the evolution from v3.1.1 forward.
+
+## ✅ COMPLETED: Codebase Health & Security Hardening (v3.1.1)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Patch release focused on internal quality, security, and correctness:
+- **Security**: Dashboard settings and onboarding endpoints now require guild admin access (was auth-only)
+- **GDPR**: User data erasure on `USER_DELETED` event — fully compliant with GDPR right to erasure
+- **Refactoring**: Repository pattern (`reminder_repository`), `AlphaCog` base class, `embed_parser` service, `configuration.py` split
+- **Performance**: `guild_id` indexes on high-traffic tables via Alembic migration 012
+- **Bug fixes**: Onboarding modal Discord limits, embed watcher one-off detection, location field in reminders
+- **Test coverage**: 17 new API endpoint tests (300 total)
 
 ## ✅ COMPLETED: Auto-Moderation + Legal/App Reflection Integrations (v3.1.0)
 
