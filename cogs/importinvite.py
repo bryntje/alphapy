@@ -4,7 +4,7 @@ import re
 from typing import Optional
 from discord.ext import commands
 import config
-from utils.logger import log_with_guild
+from utils.logger import logger, log_with_guild
 from utils.db_helpers import acquire_safe
 
 class ImportInvites(commands.Cog):
@@ -49,24 +49,24 @@ class ImportInvites(commands.Cog):
         pattern_joined = re.compile(r'<@(\d+)> joined! <@(\d+)> now has (\d+) invites?\.')
 
 
-        print(f"🔍 Kanaal check: {channel} (ID: {announcement_channel_id}) voor guild {ctx.guild.name}")
+        logger.debug("Channel check: %s (ID: %s) for guild %s", channel, announcement_channel_id, ctx.guild.name)
         async for message in channel.history(limit=1000):  # Pas aan indien nodig
             match = pattern_invited.search(message.content) or pattern_joined.search(message.content)
-            print(f"📩 Bericht gevonden: {message.content}")
+            logger.debug("Message found: %s", message.content)
             if match:
-                print(f"✅ Regex match: {match.groups()}")  # ✅ Debug of regex werkt
+                logger.debug("Regex match: %s", match.groups())
                 _, inviter_mention, count = match.groups()
                 inviter = int(re.sub(r'[^\d]', '', inviter_mention))
-                print(f"✅ Gevonden: {inviter} heeft nu {count} invites.")
+                logger.debug("Found: user_id=%s now has %s invites", inviter, count)
                 count = int(count)
                 invite_counts[inviter] = max(invite_counts.get(inviter, 0), count)
             else:
-                print(f"❌ Geen match: {message.content}")  # ❌ Debug als er GEEN match is
+                logger.debug("No regex match: %s", message.content)
 
         assert self.db is not None
         async with acquire_safe(self.db) as conn:
             for inviter, count in invite_counts.items():
-                print(f"📌 Opslaan: {inviter} → {count} invites")
+                logger.debug("Saving: user_id=%s invite_count=%s", inviter, count)
                 await conn.execute(
                     """
                     INSERT INTO invite_tracker (user_id, invite_count)
@@ -75,7 +75,7 @@ class ImportInvites(commands.Cog):
                     """,
                     inviter, count
                 )
-                print(f'✅ Geïmporteerd: {inviter} met {count} invites')
+                logger.debug("Imported: user_id=%s invite_count=%s", inviter, count)
         
         await ctx.send("✅ Import voltooid!")
 

@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 import config
 from datetime import datetime
+from utils.logger import logger
 
 class GDPRMigration(commands.Cog):
     def __init__(self, bot):
@@ -22,7 +23,7 @@ class GDPRMigration(commands.Cog):
         """)
 
         await pg_conn.close()
-        print("✅ GDPR table checked/created!")
+        logger.info("GDPR table checked/created")
 
 
     @commands.command(name="migrate_gdpr")
