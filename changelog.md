@@ -12,6 +12,36 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.1.1] - 2026-04-03
+
+### Added
+- **`AlphaCog` base class** (`utils/cog_base.py`): all cogs now extend `AlphaCog` which auto-wires `self.settings` and `self.settings_helper` in `__init__`, eliminating ~25 lines of boilerplate per cog
+- **`acquire_transactional` context manager** (`utils/db_helpers.py`): atomic multi-step DB operations with automatic rollback on failure
+- **API endpoint test suite** (`tests/test_api_endpoints.py`): 17 tests covering reminders CRUD, dashboard settings, and automod rules endpoints (auth, DB availability, admin access, and response shape)
+
+### Changed
+- **Codebase refactoring** — internal improvements, no breaking changes to slash commands or API:
+  - Extracted embed date/text parsing into `utils/embed_parser.py` (testable, decoupled from the watcher cog)
+  - Extracted all reminder SQL into `utils/reminder_repository.py` (repository pattern)
+  - Split `cogs/configuration.py`: UI components moved to `cogs/configuration_ui.py`, automod helpers to `cogs/configuration_automod.py`
+  - Migrated 9 cogs (`automod`, `configuration`, `embed_watcher`, `gdpr`, `inviteboard`, `join_roles`, `reminders`, `ticketbot`, `verification`) to `AlphaCog`
+- **Default branch clarified**: `main` is the default branch (not `master`) — documented in `CLAUDE.md` and `AGENTS.md`
+
+### Fixed
+- **Security**: Dashboard settings and onboarding endpoints (`GET/POST /api/dashboard/settings/{guild_id}`, all `/api/dashboard/{guild_id}/onboarding/*`) now require guild admin access via `verify_guild_admin_access()` — previously any authenticated user could read or modify another guild's settings
+- **GDPR**: Implemented user data erasure on Supabase `USER_DELETED` event — purges rows from `reminders`, `support_tickets`, `onboarding_answers`, `automod_user_history`, and `gdpr_terms_acceptance` for the deleted user
+- **reminder_repository**: `create()` was missing the `location` parameter — location data extracted from event embeds was silently discarded; added `location` to the INSERT and pass it from `embed_watcher`
+- **Onboarding modal**: Truncate question title/label to 45 chars to stay within Discord's API limit (was raising `400 Bad Request`)
+- **Onboarding modal**: Handle modal→modal chaining (Discord API forbids responding to a modal submit with another modal); added `TextInputTriggerView` bridge so each modal opens from a fresh button interaction
+- **Embed watcher**: Corrected one-off vs recurring detection and T-60/T0 log display
+- **Embed watcher**: Clean event title extraction, move auto-indicator to footer, delete T-60 notification when T0 fires
+- **Embed watcher**: Renamed local variable `safe_embed_text` that was shadowing the `utils.sanitizer` import
+- **Performance**: Added `guild_id` indexes on `reminders`, `support_tickets`, `automod_logs`, and `automod_user_history` tables (Alembic migration 012) — eliminates full-table scans on all guild-scoped queries
+- **Reminders**: Move success log inside the try block so it only fires on confirmed deletion (not on missing reminders)
+- **Logging**: Replace `print()` calls with `logger` in utility import scripts (`migrate_gdpr.py`, `importinvite.py`, `importdata.py`)
+
+---
+
 ## [3.1.0] - 2026-03-31
 
 ### Added
