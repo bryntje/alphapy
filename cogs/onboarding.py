@@ -570,10 +570,13 @@ class Onboarding(commands.Cog):
                 logger.debug("Onboarding: premium check failed (non-critical): %s", e)
 
             # Send summary to user
+            send_kwargs = {"embed": summary_embed, "ephemeral": True}
+            if view is not None:
+                send_kwargs["view"] = view
             if not interaction.response.is_done():
-                await interaction.response.send_message(embed=summary_embed, ephemeral=True, view=view)
+                await interaction.response.send_message(**send_kwargs)
             else:
-                await interaction.followup.send(embed=summary_embed, ephemeral=True, view=view)
+                await interaction.followup.send(**send_kwargs)
 
             # Save the onboarding data to the database
             stored = await self.store_onboarding_data(interaction.guild.id, user_id, answers)
