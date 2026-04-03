@@ -27,7 +27,7 @@ def requires_admin():
         is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
         if is_admin:
             return True
-        raise app_commands.CheckFailure("Je hebt onvoldoende rechten voor dit commando.")
+        raise app_commands.CheckFailure("You need administrator permissions for this command.")
     return app_commands.check(predicate)
 class Configuration(AlphaCog):
     config = app_commands.Group(
