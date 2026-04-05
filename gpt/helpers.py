@@ -48,6 +48,10 @@ _gpt_retry_queue: list = []  # List of dicts: {messages, user_id, model, guild_i
 MAX_RETRY_QUEUE_SIZE = 50
 MAX_RETRIES = 5
 _retry_task: Optional[asyncio.Task] = None
+_retry_lock: asyncio.Lock  # Initialised lazily on first use (event loop must exist)
+
+# Tracked fire-and-forget tasks — prevents silent exception swallowing and GC-induced cancellation.
+_background_tasks: set = set()
 
 def set_bot_instance(bot: commands.Bot) -> None:
     global bot_instance
@@ -70,7 +74,9 @@ def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optiona
     log_message = f"✅ Grok success by {user_id} – {tokens_used} tokens, {latency_ms}ms latency"
     logger.info(log_message)
     if bot_instance and guild_id:
-        asyncio.create_task(log_to_channel(log_message, level="info", guild_id=guild_id))
+        t = asyncio.create_task(log_to_channel(log_message, level="info", guild_id=guild_id))
+        _background_tasks.add(t)
+        t.add_done_callback(_background_tasks.discard)
 
 def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = None):
     from utils.logger import get_gpt_status_logs
@@ -82,7 +88,9 @@ def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = 
     log_message = f"❌ Grok error [{error_type}] by {user_id}"
     logger.error(log_message)
     if bot_instance and guild_id:
-        asyncio.create_task(log_to_channel(log_message, level="error", guild_id=guild_id))
+        t = asyncio.create_task(log_to_channel(log_message, level="error", guild_id=guild_id))
+        _background_tasks.add(t)
+        t.add_done_callback(_background_tasks.discard)
 
 def is_allowed_prompt(prompt: str) -> bool:
     # Add words or phrases here that you want to block
@@ -140,70 +148,83 @@ async def log_to_channel(message: str, level: str = "info", guild_id: Optional[i
         logger.error(f"🚨 Failed to send Grok log embed: {e}")
 
 
-def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflections: bool = True):
-    """Add a failed Grok request to the retry queue."""
-    global _gpt_retry_queue
+def _get_retry_lock() -> asyncio.Lock:
+    """Lazily create the retry lock (requires a running event loop)."""
+    global _retry_lock
+    if not hasattr(_retry_lock, '_loop') or _retry_lock._loop is None:  # type: ignore[attr-defined]
+        _retry_lock = asyncio.Lock()
+    return _retry_lock
 
-    # Limit queue size (drop oldest if full)
-    if len(_gpt_retry_queue) >= MAX_RETRY_QUEUE_SIZE:
-        _gpt_retry_queue.pop(0)
 
-    _gpt_retry_queue.append({
-        "messages": messages,
-        "user_id": user_id,
-        "model": model,
-        "guild_id": guild_id,
-        "include_reflections": include_reflections,
-        "retry_count": 0,
-        "timestamp": datetime.utcnow(),
-    })
+async def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflections: bool = True):
+    """Add a failed Grok request to the retry queue (thread-safe via asyncio.Lock)."""
+    async with _get_retry_lock():
+        # Limit queue size (drop oldest if full)
+        if len(_gpt_retry_queue) >= MAX_RETRY_QUEUE_SIZE:
+            _gpt_retry_queue.pop(0)
+
+        _gpt_retry_queue.append({
+            "messages": messages,
+            "user_id": user_id,
+            "model": model,
+            "guild_id": guild_id,
+            "include_reflections": include_reflections,
+            "retry_count": 0,
+            "timestamp": datetime.utcnow(),
+        })
+
+
+async def _retry_one(item: dict) -> None:
+    """Retry a single queued Grok request with per-item exponential backoff."""
+    retry_count = item["retry_count"]
+    if retry_count >= MAX_RETRIES:
+        logger.debug(f"⚠️ Dropping Grok retry after {MAX_RETRIES} attempts for user {item['user_id']}")
+        return
+
+    # Exponential backoff per item — runs concurrently with other retries.
+    backoff_seconds = 2 ** retry_count
+    await asyncio.sleep(backoff_seconds)
+
+    try:
+        await ask_gpt(
+            item["messages"],
+            user_id=item["user_id"],
+            model=item["model"],
+            guild_id=item["guild_id"],
+            _is_retry=True,
+            include_reflections=item.get("include_reflections", True),
+        )
+        logger.debug(f"✅ Grok retry succeeded for user {item['user_id']}")
+    except Exception as retry_error:
+        item["retry_count"] += 1
+        item["timestamp"] = datetime.utcnow()
+        async with _get_retry_lock():
+            if len(_gpt_retry_queue) < MAX_RETRY_QUEUE_SIZE:
+                _gpt_retry_queue.append(item)
+        logger.debug(f"⚠️ Grok retry {item['retry_count']}/{MAX_RETRIES} failed: {retry_error}")
 
 
 async def _retry_gpt_requests():
-    """Background task that processes the Grok retry queue every 5 minutes."""
-    global _gpt_retry_queue
-    
+    """Background task that processes the Grok retry queue every 5 minutes.
+
+    All queued items are drained atomically under the retry lock and then
+    retried concurrently — each with its own per-item backoff — so a single
+    slow retry can no longer stall the rest of the queue.
+    """
     while True:
         try:
             await asyncio.sleep(300)  # 5 minutes
-            
-            if not _gpt_retry_queue:
-                continue
-            
-            # Process queue (copy to avoid modification during iteration)
-            queue_copy = _gpt_retry_queue.copy()
-            _gpt_retry_queue.clear()
-            
-            for item in queue_copy:
-                retry_count = item["retry_count"]
-                if retry_count >= MAX_RETRIES:
-                    logger.debug(f"⚠️ Dropping Grok retry after {MAX_RETRIES} attempts")
+
+            # Atomically drain the queue to avoid a TOCTOU race with _add_to_retry_queue.
+            async with _get_retry_lock():
+                if not _gpt_retry_queue:
                     continue
-                
-                # Exponential backoff: 1s, 2s, 4s, 8s, 16s
-                backoff_seconds = 2 ** retry_count
-                await asyncio.sleep(backoff_seconds)
-                
-                try:
-                    # Retry the request (with _is_retry=True to prevent re-queuing)
-                    result = await ask_gpt(
-                        item["messages"],
-                        user_id=item["user_id"],
-                        model=item["model"],
-                        guild_id=item["guild_id"],
-                        _is_retry=True,
-                        include_reflections=item.get("include_reflections", True),
-                    )
-                    logger.debug(f"✅ Grok retry succeeded for user {item['user_id']}")
-                    # Success - don't re-queue
-                except Exception as retry_error:
-                    # Still failed - increment retry count and re-queue
-                    item["retry_count"] += 1
-                    item["timestamp"] = datetime.utcnow()
-                    if len(_gpt_retry_queue) < MAX_RETRY_QUEUE_SIZE:
-                        _gpt_retry_queue.append(item)
-                    logger.debug(f"⚠️ Grok retry {item['retry_count']}/{MAX_RETRIES} failed: {retry_error}")
-        
+                drained = _gpt_retry_queue.copy()
+                _gpt_retry_queue.clear()
+
+            # Process all items concurrently; exceptions per item are handled inside _retry_one.
+            await asyncio.gather(*[_retry_one(item) for item in drained], return_exceptions=True)
+
         except asyncio.CancelledError:
             logger.info("🛑 Grok retry queue task cancelled")
             raise
@@ -356,7 +377,7 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
         
         # If retryable and not already a retry attempt, add to queue and return fallback message
         if is_retryable and not _is_retry:
-            _add_to_retry_queue(
+            await _add_to_retry_queue(
                 messages, user_id, model or _default_model, guild_id, include_reflections
             )
             logger.warning(f"⚠️ Grok error (retryable): {error_type}. Returning fallback message and queuing for retry.")

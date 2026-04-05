@@ -6,18 +6,23 @@ boilerplate code across cogs. Provides type-safe getters with automatic
 coercion and caching.
 """
 
+import json
 from collections import OrderedDict
 from typing import Optional, Any, Dict
 from utils.settings_service import SettingsService
+from utils.db_helpers import acquire_transactional
 from utils.logger import logger
 
 
 class CachedSettingsHelper:
     """
-    Wrapper around SettingsService that provides caching and type-safe getters.
-    
-    Reduces database queries by caching frequently accessed settings and provides
-    convenient type coercion methods. Uses LRU cache with max size limit.
+    Wrapper around SettingsService that provides type-safe getters with LRU caching.
+
+    Note: SettingsService.get() is already a pure in-memory dict lookup (all settings
+    are bulk-loaded at startup). This class adds type coercion and a second LRU layer
+    mainly to avoid re-coercing frequently accessed values. The cache has no TTL —
+    entries are valid until explicitly invalidated via invalidate_cache() or until
+    evicted by size pressure.
     """
     
     def __init__(self, settings: SettingsService, max_cache_size: int = 500):
@@ -195,25 +200,67 @@ class CachedSettingsHelper:
         updated_by: Optional[int] = None
     ) -> None:
         """
-        Bulk settings update in a more efficient way.
-        
-        Note: This doesn't use a transaction yet, but groups operations.
-        Future enhancement: Use database transaction for atomic updates.
-        
+        Bulk settings update using a single database transaction.
+
+        All values are upserted atomically in one roundtrip, then in-memory
+        overrides are updated and listeners are fired per key.
+
         Args:
             guild_id: Guild ID to update settings for
             updates: Dictionary mapping (scope, key) tuples to values
             updated_by: Optional user ID who made the changes
         """
+        if not updates:
+            return
+
+        service = self._settings
+
+        # Validate and coerce all values up front; skip unknown settings.
+        coerced: dict[tuple[str, str], Any] = {}
+        rows = []
         for (scope, key), value in updates.items():
-            try:
-                await self._settings.set(scope, key, value, guild_id, updated_by)
-                # Invalidate cache for this setting
-                cache_key = self._get_cache_key(scope, key, guild_id)
-                self._cache.pop(cache_key, None)
-            except Exception as e:
-                logger.error(f"Failed to set setting {scope}.{key}: {e}")
-                # Continue with other updates even if one fails
+            definition = service._definitions.get((scope, key))
+            if not definition:
+                logger.error(f"set_bulk: unregistered setting {scope}.{key}, skipping")
+                continue
+            coerced_value = service._coerce_value(value, definition)
+            coerced[(scope, key)] = coerced_value
+            rows.append((guild_id, scope, key, json.dumps(coerced_value), definition.value_type, updated_by))
+
+        if not rows:
+            return
+
+        # If no pool (e.g. tests), fall back to per-key in-memory updates.
+        if not service._dsn or not service._pool:
+            for (scope, key), coerced_value in coerced.items():
+                service._overrides[(guild_id, scope, key)] = coerced_value
+                await service._notify(scope, key, coerced_value)
+            return
+
+        # Single transaction — one DB roundtrip for all keys.
+        try:
+            async with acquire_transactional(service._pool) as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO bot_settings (guild_id, scope, key, value, value_type, updated_by, updated_at)
+                    VALUES ($1, $2, $3, $4::jsonb, $5, $6, NOW())
+                    ON CONFLICT (guild_id, scope, key)
+                    DO UPDATE SET value = EXCLUDED.value,
+                                  value_type = EXCLUDED.value_type,
+                                  updated_by = EXCLUDED.updated_by,
+                                  updated_at = NOW()
+                    """,
+                    rows,
+                )
+        except Exception as e:
+            logger.error(f"set_bulk: transaction failed: {e}")
+            raise
+
+        # Update in-memory overrides, invalidate local cache, and fire listeners.
+        for (scope, key), coerced_value in coerced.items():
+            service._overrides[(guild_id, scope, key)] = coerced_value
+            self._cache.pop(self._get_cache_key(scope, key, guild_id), None)
+            await service._notify(scope, key, coerced_value)
     
     async def invalidate_cache(self, scope: str, key: str, guild_id: int) -> None:
         """

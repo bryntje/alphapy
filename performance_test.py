@@ -78,26 +78,27 @@ async def test_api_performance():
             ("Premium verify", f"{core_url}/premium/verify", "POST", {"user_id": 123, "guild_id": 456}),
         ]
 
-        for name, url, method, *data in endpoints:
-            try:
-                start_time = time.time()
-                headers = {"X-API-Key": api_key}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for name, url, method, *data in endpoints:
+                try:
+                    start_time = time.time()
+                    headers = {"X-API-Key": api_key}
 
-                if method == "GET":
-                    response = httpx.get(url, headers=headers, timeout=10.0)
-                elif method == "POST" and data:
-                    response = httpx.post(url, headers=headers, json=data[0], timeout=10.0)
-                else:
-                    continue
+                    if method == "GET":
+                        response = await client.get(url, headers=headers)
+                    elif method == "POST" and data:
+                        response = await client.post(url, headers=headers, json=data[0])
+                    else:
+                        continue
 
-                response_time = (time.time() - start_time) * 1000
+                    response_time = (time.time() - start_time) * 1000
 
-                if response.is_success:
-                    print(f"✅ {name}: {response_time:.1f}ms (status: {response.status_code})")
-                else:
-                    print(f"⚠️  {name}: {response_time:.1f}ms (status: {response.status_code})")
-            except Exception as e:
-                print(f"❌ {name}: Failed ({e})")
+                    if response.is_success:
+                        print(f"✅ {name}: {response_time:.1f}ms (status: {response.status_code})")
+                    else:
+                        print(f"⚠️  {name}: {response_time:.1f}ms (status: {response.status_code})")
+                except Exception as e:
+                    print(f"❌ {name}: Failed ({e})")
 
         print("✅ API tests completed")
 
