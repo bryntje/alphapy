@@ -1,8 +1,20 @@
-# 🧬 Innersync • Alphapy Roadmap v3.1.1 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.1.2 "Enterprise Ready"
 
-**Release v3.1.1 Complete!** 🎉 Codebase health, security hardening, GDPR data erasure, and test coverage expansion.
+**Release v3.1.2 Complete!** 🎉 Performance hardening, bot startup log cleanup, and bug fixes.
 
-This document outlines the evolution from v3.1.1 forward.
+This document outlines the evolution from v3.1.2 forward.
+
+## ✅ COMPLETED: Performance & Stability Hardening (v3.1.2)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Patch release focused on runtime performance and operational stability:
+- **Performance**: Persistent `httpx.AsyncClient` in premium guard — eliminates TCP connection churn on Core-API calls
+- **Performance**: GPT retry queue — concurrent processing with `asyncio.Lock` (TOCTOU race fixed); full queue drains in ~16s vs ~25 minutes
+- **Performance**: `set_bulk` rewritten with single `acquire_transactional` + `executemany` — N DB roundtrips → 1 transaction
+- **Reliability**: Fire-and-forget channel log tasks now tracked; exceptions surface instead of being silently dropped
+- **Bug fixes**: Onboarding `TypeError` on summary send when view is `None`; Dutch error message in configuration
+- **Observability**: Suppressed `UNKNOWN_SETTING` log noise for `fyi.*` keys; migration 013 cleans up stale `bot_settings` rows
 
 ## ✅ COMPLETED: Codebase Health & Security Hardening (v3.1.1)
 
