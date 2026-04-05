@@ -12,6 +12,23 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.1.2] - 2026-04-05
+
+### Performance
+- **Premium guard**: Reuse a persistent `httpx.AsyncClient` for Core-API calls instead of opening a new TCP connection per cache miss; client is cleanly closed on shutdown
+- **GPT retry queue**: Replaced serial per-item backoff with concurrent `asyncio.gather`; added `asyncio.Lock` to eliminate TOCTOU race — a full queue now drains in ~16s instead of ~25 minutes
+- **GPT retry queue**: Fire-and-forget `create_task` calls in `log_gpt_success`/`log_gpt_error` are now tracked in a `_background_tasks` set so exceptions surface instead of being silently dropped
+- **Settings**: `set_bulk` rewritten to use a single `acquire_transactional` + `executemany` — N sequential DB roundtrips reduced to 1 transaction
+- **Premium guard**: `_stats_*` counters in `is_premium` now incremented under `_cache_lock` (thread-safety)
+
+### Fixed
+- **Onboarding**: Prevent `TypeError` when `view` is `None` on summary send — occurs when user is already premium or `PREMIUM_CHECKOUT_URL` is unset (#184)
+- **Configuration**: Translate remaining Dutch error message ("Je hebt onvoldoende rechten voor dit commando.") to English (#185)
+- **Settings**: Suppress `UNKNOWN_SETTING` log noise for `fyi.*` keys — these are intentionally stored via `set_raw` without a `SettingDefinition`
+- **Migration 013**: Remove stale `bot_settings` rows leftover from renamed/removed settings (`embedwatcher.embed_watcher_offset_hours`, `guild.module_status`, `module_status.gdpr`, `system.onboarding_channel_id`)
+
+---
+
 ## [3.1.1] - 2026-04-03
 
 ### Added
