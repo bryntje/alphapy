@@ -158,7 +158,9 @@ class SettingsService:
                 composite_key = (row["guild_id"], row["scope"], row["key"])
                 definition = self._definitions.get((row["scope"], row["key"]))
                 if not definition:
-                    log_database_event("UNKNOWN_SETTING", details=f"Guild {row['guild_id']}: {row['scope']}.{row['key']}")
+                    # fyi.* keys are stored via set_raw (no SettingDefinition) — expected, suppress noise.
+                    if row["scope"] != "fyi":
+                        log_database_event("UNKNOWN_SETTING", details=f"Guild {row['guild_id']}: {row['scope']}.{row['key']}")
                     continue  # Unknown setting stored earlier; ignore gracefully.
                 decoded = self._decode_value(row["value"], definition)
                 self._overrides[composite_key] = decoded
