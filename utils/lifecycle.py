@@ -566,8 +566,13 @@ class ShutdownManager:
     async def _phase_final_cleanup(self) -> None:
         """Phase 4: Final cleanup."""
         logger.info("🧹 Phase 4: Final cleanup...")
-        
-        # Clear any remaining references
-        # (Add any additional cleanup here if needed)
-        
+
+        # Close shared HTTP client (premium guard Core-API calls)
+        try:
+            from utils.premium_guard import close_http_client
+            await close_http_client()
+            logger.info("  ✅ Premium guard HTTP client closed")
+        except Exception as e:
+            logger.debug(f"  ⚠️ Error closing premium guard HTTP client: {e}")
+
         logger.info("✅ Phase 4 complete: Final cleanup done")

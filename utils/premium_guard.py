@@ -28,9 +28,13 @@ _DEFAULT_CACHE_TTL = 300  # seconds
 
 # (user_id, guild_id) -> (is_premium: bool, expires_at: float)
 # Lock protects _cache across bot thread (is_premium/_set_cache) and webhook thread (invalidate_premium_cache).
+# Also used to serialise _stats_* counter increments (avoids a separate lock).
 _cache: dict[Tuple[int, int], Tuple[bool, float]] = {}
 _cache_lock = threading.Lock()
 _pool: Optional[asyncpg.Pool] = None
+
+# Persistent HTTP client — reused across all Core-API calls to avoid per-call TCP handshakes.
+_http_client: Optional[httpx.AsyncClient] = None
 
 # Optional counters for observability (incremented in is_premium)
 _stats_total = 0
@@ -38,6 +42,22 @@ _stats_cache_hits = 0
 _stats_core_api = 0
 _stats_local = 0
 _stats_transfers = 0
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Return the shared AsyncClient, creating it on first call."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=CORE_VERIFY_TIMEOUT)
+    return _http_client
+
+
+async def close_http_client() -> None:
+    """Close the shared HTTP client. Call during bot shutdown."""
+    global _http_client
+    if _http_client is not None and not _http_client.is_closed:
+        await _http_client.aclose()
+        _http_client = None
 
 
 def premium_required_message(feature_name: str) -> str:
@@ -132,19 +152,19 @@ async def _check_core_api(user_id: int, guild_id: int) -> Optional[bool]:
     headers = {"X-API-Key": key, "Content-Type": "application/json"}
     payload = {"user_id": user_id, "guild_id": guild_id}
     try:
-        async with httpx.AsyncClient(timeout=CORE_VERIFY_TIMEOUT) as client:
-            response = await client.post(endpoint, json=payload, headers=headers)
-            if not response.is_success:
-                logger.debug(
-                    "Premium verify API non-2xx: status=%s body=%s",
-                    response.status_code,
-                    response.text[:200],
-                )
-                return None
-            data = response.json()
-            if isinstance(data, dict) and "premium" in data:
-                return bool(data["premium"])
+        client = _get_http_client()
+        response = await client.post(endpoint, json=payload, headers=headers)
+        if not response.is_success:
+            logger.debug(
+                "Premium verify API non-2xx: status=%s body=%s",
+                response.status_code,
+                response.text[:200],
+            )
             return None
+        data = response.json()
+        if isinstance(data, dict) and "premium" in data:
+            return bool(data["premium"])
+        return None
     except Exception as e:
         logger.debug("Premium verify API error: %s", e)
         return None
@@ -198,23 +218,27 @@ async def is_premium(user_id: int, guild_id: int) -> bool:
     local premium_subs table. Fail closed: on any error returns False.
     """
     global _stats_total, _stats_cache_hits, _stats_core_api, _stats_local
-    _stats_total += 1
+    with _cache_lock:
+        _stats_total += 1
     if guild_id is None or guild_id == 0:
         return False
     cached = _get_cached(user_id, guild_id)
     if cached is not None:
-        _stats_cache_hits += 1
+        with _cache_lock:
+            _stats_cache_hits += 1
         return cached
 
     # Try Core-API first when configured
     core_result = await _check_core_api(user_id, guild_id)
     if core_result is not None:
-        _stats_core_api += 1
+        with _cache_lock:
+            _stats_core_api += 1
         _set_cache(user_id, guild_id, core_result)
         return core_result
 
     # Fallback to local DB
-    _stats_local += 1
+    with _cache_lock:
+        _stats_local += 1
     result = await _check_local_db(user_id, guild_id)
     _set_cache(user_id, guild_id, result)
     return result
