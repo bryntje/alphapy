@@ -48,7 +48,7 @@ _gpt_retry_queue: list = []  # List of dicts: {messages, user_id, model, guild_i
 MAX_RETRY_QUEUE_SIZE = 50
 MAX_RETRIES = 5
 _retry_task: Optional[asyncio.Task] = None
-_retry_lock: asyncio.Lock  # Initialised lazily on first use (event loop must exist)
+_retry_lock: Optional[asyncio.Lock] = None  # Initialised lazily on first use (event loop must exist)
 
 # Tracked fire-and-forget tasks — prevents silent exception swallowing and GC-induced cancellation.
 _background_tasks: set = set()
@@ -151,7 +151,7 @@ async def log_to_channel(message: str, level: str = "info", guild_id: Optional[i
 def _get_retry_lock() -> asyncio.Lock:
     """Lazily create the retry lock (requires a running event loop)."""
     global _retry_lock
-    if not hasattr(_retry_lock, '_loop') or _retry_lock._loop is None:  # type: ignore[attr-defined]
+    if _retry_lock is None:
         _retry_lock = asyncio.Lock()
     return _retry_lock
 
