@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 - (No changes yet)
 
 ### Fixed
-- (No changes yet)
+- **GPT retry queue**: Initialise `_retry_lock` to `None` instead of a bare type annotation — fixes `NameError: name '_retry_lock' is not defined` raised on every retry queue task run
 
 ---
 
