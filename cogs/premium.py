@@ -305,15 +305,21 @@ async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name:
     embed.set_footer(text=f"v{__version__} — {CODENAME}")
 
     early_bird = await _check_early_bird_available()
-    early_bird_price = getattr(config, "EARLY_BIRD_LIFETIME_PRICE", "€49") or "€49"
     total_spots = getattr(config, "EARLY_BIRD_TOTAL_SPOTS", 50)
+    price_monthly = getattr(config, "PRICE_MONTHLY", "€4.99") or "€4.99"
+    price_yearly_eb = getattr(config, "PRICE_YEARLY_EARLY_BIRD", "€29") or "€29"
+    price_yearly_reg = getattr(config, "PRICE_YEARLY_REGULAR", "€59.99") or "€59.99"
+    price_lifetime_eb = getattr(config, "PRICE_LIFETIME_EARLY_BIRD", "€49") or "€49"
+    price_lifetime_reg = getattr(config, "PRICE_LIFETIME_REGULAR", "€99.99") or "€99.99"
 
     if early_bird:
         embed.add_field(
             name="🎉 Premium is Live!",
             value=(
                 f"Choose your plan below. "
-                f"🔥 Early bird lifetime pricing ({early_bird_price}) — only {total_spots} spots total!"
+                f"🔥 Early bird pricing for the first {total_spots} founders — "
+                f"Annual {price_yearly_eb} (reg. {price_yearly_reg}) · "
+                f"Lifetime {price_lifetime_eb} (reg. {price_lifetime_reg})!"
             ),
             inline=False,
         )
@@ -329,15 +335,15 @@ async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name:
         checkout_urls[tier] = await _create_checkout_url(tier, guild_id, user_id)
 
     view = discord.ui.View(timeout=None)
-    # Lifetime label includes early bird price only while spots remain;
-    # once sold out we omit the price since regular pricing applies on the site.
-    tier_info: list[Tuple[str, str, Optional[str]]] = [
-        ("monthly", "Monthly", "€4.99"),
-        ("yearly", "Yearly", "€29"),
-        ("lifetime", "Lifetime", f"Early Bird {early_bird_price}" if early_bird else None),
+    # When early bird is active, show early bird price on yearly and lifetime buttons.
+    # When sold out, fall back to regular prices (pricing site is authoritative).
+    tier_info: list[Tuple[str, str, str]] = [
+        ("monthly", "Monthly", price_monthly),
+        ("yearly", "Annual", f"Early Bird {price_yearly_eb}" if early_bird else price_yearly_reg),
+        ("lifetime", "Lifetime", f"Early Bird {price_lifetime_eb}" if early_bird else price_lifetime_reg),
     ]
     for tier, label, price in tier_info:
-        button_label = f"Get {label} ({price})" if price else f"Get {label}"
+        button_label = f"Get {label} ({price})"
         url = checkout_urls.get(tier)
         if url:
             view.add_item(

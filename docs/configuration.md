@@ -283,8 +283,12 @@ The following environment variables are required/optional for bot operation:
 - `PREMIUM_CACHE_TTL_SECONDS`: TTL in seconds for the in-memory premium cache (default: 300). See [Premium](premium.md) for guard behaviour and Core-API contract.
 - `CORE_API_PAYMENTS_TOKEN`: Value of `INNERSYNC_CORE_PAYMENTS_TOKEN` from Core-API. Required for early bird availability checks (`POST /billing/early-bird/validate`). If unset, the embed assumes early bird is available (fail-open).
 - `EARLY_BIRD_CODE`: Early bird redemption code to validate against (default: `EARLYBIRD50`).
-- `EARLY_BIRD_LIFETIME_PRICE`: Display price for early bird lifetime tier shown in the embed (default: `€49`).
 - `EARLY_BIRD_TOTAL_SPOTS`: Total early bird spots shown in the embed text (default: `50`).
+- `PRICE_MONTHLY`: Monthly plan price label in the embed (default: `€4.99`).
+- `PRICE_YEARLY_EARLY_BIRD`: Annual plan early bird price label (default: `€29`).
+- `PRICE_YEARLY_REGULAR`: Annual plan regular price label, shown after early bird sells out (default: `€59.99`).
+- `PRICE_LIFETIME_EARLY_BIRD`: Lifetime plan early bird price label (default: `€49`).
+- `PRICE_LIFETIME_REGULAR`: Lifetime plan regular price label, shown after early bird sells out (default: `€99.99`).
 
 ### Optional - App reflections (Core-API webhooks)
 - `APP_REFLECTIONS_WEBHOOK_SECRET`: Secret for HMAC validation of `POST /webhooks/app-reflections` and `POST /webhooks/revoke-reflection`. If unset, falls back to `WEBHOOK_SECRET` or `SUPABASE_WEBHOOK_SECRET`.
