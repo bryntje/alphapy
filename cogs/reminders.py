@@ -178,6 +178,26 @@ class ReminderCog(AlphaCog):
             await interaction.followup.send("⚠️ Reminders are currently disabled.", ephemeral=True)
             return
 
+        # Tier-based reminder limit (free users: max 10 active reminders)
+        from utils.premium_guard import get_user_tier
+        from utils.premium_tiers import REMINDER_LIMIT
+        tier = await get_user_tier(interaction.user.id, interaction.guild.id)
+        limit = REMINDER_LIMIT.get(tier)
+        if limit is not None:
+            async with acquire_safe(self.db) as conn:
+                count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM reminders WHERE created_by = $1 AND guild_id = $2",
+                    interaction.user.id,
+                    interaction.guild.id,
+                )
+            if count >= limit:
+                await interaction.followup.send(
+                    f"You have reached the maximum of {limit} reminders for your tier. "
+                    "Upgrade via `/premium` to create unlimited reminders.",
+                    ephemeral=True,
+                )
+                return
+
         # Premium gate: reminders with image require premium
         resolved_image_url: Optional[str] = (image.url if image else None) or (image_url.strip() if image_url and image_url.strip() else None)
         if resolved_image_url:

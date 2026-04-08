@@ -5,7 +5,7 @@ from datetime import datetime
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 import httpx
 import asyncpg
 from datetime import datetime
@@ -21,7 +21,9 @@ from utils.premium_guard import (
     get_premium_status,
     get_active_premium_guild,
     transfer_premium_to_guild,
+    get_user_tier,
 )
+from utils.premium_tiers import GPT_DAILY_LIMIT, REMINDER_LIMIT
 from utils.timezone import BRUSSELS_TZ
 from utils.validators import validate_admin
 from version import __version__, CODENAME
@@ -214,11 +216,29 @@ async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name:
         timestamp=datetime.now(BRUSSELS_TZ),
     )
     embed.add_field(
-        name="✨ Features",
+        name="✨ What you unlock",
         value=(
             "• Reminders with images and banners\n"
-            "• Live session presets (with image support)\n"
-            "• Mockingbird spicy mode in growth check-ins"
+            "• Live session presets with image support\n"
+            "• Mockingbird spicy mode in growth check-ins\n"
+            "• Ticket GPT summaries (guild-level)\n"
+            "• Unlimited daily Grok interactions\n"
+            "• Unlimited active reminders"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="📊 Tier comparison",
+        value=(
+            "```\n"
+            f"{'Feature':<22} {'Free':>6} {'Monthly':>8} {'Yearly+':>8}\n"
+            f"{'─' * 46}\n"
+            f"{'Grok calls / day':<22} {'5':>6} {'25':>8} {'∞':>8}\n"
+            f"{'Active reminders':<22} {'10':>6} {'∞':>8} {'∞':>8}\n"
+            f"{'Image reminders':<22} {'✗':>6} {'✓':>8} {'✓':>8}\n"
+            f"{'Ticket summaries':<22} {'✗':>6} {'✓':>8} {'✓':>8}\n"
+            f"{'Spicy mode':<22} {'✗':>6} {'✓':>8} {'✓':>8}\n"
+            "```"
         ),
         inline=False,
     )
@@ -291,9 +311,91 @@ class PremiumCog(commands.Cog):
         try:
             self.db = await self._db_manager.ensure_pool()
             logger.info("Premium cog: Database pool created")
+            self.check_expiry_warnings.start()
         except Exception as e:
             logger.error(f"Premium cog: Failed to create database pool: {e}")
             return
+
+    async def cog_unload(self) -> None:
+        self.check_expiry_warnings.cancel()
+
+    async def _get_gpt_calls_today(self, user_id: int, guild_id: int) -> int:
+        """Return how many GPT calls this user has made today in this guild."""
+        if not self.db:
+            return 0
+        try:
+            from utils.db_helpers import acquire_safe
+            async with acquire_safe(self.db) as conn:
+                return await conn.fetchval(
+                    "SELECT call_count FROM gpt_usage WHERE user_id=$1 AND guild_id=$2 AND usage_date=CURRENT_DATE",
+                    user_id, guild_id,
+                ) or 0
+        except Exception:
+            return 0
+
+    async def _get_reminder_count(self, user_id: int, guild_id: int) -> int:
+        """Return the number of active reminders this user has in this guild."""
+        if not self.db:
+            return 0
+        try:
+            from utils.db_helpers import acquire_safe
+            async with acquire_safe(self.db) as conn:
+                return await conn.fetchval(
+                    "SELECT COUNT(*) FROM reminders WHERE created_by=$1 AND guild_id=$2",
+                    user_id, guild_id,
+                ) or 0
+        except Exception:
+            return 0
+
+    @tasks.loop(hours=24)
+    async def check_expiry_warnings(self) -> None:
+        """Send a DM to users whose premium expires within 7 days (once per subscription)."""
+        if not self.db:
+            return
+        try:
+            from utils.db_helpers import acquire_safe
+            async with acquire_safe(self.db) as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT user_id, guild_id, tier, expires_at
+                    FROM premium_subs
+                    WHERE status = 'active'
+                      AND expires_at BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+                      AND expiry_warning_sent_at IS NULL
+                    """
+                )
+            for row in rows:
+                await self._send_expiry_warning_dm(row["user_id"], row["expires_at"])
+                async with acquire_safe(self.db) as conn:
+                    await conn.execute(
+                        "UPDATE premium_subs SET expiry_warning_sent_at = NOW() "
+                        "WHERE user_id = $1 AND guild_id = $2 AND status = 'active'",
+                        row["user_id"], row["guild_id"],
+                    )
+        except Exception as e:
+            logger.error("Premium expiry warning task failed: %s", e)
+
+    @check_expiry_warnings.before_loop
+    async def before_expiry_warnings(self) -> None:
+        await self.bot.wait_until_ready()
+
+    async def _send_expiry_warning_dm(self, user_id: int, expires_at) -> None:
+        """Send a DM warning that premium expires soon."""
+        try:
+            user = await self.bot.fetch_user(user_id)
+            if user is None:
+                return
+            try:
+                exp_str = expires_at.astimezone(BRUSSELS_TZ).strftime("%d %B %Y")
+            except Exception:
+                exp_str = str(expires_at)
+            await user.send(
+                f"⚠️ Your Premium subscription expires on **{exp_str}**.\n"
+                "Renew via `/premium` to keep your features."
+            )
+            logger.info("Premium expiry warning sent to user %s (expires %s)", user_id, exp_str)
+        except Exception as e:
+            logger.warning("Could not send expiry warning DM to user %s: %s", user_id, e)
 
     @app_commands.command(
         name="premium",
@@ -361,37 +463,81 @@ class PremiumCog(commands.Cog):
             )
             return
         await interaction.response.defer(ephemeral=True)
-        status = await get_premium_status(interaction.user.id, interaction.guild.id)
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
+
+        status = await get_premium_status(user_id, guild_id)
+        tier = await get_user_tier(user_id, guild_id)
+
+        embed = discord.Embed(
+            title="⚡ Your Premium Status",
+            color=discord.Color.gold() if status["premium"] else discord.Color.greyple(),
+            timestamp=datetime.now(BRUSSELS_TZ),
+        )
+
         if status["premium"]:
-            tier = status.get("tier") or "premium"
-            active_guild = await get_active_premium_guild(interaction.user.id)
-            # When premium is confirmed in this guild but active_guild is None/0 (e.g. Core-API
-            # vs local DB sync delay), show premium in this server — don't say "haven't chosen".
-            if active_guild is not None and active_guild != 0 and active_guild != interaction.guild.id:
-                msg = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
+            active_guild = await get_active_premium_guild(user_id)
+            if active_guild is not None and active_guild != 0 and active_guild != guild_id:
+                embed.description = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
+                embed.color = discord.Color.orange()
             else:
+                tier_display = tier.capitalize()
                 expires = status.get("expires_at")
                 if expires:
                     try:
-                        exp_str = expires.astimezone(BRUSSELS_TZ).strftime("%d %B %Y at %H:%M")
+                        exp_str = expires.astimezone(BRUSSELS_TZ).strftime("%d %B %Y")
+                        from datetime import timezone
+                        days_left = (expires.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).days
+                        expiry_value = f"{exp_str} ({days_left}d remaining)"
                     except Exception:
-                        exp_str = str(expires)
-                    msg = f"You have **Premium** ({tier}) in this server until **{exp_str}**."
+                        expiry_value = str(expires)
                 else:
-                    msg = f"You have **Premium** ({tier}) in this server (no expiry)."
-        else:
-            # status["premium"] is False: not premium in this guild
-            current_guild = await get_active_premium_guild(interaction.user.id)
-            if current_guild is None or current_guild == 0:
-                msg = "You don't have Premium. Get power with /premium."
-            elif current_guild != interaction.guild.id:
-                msg = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
-            else:
-                msg = "You don't have Premium in this server. Get power with /premium."
+                    expiry_value = "Never (lifetime)"
 
-        # Add support contact info (mailto link for clickable email in Discord)
-        msg += "\n\n❓ Questions or issues? Contact [support@innersync.tech](mailto:support@innersync.tech)"
-        await interaction.followup.send(msg, ephemeral=True)
+                embed.description = f"✅ **{tier_display}** — active in this server"
+                embed.add_field(name="Expires", value=expiry_value, inline=True)
+                embed.add_field(name="Tier", value=tier_display, inline=True)
+                embed.add_field(name="\u200b", value="\u200b", inline=True)
+
+                # GPT quota
+                gpt_limit = GPT_DAILY_LIMIT.get(tier)
+                gpt_label = "∞" if gpt_limit is None else str(gpt_limit)
+                gpt_used = await self._get_gpt_calls_today(user_id, guild_id)
+                embed.add_field(
+                    name="Grok calls today",
+                    value=f"{gpt_used} / {gpt_label}",
+                    inline=True,
+                )
+
+                # Reminder count
+                reminder_limit = REMINDER_LIMIT.get(tier)
+                reminder_label = "∞" if reminder_limit is None else str(reminder_limit)
+                reminder_count = await self._get_reminder_count(user_id, guild_id)
+                embed.add_field(
+                    name="Active reminders",
+                    value=f"{reminder_count} / {reminder_label}",
+                    inline=True,
+                )
+        else:
+            current_guild = await get_active_premium_guild(user_id)
+            if current_guild is not None and current_guild != 0 and current_guild != guild_id:
+                embed.description = "Your Premium is active in another server. Use `/premium_transfer` here to move it."
+                embed.color = discord.Color.orange()
+            else:
+                embed.description = "You don't have Premium in this server. Get power with `/premium`."
+
+            # Show free tier limits for context
+            embed.add_field(
+                name="Your current limits (Free)",
+                value=(
+                    f"Grok calls / day: **{GPT_DAILY_LIMIT.get('free')}**\n"
+                    f"Active reminders: **{REMINDER_LIMIT.get('free')}**"
+                ),
+                inline=False,
+            )
+
+        embed.set_footer(text="❓ Questions? support@innersync.tech")
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(
         name="premium_transfer",

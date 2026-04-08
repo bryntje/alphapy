@@ -311,6 +311,19 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
     """
     start = time.perf_counter()
 
+    # Per-user daily GPT quota (only for user-initiated calls with a known user_id and guild_id)
+    if user_id is not None and guild_id is not None and not _is_retry:
+        try:
+            from utils.premium_guard import check_and_increment_gpt_quota
+            allowed, count, limit = await check_and_increment_gpt_quota(user_id, guild_id)
+            if not allowed:
+                return (
+                    f"You have reached your daily limit of {limit} Grok interactions. "
+                    "Upgrade for more: `/premium`"
+                )
+        except Exception as e:
+            logger.warning("GPT quota check failed — failing open: %s", e)
+
     try:
         if _api_key_missing or llm_client is None:
             raise RuntimeError(
