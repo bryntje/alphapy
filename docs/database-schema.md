@@ -97,6 +97,7 @@ Premium subscription status (local fallback when Core-API is unavailable). **One
 - `stripe_subscription_id` (TEXT): External subscription ID (for support/cancellation only)
 - `expires_at` (TIMESTAMPTZ): NULL for lifetime or N/A
 - `created_at` (TIMESTAMPTZ): When the record was created
+- `expiry_warning_sent_at` (TIMESTAMPTZ, added migration 015): Timestamp of last 7-day expiry warning DM. NULL = no warning sent yet. Used by the `check_expiry_warnings` background task to avoid duplicate DMs.
 
 **Indexes:**
 - `idx_premium_subs_user_guild` on `(user_id, guild_id)`
@@ -106,6 +107,30 @@ Premium subscription status (local fallback when Core-API is unavailable). **One
 **RLS (Supabase):** Row Level Security is enabled (migration 007). No policies are defined for `anon`/`authenticated`, so only the backend role (table owner / service role / superuser used by `DATABASE_URL`) can read or write. Direct Supabase client access with anon or authenticated keys sees no rows.
 
 **GDPR:** This table stores only access-control data (user_id, guild_id, tier, status, optional external ID, expiry). No payment details, email, or other PII are stored here.
+
+---
+
+### `gpt_usage`
+
+Per-user, per-guild daily GPT call tracking for quota enforcement. Added in migration 014.
+
+**Columns:**
+- `user_id` (BIGINT, NOT NULL): Discord user ID
+- `guild_id` (BIGINT, NOT NULL): Discord guild ID
+- `usage_date` (DATE, NOT NULL, DEFAULT CURRENT_DATE): The UTC date of usage
+- `call_count` (INTEGER, NOT NULL, DEFAULT 0): Number of GPT calls made on this date
+
+**Primary key:** `(user_id, guild_id, usage_date)`
+
+**Indexes:**
+- `idx_gpt_usage_date` on `usage_date` (for efficient cleanup of old rows)
+
+**Notes:**
+- `check_and_increment_gpt_quota()` in `utils/premium_guard.py` uses an atomic `INSERT … ON CONFLICT DO UPDATE` so no race conditions
+- Limits per tier: free = 5/day, monthly = 25/day, yearly/lifetime = unlimited (NULL)
+- Only user-initiated GPT calls are counted; ticket summaries and embed watcher calls pass `user_id=None` and are excluded
+
+**GDPR:** Stores only Discord user ID, guild ID, date, and a counter. No message content or PII beyond the snowflake ID.
 
 ---
 

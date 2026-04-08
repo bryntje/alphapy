@@ -56,11 +56,15 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ---
 
 ## ⚡ Agent: Premium
-- **Path**: `cogs/premium.py`, `utils/premium_guard.py`, `webhooks/premium_invalidate.py`, `webhooks/founder.py`
+- **Path**: `cogs/premium.py`, `utils/premium_guard.py`, `utils/premium_tiers.py`, `webhooks/premium_invalidate.py`, `webhooks/founder.py`
 - **Purpose**: Tier UX and access control (used by reminders, growth, embed watcher, onboarding)
 - **Model**: One active subscription per user, applied to one guild, transferable via `/premium_transfer`
+- **Tiers**: `free` (0) → `monthly` (1) → `yearly` (2) → `lifetime` (3). Constants in `utils/premium_tiers.py`: `TIER_RANK`, `GPT_DAILY_LIMIT` (free: 5, monthly: 25, yearly/lifetime: unlimited), `REMINDER_LIMIT` (free: 10, others: unlimited)
 - **Commands**: `/premium`, `/premium_check`, `/my_premium`, `/premium_transfer`
-- **Guard**: `is_premium()` with Core-API fallback + local cache + TTL; `invalidate_premium_cache(user_id, guild_id?)` for webhook-driven invalidation
+- **Guard**: `is_premium()` with Core-API fallback + local cache + TTL; `invalidate_premium_cache(user_id, guild_id?)` for webhook-driven invalidation. New helpers: `get_user_tier()`, `user_has_tier()`, `check_and_increment_gpt_quota()` (tracks daily GPT calls in `gpt_usage` table, fails open on DB error)
+- **Quota enforcement**: GPT daily limit checked in `gpt/helpers.py:ask_gpt()` for user-initiated calls; reminder limit checked in `cogs/reminders.py` before insert; ticket GPT summaries gated on `guild_has_premium()`
+- **Expiry warnings**: `check_expiry_warnings` background task (24h loop) sends DM 7 days before expiry; tracks `expiry_warning_sent_at` on `premium_subs` to avoid duplicates
+- **Early bird**: `/premium` embed checks `POST /billing/early-bird/validate` on Core-API (cached 5 min, fails open) via `CORE_API_PAYMENTS_TOKEN`; shows early bird prices while spots remain, regular prices after sellout
 - **Webhooks (Core → Alphapy)**:
   - `POST /webhooks/premium-invalidate`: payload `user_id`, optional `guild_id`. Clears premium cache so next check refetches from Core/DB. HMAC via `X-Webhook-Signature`; optional `PREMIUM_INVALIDATE_WEBHOOK_SECRET`.
   - `POST /webhooks/founder`: payload `user_id`, optional `message`. Sends founder welcome DM. HMAC via `X-Webhook-Signature`; optional `FOUNDER_WEBHOOK_SECRET`.
@@ -219,7 +223,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **alphapy** (2915 symbols, 10292 relationships, 250 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **alphapy** (2977 symbols, 10235 relationships, 255 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
