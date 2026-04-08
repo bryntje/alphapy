@@ -144,7 +144,8 @@ Comprehensive dashboard metrics including bot status, Grok/LLM stats, reminders,
   "gpt": {
     "last_success_time": "2026-01-21T12:00:00Z",
     "average_latency_ms": 1200,
-    "total_tokens_today": 5000,
+    "total_tokens_session": 5000,
+    "last_error_time": "2026-01-21T12:05:00Z",
     "success_count": 100,
     "error_count": 2,
     ...

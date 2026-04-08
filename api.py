@@ -629,8 +629,8 @@ class GPTMetrics(BaseModel):
     last_success_time: Optional[str]
     last_error_type: Optional[str]
     average_latency_ms: int
-    total_tokens_today: int
-    rate_limit_reset: Optional[str]
+    total_tokens_session: int
+    last_error_time: Optional[str]
     current_model: str
     last_user_id: Optional[int]
     success_count: int
@@ -751,8 +751,8 @@ def _collect_gpt_metrics() -> GPTMetrics:
         last_success_time=_datetime_to_iso(logs.last_success_time),
         last_error_type=logs.last_error_type,
         average_latency_ms=int(logs.average_latency_ms or 0),
-        total_tokens_today=int(logs.total_tokens_today or 0),
-        rate_limit_reset=logs.rate_limit_reset,
+        total_tokens_session=int(logs.total_tokens_session or 0),
+        last_error_time=_datetime_to_iso(logs.last_error_time),
         current_model=logs.current_model,
         last_user_id=logs.last_user,
         success_count=int(logs.success_count or 0),

@@ -61,15 +61,23 @@ def set_bot_instance(bot: commands.Bot) -> None:
 
 def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optional[int] = None, model: Optional[str] = None):
     from utils.logger import get_gpt_status_logs
+    now = datetime.utcnow()
     logs = get_gpt_status_logs()
-    logs.last_success_time = datetime.utcnow()
+    logs.last_success_time = now
     logs.last_user = user_id
     logs.success_count += 1
-    logs.total_tokens_today += tokens_used
-    logs.average_latency_ms = latency_ms
-    # Update current_model if provided (reflects actual model used)
+    logs.total_tokens_session += tokens_used
+    logs.last_success_latency_ms = latency_ms
     if model:
         logs.current_model = model
+    logs.success_events.appendleft(
+        {"timestamp": now, "user_id": user_id, "tokens_used": tokens_used, "latency_ms": latency_ms}
+    )
+    # Rolling average over all stored success events
+    if logs.success_events:
+        logs.average_latency_ms = int(
+            sum(e["latency_ms"] for e in logs.success_events) / len(logs.success_events)
+        )
 
     log_message = f"✅ Grok success by {user_id} – {tokens_used} tokens, {latency_ms}ms latency"
     logger.info(log_message)
@@ -80,10 +88,20 @@ def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optiona
 
 def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = None):
     from utils.logger import get_gpt_status_logs
+    now = datetime.utcnow()
     logs = get_gpt_status_logs()
     logs.last_error_type = error_type
+    logs.last_error_time = now
     logs.last_user = user_id
     logs.error_count += 1
+    # Detect rate limit errors (429)
+    error_lower = error_type.lower()
+    if "429" in error_type or "rate limit" in error_lower or "ratelimit" in error_lower:
+        logs.rate_limit_hits += 1
+        logs.last_rate_limit_time = now
+    logs.error_events.appendleft(
+        {"timestamp": now, "user_id": user_id, "error_type": error_type}
+    )
 
     log_message = f"❌ Grok error [{error_type}] by {user_id}"
     logger.error(log_message)
