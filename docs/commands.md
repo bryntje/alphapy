@@ -458,7 +458,7 @@ Show Innersync info and official links.
 ### `/gptstatus`
 Check the status of the Grok/LLM API.
 
-**Response:** Shows last success time, error count, average latency, token usage, and current model.
+**Response:** Shows API health (derived from own logs), current model, uptime, last success time, rolling average latency, last triggering user, last error type and time, interaction counts (success/error), rate limit hits this session, live retry queue size, and total tokens used this session.
 
 ---
 

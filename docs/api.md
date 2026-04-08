@@ -143,12 +143,19 @@ Comprehensive dashboard metrics including bot status, Grok/LLM stats, reminders,
   },
   "gpt": {
     "last_success_time": "2026-01-21T12:00:00Z",
+    "last_error_time": "2026-01-21T12:05:00Z",
+    "last_error_type": "RateLimitError: ...",
     "average_latency_ms": 1200,
     "total_tokens_session": 5000,
-    "last_error_time": "2026-01-21T12:05:00Z",
+    "current_model": "grok-3",
+    "last_user_id": 123456789,
     "success_count": 100,
     "error_count": 2,
-    ...
+    "rate_limit_hits": 1,
+    "last_rate_limit_time": "2026-01-21T12:05:00Z",
+    "last_success_latency_ms": 980,
+    "recent_successes": [...],
+    "recent_errors": [...]
   },
   "reminders": {
     "total": 15,
