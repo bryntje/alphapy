@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 import discord
 from discord import app_commands
 from discord.ext import commands
+import config
 from utils.validators import validate_admin
 from utils.fyi_tips import FYI_KEYS as FYI_TIPS_KEYS
 from utils.db_helpers import acquire_safe
@@ -630,40 +631,56 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @gpt_group.command(name="set_model", description="Set the Grok model")
-    @requires_admin()
-    async def gpt_set_model(self, interaction: discord.Interaction, model: str) -> None:
+    @gpt_group.command(name="set_model", description="Set the Grok model (bot owner only)")
+    @app_commands.describe(
+        model="The Grok model to use (e.g. grok-3, grok-4-1-fast-reasoning)",
+        guild_id="Target guild ID — use this to set the model for a guild you are not in",
+    )
+    async def gpt_set_model(self, interaction: discord.Interaction, model: str, guild_id: Optional[str] = None) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        if interaction.user.id not in config.OWNER_IDS:
+            await interaction.followup.send("❌ This command is restricted to bot owners.", ephemeral=True)
+            return
         model_clean = model.strip()
         if not model_clean:
             await interaction.followup.send("❌ Model name cannot be empty.", ephemeral=True)
             return
-        await self.settings.set("gpt", "model", model_clean, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Grok model set to `{model_clean}`.",
-            ephemeral=True,
-        )
+        effective_guild_id, guild_id_error = self._resolve_guild_id(interaction, guild_id)
+        if guild_id_error:
+            await interaction.followup.send(guild_id_error, ephemeral=True)
+            return
+        await self.settings.set("gpt", "model", model_clean, effective_guild_id, interaction.user.id)
+        guild_label = f"guild `{effective_guild_id}`" if effective_guild_id != interaction.guild_id else "this guild"
+        await interaction.followup.send(f"✅ Grok model set to `{model_clean}` for {guild_label}.", ephemeral=True)
         await self._send_audit_log(
             "🤖 Grok",
-            f"`gpt.model` → `{model_clean}` by {interaction.user.mention}.",
-            interaction.guild.id
+            f"`gpt.model` → `{model_clean}` for guild `{effective_guild_id}` by {interaction.user.mention}.",
+            interaction.guild_id,
         )
-    @gpt_group.command(name="reset_model", description="Reset Grok model to default")
-    @requires_admin()
-    async def gpt_reset_model(self, interaction: discord.Interaction) -> None:
+
+    @gpt_group.command(name="reset_model", description="Reset Grok model to default (bot owner only)")
+    @app_commands.describe(
+        guild_id="Target guild ID — use this to reset the model for a guild you are not in",
+    )
+    async def gpt_reset_model(self, interaction: discord.Interaction, guild_id: Optional[str] = None) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("gpt", "model", interaction.guild.id, interaction.user.id)
-        default_model = self.settings.get("gpt", "model", interaction.guild.id)
+        if interaction.user.id not in config.OWNER_IDS:
+            await interaction.followup.send("❌ This command is restricted to bot owners.", ephemeral=True)
+            return
+        effective_guild_id, guild_id_error = self._resolve_guild_id(interaction, guild_id)
+        if guild_id_error:
+            await interaction.followup.send(guild_id_error, ephemeral=True)
+            return
+        await self.settings.clear("gpt", "model", effective_guild_id, interaction.user.id)
+        default_model = self.settings.get("gpt", "model", effective_guild_id)
+        guild_label = f"guild `{effective_guild_id}`" if effective_guild_id != interaction.guild_id else "this guild"
         await interaction.followup.send(
-            f"↩️ Grok model reset to default: `{default_model}`.",
-            ephemeral=True,
+            f"↩️ Grok model reset to default (`{default_model}`) for {guild_label}.", ephemeral=True
         )
         await self._send_audit_log(
             "🤖 Grok",
-            f"`gpt.model` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
+            f"`gpt.model` reset to default for guild `{effective_guild_id}` by {interaction.user.mention}.",
+            interaction.guild_id,
         )
     @gpt_group.command(name="set_temperature", description="Set the Grok temperature")
     @requires_admin()
@@ -2411,6 +2428,19 @@ class Configuration(AlphaCog):
             ephemeral=True,
         )
         log_guild_action(interaction.guild.id, f"Auto-moderation rule severity updated: {rule_id} → {severity}", user=str(interaction.user))
+
+    def _resolve_guild_id(
+        self, interaction: discord.Interaction, guild_id_str: Optional[str]
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """Return (effective_guild_id, error_message). error_message is None on success."""
+        if guild_id_str is not None:
+            try:
+                return int(guild_id_str.strip()), None
+            except ValueError:
+                return None, f"❌ Invalid guild ID `{guild_id_str}` — must be a numeric snowflake."
+        if interaction.guild_id is not None:
+            return interaction.guild_id, None
+        return None, "❌ No guild context. Provide a `guild_id` when using this command in DMs."
 
     def _format_value(self, definition: SettingDefinition, value: Any) -> str:
         if value is None:
