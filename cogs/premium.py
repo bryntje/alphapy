@@ -6,7 +6,6 @@ from datetime import datetime
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import httpx
 import asyncpg
 from datetime import datetime
 from typing import Optional
@@ -181,30 +180,16 @@ async def _assign_founder_role_if_eligible(cog: 'PremiumCog', user_id: int, guil
 
 
 async def _create_checkout_url(tier: str, guild_id: int, user_id: int) -> str | None:
-    """Create a Payment Partner checkout URL via Core API."""
-    core_url = getattr(config, "CORE_API_URL", "") or ""
-    api_key = getattr(config, "ALPHAPY_SERVICE_KEY", None)
-    if not core_url or not api_key:
-        logger.warning(f"Premium checkout: CORE_API_URL or ALPHAPY_SERVICE_KEY not configured (core_url: {bool(core_url)}, api_key: {bool(api_key)})")
+    """Return a tier-specific checkout URL from PREMIUM_CHECKOUT_URL config.
+
+    The pricing site handles Discord OAuth and payment itself — no server-side
+    session creation is needed from the bot side.
+    """
+    base_url = getattr(config, "PREMIUM_CHECKOUT_URL", "") or ""
+    if not base_url:
+        logger.debug("Premium checkout: PREMIUM_CHECKOUT_URL not configured, buttons disabled")
         return None
-    endpoint = f"{core_url}/api/premium/checkout"
-    params = {"tier": tier, "guild_id": guild_id, "user_id": user_id}
-    headers = {"X-API-Key": api_key}
-    try:
-        logger.debug(f"Premium checkout: Calling {endpoint} with tier={tier}, guild_id={guild_id}")
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(endpoint, params=params, headers=headers)
-            if response.is_success:
-                data = response.json()
-                checkout_url = data.get("checkout_url")
-                logger.debug(f"Premium checkout: Got URL for {tier}: {bool(checkout_url)}")
-                return checkout_url
-            else:
-                logger.warning(f"Premium checkout: Core-API returned {response.status_code}: {response.text}")
-        return None
-    except Exception as e:
-        logger.error(f"Premium checkout: Exception calling Core-API: {e}")
-        return None
+    return f"{base_url}?billing={tier}"
 
 
 async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name: Optional[str] = None) -> tuple[discord.Embed, discord.ui.View]:
