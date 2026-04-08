@@ -78,6 +78,12 @@ MAIN_GUILD_ID = int(os.getenv("MAIN_GUILD_ID", "0"))  # Set to 0 to disable filt
 # Premium tier
 PREMIUM_CHECKOUT_URL = os.getenv("PREMIUM_CHECKOUT_URL", "")
 PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
+# Payments token for Core-API billing endpoints (e.g. early-bird validation)
+CORE_API_PAYMENTS_TOKEN = os.getenv("CORE_API_PAYMENTS_TOKEN", "")
+# Early bird settings
+EARLY_BIRD_CODE = os.getenv("EARLY_BIRD_CODE", "EARLYBIRD50")
+EARLY_BIRD_LIFETIME_PRICE = os.getenv("EARLY_BIRD_LIFETIME_PRICE", "€49")
+EARLY_BIRD_TOTAL_SPOTS = int(os.getenv("EARLY_BIRD_TOTAL_SPOTS", "50"))
 # Webhook secrets for Core → Alphapy callbacks (optional; fall back to APP_REFLECTIONS_WEBHOOK_SECRET / WEBHOOK_SECRET)
 PREMIUM_INVALIDATE_WEBHOOK_SECRET = os.getenv("PREMIUM_INVALIDATE_WEBHOOK_SECRET")
 FOUNDER_WEBHOOK_SECRET = os.getenv("FOUNDER_WEBHOOK_SECRET")

@@ -5,9 +5,19 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **Premium system**: Full tier differentiation — free/monthly/yearly/lifetime tiers with GPT daily quotas (free: 5, monthly: 25, yearly/lifetime: unlimited), reminder limits (free: 10, others: unlimited), and ticket GPT summary gating (guild-level premium required)
+- **Premium system**: `utils/premium_tiers.py` — central tier constants (`TIER_RANK`, `GPT_DAILY_LIMIT`, `REMINDER_LIMIT`)
+- **Premium system**: `utils/premium_guard.py` — `get_user_tier()`, `user_has_tier()`, `check_and_increment_gpt_quota()` helpers; quota tracking in `gpt_usage` table
+- **Premium system**: Expiry warning DMs — `check_expiry_warnings` background task sends a DM 7 days before premium expires; tracks `expiry_warning_sent_at` to avoid duplicates
+- **Premium system**: `/my_premium` embed extended with tier badge, expiry countdown, GPT calls today (X/Y), and active reminder count (X/Y)
+- **Premium system**: `/premium` embed now includes a feature comparison table and early bird availability status — checks `POST /billing/early-bird/validate` on Core-API (cached 5 min, fails open); lifetime button label updates to "Get Lifetime" when early bird spots are sold out
+- **DB migration 014**: `gpt_usage` table for per-user daily GPT call tracking
+- **DB migration 015**: `expiry_warning_sent_at` column on `premium_subs`
+- **Config**: `CORE_API_PAYMENTS_TOKEN`, `EARLY_BIRD_CODE`, `EARLY_BIRD_LIFETIME_PRICE`, `EARLY_BIRD_TOTAL_SPOTS` env vars
+- **set_model / reset_model**: Restricted to bot owner only (billing protection); added optional `guild_id` parameter so the owner can set a per-guild model override without being a member of that guild
 
 ### Fixed
+- **Premium checkout buttons**: Fixed 404 error — bot was calling non-existent `POST /api/premium/checkout`; now reads `PREMIUM_CHECKOUT_URL` directly and appends `?billing=<tier>`, matching the pattern used in onboarding
 - **GPT retry queue**: Initialise `_retry_lock` to `None` instead of a bare type annotation — fixes `NameError: name '_retry_lock' is not defined` raised on every retry queue task run
 
 ---

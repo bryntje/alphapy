@@ -1,14 +1,15 @@
 """Premium tier: /premium command and admin /premium_check."""
 
 import logging
+import time
 from datetime import datetime
+from typing import Optional, Tuple
 
 import discord
+import httpx
 from discord import app_commands
 from discord.ext import commands, tasks
 import asyncpg
-from datetime import datetime
-from typing import Optional
 
 try:
     import config_local as config  # type: ignore
@@ -179,6 +180,64 @@ async def _assign_founder_role_if_eligible(cog: 'PremiumCog', user_id: int, guil
         logger.error(f"Founder role: Unexpected error assigning role to user {user_id}: {e}")
 
 
+# ---------------------------------------------------------------------------
+# Early bird availability check
+# ---------------------------------------------------------------------------
+
+_EARLY_BIRD_CACHE: Optional[bool] = None
+_EARLY_BIRD_CACHE_TS: float = 0.0
+_EARLY_BIRD_CACHE_TTL: int = 300  # seconds
+
+
+async def _check_early_bird_available() -> bool:
+    """Return True if early bird spots are still available.
+
+    Calls POST /billing/early-bird/validate on Core-API using a sentinel
+    discord_user_id (1) — Discord's own account — which will never have
+    redeemed early bird. Caches the result for 5 minutes to avoid hammering
+    Core-API on every /premium invocation. Fails open (returns True) on any
+    error so the embed never hides early bird access incorrectly.
+    """
+    global _EARLY_BIRD_CACHE, _EARLY_BIRD_CACHE_TS
+
+    now = time.monotonic()
+    if _EARLY_BIRD_CACHE is not None and (now - _EARLY_BIRD_CACHE_TS) < _EARLY_BIRD_CACHE_TTL:
+        return _EARLY_BIRD_CACHE
+
+    core_url = getattr(config, "CORE_API_URL", "") or ""
+    payments_token = getattr(config, "CORE_API_PAYMENTS_TOKEN", "") or ""
+    earlybird_code = getattr(config, "EARLY_BIRD_CODE", "EARLYBIRD50") or "EARLYBIRD50"
+
+    if not core_url or not payments_token:
+        logger.debug("Early bird check: CORE_API_URL or CORE_API_PAYMENTS_TOKEN not configured — assuming available")
+        return True
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"{core_url}/billing/early-bird/validate",
+                json={"code": earlybird_code, "discord_user_id": 1},
+                headers={"X-Payments-Token": payments_token},
+            )
+        if response.is_success:
+            data = response.json()
+            reason = data.get("reason", "")
+            # Only mark unavailable when Core-API explicitly says the limit is hit.
+            # "Already used" or any other reason means spots still remain.
+            is_available = reason != "Early bird limit reached"
+        else:
+            logger.warning("Early bird check: Core-API returned %s", response.status_code)
+            is_available = True  # fail open
+    except Exception as exc:
+        logger.warning("Early bird check: %s", exc)
+        is_available = True  # fail open
+
+    _EARLY_BIRD_CACHE = is_available
+    _EARLY_BIRD_CACHE_TS = now
+    logger.debug("Early bird available: %s (cached for %ss)", is_available, _EARLY_BIRD_CACHE_TTL)
+    return is_available
+
+
 async def _create_checkout_url(tier: str, guild_id: int, user_id: int) -> str | None:
     """Return a tier-specific checkout URL from PREMIUM_CHECKOUT_URL config.
 
@@ -244,28 +303,46 @@ async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name:
         inline=False,
     )
     embed.set_footer(text=f"v{__version__} — {CODENAME}")
-    embed.add_field(
-        name="🎉 Premium is Live!",
-        value="Choose your plan below. Early bird pricing available for the first 50 lifetime members!",
-        inline=False,
-    )
+
+    early_bird = await _check_early_bird_available()
+    early_bird_price = getattr(config, "EARLY_BIRD_LIFETIME_PRICE", "€49") or "€49"
+    total_spots = getattr(config, "EARLY_BIRD_TOTAL_SPOTS", 50)
+
+    if early_bird:
+        embed.add_field(
+            name="🎉 Premium is Live!",
+            value=(
+                f"Choose your plan below. "
+                f"🔥 Early bird lifetime pricing ({early_bird_price}) — only {total_spots} spots total!"
+            ),
+            inline=False,
+        )
+    else:
+        embed.add_field(
+            name="🎉 Premium is Live!",
+            value="Choose your plan below.",
+            inline=False,
+        )
 
     checkout_urls = {}
     for tier in ["monthly", "yearly", "lifetime"]:
         checkout_urls[tier] = await _create_checkout_url(tier, guild_id, user_id)
 
     view = discord.ui.View(timeout=None)
-    tier_info = [
+    # Lifetime label includes early bird price only while spots remain;
+    # once sold out we omit the price since regular pricing applies on the site.
+    tier_info: list[Tuple[str, str, Optional[str]]] = [
         ("monthly", "Monthly", "€4.99"),
         ("yearly", "Yearly", "€29"),
-        ("lifetime", "Lifetime", "€49"),
+        ("lifetime", "Lifetime", f"Early Bird {early_bird_price}" if early_bird else None),
     ]
     for tier, label, price in tier_info:
+        button_label = f"Get {label} ({price})" if price else f"Get {label}"
         url = checkout_urls.get(tier)
         if url:
             view.add_item(
                 discord.ui.Button(
-                    label=f"Get {label} ({price})",
+                    label=button_label,
                     url=url,
                     style=discord.ButtonStyle.link,
                 )
@@ -273,7 +350,7 @@ async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name:
         else:
             view.add_item(
                 discord.ui.Button(
-                    label=f"Get {label} ({price})",
+                    label=button_label,
                     style=discord.ButtonStyle.secondary,
                     disabled=True,
                 )
