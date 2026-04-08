@@ -1,8 +1,22 @@
-# 🧬 Innersync • Alphapy Roadmap v3.1.2 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.2.0 "Enterprise Ready"
 
-**Release v3.1.2 Complete!** 🎉 Performance hardening, bot startup log cleanup, and bug fixes.
+**Release v3.2.0 Complete!** 🎉 Premium tier differentiation, GPT quotas, early bird pricing, and /gptstatus overhaul.
 
-This document outlines the evolution from v3.1.2 forward.
+This document outlines the evolution from v3.2.0 forward.
+
+## ✅ COMPLETED: Premium Tier Differentiation & GPT Quotas (v3.2.0)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Minor release adding real tier differentiation, quota enforcement, and improved /premium UX:
+- **Premium tiers**: free/monthly/yearly/lifetime with GPT daily quotas (free: 5, monthly: 25, yearly/lifetime: unlimited) and reminder limits (free: 10, others: unlimited)
+- **Ticket GPT summaries**: gated on guild-level premium; non-premium guilds skip AI summary
+- **Expiry warnings**: background task sends DM 7 days before subscription expires
+- **Early bird pricing**: live availability check via Core-API (`/billing/early-bird/validate`, cached 5 min); buttons show early bird vs regular prices dynamically
+- **`/premium` buttons**: fixed 404 — now links to `PREMIUM_CHECKOUT_URL` directly (pricing site handles OAuth + Mollie checkout)
+- **`/my_premium`**: extended with tier badge, expiry countdown, GPT quota (X/Y), reminder count (X/Y)
+- **`/gptstatus`**: complete overhaul — uses own in-memory logs instead of OpenAI status page; rolling latency average; rate limit tracking; retry queue visibility
+- **set_model**: restricted to bot owner only for billing protection; added per-guild override via `guild_id` param
 
 ## ✅ COMPLETED: Performance & Stability Hardening (v3.1.2)
 
