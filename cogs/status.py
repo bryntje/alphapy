@@ -34,7 +34,8 @@ BOOT_TIME = datetime.now(BRUSSELS_TZ)
 
 @app_commands.command(name="gptstatus", description="Check the status of the Grok/LLM API.")
 async def gptstatus(interaction: discord.Interaction):
-    embed = await get_gptstatus_embed()
+    guild_id = interaction.guild_id
+    embed = await get_gptstatus_embed(guild_id=guild_id, bot=interaction.client)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @app_commands.command(name="version", description="Show bot version")
@@ -548,58 +549,94 @@ async def setup(bot: commands.Bot):
 
 # ------------------ HELPER FUNCTIONS ------------------ #
 
-STATUS_URL = "https://status.openai.com/api/v2/status.json"
-
-async def fetch_openai_status():
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(STATUS_URL) as resp:
-                data = await resp.json()
-                return data.get("status", {}).get("description", "Unknown")
-    except Exception:
-        return "Unavailable"
-
-def format_timedelta(ts):
+def _format_timedelta(ts: datetime) -> str:
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
     delta = datetime.now(BRUSSELS_TZ) - ts
-    minutes = int(delta.total_seconds() // 60)
-    return f"{minutes} min ago" if minutes < 60 else f"{delta.seconds // 3600} hr ago"
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 60:
+        return f"{total_seconds}s ago"
+    minutes = total_seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    mins = minutes % 60
+    return f"{hours}h {mins}m ago" if mins else f"{hours}h ago"
 
-async def get_gptstatus_embed():
+
+def _derive_api_health(logs) -> str:
+    """Return a health string derived from our own success/error logs."""
+    if logs.last_success_time is None:
+        return "❓ No activity this session"
+    ts = logs.last_success_time
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    age_minutes = (datetime.now(timezone.utc) - ts).total_seconds() / 60
+    if age_minutes <= 30:
+        return "✅ Operational"
+    if age_minutes <= 120:
+        return f"⚠️ Last success {_format_timedelta(logs.last_success_time)} — may be degraded"
+    return f"❌ No recent activity (last: {_format_timedelta(logs.last_success_time)})"
+
+
+def _get_configured_model(bot, guild_id: Optional[int]) -> str:
+    """Read the currently configured Grok model from guild settings, falling back to logs then default."""
+    try:
+        settings = getattr(bot, "settings", None) if bot else None
+        if settings:
+            fetched = settings.get("gpt", "model", guild_id) if guild_id else settings.get("gpt", "model")
+            if isinstance(fetched, str) and fetched.strip():
+                return fetched.strip()
+    except Exception:
+        pass
+    logs = get_gpt_status_logs()
+    return logs.current_model or "grok-3"
+
+
+async def get_gptstatus_embed(guild_id: Optional[int] = None, bot=None):
+    from gpt.helpers import _gpt_retry_queue
     logs = get_gpt_status_logs()
 
-    last_success = logs.last_success_time or "-"
-    last_error = logs.last_error_type or "None"
+    health = _derive_api_health(logs)
+    model = _get_configured_model(bot, guild_id)
     latency = logs.average_latency_ms or 0
-    token_usage = logs.total_tokens_today or 0
-    rate_limit_reset = logs.rate_limit_reset or "~"
-    # Default model depends on provider (grok-3 for Grok, gpt-3.5-turbo for OpenAI)
-    try:
-        import config
-        default_model = "grok-3" if getattr(config, "LLM_PROVIDER", "grok").strip().lower() == "grok" else "gpt-3.5-turbo"
-    except:
-        default_model = "grok-3"
-    model = logs.current_model or default_model
-    user = logs.last_user or "-"
+    token_usage = logs.total_tokens_session or 0
     success_count = logs.success_count or 0
     error_count = logs.error_count or 0
+    rate_limit_hits = logs.rate_limit_hits or 0
+    retry_queue_size = len(_gpt_retry_queue)
 
-    status = await fetch_openai_status()
-
-    embed = EmbedBuilder.status(
-        title="🧠 Grok API Status"
+    last_success_str = (
+        _format_timedelta(logs.last_success_time) if logs.last_success_time else "—"
     )
-    embed.add_field(name="🔹 Operational", value=f"{'✅ Yes' if 'Operational' in status else '⚠️ ' + status}", inline=False)
-    embed.add_field(name="🔹 Last successful reply", value=format_timedelta(last_success) if isinstance(last_success, datetime) else last_success, inline=True)
-    embed.add_field(name="🔹 Last error", value=last_error, inline=True)
-    embed.add_field(name="🔹 Current model", value=f"`{model}`", inline=True)
-    embed.add_field(name="🔹 Prompt tokens used today", value=f"{token_usage:,}", inline=True)
-    embed.add_field(name="🔹 Rate limit window", value=f"Reset in {rate_limit_reset}", inline=True)
-    embed.add_field(name="🔹 Logged interactions", value=f"✅ {success_count} / ❌ {error_count}", inline=True)
-    embed.add_field(name="🔹 Last user to trigger Grok", value=f"<@{user}>", inline=True)
-    embed.add_field(name="🔹 Latency (avg)", value=f"{latency}ms", inline=True)
-    embed.add_field(name="🔹 Uptime", value=_format_uptime(BOOT_TIME), inline=True)
+    last_error_str = logs.last_error_type or "None"
+    last_error_time_str = (
+        _format_timedelta(logs.last_error_time) if logs.last_error_time else "—"
+    )
+    last_user_str = f"<@{logs.last_user}>" if logs.last_user else "—"
+
+    if rate_limit_hits == 0:
+        rate_limit_str = "✅ None this session"
+    else:
+        last_rl = _format_timedelta(logs.last_rate_limit_time) if logs.last_rate_limit_time else "—"
+        rate_limit_str = f"⚠️ {rate_limit_hits}x (last: {last_rl})"
+
+    retry_queue_str = f"{retry_queue_size} pending" if retry_queue_size > 0 else "—"
+
+    embed = EmbedBuilder.status(title="🧠 Grok API Status")
+    embed.add_field(name="Health", value=health, inline=False)
+    embed.add_field(name="Model", value=f"`{model}`", inline=True)
+    embed.add_field(name="Uptime", value=_format_uptime(BOOT_TIME), inline=True)
+    embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+    embed.add_field(name="Last success", value=last_success_str, inline=True)
+    embed.add_field(name="Avg latency", value=f"{latency} ms", inline=True)
+    embed.add_field(name="Last user", value=last_user_str, inline=True)
+    embed.add_field(name="Last error", value=last_error_str, inline=True)
+    embed.add_field(name="Error time", value=last_error_time_str, inline=True)
+    embed.add_field(name="Interactions", value=f"✅ {success_count}  ❌ {error_count}", inline=True)
+    embed.add_field(name="Rate limits (session)", value=rate_limit_str, inline=True)
+    embed.add_field(name="Retry queue", value=retry_queue_str, inline=True)
+    embed.add_field(name="Tokens (session)", value=f"{token_usage:,}", inline=True)
     embed.set_footer(text=f"📦 Grok Status • v{__version__} — {CODENAME} • Updated just now")
 
     return embed

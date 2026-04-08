@@ -628,13 +628,15 @@ class GPTLogEvent(BaseModel):
 class GPTMetrics(BaseModel):
     last_success_time: Optional[str]
     last_error_type: Optional[str]
+    last_error_time: Optional[str]
     average_latency_ms: int
-    total_tokens_today: int
-    rate_limit_reset: Optional[str]
+    total_tokens_session: int
     current_model: str
     last_user_id: Optional[int]
     success_count: int
     error_count: int
+    rate_limit_hits: int
+    last_rate_limit_time: Optional[str]
     last_success_latency_ms: Optional[int]
     recent_successes: List[GPTLogEvent]
     recent_errors: List[GPTLogEvent]
@@ -750,13 +752,15 @@ def _collect_gpt_metrics() -> GPTMetrics:
     return GPTMetrics(
         last_success_time=_datetime_to_iso(logs.last_success_time),
         last_error_type=logs.last_error_type,
+        last_error_time=_datetime_to_iso(logs.last_error_time),
         average_latency_ms=int(logs.average_latency_ms or 0),
-        total_tokens_today=int(logs.total_tokens_today or 0),
-        rate_limit_reset=logs.rate_limit_reset,
+        total_tokens_session=int(logs.total_tokens_session or 0),
         current_model=logs.current_model,
         last_user_id=logs.last_user,
         success_count=int(logs.success_count or 0),
         error_count=int(logs.error_count or 0),
+        rate_limit_hits=int(logs.rate_limit_hits or 0),
+        last_rate_limit_time=_datetime_to_iso(logs.last_rate_limit_time),
         last_success_latency_ms=logs.last_success_latency_ms,
         recent_successes=_serialize_gpt_events(logs.success_events),
         recent_errors=_serialize_gpt_events(logs.error_events),

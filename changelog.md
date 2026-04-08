@@ -15,10 +15,25 @@ All notable changes to this project will be documented in this file.
 - **DB migration 015**: `expiry_warning_sent_at` column on `premium_subs`
 - **Config**: `CORE_API_PAYMENTS_TOKEN`, `EARLY_BIRD_CODE`, `EARLY_BIRD_LIFETIME_PRICE`, `EARLY_BIRD_TOTAL_SPOTS` env vars
 - **set_model / reset_model**: Restricted to bot owner only (billing protection); added optional `guild_id` parameter so the owner can set a per-guild model override without being a member of that guild
+- **`/gptstatus`**: New **Rate limits (session)** field — tracks 429 hits since last restart, auto-detected from error type string (`429`, `rate limit`, `ratelimit`); shows count + time of last hit
+- **`/gptstatus`**: New **Retry queue** field — live count of requests currently buffered in `_gpt_retry_queue` waiting to be retried after a rate limit or API error
+- **`GPTStatusLogs`**: Added `rate_limit_hits` counter and `last_rate_limit_time` timestamp fields
+
+### Changed
+- **`/gptstatus`**: API health is now derived from own in-memory logs (last success age) instead of polling `status.openai.com` — which was wrong since the bot uses Grok (xAI), not OpenAI
+- **`/gptstatus`**: Average latency is now a proper rolling average over the last 25 success events instead of overwriting with the last value each time
+- **`/gptstatus`**: `total_tokens_today` renamed to `total_tokens_session` — clarifies the counter is in-memory and resets on restart; same rename in `api.py` (`GPTMetrics`) and `docs/api.md`
+- **`/gptstatus`**: `rate_limit_reset` field removed — was always `"~"` and never tracked anywhere
+- **`/gptstatus`**: `last_error_time` field added to embed and `GPTMetrics` API model; replaces the meaningless rate limit reset field
+- **`/gptstatus`**: `last_user` field no longer renders as `<@->` or `<@None>` when no user has triggered Grok yet
+- **`GPTStatusLogs`**: `success_events` and `error_events` deques are now populated in `gpt/helpers.py` — previously they were only populated in dead-code functions in `utils/logger.py` that were never called
 
 ### Fixed
 - **Premium checkout buttons**: Fixed 404 error — bot was calling non-existent `POST /api/premium/checkout`; now reads `PREMIUM_CHECKOUT_URL` directly and appends `?billing=<tier>`, matching the pattern used in onboarding
 - **GPT retry queue**: Initialise `_retry_lock` to `None` instead of a bare type annotation — fixes `NameError: name '_retry_lock' is not defined` raised on every retry queue task run
+
+### Removed
+- **`utils/logger.py`**: Dead `log_gpt_success` and `log_gpt_error` functions removed — all cogs import these from `gpt/helpers.py`; the `utils/logger.py` copies were never called
 
 ---
 
