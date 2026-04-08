@@ -741,6 +741,11 @@ class TicketBot(AlphaCog):
                 + "\n".join(safe_messages)
             )
 
+            from utils.premium_guard import guild_has_premium
+            if not await guild_has_premium(guild_id):
+                logger.info("Ticket summary skipped — guild %s has no premium", guild_id)
+                return None
+
             try:
                 summary_text = await ask_gpt(
                     messages=[{"role": "user", "content": prompt}],
@@ -1479,9 +1484,13 @@ class TicketActionView(discord.ui.View):
                 + "\n".join(safe_messages)
             )
 
+            guild_id = channel.guild.id if channel.guild else None
+            from utils.premium_guard import guild_has_premium
+            if not await guild_has_premium(guild_id):
+                logger.info("Idle ticket summary skipped — guild %s has no premium", guild_id)
+                return None
+
             try:
-                # Use default model from ask_gpt (defaults to grok-3 for Grok)
-                guild_id = channel.guild.id if channel.guild else None
                 summary_text = await ask_gpt(
                     messages=[{"role": "user", "content": prompt}],
                     user_id=None,

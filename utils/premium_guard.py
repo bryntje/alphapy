@@ -388,3 +388,89 @@ async def transfer_premium_to_guild(user_id: int, new_guild_id: int) -> Tuple[bo
     except Exception as e:
         logger.warning("Premium guard: transfer_premium_to_guild failed: %s", e)
         return False, "transfer failed"
+
+
+# ---------------------------------------------------------------------------
+# Tier helpers
+# ---------------------------------------------------------------------------
+
+async def get_user_tier(user_id: int, guild_id: int) -> str:
+    """
+    Return the user's current tier: 'free', 'monthly', 'yearly', or 'lifetime'.
+
+    Falls back to 'free' on any error or when no active subscription is found.
+    """
+    status = await get_premium_status(user_id, guild_id)
+    if not status.get("premium"):
+        return "free"
+    tier = status.get("tier") or "monthly"
+    from utils.premium_tiers import TIER_RANK
+    return tier if tier in TIER_RANK else "monthly"
+
+
+async def user_has_tier(user_id: int, guild_id: int, min_tier: str) -> bool:
+    """Return True if the user's tier rank is >= min_tier's rank."""
+    from utils.premium_tiers import TIER_RANK
+    tier = await get_user_tier(user_id, guild_id)
+    return TIER_RANK.get(tier, 0) >= TIER_RANK.get(min_tier, 0)
+
+
+# ---------------------------------------------------------------------------
+# GPT daily quota
+# ---------------------------------------------------------------------------
+
+async def check_and_increment_gpt_quota(
+    user_id: int, guild_id: int
+) -> Tuple[bool, int, Optional[int]]:
+    """
+    Check whether the user is within their daily GPT call quota and increment if so.
+
+    Returns (allowed, current_count, limit).
+    - allowed=True  → call is permitted; count has been incremented.
+    - allowed=False → quota exceeded; count is the current value; limit is the cap.
+    - limit=None    → unlimited tier (always allowed).
+
+    Fails open on DB error: returns (True, 0, limit) so a DB outage never blocks users.
+    """
+    from utils.premium_tiers import GPT_DAILY_LIMIT
+    tier = await get_user_tier(user_id, guild_id)
+    limit = GPT_DAILY_LIMIT.get(tier)
+
+    if limit is None:
+        return True, 0, None  # Unlimited tier — skip DB entirely
+
+    pool = await _ensure_pool()
+    if pool is None:
+        logger.warning("GPT quota: DB pool unavailable — failing open for user %s", user_id)
+        return True, 0, limit
+
+    try:
+        async with acquire_safe(pool) as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO gpt_usage (user_id, guild_id, usage_date, call_count)
+                VALUES ($1, $2, CURRENT_DATE, 1)
+                ON CONFLICT (user_id, guild_id, usage_date)
+                DO UPDATE SET call_count = gpt_usage.call_count + 1
+                RETURNING call_count
+                """,
+                user_id,
+                guild_id,
+            )
+            count = row["call_count"] if row else 1
+        if count > limit:
+            # Decrement back — we over-incremented past the cap
+            async with acquire_safe(pool) as conn:
+                await conn.execute(
+                    """
+                    UPDATE gpt_usage SET call_count = call_count - 1
+                    WHERE user_id = $1 AND guild_id = $2 AND usage_date = CURRENT_DATE
+                    """,
+                    user_id,
+                    guild_id,
+                )
+            return False, count - 1, limit
+        return True, count, limit
+    except Exception as e:
+        logger.warning("GPT quota: DB check failed for user %s — failing open: %s", user_id, e)
+        return True, 0, limit

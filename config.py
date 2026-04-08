@@ -78,6 +78,17 @@ MAIN_GUILD_ID = int(os.getenv("MAIN_GUILD_ID", "0"))  # Set to 0 to disable filt
 # Premium tier
 PREMIUM_CHECKOUT_URL = os.getenv("PREMIUM_CHECKOUT_URL", "")
 PREMIUM_CACHE_TTL_SECONDS = int(os.getenv("PREMIUM_CACHE_TTL_SECONDS", "300"))
+# Payments token for Core-API billing endpoints (e.g. early-bird validation)
+CORE_API_PAYMENTS_TOKEN = os.getenv("CORE_API_PAYMENTS_TOKEN", "")
+# Early bird settings
+EARLY_BIRD_CODE = os.getenv("EARLY_BIRD_CODE", "EARLYBIRD50")
+EARLY_BIRD_TOTAL_SPOTS = int(os.getenv("EARLY_BIRD_TOTAL_SPOTS", "50"))
+# Prices shown in /premium embed (early bird and regular)
+PRICE_MONTHLY = os.getenv("PRICE_MONTHLY", "€4.99")
+PRICE_YEARLY_EARLY_BIRD = os.getenv("PRICE_YEARLY_EARLY_BIRD", "€29")
+PRICE_YEARLY_REGULAR = os.getenv("PRICE_YEARLY_REGULAR", "€59.99")
+PRICE_LIFETIME_EARLY_BIRD = os.getenv("PRICE_LIFETIME_EARLY_BIRD", "€49")
+PRICE_LIFETIME_REGULAR = os.getenv("PRICE_LIFETIME_REGULAR", "€99.99")
 # Webhook secrets for Core → Alphapy callbacks (optional; fall back to APP_REFLECTIONS_WEBHOOK_SECRET / WEBHOOK_SECRET)
 PREMIUM_INVALIDATE_WEBHOOK_SECRET = os.getenv("PREMIUM_INVALIDATE_WEBHOOK_SECRET")
 FOUNDER_WEBHOOK_SECRET = os.getenv("FOUNDER_WEBHOOK_SECRET")
