@@ -248,7 +248,7 @@ async def _create_checkout_url(tier: str, guild_id: int, user_id: int) -> str | 
     if not base_url:
         logger.debug("Premium checkout: PREMIUM_CHECKOUT_URL not configured, buttons disabled")
         return None
-    return f"{base_url}?billing={tier}"
+    return base_url
 
 
 async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name: Optional[str] = None) -> tuple[discord.Embed, discord.ui.View]:
