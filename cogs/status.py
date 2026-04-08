@@ -34,7 +34,8 @@ BOOT_TIME = datetime.now(BRUSSELS_TZ)
 
 @app_commands.command(name="gptstatus", description="Check the status of the Grok/LLM API.")
 async def gptstatus(interaction: discord.Interaction):
-    embed = await get_gptstatus_embed()
+    guild_id = interaction.guild_id
+    embed = await get_gptstatus_embed(guild_id=guild_id, bot=interaction.client)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @app_commands.command(name="version", description="Show bot version")
@@ -578,12 +579,26 @@ def _derive_api_health(logs) -> str:
     return f"❌ No recent activity (last: {_format_timedelta(logs.last_success_time)})"
 
 
-async def get_gptstatus_embed():
+def _get_configured_model(bot, guild_id: Optional[int]) -> str:
+    """Read the currently configured Grok model from guild settings, falling back to logs then default."""
+    try:
+        settings = getattr(bot, "settings", None) if bot else None
+        if settings:
+            fetched = settings.get("gpt", "model", guild_id) if guild_id else settings.get("gpt", "model")
+            if isinstance(fetched, str) and fetched.strip():
+                return fetched.strip()
+    except Exception:
+        pass
+    logs = get_gpt_status_logs()
+    return logs.current_model or "grok-3"
+
+
+async def get_gptstatus_embed(guild_id: Optional[int] = None, bot=None):
     from gpt.helpers import _gpt_retry_queue
     logs = get_gpt_status_logs()
 
     health = _derive_api_health(logs)
-    model = logs.current_model or "grok-3"
+    model = _get_configured_model(bot, guild_id)
     latency = logs.average_latency_ms or 0
     token_usage = logs.total_tokens_session or 0
     success_count = logs.success_count or 0
