@@ -416,7 +416,7 @@ The share option only appears if a growth channel has been configured by an admi
 ### `/growthhistory`
 View your recent Growth Check-ins.
 
-**Behavior:** Shows your last 15 check-ins in a paginated embed (3 per page). Each entry displays the date, goal, and obstacle. Use the dropdown to open a specific check-in in full detail, including Grok's reflection response. Navigation via Previous/Next buttons.
+**Behavior:** Shows your last 15 check-ins in a paginated embed (3 per page). Each entry displays the date, goal, and obstacle. Use the dropdown to open a specific check-in in full detail, including Grok's reflection response. Navigation via Previous/Next buttons. In the detail view, a Delete button allows removing the check-in (with confirmation step).
 
 **Cooldown:** 1 use per 30 seconds per user.
 

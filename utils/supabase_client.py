@@ -151,6 +151,33 @@ async def _supabase_post(
     return data
 
 
+async def _supabase_delete(table: str, filters: Dict[str, str]) -> None:
+    """Delete rows from a Supabase table matching the given PostgREST filters.
+
+    Args:
+        table: Table name (e.g. "reflections")
+        filters: Dict of PostgREST filter params, e.g. {"id": "eq.abc-123", "user_id": "eq.uuid"}
+    """
+    _require_config()
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.delete(
+            url,
+            headers=_headers(method="DELETE"),
+            params=filters,
+        )
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "Supabase DELETE failed: table=%s status=%s body=%s",
+            table,
+            exc.response.status_code,
+            exc.response.text,
+        )
+        raise
+
+
 async def upsert_profile(payload: Dict[str, Any]) -> None:
     """Upsert a profile record keyed by user_id."""
     await _supabase_post("profiles", payload, upsert=True)
@@ -284,4 +311,5 @@ __all__ = [
     "insert_reflection_for_discord",
     "insert_insight_for_discord",
     "SupabaseConfigurationError",
+    "_supabase_delete",
 ]
