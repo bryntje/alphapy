@@ -49,9 +49,12 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ---
 
 ## 🌱 Agent: GrowthCheckIn
-- **Purpose**: Personal growth guidance via Grok
+- **Purpose**: Personal growth guidance via Grok, with optional community sharing
 - **Command**: `/growthcheckin`
 - **Premium**: Mockingbird spicy mode for premium users
+- **Reflection context**: Past reflections (Supabase `reflections_shared` + `app_reflections`) are automatically injected into the Grok prompt via `ask_gpt(include_reflections=True)`. The prompt explicitly instructs Grok to reference recurring patterns and progress.
+- **Sharing**: After the AI response, users see a `GrowthShareView` (ephemeral) with three options: share anonymously, share with display name, or keep private. The share posts a Discord embed (goal / obstacle / feeling / Grok response) to the configured `growth.log_channel_id`. If no channel is configured, the share option is not shown.
+- **Admin config**: `/config growth set_channel [#channel]` — omit `#channel` to get a picker (select existing or create new `#growth-checkins`). `/config growth reset_channel` removes the setting.
 
 ---
 
@@ -223,7 +226,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **alphapy** (2977 symbols, 10235 relationships, 255 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **alphapy** (2976 symbols, 10239 relationships, 255 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

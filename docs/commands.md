@@ -400,7 +400,25 @@ Reload the FAQ index (admin only). Use after bulk changes or imports.
 ### `/growthcheckin`
 Grok-powered check-in for goals, obstacles, and emotions.
 
-**Behavior:** Opens a modal with questions about goals, obstacles, and feelings. Responses are processed by Grok and stored for reflection.
+**Behavior:** Opens a modal with three fields (goal, obstacle, feeling). Grok responds with coaching feedback. If the user has past reflections, Grok actively references patterns and progress. Premium users receive Mockingbird mode (direct, sharper tone).
+
+After the response, an optional share prompt appears (ephemeral):
+- **Share anonymously** — posts the check-in + Grok response as an embed in the growth channel, without name or avatar.
+- **Share with my name** — same embed with display name and avatar.
+- **Keep private** — dismisses the prompt.
+
+The share option only appears if a growth channel has been configured by an admin (`/config growth set_channel`). All sharing is opt-in per interaction.
+
+**Cooldown:** 2 uses per 5 minutes per user per guild.
+
+---
+
+### `/growthhistory`
+View your recent Growth Check-ins.
+
+**Behavior:** Shows your last 15 check-ins in a paginated embed (3 per page). Each entry displays the date, goal, and obstacle. Use the dropdown to open a specific check-in in full detail, including Grok's reflection response. Navigation via Previous/Next buttons. In the detail view, a Delete button allows removing the check-in (with confirmation step).
+
+**Cooldown:** 1 use per 30 seconds per user.
 
 ---
 

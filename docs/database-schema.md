@@ -175,6 +175,11 @@ Plaintext reflections received from the App via Core-API webhook. Used for Grok 
 - Populated by `POST /webhooks/app-reflections`; deleted by `POST /webhooks/revoke-reflection`.
 - Context loader (`gpt/context_loader.py`) reads from this table for user-self flows (e.g. `/growthcheckin`). Ticket "Suggest reply" does not use reflection context.
 
+**Grok context sources for `/growthcheckin` (all three are merged, max 5 total):**
+1. Supabase `reflections_shared` — App reflections the user opted to share (requires `bot_sharing_enabled = true`)
+2. Supabase `reflections` — Discord check-ins written by `/growthcheckin` itself (no opt-in required)
+3. Railway `app_reflections` — plaintext from Core-API webhook (last 30 days, no opt-in required)
+
 ---
 
 ### `onboarding`

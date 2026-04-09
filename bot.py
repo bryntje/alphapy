@@ -368,6 +368,15 @@ settings_service.register(
         default="grok-3",
     )
 )
+settings_service.register(
+    SettingDefinition(
+        scope="growth",
+        key="log_channel_id",
+        description="Channel where shared Growth Check-in posts are published.",
+        value_type="channel",
+        default=0,  # Must be configured per guild
+    )
+)
 
 # Event: Bot is ready
 @bot.event

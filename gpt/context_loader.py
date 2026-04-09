@@ -251,6 +251,56 @@ async def load_user_reflections(
             exc_info=True,
         )
 
+    # Load Discord check-ins from the `reflections` table (written by /growthcheckin).
+    # These are the user's own bot submissions — no bot_sharing_enabled gate needed.
+    if loaded_count < limit:
+        try:
+            if not user_id:
+                user_id = await get_user_id_for_discord(discord_id)
+            if user_id:
+                remaining = limit - loaded_count
+                discord_reflection_rows = await _supabase_get(
+                    "reflections",
+                    {
+                        "select": "reflection,mantra,future_message,date",
+                        "user_id": f"eq.{user_id}",
+                        "order": "date.desc",
+                        "limit": remaining,
+                    },
+                )
+                if discord_reflection_rows:
+                    dr_parts = ["Recent Discord check-ins (via /growthcheckin):", ""]
+                    dr_count = 0
+                    for row in discord_reflection_rows:
+                        date_str = _sanitize_reflection_field(
+                            row.get("date", ""), max_chars=_REFLECTION_DATE_MAX_CHARS
+                        )
+                        reflection_text = _sanitize_reflection_field(row.get("reflection", ""))
+                        mantra = _sanitize_reflection_field(row.get("mantra"))
+                        future_message = _sanitize_reflection_field(row.get("future_message"))
+                        has_content = bool(reflection_text or mantra or future_message)
+                        if has_content:
+                            dr_count += 1
+                            dr_parts.append(f"Check-in {dr_count} ({date_str}):")
+                            if reflection_text:
+                                dr_parts.append(f"  {reflection_text}")
+                            if mantra:
+                                dr_parts.append(f"  Mantra: {mantra}")
+                            if future_message:
+                                dr_parts.append(f"  Future message: {future_message}")
+                            dr_parts.append("")
+                    if dr_count > 0:
+                        dr_context = "\n".join(dr_parts).strip()
+                        context_str = f"{context_str}\n\n{dr_context}".strip() if context_str else dr_context
+                        loaded_count += dr_count
+                        logger.debug(
+                            "Loaded %s Discord check-ins from reflections for discord_id=%s",
+                            dr_count,
+                            discord_id,
+                        )
+        except Exception as e:
+            logger.debug("Failed to load Discord check-ins for discord_id=%s: %s", discord_id, e)
+
     # Always try app_reflections (plaintext from App via Core webhook), but
     # enforce the global limit across both sources. loaded_count is the number
     # of reflections that actually produced context (valid_count from Supabase,

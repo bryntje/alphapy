@@ -3,7 +3,7 @@
 import logging
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import discord
 from discord import Embed
@@ -61,7 +61,7 @@ def set_bot_instance(bot: commands.Bot) -> None:
 
 def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optional[int] = None, model: Optional[str] = None):
     from utils.logger import get_gpt_status_logs
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     logs = get_gpt_status_logs()
     logs.last_success_time = now
     logs.last_user = user_id
@@ -88,7 +88,7 @@ def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optiona
 
 def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = None):
     from utils.logger import get_gpt_status_logs
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     logs = get_gpt_status_logs()
     logs.last_error_type = error_type
     logs.last_error_time = now
@@ -154,7 +154,7 @@ async def log_to_channel(message: str, level: str = "info", guild_id: Optional[i
 
     embed = Embed(
         description=message,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         color=0x00BFFF if level == "info" else 0xFF0000
     )
     embed.set_author(name=f"Grok {level.upper()}")
@@ -174,7 +174,7 @@ def _get_retry_lock() -> asyncio.Lock:
     return _retry_lock
 
 
-async def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflections: bool = True):
+async def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflections: bool = True, max_tokens: Optional[int] = None):
     """Add a failed Grok request to the retry queue (thread-safe via asyncio.Lock)."""
     async with _get_retry_lock():
         # Limit queue size (drop oldest if full)
@@ -187,8 +187,9 @@ async def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflec
             "model": model,
             "guild_id": guild_id,
             "include_reflections": include_reflections,
+            "max_tokens": max_tokens,
             "retry_count": 0,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
         })
 
 
@@ -211,11 +212,12 @@ async def _retry_one(item: dict) -> None:
             guild_id=item["guild_id"],
             _is_retry=True,
             include_reflections=item.get("include_reflections", True),
+            max_tokens=item.get("max_tokens"),
         )
         logger.debug(f"✅ Grok retry succeeded for user {item['user_id']}")
     except Exception as retry_error:
         item["retry_count"] += 1
-        item["timestamp"] = datetime.utcnow()
+        item["timestamp"] = datetime.now(timezone.utc)
         async with _get_retry_lock():
             if len(_gpt_retry_queue) < MAX_RETRY_QUEUE_SIZE:
                 _gpt_retry_queue.append(item)
@@ -315,10 +317,10 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
     return model_value, temperature_value
 
 
-async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None, _is_retry: bool = False, include_reflections: bool = True):
+async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None, _is_retry: bool = False, include_reflections: bool = True, max_tokens: Optional[int] = None):
     """
     Main Grok interaction function.
-    
+
     Args:
         messages: List of message dicts or string prompt
         user_id: User ID for logging and reflection context loading (Discord ID)
@@ -326,6 +328,7 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
         guild_id: Guild ID for logging
         _is_retry: Internal flag to prevent re-queuing on retry attempts
         include_reflections: Whether to include user reflections as context (default: True)
+        max_tokens: Hard cap on response length (default: None = API default)
     """
     start = time.perf_counter()
 
@@ -378,6 +381,8 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
         }
         if temperature is not None:
             chat_kwargs["temperature"] = temperature
+        if max_tokens is not None:
+            chat_kwargs["max_tokens"] = max_tokens
 
         response = await llm_client.chat.completions.create(**chat_kwargs)
         latency = (time.perf_counter() - start) * 1000 if response else 0  # in ms
@@ -409,7 +414,7 @@ async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id:
         # If retryable and not already a retry attempt, add to queue and return fallback message
         if is_retryable and not _is_retry:
             await _add_to_retry_queue(
-                messages, user_id, model or _default_model, guild_id, include_reflections
+                messages, user_id, model or _default_model, guild_id, include_reflections, max_tokens
             )
             logger.warning(f"⚠️ Grok error (retryable): {error_type}. Returning fallback message and queuing for retry.")
             return FALLBACK_MESSAGE
