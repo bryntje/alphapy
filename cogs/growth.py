@@ -180,7 +180,8 @@ If you have context from this user's past reflections, actively reference patter
                 prompt = base_prompt.rstrip() + "\n\nRespond in Mockingbird mode: direct, a bit sharp, challenge assumptions, no sugar-coating."
 
         try:
-            reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id)
+            # max_tokens ~400 keeps the response within Discord's 2000-char message limit
+            reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id, max_tokens=400)
 
             # Determine if a growth channel is configured for optional sharing
             growth_channel: Optional[discord.TextChannel] = None
@@ -196,6 +197,8 @@ If you have context from this user's past reflections, actively reference patter
                     except Exception:
                         pass
 
+            _SHARE_SUFFIX = "\n\n─────────────────\n*Want to share this with the community?*"
+
             if growth_channel:
                 share_view = GrowthShareView(
                     goal=self.goal.value,
@@ -205,7 +208,7 @@ If you have context from this user's past reflections, actively reference patter
                     growth_channel=growth_channel,
                 )
                 await interaction.followup.send(
-                    reply + "\n\n─────────────────\n*Want to share this with the community?*",
+                    reply + _SHARE_SUFFIX,
                     ephemeral=True,
                     view=share_view,
                 )
