@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -103,19 +104,6 @@ class GrowthShareView(discord.ui.View):
         self.stop()
 
 
-class GrowthCheckin(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    @app_commands.command(
-        name="growthcheckin",
-        description="Reflect on your goals, obstacles, and how you feel.",
-    )
-    @app_checks.cooldown(2, 300.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)
-    async def growthcheckin(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(GrowthModal())
-
-
 class GrowthModal(discord.ui.Modal, title="🌱 Growth Check-in"):
     goal = discord.ui.TextInput(
         label="What do you want to achieve?",
@@ -152,6 +140,8 @@ Ask 1 or 2 deeper questions to support clarity.
 Be encouraging, not forceful.
 
 If you have context from this user's past reflections, actively reference patterns you notice — recurring themes, progress since last time, or shifts in mindset. Make the response feel continuous and personalized.
+
+Keep your response under 250 words. End with a complete sentence.
 """
         guild_id = interaction.guild.id if interaction.guild else None
 
@@ -180,8 +170,8 @@ If you have context from this user's past reflections, actively reference patter
                 prompt = base_prompt.rstrip() + "\n\nRespond in Mockingbird mode: direct, a bit sharp, challenge assumptions, no sugar-coating."
 
         try:
-            # max_tokens ~400 keeps the response within Discord's 2000-char message limit
-            reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id, max_tokens=400)
+            # max_tokens=500 as hard safety net; actual length controlled by prompt instruction (250 words)
+            reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id, max_tokens=500)
 
             # Determine if a growth channel is configured for optional sharing
             growth_channel: Optional[discord.TextChannel] = None
@@ -268,6 +258,211 @@ If you have context from this user's past reflections, actively reference patter
         except Exception:
             await interaction.followup.send(
                 "❌ Something went wrong while processing your check-in. Please try again later.",
+                ephemeral=True,
+            )
+
+
+_HISTORY_PER_PAGE = 3
+_HISTORY_MAX_FETCH = 15  # 5 pages max
+
+
+def _parse_reflection(raw: str) -> tuple[str, str, str]:
+    """Parse 'Goal: ...\nObstacle: ...\nFeeling: ...' into (goal, obstacle, feeling)."""
+    goal = obstacle = feeling = ""
+    for line in raw.splitlines():
+        if line.startswith("Goal: "):
+            goal = line[6:]
+        elif line.startswith("Obstacle: "):
+            obstacle = line[10:]
+        elif line.startswith("Feeling: "):
+            feeling = line[9:]
+    return goal, obstacle, feeling
+
+
+class GrowthDetailView(discord.ui.View):
+    """Full detail view for one check-in, including Grok response."""
+
+    def __init__(self, row: dict, back_view: "GrowthHistoryView"):
+        super().__init__(timeout=300)
+        self.row = row
+        self.back_view = back_view
+
+    def build_embed(self) -> discord.Embed:
+        date_str = str(self.row.get("date", ""))[:10]
+        raw = self.row.get("reflection", "")
+        goal, obstacle, feeling = _parse_reflection(raw)
+        future_message = self.row.get("future_message") or ""
+
+        embed = discord.Embed(
+            title=f"🌱 Growth Check-in — {date_str}",
+            color=_GROWTH_EMBED_COLOR,
+            timestamp=datetime.now(timezone.utc),
+        )
+        if goal:
+            embed.add_field(name="Goal", value=safe_embed_text(goal[:1024]), inline=False)
+        if obstacle:
+            embed.add_field(name="Obstacle", value=safe_embed_text(obstacle[:1024]), inline=False)
+        if feeling:
+            embed.add_field(name="How I felt", value=safe_embed_text(feeling[:1024]), inline=False)
+        if future_message:
+            grok_text = future_message[:1021] + "…" if len(future_message) > 1024 else future_message
+            embed.add_field(name="🤖 Grok's reflection", value=safe_embed_text(grok_text), inline=False)
+        embed.set_footer(text="Innersync • Growth")
+        return embed
+
+    @discord.ui.button(label="← Back to list", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.back_view._rebuild_items()
+        await interaction.response.edit_message(
+            embed=self.back_view.build_embed(),
+            view=self.back_view,
+        )
+
+
+class GrowthHistoryView(discord.ui.View):
+    """Paginated list of growth check-ins (3 per page) with a Select for detail."""
+
+    def __init__(self, reflections: list, page: int = 0):
+        super().__init__(timeout=300)
+        self.reflections = reflections
+        self.page = page
+        self._rebuild_items()
+
+    @property
+    def total_pages(self) -> int:
+        return max(1, math.ceil(len(self.reflections) / _HISTORY_PER_PAGE))
+
+    @property
+    def page_items(self) -> list:
+        start = self.page * _HISTORY_PER_PAGE
+        return self.reflections[start:start + _HISTORY_PER_PAGE]
+
+    def build_embed(self) -> discord.Embed:
+        embed = discord.Embed(
+            title="🌱 Growth History",
+            color=_GROWTH_EMBED_COLOR,
+            timestamp=datetime.now(timezone.utc),
+        )
+        if not self.reflections:
+            embed.description = "No check-ins found yet. Use `/growthcheckin` to get started."
+        else:
+            for row in self.page_items:
+                date_str = str(row.get("date", ""))[:10]
+                goal, obstacle, _ = _parse_reflection(row.get("reflection", ""))
+                preview_parts = []
+                if goal:
+                    preview_parts.append(f"**Goal:** {goal[:120]}")
+                if obstacle:
+                    preview_parts.append(f"**Obstacle:** {obstacle[:120]}")
+                embed.add_field(
+                    name=f"📅 {date_str}",
+                    value=safe_embed_text("\n".join(preview_parts) or "—"),
+                    inline=False,
+                )
+        embed.set_footer(text=f"Page {self.page + 1}/{self.total_pages} • Innersync • Growth")
+        return embed
+
+    def _rebuild_items(self):
+        self.clear_items()
+        items = self.page_items
+        if items:
+            options = []
+            for i, row in enumerate(items):
+                date_str = str(row.get("date", ""))[:10]
+                goal, _, _ = _parse_reflection(row.get("reflection", ""))
+                desc = goal[:97] + "…" if len(goal) > 97 else goal
+                options.append(discord.SelectOption(
+                    label=date_str or f"Check-in {self.page * _HISTORY_PER_PAGE + i + 1}",
+                    value=str(self.page * _HISTORY_PER_PAGE + i),
+                    description=desc or "View full detail",
+                ))
+            select = discord.ui.Select(
+                placeholder="Open a check-in for full detail + Grok response…",
+                options=options,
+                row=0,
+            )
+            select.callback = self._on_select
+            self.add_item(select)
+
+        prev_btn = discord.ui.Button(
+            label="← Previous",
+            style=discord.ButtonStyle.secondary,
+            disabled=self.page == 0,
+            row=1,
+        )
+        prev_btn.callback = self._on_prev
+        self.add_item(prev_btn)
+
+        next_btn = discord.ui.Button(
+            label="Next →",
+            style=discord.ButtonStyle.secondary,
+            disabled=self.page >= self.total_pages - 1,
+            row=1,
+        )
+        next_btn.callback = self._on_next
+        self.add_item(next_btn)
+
+    async def _on_select(self, interaction: discord.Interaction):
+        idx = int(interaction.data["values"][0])
+        row = self.reflections[idx]
+        detail_view = GrowthDetailView(row=row, back_view=self)
+        await interaction.response.edit_message(embed=detail_view.build_embed(), view=detail_view)
+
+    async def _on_prev(self, interaction: discord.Interaction):
+        self.page -= 1
+        self._rebuild_items()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    async def _on_next(self, interaction: discord.Interaction):
+        self.page += 1
+        self._rebuild_items()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+
+class GrowthCheckin(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(
+        name="growthcheckin",
+        description="Reflect on your goals, obstacles, and how you feel.",
+    )
+    @app_checks.cooldown(2, 300.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)
+    async def growthcheckin(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(GrowthModal())
+
+    @app_commands.command(
+        name="growthhistory",
+        description="View your recent Growth Check-ins.",
+    )
+    @app_checks.cooldown(1, 30.0, key=lambda i: i.user.id)
+    async def growthhistory(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            user_id = await get_user_id_for_discord(interaction.user.id)
+            if not user_id:
+                await interaction.followup.send(
+                    "No Innersync profile linked to your account. Complete a `/growthcheckin` first.",
+                    ephemeral=True,
+                )
+                return
+
+            rows = await _supabase_get(
+                "reflections",
+                {
+                    "select": "reflection,future_message,date",
+                    "user_id": f"eq.{user_id}",
+                    "order": "date.desc",
+                    "limit": _HISTORY_MAX_FETCH,
+                },
+            )
+
+            view = GrowthHistoryView(reflections=rows or [])
+            await interaction.followup.send(embed=view.build_embed(), view=view, ephemeral=True)
+        except Exception as e:
+            logger.warning("Failed to load growth history for discord_id=%s: %s", interaction.user.id, e)
+            await interaction.followup.send(
+                "❌ Could not load your growth history. Please try again later.",
                 ephemeral=True,
             )
 

@@ -11,9 +11,10 @@ All notable changes to this project will be documented in this file.
 - **`/config growth reset_channel`**: Removes the growth channel configuration
 - **`growth.log_channel_id`**: New `SettingDefinition` registered in `bot.py`
 - **Context loader**: Discord check-ins (Supabase `reflections` table) are now loaded as a third Grok context source alongside `reflections_shared` and `app_reflections`
+- **`/growthhistory`**: New command — view your last 15 Growth Check-ins in a paginated embed (3 per page, Previous/Next navigation); select a check-in from the dropdown to see the full detail including Grok's reflection
 
 ### Fixed
-- **`/growthcheckin`**: Grok response now capped at 400 tokens via `max_tokens` API parameter, preventing Discord's 2000-char message limit from being exceeded and causing a generic error
+- **`/growthcheckin`**: Grok response length now controlled via prompt instruction (max 250 words) with `max_tokens=500` as API safety net — prevents mid-sentence cutoffs and Discord's 2000-char message limit errors
 - **`ask_gpt`**: Added `max_tokens` parameter (propagated through retry queue) for callers that need response length control
 - **Embed timestamps**: Replaced `datetime.utcnow()` with `datetime.now(timezone.utc)` in `gpt/helpers.py` — fixes 2-hour timezone display offset in Grok log embeds
 
