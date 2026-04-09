@@ -13,7 +13,9 @@ All notable changes to this project will be documented in this file.
 - **Context loader**: Discord check-ins (Supabase `reflections` table) are now loaded as a third Grok context source alongside `reflections_shared` and `app_reflections`
 
 ### Fixed
-- (No changes yet)
+- **`/growthcheckin`**: Grok response now capped at 400 tokens via `max_tokens` API parameter, preventing Discord's 2000-char message limit from being exceeded and causing a generic error
+- **`ask_gpt`**: Added `max_tokens` parameter (propagated through retry queue) for callers that need response length control
+- **Embed timestamps**: Replaced `datetime.utcnow()` with `datetime.now(timezone.utc)` in `gpt/helpers.py` — fixes 2-hour timezone display offset in Grok log embeds
 
 ---
 
