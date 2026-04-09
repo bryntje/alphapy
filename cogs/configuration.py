@@ -92,6 +92,11 @@ class Configuration(AlphaCog):
         description="Auto-moderation settings",
         parent=config,
     )
+    growth_group = app_commands.Group(
+        name="growth",
+        description="Growth Check-in settings",
+        parent=config,
+    )
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
         self.rule_processor = RuleProcessor(bot)
@@ -2429,6 +2434,50 @@ class Configuration(AlphaCog):
         )
         log_guild_action(interaction.guild.id, f"Auto-moderation rule severity updated: {rule_id} → {severity}", user=str(interaction.user))
 
+    @growth_group.command(name="set_channel", description="Set the channel where shared Growth Check-ins are posted")
+    @requires_admin()
+    async def growth_set_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: Optional[discord.TextChannel] = None,
+    ) -> None:
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        if channel is not None:
+            await interaction.response.defer(ephemeral=True)
+            await self.settings.set("growth", "log_channel_id", channel.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(
+                f"✅ Growth Check-in channel set to {channel.mention}.",
+                ephemeral=True,
+            )
+            await self._send_audit_log(
+                "⚙️ Setting updated",
+                f"`growth.log_channel_id` set to {channel.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            view = GrowthChannelSetupView(self.settings, interaction.guild, interaction.user)
+            await interaction.response.send_message(
+                "Pick an existing channel or let me create a dedicated **#growth-checkins** channel:",
+                view=view,
+                ephemeral=True,
+            )
+
+    @growth_group.command(name="reset_channel", description="Remove the Growth Check-in channel configuration")
+    @requires_admin()
+    async def growth_reset_channel(self, interaction: discord.Interaction) -> None:
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await interaction.response.defer(ephemeral=True)
+        await self.settings.clear("growth", "log_channel_id", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            "↩️ Growth Check-in channel removed. Sharing option will no longer appear.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "⚙️ Setting reset",
+            f"`growth.log_channel_id` cleared by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
     def _resolve_guild_id(
         self, interaction: discord.Interaction, guild_id_str: Optional[str]
     ) -> Tuple[Optional[int], Optional[str]]:
@@ -2475,6 +2524,55 @@ class Configuration(AlphaCog):
             log_guild_action(guild_id, "AUDIT_LOG", details=f"config: {title}")
         except Exception as e:
             log_with_guild(f"Could not send audit log: {e}", guild_id, "error")
+
+
+class GrowthChannelSetupView(discord.ui.View):
+    """Shown when /config growth set_channel is called without a channel argument.
+
+    Lets the admin pick an existing channel or create a new #growth-checkins channel.
+    """
+
+    def __init__(self, settings, guild: discord.Guild, actor: discord.Member):
+        super().__init__(timeout=120)
+        self.settings = settings
+        self.guild = guild
+        self.actor = actor
+
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="Pick an existing channel…",
+        min_values=1,
+        max_values=1,
+    )
+    async def channel_select(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        channel = select.values[0]
+        await self.settings.set("growth", "log_channel_id", channel.id, self.guild.id, self.actor.id)
+        await interaction.response.edit_message(
+            content=f"✅ Growth Check-in channel set to {channel.mention}.",
+            view=None,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Create #growth-checkins", style=discord.ButtonStyle.primary, emoji="🌱")
+    async def create_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        try:
+            channel = await self.guild.create_text_channel(
+                "growth-checkins",
+                reason=f"Growth Check-in channel created by {self.actor} via /config growth set_channel",
+            )
+            await self.settings.set("growth", "log_channel_id", channel.id, self.guild.id, self.actor.id)
+            await interaction.edit_original_response(
+                content=f"✅ Created and configured {channel.mention} as the Growth Check-in channel.",
+                view=None,
+            )
+        except discord.Forbidden:
+            await interaction.edit_original_response(
+                content="❌ I don't have permission to create channels. Please create one manually and use `/config growth set_channel #channel`.",
+                view=None,
+            )
+        self.stop()
 
 
 async def setup(bot: commands.Bot):

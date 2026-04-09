@@ -165,6 +165,12 @@ Variant is "with inviter" or "without inviter" (dropdown).
 /config gdpr reset_channel
 ```
 
+### Growth Scope
+```
+/config growth set_channel [#channel]   — omit #channel to get a picker (select existing or create new #growth-checkins)
+/config growth reset_channel            — removes the setting; share option disappears from /growthcheckin
+```
+
 ### Onboarding Scope
 ```
 /config onboarding show
