@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **`/growthcheckin`**: Grok prompt now explicitly instructs the AI to reference past reflection patterns, recurring themes, and progress across sessions
+- **`/growthcheckin`**: Optional community sharing via `GrowthShareView` — after the AI response, users can share anonymously, share with display name, or keep private; posts a styled embed (goal / obstacle / feeling / Grok response) to the configured growth channel
+- **`/config growth set_channel [#channel]`**: Admin command to configure the growth check-in channel; omitting the channel argument opens a picker to select an existing channel or create a new `#growth-checkins` channel
+- **`/config growth reset_channel`**: Removes the growth channel configuration
+- **`growth.log_channel_id`**: New `SettingDefinition` registered in `bot.py`
+- **Context loader**: Discord check-ins (Supabase `reflections` table) are now loaded as a third Grok context source alongside `reflections_shared` and `app_reflections`
 
 ### Fixed
 - (No changes yet)
