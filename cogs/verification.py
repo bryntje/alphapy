@@ -623,17 +623,15 @@ class VerificationCog(AlphaCog):
 
         if reference_image_url:
             prompt = (
-                "You are a payment verification assistant. Your job is to check whether a submitted screenshot matches a reference example.\n\n"
-                "You have been given TWO images:\n"
-                "- Image 1 (first): the user's submitted screenshot.\n"
-                "- Image 2 (second): a reference example uploaded by the server admin that defines what a valid submission looks like.\n\n"
-                "Your only task is to judge whether Image 1 is sufficiently similar to Image 2.\n"
-                "The admin has defined the reference as valid — do not second-guess it.\n"
-                "If the submitted screenshot shows the same type of document as the reference (same platform, same layout, same kind of confirmation), set can_verify to true.\n"
-                "Only flag needs_manual_review if the images are clearly different types of documents, or if Image 1 is unreadable.\n\n"
-                "Respond in **JSON only**, no other text:\n"
-                '{\n  "can_verify": boolean,\n  "needs_manual_review": boolean,\n  "reason": string\n}\n\n'
-                "- `reason`: one sentence, no card numbers, IBANs, email addresses, or other PII."
+                "You are given two images.\n"
+                "- Image 1: submitted by a user who wants access.\n"
+                "- Image 2: a reference example set by the server admin that defines what an acceptable submission looks like.\n\n"
+                "Your only task is to decide whether Image 1 matches Image 2 closely enough.\n"
+                "The admin has defined Image 2 as the standard — you must not question whether it is a valid document.\n"
+                "Set can_verify to true if Image 1 shows the same kind of document or screen as Image 2, even if details differ slightly.\n"
+                "Set needs_manual_review to true only if Image 1 is clearly a different type of document, or if it is too blurry or cropped to compare.\n\n"
+                "Respond in JSON only, no other text:\n"
+                '{"can_verify": boolean, "needs_manual_review": boolean, "reason": "one sentence max, no PII"}'
             )
         else:
             prompt = (
@@ -762,7 +760,8 @@ class VerificationCog(AlphaCog):
                 description=(
                     f"User: {message.author.mention} ({message.author.id})\n"
                     f"Channel: {channel.mention}\n"
-                    f"Started: {datetime.now(BRUSSELS_TZ).strftime('%Y-%m-%d %H:%M UTC')}"
+                    f"Started: {datetime.now(BRUSSELS_TZ).strftime('%Y-%m-%d %H:%M UTC')}\n"
+                    f"AI reason: {safe_embed_text(reason, 300)}"
                 ),
                 level="warning",
                 guild_id=guild_id,
