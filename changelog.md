@@ -25,6 +25,10 @@ All notable changes to this project will be documented in this file.
 - **`/growthhistory`**: New command — view your last 15 Growth Check-ins in a paginated embed (3 per page, Previous/Next navigation); select a check-in from the dropdown to see the full detail including Grok's reflection; delete individual check-ins with confirmation step
 
 ### Fixed
+- **Verification — vision model override**: `ask_gpt_vision` was ignoring the caller's explicit `model` parameter and always using the guild's global `gpt.model` setting (a text-only model), causing all image analysis to fail with a 400 error. The vision model is now respected as-is; only temperature is pulled from settings.
+- **Verification — image content types**: xAI chat completions API requires `image_url` / `text` content types, not `input_image` / `input_text` (Responses API format). Fixed — the AI was silently never receiving images.
+- **Verification — default vision model**: Updated default from `grok-2-vision-latest` (deprecated) to `grok-4-1-fast-reasoning`.
+- **Verification — reference image URL**: Message ID stored by the settings service was wrapped in quotes; added `.strip("\"'")` on retrieval. Also added `bot.fetch_channel()` fallback when the channel is not in the bot's cache.
 - **`/growthcheckin`**: Grok response length now controlled via prompt instruction (max 250 words) with `max_tokens=500` as API safety net — prevents mid-sentence cutoffs and Discord's 2000-char message limit errors
 - **`ask_gpt`**: Added `max_tokens` parameter (propagated through retry queue) for callers that need response length control
 - **Embed timestamps**: Replaced `datetime.utcnow()` with `datetime.now(timezone.utc)` in `gpt/helpers.py` — fixes 2-hour timezone display offset in Grok log embeds
