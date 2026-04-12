@@ -50,6 +50,10 @@ class VerificationCog(AlphaCog):
             self.bot.add_view(ManualReviewView(self, timeout=None))
         except Exception as e:
             logger.warning(f"⚠️ VerificationCog: could not register ManualReviewView: {e}")
+        try:
+            self.bot.add_view(VerificationCloseView(self, timeout=None))
+        except Exception as e:
+            logger.warning(f"⚠️ VerificationCog: could not register VerificationCloseView: {e}")
 
     async def setup_db(self) -> None:
         """Initialize database pool and ensure verification_tickets table exists."""
@@ -524,15 +528,35 @@ class VerificationCog(AlphaCog):
             guild_id=guild_id,
         )
 
-        # 5. Delete channel after a brief delay
-        async def _delete_channel() -> None:
-            await asyncio.sleep(5)
-            try:
-                await channel.delete(reason=f"Verification {outcome} — auto-cleanup")
-            except Exception as e:
-                logger.debug(f"VerificationCog: could not delete verification channel: {e}")
+        # 5. On close: delete channel after 5s.
+        #    On approve/reject: lock channel and post a Close button for the admin.
+        if outcome == "closed":
+            async def _delete_channel() -> None:
+                await asyncio.sleep(5)
+                try:
+                    await channel.delete(reason="Verification closed — auto-cleanup")
+                except Exception as e:
+                    logger.debug(f"VerificationCog: could not delete verification channel: {e}")
 
-        asyncio.create_task(_delete_channel())
+            asyncio.create_task(_delete_channel())
+        else:
+            try:
+                overwrites = channel.overwrites
+                overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
+                if member:
+                    overwrites[member] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        read_message_history=True,
+                    )
+                await channel.edit(overwrites=overwrites, reason=f"Verification {outcome} — locked for review")
+            except Exception as e:
+                logger.debug(f"VerificationCog: could not lock verification channel: {e}")
+
+            try:
+                await channel.send(view=VerificationCloseView(self, timeout=None))
+            except Exception as e:
+                logger.debug(f"VerificationCog: could not send close button: {e}")
 
     # ----- Listener -----
 
@@ -787,6 +811,51 @@ class ManualReviewView(discord.ui.View):
         guild = cast(discord.Guild, interaction.guild)
         channel = cast(discord.TextChannel, interaction.channel)
         await interaction.response.send_modal(RejectReasonModal(self.cog, channel, guild))
+
+
+class VerificationCloseView(discord.ui.View):
+    """Posted after approve/reject so an admin can delete the channel via button."""
+
+    def __init__(self, cog: "VerificationCog", timeout: Optional[float] = None):
+        super().__init__(timeout=timeout)
+        self.cog = cog
+
+    @discord.ui.button(
+        label="Close channel",
+        style=discord.ButtonStyle.secondary,
+        custom_id="verification_close_btn",
+        emoji="🔒",
+    )
+    async def close_channel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        from utils.validators import validate_admin
+
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Only works in a server.", ephemeral=True)
+            return
+
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
+            return
+
+        if not isinstance(interaction.channel, discord.TextChannel):
+            await interaction.response.send_message("❌ Unexpected channel type.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        guild = cast(discord.Guild, interaction.guild)
+        channel = cast(discord.TextChannel, interaction.channel)
+        member = await _fetch_ticket_member(self.cog, channel, guild)
+
+        await self.cog._resolve_verification(
+            channel=channel,
+            member=member,
+            guild=guild,
+            resolved_by=interaction.user,
+            outcome="closed",
+        )
+        await interaction.followup.send("🔒 Channel will be deleted shortly.", ephemeral=True)
 
 
 class VerificationPanelView(discord.ui.View):
