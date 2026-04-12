@@ -86,14 +86,13 @@ class VerificationCog(AlphaCog):
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_verification_tickets_channel_id ON verification_tickets(channel_id);"
                 )
-
-            # Idempotent schema additions for audit trail
-            await conn.execute(
-                "ALTER TABLE verification_tickets ADD COLUMN IF NOT EXISTS resolved_by_user_id BIGINT;"
-            )
-            await conn.execute(
-                "ALTER TABLE verification_tickets ADD COLUMN IF NOT EXISTS rejection_reason TEXT;"
-            )
+                # Idempotent schema additions for audit trail
+                await conn.execute(
+                    "ALTER TABLE verification_tickets ADD COLUMN IF NOT EXISTS resolved_by_user_id BIGINT;"
+                )
+                await conn.execute(
+                    "ALTER TABLE verification_tickets ADD COLUMN IF NOT EXISTS rejection_reason TEXT;"
+                )
 
             logger.info("VerificationCog: DB ready (verification_tickets)")
             log_database_event("DB_READY", details="VerificationCog database fully initialized")
