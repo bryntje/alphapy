@@ -685,18 +685,26 @@ class VerificationCog(AlphaCog):
         reason = "Unclear AI result."
 
         try:
-            raw = (result_text or "").strip()
+            raw = (result_text or "").strip().lstrip("\ufeff")  # strip BOM if present
 
-            # Robustly extract the JSON object from the response regardless of wrapping:
-            # 1. Try content between ``` fences (```json ... ``` or ``` ... ```)
-            # 2. Fall back to first { … last } extraction
-            fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
+            # Strategy 1: extract from ``` fences (handles ```json and plain ```)
+            fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
             if fence_match:
                 clean_text = fence_match.group(1).strip()
             else:
+                # Strategy 2: find first { to last }
                 start = raw.find("{")
                 end = raw.rfind("}")
-                clean_text = raw[start: end + 1] if start != -1 and end > start else raw
+                if start != -1 and end > start:
+                    clean_text = raw[start: end + 1]
+                else:
+                    # No JSON structure found — log format for diagnosis, default to manual review
+                    logger.warning(
+                        "VerificationCog: AI returned no JSON structure (length=%s, start=%r)",
+                        len(raw),
+                        raw[:80],
+                    )
+                    clean_text = "{}"
 
             parsed = json.loads(clean_text or "{}")
             if isinstance(parsed, dict):
@@ -708,9 +716,10 @@ class VerificationCog(AlphaCog):
         except Exception as e:
             # Avoid logging the full AI response to reduce risk of PII in logs
             logger.warning(
-                "VerificationCog: could not parse vision JSON: %s (response length=%s)",
+                "VerificationCog: could not parse vision JSON: %s (length=%s, start=%r)",
                 e,
                 len(result_text or ""),
+                (result_text or "")[:80],
             )
 
         # Update DB
