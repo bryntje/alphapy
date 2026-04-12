@@ -4,6 +4,29 @@ All notable releases of Alphapy will be documented in this file.
 
 ---
 
+## [3.3.0] - 2026-04-12 - "Enterprise Ready"
+
+### Minor Release: Verification Overhaul & Growth Check-in Improvements
+
+This release completes the verification workflow with full admin controls and AI configurability, and ships growth check-in community sharing and history.
+
+#### What's New
+- **Verification — manual approve/reject**: `ManualReviewView` with admin Approve/Reject buttons posted when AI flags a screenshot for manual review; reject opens a modal for optional reason
+- **Verification — reference image**: Admins can set a reference payment screenshot via `/config verification set_reference_image`; the AI compares both images on every submission
+- **Verification — AI prompt context**: `/config verification set_ai_prompt_context` lets admins tell the AI what a valid payment looks like for their community
+- **Verification — channel auto-delete**: Verification channels are deleted 5 seconds after resolution instead of being left locked/renamed
+- **Verification — audit trail**: `resolved_by_user_id` and `rejection_reason` columns added to `verification_tickets`
+- **`/growthcheckin`**: Optional community sharing (anonymous or named) to a configured growth channel
+- **`/growthhistory`**: Paginated view of last 15 check-ins with full detail modal and per-entry deletion
+- **`/config growth set_channel`**: Configure the community growth channel with optional channel picker
+
+#### Bug Fixes
+- **Verification AI pipeline**: `ask_gpt_vision` now respects the caller's explicit model — guild `gpt.model` setting was overriding to a text-only model, silently breaking all image analysis
+- **Verification AI pipeline**: Fixed content types `input_image`/`input_text` → `image_url`/`text` (xAI chat completions format); images were never reaching the model
+- **Default vision model**: Updated to `grok-4-1-fast-reasoning` (`grok-2-vision-latest` deprecated)
+
+---
+
 ## [3.1.0] - 2026-03-31 - "Enterprise Ready"
 
 ### Minor Release: Auto-Moderation, App Reflections, and Legal Notifications
