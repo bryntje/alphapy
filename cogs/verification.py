@@ -18,7 +18,7 @@ from gpt.helpers import ask_gpt_vision
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger, log_database_event, log_with_guild, log_guild_action
-from utils.sanitizer import safe_embed_text
+from utils.sanitizer import safe_embed_text, safe_prompt
 from utils.premium_guard import guild_has_premium
 from utils.settings_helpers import CachedSettingsHelper
 from utils.settings_service import SettingsService
@@ -649,7 +649,7 @@ class VerificationCog(AlphaCog):
 
         ai_prompt_context = self._get_ai_prompt_context(guild_id)
         if ai_prompt_context:
-            prompt += f"\n\nAdditional context from the server admin:\n{ai_prompt_context}"
+            prompt += f"\n\nAdditional context from the server admin:\n{safe_prompt(ai_prompt_context)}"
 
         image_url = attachment.url
 

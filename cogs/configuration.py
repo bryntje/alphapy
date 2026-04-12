@@ -13,6 +13,7 @@ from utils.settings_service import SettingsService, SettingDefinition
 from utils.automod_rules import RuleProcessor, RuleType, ActionType
 from utils.premium_guard import guild_has_premium
 from utils.logger import log_with_guild, log_guild_action, logger
+from utils.sanitizer import safe_embed_text
 from utils.timezone import BRUSSELS_TZ
 from cogs.reaction_roles import StartOnboardingView
 from utils.cog_base import AlphaCog
@@ -1099,7 +1100,7 @@ class Configuration(AlphaCog):
             return
         await self.settings.set("verification", "ai_prompt_context", context_clean, interaction.guild.id, interaction.user.id)
         await interaction.followup.send(
-            f"✅ AI prompt context set:\n> {context_clean[:200]}{'…' if len(context_clean) > 200 else ''}",
+            f"✅ AI prompt context set:\n> {safe_embed_text(context_clean, 200)}",
             ephemeral=True,
         )
         await self._send_audit_log(
@@ -1140,8 +1141,7 @@ class Configuration(AlphaCog):
             return
 
         # Post the image to the log channel so the URL stays refreshable via fetch_message
-        from utils.settings_helpers import CachedSettingsHelper
-        log_channel_id = CachedSettingsHelper(self.settings).get_int("system", "log_channel_id", interaction.guild.id, fallback=0)
+        log_channel_id = self.settings_helper.get_int("system", "log_channel_id", interaction.guild.id, fallback=0)
         storage_channel = self.bot.get_channel(log_channel_id) if log_channel_id else interaction.channel
         if not storage_channel or not hasattr(storage_channel, "send"):
             await interaction.followup.send(
@@ -1160,7 +1160,7 @@ class Configuration(AlphaCog):
                 file=file,
             )
         except Exception as e:
-            await interaction.followup.send(f"❌ Could not store the reference image: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Could not store the reference image: {safe_embed_text(str(e), 200)}", ephemeral=True)
             return
 
         await self.settings.set(
@@ -1189,10 +1189,8 @@ class Configuration(AlphaCog):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
 
-        from utils.settings_helpers import CachedSettingsHelper
-        helper = CachedSettingsHelper(self.settings)
-        channel_id = helper.get_int("verification", "reference_image_channel_id", interaction.guild.id, fallback=0)
-        message_id_str = helper.get_str("verification", "reference_image_message_id", interaction.guild.id, fallback="")
+        channel_id = self.settings_helper.get_int("verification", "reference_image_channel_id", interaction.guild.id, fallback=0)
+        message_id_str = self.settings_helper.get_str("verification", "reference_image_message_id", interaction.guild.id, fallback="")
 
         # Best-effort delete the stored message
         if channel_id and message_id_str:
