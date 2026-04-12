@@ -684,7 +684,14 @@ class VerificationCog(AlphaCog):
         reason = "Unclear AI result."
 
         try:
-            parsed = json.loads(result_text or "{}")
+            # Strip markdown code fences that some models wrap around JSON responses
+            clean_text = (result_text or "").strip()
+            if clean_text.startswith("```"):
+                clean_text = clean_text.split("\n", 1)[-1]  # drop opening fence line
+                clean_text = clean_text.rsplit("```", 1)[0]  # drop closing fence
+            clean_text = clean_text.strip()
+
+            parsed = json.loads(clean_text or "{}")
             if isinstance(parsed, dict):
                 can_verify = bool(parsed.get("can_verify", False))
                 needs_manual_review = bool(parsed.get("needs_manual_review", not can_verify))
