@@ -430,6 +430,8 @@ async def ask_gpt_vision(
     user_id: Optional[int] = None,
     model: Optional[str] = None,
     guild_id: Optional[int] = None,
+    extra_image_urls: Optional[list] = None,
+    system_prompt: Optional[str] = None,
 ) -> str:
     """
     Vision-capable helper for image-based analysis.
@@ -437,6 +439,10 @@ async def ask_gpt_vision(
     This uses the same client as `ask_gpt` but constructs a multi-part message
     with both text and an image URL. The caller is responsible for providing
     a safe image URL (typically a Discord CDN URL).
+
+    Pass `system_prompt` to override the default chatbot personality — required
+    for task-specific vision calls (e.g. verification) so the model follows the
+    structured instructions instead of the assistant persona.
     """
     start = time.perf_counter()
 
@@ -446,27 +452,37 @@ async def ask_gpt_vision(
                 f"{_api_key_name} is missing. Set the key (.env or config_local.py) and restart the bot."
             )
 
-        # Resolve model and optional temperature from settings
-        resolved_model, temperature = _get_settings_values(model or _default_model)
+        # Resolve model: if caller passed an explicit model (e.g. vision_model from guild
+        # settings), honour it — do NOT let the global gpt.model setting override it.
+        # Still fetch temperature from settings.
+        if model is not None:
+            _, temperature = _get_settings_values(model)
+            resolved_model = model
+        else:
+            resolved_model, temperature = _get_settings_values(_default_model)
 
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT,
+                "content": system_prompt if system_prompt is not None else SYSTEM_PROMPT,
             },
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "input_text",
+                        "type": "text",
                         "text": prompt,
                     },
                     {
-                        "type": "input_image",
+                        "type": "image_url",
                         "image_url": {
                             "url": image_url,
                         },
                     },
+                    *[
+                        {"type": "image_url", "image_url": {"url": u}}
+                        for u in (extra_image_urls or [])
+                    ],
                 ],
             },
         ]

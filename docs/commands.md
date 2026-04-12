@@ -636,14 +636,29 @@ Post a verification panel with a **Start verification** button.
 ---
 
 ### `/verification_close`
-Close a verification channel after manual review.
+Close a verification channel without approving or rejecting (neutral closure).
 
 **Behavior:**
 - Can only be used inside a verification channel (under the configured verification category).
-- Marks the related `verification_tickets` row as `closed_manual`, locks the channel (read-only for the user, hidden for others), and attempts to rename it with a `-closed` suffix.
-- Posts a closing embed in the channel and logs the action in the guild log channel.
+- Marks the related `verification_tickets` row as `closed_manual`, sends a closure embed, and deletes the channel after 5 seconds.
+- Sends a standardised summary to the guild log channel: user, outcome, resolver, timestamp.
 
 **Permissions:** Owner/Admin
+
+---
+
+### Approve / Reject buttons
+
+When the AI cannot auto-verify a screenshot, it posts a **Manual review required** embed with **Approve** and **Reject** buttons (admin-only).
+
+**Approve:**
+- Assigns the configured verified role to the user.
+- Removes the onboarding join role if configured.
+- Sends an approval embed, deletes the channel after 5 seconds, and logs the outcome.
+
+**Reject:**
+- Opens a modal where the admin can enter an optional rejection reason (shown to the user).
+- Sends a rejection embed, deletes the channel after 5 seconds, and logs the outcome.
 
 ---
 

@@ -363,9 +363,36 @@ settings_service.register(
     SettingDefinition(
         scope="verification",
         key="vision_model",
-        description="Vision-capable model for verification (e.g. gpt-4o or grok-2-vision-latest).",
+        description="Vision-capable model for verification (e.g. grok-4-1-fast-reasoning).",
         value_type="str",
-        default="grok-3",
+        default="grok-4-1-fast-reasoning",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="verification",
+        key="ai_prompt_context",
+        description="Extra context for the AI verifier (e.g. what a valid payment looks like for this community).",
+        value_type="str",
+        default="",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="verification",
+        key="reference_image_channel_id",
+        description="Channel where the reference payment screenshot is stored (managed by the bot).",
+        value_type="channel",
+        default=0,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="verification",
+        key="reference_image_message_id",
+        description="Message ID of the bot-stored reference payment screenshot.",
+        value_type="str",
+        default="",
     )
 )
 settings_service.register(

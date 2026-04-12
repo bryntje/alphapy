@@ -13,6 +13,7 @@ from utils.settings_service import SettingsService, SettingDefinition
 from utils.automod_rules import RuleProcessor, RuleType, ActionType
 from utils.premium_guard import guild_has_premium
 from utils.logger import log_with_guild, log_guild_action, logger
+from utils.sanitizer import safe_embed_text
 from utils.timezone import BRUSSELS_TZ
 from cogs.reaction_roles import StartOnboardingView
 from utils.cog_base import AlphaCog
@@ -1051,9 +1052,17 @@ class Configuration(AlphaCog):
         if not model_clean:
             await interaction.followup.send("❌ Model name cannot be empty.", ephemeral=True)
             return
+
         await self.settings.set("verification", "vision_model", model_clean, interaction.guild.id, interaction.user.id)
+
+        # Warn only for known text-only models (Grok 4.x and newer all support image input)
+        text_only_models = {"grok-3", "grok-3-mini", "grok-3-fast", "grok-2", "grok-2-mini"}
+        vision_note = (
+            "\n⚠️ This model is text-only and does not support image inputs — verification will fail."
+        ) if model_clean.lower() in text_only_models else ""
+
         await interaction.followup.send(
-            f"✅ Verification vision model set to `{model_clean}`.",
+            f"✅ Verification vision model set to `{model_clean}`.{vision_note}",
             ephemeral=True,
         )
         await self._send_audit_log(
@@ -1079,6 +1088,139 @@ class Configuration(AlphaCog):
             f"`verification.vision_model` reset to default by {interaction.user.mention}.",
             interaction.guild.id,
         )
+
+    @verification_group.command(
+        name="set_ai_prompt_context",
+        description="Set extra context for the AI verifier (e.g. what a valid payment looks like).",
+    )
+    @requires_admin()
+    @app_commands.describe(context="Context text shown to the AI alongside every screenshot (max 1000 chars).")
+    async def verification_set_ai_prompt_context(
+        self,
+        interaction: discord.Interaction,
+        context: str,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        context_clean = context.strip()[:1000]
+        if not context_clean:
+            await interaction.followup.send("❌ Context cannot be empty.", ephemeral=True)
+            return
+        await self.settings.set("verification", "ai_prompt_context", context_clean, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ AI prompt context set:\n> {safe_embed_text(context_clean, 200)}",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.ai_prompt_context` updated by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="reset_ai_prompt_context", description="Clear the AI verifier context.")
+    @requires_admin()
+    async def verification_reset_ai_prompt_context(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.clear("verification", "ai_prompt_context", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("↩️ AI prompt context cleared.", ephemeral=True)
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.ai_prompt_context` cleared by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(
+        name="set_reference_image",
+        description="Upload a reference payment screenshot the AI uses to judge submissions.",
+    )
+    @requires_admin()
+    @app_commands.describe(image="A clear example of a valid payment confirmation for your community.")
+    async def verification_set_reference_image(
+        self,
+        interaction: discord.Interaction,
+        image: discord.Attachment,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+
+        if not image.content_type or not image.content_type.startswith("image/"):
+            await interaction.followup.send("❌ Please attach an image file (PNG, JPG, etc.).", ephemeral=True)
+            return
+
+        # Post the image to the log channel so the URL stays refreshable via fetch_message
+        log_channel_id = self.settings_helper.get_int("system", "log_channel_id", interaction.guild.id, fallback=0)
+        storage_channel = self.bot.get_channel(log_channel_id) if log_channel_id else interaction.channel
+        if not storage_channel or not hasattr(storage_channel, "send"):
+            await interaction.followup.send(
+                "❌ Could not find a channel to store the reference image. Please configure a log channel first.",
+                ephemeral=True,
+            )
+            return
+
+        import discord as _discord
+        storage_text_channel = cast(_discord.TextChannel, storage_channel)
+
+        try:
+            file = await image.to_file()
+            stored_msg = await storage_text_channel.send(
+                content=f"🖼️ **Verification reference image** — uploaded by {interaction.user.mention} for `/config verification`",
+                file=file,
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Could not store the reference image: {safe_embed_text(str(e), 200)}", ephemeral=True)
+            return
+
+        await self.settings.set(
+            "verification", "reference_image_channel_id", stored_msg.channel.id,
+            interaction.guild.id, interaction.user.id,
+        )
+        await self.settings.set(
+            "verification", "reference_image_message_id", str(stored_msg.id),
+            interaction.guild.id, interaction.user.id,
+        )
+
+        await interaction.followup.send(
+            f"✅ Reference image saved. The AI will now compare every submitted screenshot against this example.\n"
+            f"Stored in: {storage_text_channel.mention}",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.reference_image` set by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="reset_reference_image", description="Remove the reference payment screenshot.")
+    @requires_admin()
+    async def verification_reset_reference_image(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+
+        channel_id = self.settings_helper.get_int("verification", "reference_image_channel_id", interaction.guild.id, fallback=0)
+        message_id_str = self.settings_helper.get_str("verification", "reference_image_message_id", interaction.guild.id, fallback="")
+
+        # Best-effort delete the stored message
+        if channel_id and message_id_str:
+            try:
+                ch = self.bot.get_channel(channel_id)
+                if ch and hasattr(ch, "fetch_message"):
+                    import discord as _discord
+                    text_ch = cast(_discord.TextChannel, ch)
+                    msg = await text_ch.fetch_message(int(message_id_str))
+                    await msg.delete()
+            except Exception:
+                pass
+
+        await self.settings.clear("verification", "reference_image_channel_id", interaction.guild.id, interaction.user.id)
+        await self.settings.clear("verification", "reference_image_message_id", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("↩️ Reference image removed.", ephemeral=True)
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.reference_image` cleared by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
     @gdpr_group.command(name="show", description="Show GDPR settings")
     @requires_admin()
     async def gdpr_show(self, interaction: discord.Interaction) -> None:
