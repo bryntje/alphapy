@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import datetime
 from typing import Literal, Optional, Dict, Any, cast
 
@@ -684,12 +685,18 @@ class VerificationCog(AlphaCog):
         reason = "Unclear AI result."
 
         try:
-            # Strip markdown code fences that some models wrap around JSON responses
-            clean_text = (result_text or "").strip()
-            if clean_text.startswith("```"):
-                clean_text = clean_text.split("\n", 1)[-1]  # drop opening fence line
-                clean_text = clean_text.rsplit("```", 1)[0]  # drop closing fence
-            clean_text = clean_text.strip()
+            raw = (result_text or "").strip()
+
+            # Robustly extract the JSON object from the response regardless of wrapping:
+            # 1. Try content between ``` fences (```json ... ``` or ``` ... ```)
+            # 2. Fall back to first { … last } extraction
+            fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
+            if fence_match:
+                clean_text = fence_match.group(1).strip()
+            else:
+                start = raw.find("{")
+                end = raw.rfind("}")
+                clean_text = raw[start: end + 1] if start != -1 and end > start else raw
 
             parsed = json.loads(clean_text or "{}")
             if isinstance(parsed, dict):
