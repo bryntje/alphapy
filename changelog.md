@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Verification — manual approve/reject**: When the AI flags a screenshot for manual review, a `ManualReviewView` embed is posted in the verification channel with admin-only **Approve** (green) and **Reject** (red) buttons. Reject opens a modal where the admin can enter an optional reason shown to the user.
+- **Verification — AI prompt context**: New `verification.ai_prompt_context` setting. Admins can use `/config verification set_ai_prompt_context` to give the AI extra context about what a valid payment looks like for their community (e.g. "Valid payments come from Stripe for the Alphapips membership"). Appended to the base vision prompt on every screenshot review.
+- **Verification — channel auto-delete**: All verification channels are now deleted 5 seconds after resolution (approved, rejected, or closed) instead of being locked/renamed and left behind.
+- **Verification — audit trail**: `verification_tickets` table gains two new columns — `resolved_by_user_id` (who approved/rejected) and `rejection_reason` (optional text from the rejection modal).
+- **Verification — standardised log summary**: All resolution paths emit a consistent log embed to the guild log channel: user, started timestamp, resolved by (AI auto or @admin), outcome. No payment details included.
+- **`/config verification set_ai_prompt_context <text>`**: Set extra context for the AI verifier (max 1000 chars).
+- **`/config verification reset_ai_prompt_context`**: Clear the AI verifier context.
 - **`/growthcheckin`**: Grok prompt now explicitly instructs the AI to reference past reflection patterns, recurring themes, and progress across sessions
 - **`/growthcheckin`**: Optional community sharing via `GrowthShareView` — after the AI response, users can share anonymously, share with display name, or keep private; posts a styled embed (goal / obstacle / feeling / Grok response) to the configured growth channel
 - **`/config growth set_channel [#channel]`**: Admin command to configure the growth check-in channel; omitting the channel argument opens a picker to select an existing channel or create a new `#growth-checkins` channel
