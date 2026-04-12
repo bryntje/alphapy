@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+---
+
+## [3.3.0] - 2026-04-12
+
+### Added
 - **Verification — manual approve/reject**: When the AI flags a screenshot for manual review, a `ManualReviewView` embed is posted in the verification channel with admin-only **Approve** (green) and **Reject** (red) buttons. Reject opens a modal where the admin can enter an optional reason shown to the user.
 - **Verification — AI prompt context**: New `verification.ai_prompt_context` setting. Admins can use `/config verification set_ai_prompt_context` to give the AI extra context about what a valid payment looks like for their community (e.g. "Valid payments come from Stripe for the Alphapips membership"). Appended to the base vision prompt on every screenshot review.
 - **Verification — channel auto-delete**: All verification channels are now deleted 5 seconds after resolution (approved, rejected, or closed) instead of being locked/renamed and left behind.

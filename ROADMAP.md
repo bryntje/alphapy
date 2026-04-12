@@ -1,8 +1,17 @@
-# 🧬 Innersync • Alphapy Roadmap v3.2.0 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.3.0 "Enterprise Ready"
 
-**Release v3.2.0 Complete!** 🎉 Premium tier differentiation, GPT quotas, early bird pricing, and /gptstatus overhaul.
+**Release v3.3.0 Complete!** 🎉 Verification overhaul (manual approve/reject, reference image, AI context), growth check-in sharing and history.
 
-This document outlines the evolution from v3.2.0 forward.
+This document outlines the evolution from v3.3.0 forward.
+
+## ✅ COMPLETED: Verification Overhaul & Growth Check-in Improvements (v3.3.0)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Minor release completing the verification workflow and growth community features:
+- **Verification**: Manual approve/reject buttons for admin review, reference image comparison, AI prompt context setting, channel auto-delete on resolution, audit trail columns
+- **Verification AI pipeline**: Fixed vision model override bug (guild `gpt.model` was silently overriding vision model), fixed content types for xAI chat completions, updated default to `grok-4-1-fast-reasoning`
+- **Growth check-in**: Community sharing (anonymous/named) to configured channel, `/growthhistory` with paginated view + deletion, `/config growth set_channel` with picker
 
 ## ✅ COMPLETED: Premium Tier Differentiation & GPT Quotas (v3.2.0)
 
