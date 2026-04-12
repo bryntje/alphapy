@@ -623,29 +623,26 @@ class VerificationCog(AlphaCog):
 
         if reference_image_url:
             prompt = (
-                "You are verifying whether an uploaded image is a valid proof of payment or subscription confirmation.\n\n"
+                "You are a payment verification assistant. Your job is to check whether a submitted screenshot matches a reference example.\n\n"
                 "You have been given TWO images:\n"
-                "1. The user's submitted screenshot (first image).\n"
-                "2. A reference example of a valid payment confirmation provided by the server admin (second image).\n\n"
-                "Use the reference image to understand what a valid payment looks like for this community.\n\n"
-                "Strictly answer in **JSON only** with the following keys:\n"
+                "- Image 1 (first): the user's submitted screenshot.\n"
+                "- Image 2 (second): a reference example uploaded by the server admin that defines what a valid submission looks like.\n\n"
+                "Your only task is to judge whether Image 1 is sufficiently similar to Image 2.\n"
+                "The admin has defined the reference as valid — do not second-guess it.\n"
+                "If the submitted screenshot shows the same type of document as the reference (same platform, same layout, same kind of confirmation), set can_verify to true.\n"
+                "Only flag needs_manual_review if the images are clearly different types of documents, or if Image 1 is unreadable.\n\n"
+                "Respond in **JSON only**, no other text:\n"
                 '{\n  "can_verify": boolean,\n  "needs_manual_review": boolean,\n  "reason": string\n}\n\n'
-                "- `can_verify`: true if the user's screenshot clearly resembles a valid payment similar to the reference.\n"
-                "- `needs_manual_review`: true if the screenshot is unclear, incomplete, or significantly different from the reference.\n"
-                "- `reason`: short explanation in English without including any card numbers, IBAN, email addresses, or other PII.\n\n"
-                "Never include raw payment details in your answer. Just describe the situation at a high level.\n"
-                "Now analyze the screenshot and respond with JSON only."
+                "- `reason`: one sentence, no card numbers, IBANs, email addresses, or other PII."
             )
         else:
             prompt = (
-                "You are verifying whether an uploaded image is a valid proof of payment or subscription confirmation.\n\n"
-                "Strictly answer in **JSON only** with the following keys:\n"
+                "You are a payment verification assistant. Decide whether the submitted screenshot is a valid proof of payment or subscription confirmation.\n\n"
+                "Respond in **JSON only**, no other text:\n"
                 '{\n  "can_verify": boolean,\n  "needs_manual_review": boolean,\n  "reason": string\n}\n\n'
-                "- `can_verify`: true if the screenshot clearly shows a valid payment or active subscription for this product.\n"
-                "- `needs_manual_review`: true if the screenshot is unclear, incomplete, or ambiguous.\n"
-                "- `reason`: short explanation in English without including any card numbers, IBAN, email addresses, or other PII.\n\n"
-                "Never include raw payment details in your answer. Just describe the situation at a high level.\n"
-                "Now analyze the screenshot and respond with JSON only."
+                "- `can_verify`: true if the screenshot clearly shows a completed payment, active subscription, or order confirmation.\n"
+                "- `needs_manual_review`: true only if the screenshot is too blurry, cropped, or ambiguous to make a decision.\n"
+                "- `reason`: one sentence, no card numbers, IBANs, email addresses, or other PII."
             )
 
         ai_prompt_context = self._get_ai_prompt_context(guild_id)
