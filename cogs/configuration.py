@@ -1052,9 +1052,17 @@ class Configuration(AlphaCog):
         if not model_clean:
             await interaction.followup.send("❌ Model name cannot be empty.", ephemeral=True)
             return
+
         await self.settings.set("verification", "vision_model", model_clean, interaction.guild.id, interaction.user.id)
+
+        # Warn only for known text-only models (Grok 4.x and newer all support image input)
+        text_only_models = {"grok-3", "grok-3-mini", "grok-3-fast", "grok-2", "grok-2-mini"}
+        vision_note = (
+            "\n⚠️ This model is text-only and does not support image inputs — verification will fail."
+        ) if model_clean.lower() in text_only_models else ""
+
         await interaction.followup.send(
-            f"✅ Verification vision model set to `{model_clean}`.",
+            f"✅ Verification vision model set to `{model_clean}`.{vision_note}",
             ephemeral=True,
         )
         await self._send_audit_log(

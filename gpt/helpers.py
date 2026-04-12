@@ -452,8 +452,14 @@ async def ask_gpt_vision(
                 f"{_api_key_name} is missing. Set the key (.env or config_local.py) and restart the bot."
             )
 
-        # Resolve model and optional temperature from settings
-        resolved_model, temperature = _get_settings_values(model or _default_model)
+        # Resolve model: if caller passed an explicit model (e.g. vision_model from guild
+        # settings), honour it — do NOT let the global gpt.model setting override it.
+        # Still fetch temperature from settings.
+        if model is not None:
+            _, temperature = _get_settings_values(model)
+            resolved_model = model
+        else:
+            resolved_model, temperature = _get_settings_values(_default_model)
 
         messages = [
             {
@@ -464,17 +470,17 @@ async def ask_gpt_vision(
                 "role": "user",
                 "content": [
                     {
-                        "type": "input_text",
+                        "type": "text",
                         "text": prompt,
                     },
                     {
-                        "type": "input_image",
+                        "type": "image_url",
                         "image_url": {
                             "url": image_url,
                         },
                     },
                     *[
-                        {"type": "input_image", "image_url": {"url": u}}
+                        {"type": "image_url", "image_url": {"url": u}}
                         for u in (extra_image_urls or [])
                     ],
                 ],

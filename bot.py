@@ -363,9 +363,9 @@ settings_service.register(
     SettingDefinition(
         scope="verification",
         key="vision_model",
-        description="Vision-capable model for verification (e.g. gpt-4o or grok-2-vision-latest).",
+        description="Vision-capable model for verification (e.g. grok-4-1-fast-reasoning).",
         value_type="str",
-        default="grok-3",
+        default="grok-4-1-fast-reasoning",
     )
 )
 settings_service.register(

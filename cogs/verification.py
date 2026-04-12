@@ -154,20 +154,20 @@ class VerificationCog(AlphaCog):
     async def _get_reference_image_url(self, guild_id: int) -> Optional[str]:
         """Fetch a fresh URL for the stored reference image by re-fetching its Discord message."""
         channel_id = self.settings_helper.get_int("verification", "reference_image_channel_id", guild_id, fallback=0)
-        message_id_str = self.settings_helper.get_str("verification", "reference_image_message_id", guild_id, fallback="")
+        message_id_str = self.settings_helper.get_str("verification", "reference_image_message_id", guild_id, fallback="").strip("\"'")
         if not channel_id or not message_id_str:
             return None
         try:
             channel = self.bot.get_channel(channel_id)
             if not channel or not hasattr(channel, "fetch_message"):
-                return None
+                channel = await self.bot.fetch_channel(channel_id)
             text_channel = cast(discord.TextChannel, channel)
             msg = await text_channel.fetch_message(int(message_id_str))
             for att in msg.attachments:
                 if att.content_type and att.content_type.startswith("image/"):
                     return att.url
         except Exception as e:
-            logger.debug(f"VerificationCog: could not fetch reference image: {e}")
+            logger.warning("VerificationCog: could not fetch reference image: %s", e)
         return None
 
     async def send_log_embed(self, title: str, description: str, level: str, guild_id: int) -> None:
@@ -658,9 +658,9 @@ class VerificationCog(AlphaCog):
                 guild_id=guild_id,
                 extra_image_urls=[reference_image_url] if reference_image_url else None,
                 system_prompt=(
-                    "You are a strict payment verification assistant. "
-                    "You only respond with valid JSON in the exact format requested. "
-                    "Do not add any explanation, greeting, or prose outside the JSON object."
+                    "You are an image analysis assistant. "
+                    "You analyze screenshots and respond ONLY with the JSON object specified in the user message. "
+                    "Never include any text, explanation, or formatting outside the JSON object."
                 ),
             )
         except Exception as e:
@@ -700,19 +700,25 @@ class VerificationCog(AlphaCog):
                 else:
                     # No JSON structure found — log format for diagnosis, default to manual review
                     logger.warning(
-                        "VerificationCog: AI returned no JSON structure (length=%s, start=%r)",
+                        "VerificationCog: AI returned no JSON structure (length=%s): %r",
                         len(raw),
-                        raw[:80],
+                        raw,
                     )
                     clean_text = "{}"
 
             parsed = json.loads(clean_text or "{}")
-            if isinstance(parsed, dict):
+            if isinstance(parsed, dict) and "can_verify" in parsed:
                 can_verify = bool(parsed.get("can_verify", False))
                 needs_manual_review = bool(parsed.get("needs_manual_review", not can_verify))
                 reason_val = parsed.get("reason")
                 if isinstance(reason_val, str) and reason_val.strip():
                     reason = reason_val.strip()
+            elif isinstance(parsed, dict):
+                # AI returned JSON but with unexpected keys — log it
+                logger.warning(
+                    "VerificationCog: AI returned unexpected JSON schema (keys=%s)",
+                    list(parsed.keys()),
+                )
         except Exception as e:
             # Avoid logging the full AI response to reduce risk of PII in logs
             logger.warning(
