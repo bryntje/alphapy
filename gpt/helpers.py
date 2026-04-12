@@ -431,6 +431,7 @@ async def ask_gpt_vision(
     model: Optional[str] = None,
     guild_id: Optional[int] = None,
     extra_image_urls: Optional[list] = None,
+    system_prompt: Optional[str] = None,
 ) -> str:
     """
     Vision-capable helper for image-based analysis.
@@ -438,6 +439,10 @@ async def ask_gpt_vision(
     This uses the same client as `ask_gpt` but constructs a multi-part message
     with both text and an image URL. The caller is responsible for providing
     a safe image URL (typically a Discord CDN URL).
+
+    Pass `system_prompt` to override the default chatbot personality — required
+    for task-specific vision calls (e.g. verification) so the model follows the
+    structured instructions instead of the assistant persona.
     """
     start = time.perf_counter()
 
@@ -453,7 +458,7 @@ async def ask_gpt_vision(
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT,
+                "content": system_prompt if system_prompt is not None else SYSTEM_PROMPT,
             },
             {
                 "role": "user",

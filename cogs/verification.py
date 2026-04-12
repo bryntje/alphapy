@@ -662,6 +662,11 @@ class VerificationCog(AlphaCog):
                 model=vision_model,
                 guild_id=guild_id,
                 extra_image_urls=[reference_image_url] if reference_image_url else None,
+                system_prompt=(
+                    "You are a strict payment verification assistant. "
+                    "You only respond with valid JSON in the exact format requested. "
+                    "Do not add any explanation, greeting, or prose outside the JSON object."
+                ),
             )
         except Exception as e:
             logger.exception(f"VerificationCog: vision call failed: {e}")
