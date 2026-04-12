@@ -1079,6 +1079,47 @@ class Configuration(AlphaCog):
             f"`verification.vision_model` reset to default by {interaction.user.mention}.",
             interaction.guild.id,
         )
+
+    @verification_group.command(
+        name="set_ai_prompt_context",
+        description="Set extra context for the AI verifier (e.g. what a valid payment looks like).",
+    )
+    @requires_admin()
+    @app_commands.describe(context="Context text shown to the AI alongside every screenshot (max 1000 chars).")
+    async def verification_set_ai_prompt_context(
+        self,
+        interaction: discord.Interaction,
+        context: str,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        context_clean = context.strip()[:1000]
+        if not context_clean:
+            await interaction.followup.send("❌ Context cannot be empty.", ephemeral=True)
+            return
+        await self.settings.set("verification", "ai_prompt_context", context_clean, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ AI prompt context set:\n> {context_clean[:200]}{'…' if len(context_clean) > 200 else ''}",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.ai_prompt_context` updated by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="reset_ai_prompt_context", description="Clear the AI verifier context.")
+    @requires_admin()
+    async def verification_reset_ai_prompt_context(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.clear("verification", "ai_prompt_context", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("↩️ AI prompt context cleared.", ephemeral=True)
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.ai_prompt_context` cleared by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
     @gdpr_group.command(name="show", description="Show GDPR settings")
     @requires_admin()
     async def gdpr_show(self, interaction: discord.Interaction) -> None:

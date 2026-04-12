@@ -90,8 +90,10 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ## ✅ Agent: Verification
 - **Path**: `cogs/verification.py`, `cogs/configuration.py`
 - **Purpose**: Lets guilds run their own payment verification: a public area plus a paid area gated by a "verified" role. Members submit a payment screenshot (for the guild’s products, events, or access); after AI or manual review they receive the verified role and access. This is **not** for verifying Alphapy premium—it is a premium **feature** of Alphapy that guilds can use for their own payment gating.
-- **Flow**: Screenshot → vision JSON (`can_verify` / `needs_manual_review`) → auto-role or manual review
-- **Key**: Conservative vision model, no screenshots stored
+- **Flow**: Screenshot → vision JSON (`can_verify` / `needs_manual_review`) → auto-approve via `_resolve_verification` OR manual review embed with Approve/Reject buttons (`ManualReviewView`). All resolution paths go through `_resolve_verification`, which assigns roles, updates the DB (including `resolved_by_user_id`), sends a standardised log summary, and deletes the channel after 5 seconds.
+- **Manual review**: When AI is uncertain, a `ManualReviewView` embed is posted with admin-only Approve (green) and Reject (red) buttons. Reject opens a modal (`RejectReasonModal`) for an optional reason shown to the user.
+- **AI context**: Admins can configure `verification.ai_prompt_context` via `/config verification set_ai_prompt_context` to tell the AI what a valid payment looks like for their community. This text is appended to the base vision prompt.
+- **Key**: Conservative vision model, no screenshots stored; log summaries contain no payment details (user, outcome, resolver, timestamp only)
 - **Premium**: Only guilds with an active Alphapy premium subscription can use verification (`guild_has_premium`). The member clicking Start verification does not need Alphapy premium—they are proving payment to the guild to get the verified role.
 
 ---
@@ -226,7 +228,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **alphapy** (2976 symbols, 10239 relationships, 255 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **alphapy** (3020 symbols, 10384 relationships, 259 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

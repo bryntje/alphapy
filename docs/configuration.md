@@ -63,6 +63,9 @@ Alternatively, run the following commands in order:
 
 # Optional: override vision-capable model for this guild
 /config verification set_vision_model grok-4
+
+# Optional: tell the AI what a valid payment looks like for your community
+/config verification set_ai_prompt_context "Valid payments come from Stripe for the Alphapips membership. The screenshot must show the amount and date."
 ```
 
 ### 3. Optional Settings
@@ -216,12 +219,15 @@ Key is chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`)
 /config verification reset_category
 /config verification set_vision_model <model-name>
 /config verification reset_vision_model
+/config verification set_ai_prompt_context <text>
+/config verification reset_ai_prompt_context
 ```
 
 **Notes:**
 - `verified_role_id` is the role granted after successful AI verification.
 - `category_id` must be a category where the bot can create private verification channels.
 - `vision_model` can be used to select a specific vision-capable model (e.g. `grok-4`, `grok-2-vision-latest`); if unset, the default model from `/config gpt` / `LLM_PROVIDER` is used.
+- `ai_prompt_context` is optional extra context appended to the AI prompt on every screenshot review (max 1000 chars). Use this to describe what a valid payment looks like for your community, e.g. `"Valid payments come from Stripe for the Alphapips membership. The screenshot must show the amount and date."`
 
 ## Template Placeholders
 

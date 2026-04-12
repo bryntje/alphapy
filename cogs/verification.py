@@ -1,6 +1,7 @@
+import asyncio
 import json
 from datetime import datetime
-from typing import Optional, Dict, Any, cast
+from typing import Literal, Optional, Dict, Any, cast
 
 import asyncpg
 import discord
@@ -45,6 +46,10 @@ class VerificationCog(AlphaCog):
             self.bot.add_view(VerificationPanelView(self, timeout=None))
         except Exception as e:
             logger.warning(f"⚠️ VerificationCog: could not register VerificationPanelView: {e}")
+        try:
+            self.bot.add_view(ManualReviewView(self, timeout=None))
+        except Exception as e:
+            logger.warning(f"⚠️ VerificationCog: could not register ManualReviewView: {e}")
 
     async def setup_db(self) -> None:
         """Initialize database pool and ensure verification_tickets table exists."""
@@ -81,6 +86,14 @@ class VerificationCog(AlphaCog):
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_verification_tickets_channel_id ON verification_tickets(channel_id);"
                 )
+
+            # Idempotent schema additions for audit trail
+            await conn.execute(
+                "ALTER TABLE verification_tickets ADD COLUMN IF NOT EXISTS resolved_by_user_id BIGINT;"
+            )
+            await conn.execute(
+                "ALTER TABLE verification_tickets ADD COLUMN IF NOT EXISTS rejection_reason TEXT;"
+            )
 
             logger.info("VerificationCog: DB ready (verification_tickets)")
             log_database_event("DB_READY", details="VerificationCog database fully initialized")
@@ -130,6 +143,9 @@ class VerificationCog(AlphaCog):
     def _get_log_channel_id(self, guild_id: int) -> int:
         value = self.settings_helper.get_int("system", "log_channel_id", guild_id, fallback=0)
         return int(value) if value else 0
+
+    def _get_ai_prompt_context(self, guild_id: int) -> str:
+        return self.settings_helper.get_str("verification", "ai_prompt_context", guild_id, fallback="")
 
     async def send_log_embed(self, title: str, description: str, level: str, guild_id: int) -> None:
         """Send log embed to the guild's log channel using EmbedBuilder."""
@@ -266,67 +282,17 @@ class VerificationCog(AlphaCog):
 
         await interaction.response.defer(ephemeral=True)
 
-        # Update ticket status in database (best-effort)
-        if is_pool_healthy(self.db):
-            try:
-                async with acquire_safe(self.db) as conn:
-                    await conn.execute(
-                        """
-                        UPDATE verification_tickets
-                        SET status = 'closed_manual', resolved_at = NOW()
-                        WHERE guild_id = $1 AND channel_id = $2
-                        """,
-                        guild_id,
-                        int(channel.id),
-                    )
-            except Exception as e:
-                logger.warning(f"VerificationCog: failed to mark ticket closed manually: {e}")
+        guild = interaction.guild
+        member = guild.get_member(interaction.user.id) if guild else None
 
-        # Lock and optionally rename the channel
-        try:
-            overwrites = channel.overwrites
-            guild = interaction.guild
-            member = guild.get_member(interaction.user.id)
-            if member:
-                overwrites[member] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=False,
-                    read_message_history=True,
-                )
-            overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
-            await channel.edit(overwrites=overwrites, reason="Verification closed manually")
+        await interaction.followup.send("✅ Verification channel is being closed.", ephemeral=True)
 
-            try:
-                if not channel.name.endswith("-closed"):
-                    await channel.edit(name=f"{channel.name}-closed")
-            except Exception:
-                pass
-        except Exception as e:
-            logger.debug(f"VerificationCog: could not lock/rename verification channel: {e}")
-
-        # Notify in channel and to the invoker
-        closed_embed = EmbedBuilder.warning(
-            title="🔒 Verification closed",
-            description=(
-                "This verification has been closed manually by a team member.\n\n"
-                "If you believe this is a mistake, please contact the team."
-            ),
-        )
-        try:
-            await channel.send(embed=closed_embed)
-        except Exception:
-            pass
-
-        await interaction.followup.send("✅ Verification channel closed.", ephemeral=True)
-
-        await self.send_log_embed(
-            title="🔒 Verification closed manually",
-            description=(
-                f"Channel: {channel.mention}\n"
-                f"Closed by: {interaction.user} ({interaction.user.id})"
-            ),
-            level="info",
-            guild_id=guild_id,
+        await self._resolve_verification(
+            channel=channel,
+            member=member,
+            guild=guild,
+            resolved_by=interaction.user,
+            outcome="closed",
         )
 
     # ----- Ticket helpers -----
@@ -419,6 +385,8 @@ class VerificationCog(AlphaCog):
         ai_can_verify: Optional[bool],
         ai_needs_manual_review: Optional[bool],
         ai_reason: Optional[str],
+        resolved_by_user_id: Optional[int] = None,
+        rejection_reason: Optional[str] = None,
     ) -> None:
         if not is_pool_healthy(self.db):
             return
@@ -431,19 +399,141 @@ class VerificationCog(AlphaCog):
                         ai_can_verify = $2,
                         ai_needs_manual_review = $3,
                         ai_reason = $4,
-                        resolved_at = CASE WHEN $1 <> 'pending' THEN NOW() ELSE resolved_at END
-                    WHERE channel_id = $5 AND status = 'pending'
+                        resolved_at = CASE WHEN $1 <> 'pending' THEN NOW() ELSE resolved_at END,
+                        resolved_by_user_id = COALESCE($6, resolved_by_user_id),
+                        rejection_reason = COALESCE($7, rejection_reason)
+                    WHERE channel_id = $5
                     """,
                     status,
                     ai_can_verify,
                     ai_needs_manual_review,
                     ai_reason,
                     channel_id,
+                    resolved_by_user_id,
+                    rejection_reason,
                 )
         except RuntimeError:
             logger.debug("VerificationCog: database pool not available when updating ticket")
         except Exception as e:
             logger.warning(f"VerificationCog: failed to update verification ticket: {e}")
+
+    async def _resolve_verification(
+        self,
+        *,
+        channel: discord.TextChannel,
+        member: Optional[discord.Member],
+        guild: discord.Guild,
+        resolved_by: Optional[discord.abc.User],
+        outcome: Literal["approved", "rejected", "closed"],
+        reason: str = "",
+        started_at: Optional[datetime] = None,
+    ) -> None:
+        """Unified resolution handler for all verification outcomes.
+
+        Assigns/removes roles (on approval), updates DB, sends in-channel embed,
+        sends a standardised log summary, and deletes the channel after 5 seconds.
+        """
+        guild_id = guild.id
+
+        # 1. Role assignment / removal on approval
+        if outcome == "approved" and member:
+            verified_role_id = self._get_verified_role_id(guild_id)
+            if verified_role_id:
+                role = guild.get_role(verified_role_id)
+                if role:
+                    try:
+                        await member.add_roles(role, reason="Verification approved")
+                    except Exception as e:
+                        logger.warning(f"VerificationCog: could not assign verified role: {e}")
+            try:
+                join_role_id = self.settings_helper.get_int("onboarding", "join_role_id", guild_id, fallback=0)
+            except Exception:
+                join_role_id = 0
+            if join_role_id:
+                join_role = guild.get_role(int(join_role_id))
+                if join_role and member and any(r.id == join_role.id for r in member.roles):
+                    try:
+                        await member.remove_roles(join_role, reason="Remove join role after verification")
+                    except Exception as e:
+                        logger.warning(f"VerificationCog: could not remove join role: {e}")
+
+        # 2. DB update — only resolution fields; AI fields already set by on_message
+        resolved_by_user_id = int(resolved_by.id) if resolved_by else None
+        db_status = {"approved": "verified", "rejected": "rejected", "closed": "closed_manual"}[outcome]
+        if is_pool_healthy(self.db):
+            try:
+                async with acquire_safe(self.db) as conn:
+                    await conn.execute(
+                        """
+                        UPDATE verification_tickets
+                        SET status = $1,
+                            resolved_at = NOW(),
+                            resolved_by_user_id = $2,
+                            rejection_reason = COALESCE($3, rejection_reason)
+                        WHERE channel_id = $4
+                        """,
+                        db_status,
+                        resolved_by_user_id,
+                        reason if outcome == "rejected" else None,
+                        int(channel.id),
+                    )
+            except Exception as e:
+                logger.warning(f"VerificationCog: failed to update ticket resolution: {e}")
+
+        # 3. In-channel closing embed
+        if outcome == "approved":
+            closing_embed = EmbedBuilder.success(
+                title="✅ Verification approved",
+                description="Your verification has been approved. You now have access to the verified area.",
+            )
+        elif outcome == "rejected":
+            closing_embed = EmbedBuilder.error(
+                title="❌ Verification rejected",
+                description=(
+                    "Your verification was not approved.\n\n"
+                    + (f"Reason: {safe_embed_text(reason, 512)}\n\n" if reason else "")
+                    + "If you think this is a mistake, please contact the team."
+                ),
+            )
+        else:
+            closing_embed = EmbedBuilder.warning(
+                title="🔒 Verification closed",
+                description="This verification has been closed. If you think this is a mistake, please contact the team.",
+            )
+
+        try:
+            await channel.send(embed=closing_embed)
+        except Exception:
+            pass
+
+        # 4. Standardised log summary (no payment details)
+        resolver_label = resolved_by.mention if resolved_by else "AI (auto)"
+        outcome_label = {"approved": "✅ Approved", "rejected": "❌ Rejected", "closed": "🔒 Closed"}[outcome]
+        log_desc_parts = [
+            f"User: {member.mention if member else 'unknown'} ({member.id if member else '?'})",
+            f"Resolved by: {resolver_label}",
+            f"Outcome: {outcome_label}",
+        ]
+        if started_at:
+            log_desc_parts.insert(1, f"Started: {started_at.strftime('%Y-%m-%d %H:%M UTC')}")
+
+        log_level = "success" if outcome == "approved" else ("error" if outcome == "rejected" else "info")
+        await self.send_log_embed(
+            title=f"Verification {outcome_label}",
+            description="\n".join(log_desc_parts),
+            level=log_level,
+            guild_id=guild_id,
+        )
+
+        # 5. Delete channel after a brief delay
+        async def _delete_channel() -> None:
+            await asyncio.sleep(5)
+            try:
+                await channel.delete(reason=f"Verification {outcome} — auto-cleanup")
+            except Exception as e:
+                logger.debug(f"VerificationCog: could not delete verification channel: {e}")
+
+        asyncio.create_task(_delete_channel())
 
     # ----- Listener -----
 
@@ -485,7 +575,6 @@ class VerificationCog(AlphaCog):
         await message.channel.send(embed=processing_embed)
 
         # Build verification prompt
-        verified_role_id = self._get_verified_role_id(guild_id)
         vision_model = self._get_vision_model(guild_id)
 
         prompt = (
@@ -498,6 +587,10 @@ class VerificationCog(AlphaCog):
             "Never include raw payment details in your answer. Just describe the situation at a high level.\n"
             "Now analyze the screenshot and respond with JSON only."
         )
+
+        ai_prompt_context = self._get_ai_prompt_context(guild_id)
+        if ai_prompt_context:
+            prompt += f"\n\nAdditional context from the server admin:\n{ai_prompt_context}"
 
         image_url = attachment.url
 
@@ -557,87 +650,144 @@ class VerificationCog(AlphaCog):
 
         # Act on result
         member = guild.get_member(message.author.id)
+        channel = cast(discord.TextChannel, message.channel)
 
-        if can_verify and not needs_manual_review and member:
-            if verified_role_id:
-                role = guild.get_role(verified_role_id)
-                if role:
-                    try:
-                        await member.add_roles(role, reason="AI verification succeeded")
-                    except Exception as e:
-                        logger.warning(f"VerificationCog: could not assign verified role: {e}")
-
-            # Always remove join role after successful verification, if configured
-            try:
-                join_role_id = self.settings_helper.get_int("onboarding", "join_role_id", guild_id, fallback=0)
-            except Exception:
-                join_role_id = 0
-            if join_role_id and join_role_id != 0:
-                join_role = guild.get_role(int(join_role_id))
-                if join_role and any(r.id == join_role.id for r in member.roles):
-                    try:
-                        await member.remove_roles(join_role, reason="Remove join role after verification")
-                        logger.info(
-                            "VerificationCog: join role %s removed from user %s after verification",
-                            join_role.id,
-                            member.id,
-                        )
-                    except Exception as e:
-                        logger.warning(f"VerificationCog: could not remove join role after verification: {e}")
-
-            success_embed = EmbedBuilder.success(
-                title="✅ You are verified",
-                description=(
-                    "Your payment screenshot has been verified successfully.\n\n"
-                    f"Reason: {safe_embed_text(reason, 1024)}"
-                ),
-            )
-            await message.channel.send(embed=success_embed)
-
-            # Optionally lock the channel
-            try:
-                overwrites = message.channel.overwrites
-                overwrites[member] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=False,
-                    read_message_history=True,
-                )
-                overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
-                await message.channel.edit(overwrites=overwrites, reason="Verification completed")
-            except Exception as e:
-                logger.debug(f"VerificationCog: could not lock verification channel: {e}")
-
-            await self.send_log_embed(
-                title="✅ Verification succeeded",
-                description=(
-                    f"User: {member} ({member.id})\n"
-                    f"Channel: {message.channel.mention}\n"
-                    f"Reason: {safe_embed_text(reason, 1024)}"
-                ),
-                level="success",
-                guild_id=guild_id,
+        if can_verify and not needs_manual_review:
+            await self._resolve_verification(
+                channel=channel,
+                member=member,
+                guild=guild,
+                resolved_by=None,
+                outcome="approved",
+                reason=reason,
             )
         else:
             warn_embed = EmbedBuilder.warning(
                 title="👀 Manual review required",
                 description=(
                     "The AI could not confidently verify this screenshot.\n"
-                    "A member of the team will review your verification manually.\n\n"
-                    f"Reason: {safe_embed_text(reason, 1024)}"
+                    "A member of the team will review your submission manually.\n\n"
+                    f"Reason: {safe_embed_text(reason, 512)}"
                 ),
             )
-            await message.channel.send(embed=warn_embed)
+            await channel.send(embed=warn_embed, view=ManualReviewView(self, timeout=None))
 
             await self.send_log_embed(
                 title="⚠️ Verification needs manual review",
                 description=(
-                    f"User: {message.author} ({message.author.id})\n"
-                    f"Channel: {message.channel.mention}\n"
-                    f"Reason: {safe_embed_text(reason, 1024)}"
+                    f"User: {message.author.mention} ({message.author.id})\n"
+                    f"Channel: {channel.mention}\n"
+                    f"Started: {datetime.now(BRUSSELS_TZ).strftime('%Y-%m-%d %H:%M UTC')}"
                 ),
                 level="warning",
                 guild_id=guild_id,
             )
+
+
+async def _fetch_ticket_member(cog: "VerificationCog", channel: discord.TextChannel, guild: discord.Guild) -> Optional[discord.Member]:
+    """Look up the member who owns a verification ticket by channel_id."""
+    if not (cog.db and is_pool_healthy(cog.db)):
+        return None
+    try:
+        async with acquire_safe(cog.db) as conn:
+            row = await conn.fetchrow(
+                "SELECT user_id FROM verification_tickets WHERE channel_id = $1",
+                int(channel.id),
+            )
+            if row:
+                return guild.get_member(int(row["user_id"]))
+    except Exception as e:
+        logger.warning(f"ManualReviewView: could not fetch ticket member: {e}")
+    return None
+
+
+class RejectReasonModal(discord.ui.Modal, title="Rejection reason"):
+    reason = discord.ui.TextInput(
+        label="Reason (shown to the user)",
+        style=discord.TextStyle.paragraph,
+        placeholder="e.g. Screenshot is too blurry or does not show a valid payment.",
+        required=False,
+        max_length=512,
+    )
+
+    def __init__(self, cog: "VerificationCog", channel: discord.TextChannel, guild: discord.Guild) -> None:
+        super().__init__()
+        self.cog = cog
+        self.channel = channel
+        self.guild = guild
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        reason_text = self.reason.value.strip() if self.reason.value else ""
+        member = await _fetch_ticket_member(self.cog, self.channel, self.guild)
+        await self.cog._resolve_verification(
+            channel=self.channel,
+            member=member,
+            guild=self.guild,
+            resolved_by=interaction.user,
+            outcome="rejected",
+            reason=reason_text,
+        )
+        await interaction.followup.send("❌ Verification rejected.", ephemeral=True)
+
+
+class ManualReviewView(discord.ui.View):
+    def __init__(self, cog: "VerificationCog", timeout: Optional[float] = None):
+        super().__init__(timeout=timeout)
+        self.cog = cog
+
+    async def _guard(self, interaction: discord.Interaction) -> bool:
+        """Return True if the interaction passes admin and channel checks."""
+        from utils.validators import validate_admin
+
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Only works in a server.", ephemeral=True)
+            return False
+        is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
+        if not is_admin:
+            await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
+            return False
+        if not isinstance(interaction.channel, discord.TextChannel):
+            await interaction.response.send_message("❌ Unexpected channel type.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(
+        label="Approve",
+        style=discord.ButtonStyle.success,
+        custom_id="verification_approve_btn",
+    )
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if not await self._guard(interaction):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        guild = cast(discord.Guild, interaction.guild)
+        channel = cast(discord.TextChannel, interaction.channel)
+        member = await _fetch_ticket_member(self.cog, channel, guild)
+
+        await self.cog._resolve_verification(
+            channel=channel,
+            member=member,
+            guild=guild,
+            resolved_by=interaction.user,
+            outcome="approved",
+        )
+        await interaction.followup.send("✅ Verification approved.", ephemeral=True)
+
+    @discord.ui.button(
+        label="Reject",
+        style=discord.ButtonStyle.danger,
+        custom_id="verification_reject_btn",
+    )
+    async def reject(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if not await self._guard(interaction):
+            return
+
+        guild = cast(discord.Guild, interaction.guild)
+        channel = cast(discord.TextChannel, interaction.channel)
+        await interaction.response.send_modal(RejectReasonModal(self.cog, channel, guild))
 
 
 class VerificationPanelView(discord.ui.View):

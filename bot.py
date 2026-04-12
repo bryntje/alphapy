@@ -370,6 +370,15 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="verification",
+        key="ai_prompt_context",
+        description="Extra context for the AI verifier (e.g. what a valid payment looks like for this community).",
+        value_type="str",
+        default="",
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="growth",
         key="log_channel_id",
         description="Channel where shared Growth Check-in posts are published.",
