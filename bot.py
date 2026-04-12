@@ -379,6 +379,24 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="verification",
+        key="reference_image_channel_id",
+        description="Channel where the reference payment screenshot is stored (managed by the bot).",
+        value_type="channel",
+        default=0,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="verification",
+        key="reference_image_message_id",
+        description="Message ID of the bot-stored reference payment screenshot.",
+        value_type="str",
+        default="",
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="growth",
         key="log_channel_id",
         description="Channel where shared Growth Check-in posts are published.",

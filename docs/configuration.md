@@ -221,6 +221,8 @@ Key is chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`)
 /config verification reset_vision_model
 /config verification set_ai_prompt_context <text>
 /config verification reset_ai_prompt_context
+/config verification set_reference_image [image attachment]
+/config verification reset_reference_image
 ```
 
 **Notes:**
@@ -228,6 +230,7 @@ Key is chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`)
 - `category_id` must be a category where the bot can create private verification channels.
 - `vision_model` can be used to select a specific vision-capable model (e.g. `grok-4`, `grok-2-vision-latest`); if unset, the default model from `/config gpt` / `LLM_PROVIDER` is used.
 - `ai_prompt_context` is optional extra context appended to the AI prompt on every screenshot review (max 1000 chars). Use this to describe what a valid payment looks like for your community, e.g. `"Valid payments come from Stripe for the Alphapips membership. The screenshot must show the amount and date."`
+- `reference_image` accepts an image attachment directly. The bot stores the image in the log channel so the URL stays refreshable across bot restarts. When set, the AI receives both the user's screenshot and the reference image and explicitly compares them. Clear with `reset_reference_image` (this also deletes the stored message).
 
 ## Template Placeholders
 

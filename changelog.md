@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
 - **Verification — standardised log summary**: All resolution paths emit a consistent log embed to the guild log channel: user, started timestamp, resolved by (AI auto or @admin), outcome. No payment details included.
 - **`/config verification set_ai_prompt_context <text>`**: Set extra context for the AI verifier (max 1000 chars).
 - **`/config verification reset_ai_prompt_context`**: Clear the AI verifier context.
+- **Verification — reference image**: Admins can upload an example of a valid payment confirmation via `/config verification set_reference_image`. The bot stores the image in the log channel so the URL stays refreshable; when a user submits a screenshot the AI receives both images and explicitly compares them. Clear with `/config verification reset_reference_image`.
+- **`/config verification set_reference_image <attachment>`**: Upload a reference payment screenshot for AI comparison.
+- **`/config verification reset_reference_image`**: Remove the stored reference image.
+- **`ask_gpt_vision`**: New `extra_image_urls` parameter for passing multiple images in a single vision call.
 - **`/growthcheckin`**: Grok prompt now explicitly instructs the AI to reference past reflection patterns, recurring themes, and progress across sessions
 - **`/growthcheckin`**: Optional community sharing via `GrowthShareView` — after the AI response, users can share anonymously, share with display name, or keep private; posts a styled embed (goal / obstacle / feeling / Grok response) to the configured growth channel
 - **`/config growth set_channel [#channel]`**: Admin command to configure the growth check-in channel; omitting the channel argument opens a picker to select an existing channel or create a new `#growth-checkins` channel

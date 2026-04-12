@@ -1120,6 +1120,101 @@ class Configuration(AlphaCog):
             f"`verification.ai_prompt_context` cleared by {interaction.user.mention}.",
             interaction.guild.id,
         )
+
+    @verification_group.command(
+        name="set_reference_image",
+        description="Upload a reference payment screenshot the AI uses to judge submissions.",
+    )
+    @requires_admin()
+    @app_commands.describe(image="A clear example of a valid payment confirmation for your community.")
+    async def verification_set_reference_image(
+        self,
+        interaction: discord.Interaction,
+        image: discord.Attachment,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+
+        if not image.content_type or not image.content_type.startswith("image/"):
+            await interaction.followup.send("❌ Please attach an image file (PNG, JPG, etc.).", ephemeral=True)
+            return
+
+        # Post the image to the log channel so the URL stays refreshable via fetch_message
+        from utils.settings_helpers import CachedSettingsHelper
+        log_channel_id = CachedSettingsHelper(self.settings).get_int("system", "log_channel_id", interaction.guild.id, fallback=0)
+        storage_channel = self.bot.get_channel(log_channel_id) if log_channel_id else interaction.channel
+        if not storage_channel or not hasattr(storage_channel, "send"):
+            await interaction.followup.send(
+                "❌ Could not find a channel to store the reference image. Please configure a log channel first.",
+                ephemeral=True,
+            )
+            return
+
+        import discord as _discord
+        storage_text_channel = cast(_discord.TextChannel, storage_channel)
+
+        try:
+            file = await image.to_file()
+            stored_msg = await storage_text_channel.send(
+                content=f"🖼️ **Verification reference image** — uploaded by {interaction.user.mention} for `/config verification`",
+                file=file,
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Could not store the reference image: {e}", ephemeral=True)
+            return
+
+        await self.settings.set(
+            "verification", "reference_image_channel_id", stored_msg.channel.id,
+            interaction.guild.id, interaction.user.id,
+        )
+        await self.settings.set(
+            "verification", "reference_image_message_id", str(stored_msg.id),
+            interaction.guild.id, interaction.user.id,
+        )
+
+        await interaction.followup.send(
+            f"✅ Reference image saved. The AI will now compare every submitted screenshot against this example.\n"
+            f"Stored in: {storage_text_channel.mention}",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.reference_image` set by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(name="reset_reference_image", description="Remove the reference payment screenshot.")
+    @requires_admin()
+    async def verification_reset_reference_image(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+
+        from utils.settings_helpers import CachedSettingsHelper
+        helper = CachedSettingsHelper(self.settings)
+        channel_id = helper.get_int("verification", "reference_image_channel_id", interaction.guild.id, fallback=0)
+        message_id_str = helper.get_str("verification", "reference_image_message_id", interaction.guild.id, fallback="")
+
+        # Best-effort delete the stored message
+        if channel_id and message_id_str:
+            try:
+                ch = self.bot.get_channel(channel_id)
+                if ch and hasattr(ch, "fetch_message"):
+                    import discord as _discord
+                    text_ch = cast(_discord.TextChannel, ch)
+                    msg = await text_ch.fetch_message(int(message_id_str))
+                    await msg.delete()
+            except Exception:
+                pass
+
+        await self.settings.clear("verification", "reference_image_channel_id", interaction.guild.id, interaction.user.id)
+        await self.settings.clear("verification", "reference_image_message_id", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("↩️ Reference image removed.", ephemeral=True)
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.reference_image` cleared by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
     @gdpr_group.command(name="show", description="Show GDPR settings")
     @requires_admin()
     async def gdpr_show(self, interaction: discord.Interaction) -> None:

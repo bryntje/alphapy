@@ -430,6 +430,7 @@ async def ask_gpt_vision(
     user_id: Optional[int] = None,
     model: Optional[str] = None,
     guild_id: Optional[int] = None,
+    extra_image_urls: Optional[list] = None,
 ) -> str:
     """
     Vision-capable helper for image-based analysis.
@@ -467,6 +468,10 @@ async def ask_gpt_vision(
                             "url": image_url,
                         },
                     },
+                    *[
+                        {"type": "input_image", "image_url": {"url": u}}
+                        for u in (extra_image_urls or [])
+                    ],
                 ],
             },
         ]

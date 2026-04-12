@@ -150,6 +150,25 @@ class VerificationCog(AlphaCog):
     def _get_ai_prompt_context(self, guild_id: int) -> str:
         return self.settings_helper.get_str("verification", "ai_prompt_context", guild_id, fallback="")
 
+    async def _get_reference_image_url(self, guild_id: int) -> Optional[str]:
+        """Fetch a fresh URL for the stored reference image by re-fetching its Discord message."""
+        channel_id = self.settings_helper.get_int("verification", "reference_image_channel_id", guild_id, fallback=0)
+        message_id_str = self.settings_helper.get_str("verification", "reference_image_message_id", guild_id, fallback="")
+        if not channel_id or not message_id_str:
+            return None
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if not channel or not hasattr(channel, "fetch_message"):
+                return None
+            text_channel = cast(discord.TextChannel, channel)
+            msg = await text_channel.fetch_message(int(message_id_str))
+            for att in msg.attachments:
+                if att.content_type and att.content_type.startswith("image/"):
+                    return att.url
+        except Exception as e:
+            logger.debug(f"VerificationCog: could not fetch reference image: {e}")
+        return None
+
     async def send_log_embed(self, title: str, description: str, level: str, guild_id: int) -> None:
         """Send log embed to the guild's log channel using EmbedBuilder."""
         if guild_id == 0:
@@ -599,17 +618,34 @@ class VerificationCog(AlphaCog):
 
         # Build verification prompt
         vision_model = self._get_vision_model(guild_id)
+        reference_image_url = await self._get_reference_image_url(guild_id)
 
-        prompt = (
-            "You are verifying whether an uploaded image is a valid proof of payment or subscription confirmation.\n\n"
-            "Strictly answer in **JSON only** with the following keys:\n"
-            '{\n  "can_verify": boolean,\n  "needs_manual_review": boolean,\n  "reason": string\n}\n\n'
-            "- `can_verify`: true if the screenshot clearly shows a valid payment or active subscription for this product.\n"
-            "- `needs_manual_review`: true if the screenshot is unclear, incomplete, or ambiguous.\n"
-            "- `reason`: short explanation in English without including any card numbers, IBAN, email addresses, or other PII.\n\n"
-            "Never include raw payment details in your answer. Just describe the situation at a high level.\n"
-            "Now analyze the screenshot and respond with JSON only."
-        )
+        if reference_image_url:
+            prompt = (
+                "You are verifying whether an uploaded image is a valid proof of payment or subscription confirmation.\n\n"
+                "You have been given TWO images:\n"
+                "1. The user's submitted screenshot (first image).\n"
+                "2. A reference example of a valid payment confirmation provided by the server admin (second image).\n\n"
+                "Use the reference image to understand what a valid payment looks like for this community.\n\n"
+                "Strictly answer in **JSON only** with the following keys:\n"
+                '{\n  "can_verify": boolean,\n  "needs_manual_review": boolean,\n  "reason": string\n}\n\n'
+                "- `can_verify`: true if the user's screenshot clearly resembles a valid payment similar to the reference.\n"
+                "- `needs_manual_review`: true if the screenshot is unclear, incomplete, or significantly different from the reference.\n"
+                "- `reason`: short explanation in English without including any card numbers, IBAN, email addresses, or other PII.\n\n"
+                "Never include raw payment details in your answer. Just describe the situation at a high level.\n"
+                "Now analyze the screenshot and respond with JSON only."
+            )
+        else:
+            prompt = (
+                "You are verifying whether an uploaded image is a valid proof of payment or subscription confirmation.\n\n"
+                "Strictly answer in **JSON only** with the following keys:\n"
+                '{\n  "can_verify": boolean,\n  "needs_manual_review": boolean,\n  "reason": string\n}\n\n'
+                "- `can_verify`: true if the screenshot clearly shows a valid payment or active subscription for this product.\n"
+                "- `needs_manual_review`: true if the screenshot is unclear, incomplete, or ambiguous.\n"
+                "- `reason`: short explanation in English without including any card numbers, IBAN, email addresses, or other PII.\n\n"
+                "Never include raw payment details in your answer. Just describe the situation at a high level.\n"
+                "Now analyze the screenshot and respond with JSON only."
+            )
 
         ai_prompt_context = self._get_ai_prompt_context(guild_id)
         if ai_prompt_context:
@@ -624,6 +660,7 @@ class VerificationCog(AlphaCog):
                 user_id=int(message.author.id),
                 model=vision_model,
                 guild_id=guild_id,
+                extra_image_urls=[reference_image_url] if reference_image_url else None,
             )
         except Exception as e:
             logger.exception(f"VerificationCog: vision call failed: {e}")
