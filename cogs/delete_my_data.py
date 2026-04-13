@@ -94,7 +94,7 @@ async def _purge_user_data(pool: asyncpg.Pool, user_id: int) -> None:
     tables_to_delete = [
         ("onboarding", "user_id"),
         ("support_tickets", "user_id"),
-        ("faq_search_logs", "user_id"),
+        # faq_search_logs excluded: the table has no user_id column (queries are stored anonymously)
         ("audit_logs", "user_id"),
         ("terms_acceptance", "user_id"),
         ("gdpr_acceptance", "user_id"),

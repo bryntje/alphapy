@@ -39,7 +39,7 @@ async def _purge_railway_data(pool, discord_id: int, supabase_user_id: str) -> N
     tables_to_delete = [
         ("onboarding", "user_id"),
         ("support_tickets", "user_id"),
-        ("faq_search_logs", "user_id"),
+        # faq_search_logs excluded: the table has no user_id column (queries are stored anonymously)
         ("audit_logs", "user_id"),
         ("terms_acceptance", "user_id"),
         ("gdpr_acceptance", "user_id"),      # GDPR button acceptance record
