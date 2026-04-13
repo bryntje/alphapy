@@ -142,8 +142,9 @@ Tracks user acceptance of the Terms of Service and Privacy Policy for GDPR compl
 - `id` (SERIAL PRIMARY KEY)
 - `user_id` (BIGINT, NOT NULL, UNIQUE): Discord user ID
 - `accepted_at` (TIMESTAMPTZ, NOT NULL, DEFAULT NOW()): When the user accepted the terms
-- `version` (TEXT, NOT NULL, DEFAULT '2025-02-27'): Legal terms version the user accepted
-- `ip_address` (INET, NULLABLE): IP address at time of acceptance (optional; may be NULL)
+- `version` (TEXT, NOT NULL, DEFAULT '2026-03-02'): Legal terms version the user accepted
+
+> **Note:** The `ip_address` column was dropped in migration 016. Discord gateway interactions carry no client IP, so the column was always NULL. Re-add it via a new migration only if a web-based consent flow is implemented.
 
 **Indexes:**
 - `idx_terms_acceptance_user` on `user_id`
@@ -152,6 +153,22 @@ Tracks user acceptance of the Terms of Service and Privacy Policy for GDPR compl
 **Notes:**
 - Used by the `/premium` flow: users must accept terms before accessing premium checkout.
 - Stores only minimal consent metadata for legal compliance; no content of the terms is stored here.
+
+---
+
+### `gdpr_acceptance`
+
+Guild GDPR agreement acceptance (the "I Agree" button in the GDPR channel).
+
+**Columns:**
+- `user_id` (BIGINT, PRIMARY KEY): Discord user ID
+- `accepted` (INTEGER, NOT NULL, DEFAULT 0): 1 = accepted, 0 = not accepted
+- `timestamp` (TIMESTAMP, NOT NULL, DEFAULT CURRENT_TIMESTAMP): When the user clicked "I Agree"
+
+**Notes:**
+- Written by `cogs/gdpr.py` when a user clicks the "I Agree" button on the GDPR Data Processing Agreement embed
+- Formalised in Alembic migration 016 (was previously created ad-hoc by `cogs/migrate_gdpr.py`)
+- Deleted as part of GDPR erasure when a user's Supabase account is deleted (`webhooks/supabase.py:_purge_railway_data`) or when the user runs `/delete_my_data`
 
 ---
 

@@ -6,7 +6,7 @@ permalink: /privacy-policy/
 
 # Innersync • Alphapy Bot Privacy Policy
 
-_Last updated: 2026-03-02_
+_Last updated: 2026-04-13_
 
 This Privacy Policy explains how the Innersync • Alphapy Discord Bot (“**Innersync • Alphapy**”, “**Bot**”, “**we**”, “**us**”) collects, uses, and protects information when it operates on your Discord server and when you use our pricing and information website. By installing or interacting with the Bot, or by visiting our websites, you consent to the practices described here. If you do not agree with this Policy, do not use the Bot or our websites.
 
@@ -33,6 +33,7 @@ Depending on the features you enable, the Bot may process the following categori
 - **Logging and audit events**: Internal logs for errors, status updates, and admin actions posted to designated log channels.
 - **Support communications**: Emails or GitHub issues you send us about the Bot.
 - **Premium subscription data**: For paying users, we store subscription tier, status, activation date, and guild assignment. Payment information (credit card details, billing addresses) is processed exclusively by our payment provider (Lemon Squeezy) and never stored on our systems.
+- **Email address**: Optionally collected during the onboarding flow when your guild administrator has enabled the email question step. Used solely for communication related to your onboarding or support. Not shared with third parties beyond hosting infrastructure. You may leave this field blank if it is marked optional.
 
 **Data related to the Pricing Site (pricing.alphapy.innersync.tech):**
 
@@ -103,7 +104,7 @@ If you are located in the EU/EEA, UK, or other regions with similar rights, you 
 - Access, export, or receive a copy of the data (`/export_onboarding` and other exports);
 - Request correction of inaccurate data;
 - Object to or restrict certain processing;
-- Request deletion of data (upcoming `/delete_my_data` command or email request);
+- Request deletion of all your Railway database records via the `/delete_my_data` Discord command (available in any server running Alphapy). This deletes your bot data only; your Discord account is governed by Discord's own privacy policy and is not affected.
 - Withdraw consent for optional AI features and for optional cookies on the Pricing Site;
 - Data portability, where applicable.
 
@@ -113,7 +114,9 @@ For Belgian users: complaints can also be filed with the Gegevensbeschermingsaut
 
 ## 8. Data deletion workflow
 
-Server administrators can delete reminders, tickets, or check-in records via bot commands or database tools. Until the `/delete_my_data` command is released, individuals can request manual deletion by emailing the controller with their Discord username and ID. We may take reasonable steps to verify identity before fulfilling requests.
+**Self-service (recommended):** Use the `/delete_my_data` slash command in any server running Alphapy. The command shows a detailed list of what will be deleted and requires explicit confirmation (two-step: read + confirm button). Deletion covers all Railway PostgreSQL records linked to your Discord user ID — including onboarding responses, tickets, audit logs, AI usage records, reflections, and consent records. Anonymisation is applied to reminders and custom commands you created. Your Discord account and Supabase/web account are **not** affected. Premium subscription records are retained for 7 years as required by Belgian tax law.
+
+**By email:** Server administrators can also delete reminders, tickets, or check-in records via bot commands or database tools. Individuals may additionally request manual deletion by emailing the controller at `support@innersync.tech` with their Discord username and ID. We may take reasonable steps to verify identity before fulfilling requests.
 
 ## 9. Security practices
 

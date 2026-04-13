@@ -42,6 +42,8 @@ async def _purge_railway_data(pool, discord_id: int, supabase_user_id: str) -> N
         ("faq_search_logs", "user_id"),
         ("audit_logs", "user_id"),
         ("terms_acceptance", "user_id"),
+        ("gdpr_acceptance", "user_id"),      # GDPR button acceptance record
+        ("gpt_usage", "user_id"),             # daily GPT quota counters
         ("automod_logs", "user_id"),
         ("automod_user_history", "user_id"),
         ("app_reflections", "user_id"),
@@ -50,9 +52,28 @@ async def _purge_railway_data(pool, discord_id: int, supabase_user_id: str) -> N
         ("reminders", "created_by"),
         ("custom_commands", "created_by"),
     ]
+    # NOTE: `premium_subs` is intentionally excluded from GDPR erasure.
+    # Belgian tax law (Wetboek van inkomstenbelastingen / Belgian Income Tax Code)
+    # requires retention of financial records for 7 years. Subscription tier, status,
+    # and transaction identifiers qualify as such records. See docs/privacy-policy.md §6.
 
     async with acquire_safe(pool) as conn:
         async with conn.transaction():
+            # Erase ticket_summaries before support_tickets is deleted — the subquery
+            # join would find no rows if the parent tickets are already gone.
+            result = await conn.execute(
+                """
+                DELETE FROM ticket_summaries
+                WHERE ticket_id IN (
+                    SELECT id FROM support_tickets WHERE user_id = $1
+                )
+                """,  # noqa: S608
+                discord_id,
+            )
+            logger.info(
+                "GDPR purge: %s from ticket_summaries (discord_id=%s)", result, discord_id
+            )
+
             for table, col in tables_to_delete:
                 result = await conn.execute(
                     f"DELETE FROM {table} WHERE {col} = $1", discord_id  # noqa: S608
