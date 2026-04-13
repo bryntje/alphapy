@@ -5,6 +5,11 @@ import time
 from datetime import datetime
 from typing import Optional, Tuple
 
+# Version string of the currently published Terms of Service / Privacy Policy.
+# Must match the `_Last updated:` date in docs/privacy-policy.md.
+# Updating this causes existing acceptors to be re-prompted on their next /premium use.
+CURRENT_TERMS_VERSION = "2026-03-02"
+
 import discord
 import httpx
 from discord import app_commands
@@ -100,7 +105,7 @@ async def _save_terms_acceptance(cog: 'PremiumCog', user_id: int, accepted_by: i
         async with cog._db_manager.connection() as conn:
             await conn.execute(
                 "INSERT INTO terms_acceptance (user_id, accepted_at, version) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO NOTHING",
-                user_id, datetime.utcnow(), "2026-02-27"
+                user_id, datetime.utcnow(), CURRENT_TERMS_VERSION
             )
         logger.info(f"Terms accepted by user {user_id}")
     except Exception as e:
@@ -114,7 +119,7 @@ async def _has_accepted_terms(cog: 'PremiumCog', user_id: int) -> bool:
         async with cog._db_manager.connection() as conn:
             result = await conn.fetchval(
                 "SELECT 1 FROM terms_acceptance WHERE user_id = $1 AND version = $2",
-                user_id, "2026-02-27"
+                user_id, CURRENT_TERMS_VERSION
             )
         return result is not None
     except Exception as e:
