@@ -5,10 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **`/delete_my_data`**: New slash command for self-service GDPR erasure. Any user can permanently delete all their personal data from Alphapy's database (onboarding, tickets, audit logs, AI usage records, reflections, consent records, etc.) via a two-step ephemeral confirmation flow. Does not affect Discord or Supabase accounts. Premium subscription records are retained per Belgian tax law (7 years).
+- **Retention cleanup**: Daily background task automatically deletes `audit_logs` and `faq_search_logs` records older than 90 days, satisfying GDPR data minimisation requirements.
+- **Migration 016**: Formalises the `gdpr_acceptance` table in the Alembic chain (was previously created ad-hoc, breaking fresh deployments). Also drops the never-populated `ip_address` column from `terms_acceptance`.
 
 ### Fixed
-- (No changes yet)
+- **GDPR — accept button broken**: `GDPRButton.callback()` referenced undefined variable `ctx`; replaced with `interaction.guild_id`. No GDPR acceptance was ever stored when users clicked "I Agree".
+- **GDPR — erasure gaps**: `gdpr_acceptance`, `gpt_usage`, and `ticket_summaries` were missing from the Supabase `USER_DELETED` erasure flow (`_purge_railway_data`). `ticket_summaries` is now deleted via a subquery before its parent `support_tickets` rows are removed.
+- **GDPR — terms version mismatch**: `terms_acceptance` version was hardcoded as `"2026-02-27"` but the Privacy Policy was last updated `2026-03-02`. Corrected via a `CURRENT_TERMS_VERSION` constant; existing acceptors will be re-prompted on next `/premium` use.
+- **Docs — privacy policy**: Added email address as an explicitly named data category (collected optionally during onboarding). Updated sections 7 and 8 to reflect the live `/delete_my_data` command. Updated `_Last updated_` date.
 
 ---
 
