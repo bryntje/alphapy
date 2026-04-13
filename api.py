@@ -137,21 +137,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Warn about unset webhook secrets — missing secrets mean those endpoints
     # accept unauthenticated requests, which is a security risk in production.
-    _webhook_secrets = {
-        "SUPABASE_WEBHOOK_SECRET": "Supabase auth / GDPR erasure webhook",
-        "PREMIUM_INVALIDATE_WEBHOOK_SECRET": "premium invalidation webhook",
-        "APP_REFLECTIONS_WEBHOOK_SECRET": "reflections sync webhook",
-        "FOUNDER_WEBHOOK_SECRET": "founder DM webhook",
-        "LEGAL_UPDATE_WEBHOOK_SECRET": "legal update webhook",
-    }
-    for _env_var, _description in _webhook_secrets.items():
-        if not getattr(config, _env_var, None):
-            logger.warning(
-                "⚠️  %s is not set — the %s is unauthenticated. "
-                "Set this secret in production to require HMAC validation.",
-                _env_var,
-                _description,
-            )
+    # Note: we log only the env var *name*, never its value.
+    if not getattr(config, "SUPABASE_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  SUPABASE_WEBHOOK_SECRET is not set — Supabase auth/GDPR erasure webhook is unauthenticated.")
+    if not getattr(config, "PREMIUM_INVALIDATE_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  PREMIUM_INVALIDATE_WEBHOOK_SECRET is not set — premium invalidation webhook is unauthenticated.")
+    if not getattr(config, "APP_REFLECTIONS_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  APP_REFLECTIONS_WEBHOOK_SECRET is not set — reflections sync webhook is unauthenticated.")
+    if not getattr(config, "FOUNDER_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  FOUNDER_WEBHOOK_SECRET is not set — founder DM webhook is unauthenticated.")
+    if not getattr(config, "LEGAL_UPDATE_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  LEGAL_UPDATE_WEBHOOK_SECRET is not set — legal update webhook is unauthenticated.")
 
     # Log MAIN_GUILD_ID configuration
     if hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
