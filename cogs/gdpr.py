@@ -122,8 +122,8 @@ class GDPRButton(discord.ui.Button):
         self.settings = getattr(bot, "settings", None)
     
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not self._is_enabled(ctx.guild.id):
-            await interaction.response.send_message("⚠️ GDPR-functionaliteit is momenteel uitgeschakeld.", ephemeral=True)
+        if not self._is_enabled(interaction.guild_id):
+            await interaction.response.send_message("⚠️ GDPR functionality is currently disabled.", ephemeral=True)
             return
         await store_gdpr_acceptance(interaction.user.id)
         await interaction.response.send_message("Thank you for accepting the GDPR terms.", ephemeral=True)
