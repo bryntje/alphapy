@@ -232,7 +232,7 @@ class FAQ(commands.Cog):
             return
         except Exception as e:
             logger.error(f"Database error in faq_view: {e}")
-            await interaction.followup.send(f"❌ Error fetching FAQ entry: {e}", ephemeral=not public)
+            await interaction.followup.send("❌ Database error. Please try again later.", ephemeral=not public)
             return
         if not row:
             await interaction.followup.send("Entry not found.", ephemeral=not public)
@@ -347,7 +347,8 @@ class FAQ(commands.Cog):
                     f"[{new_id}] {title} by {interaction.user} ({interaction.user.id})",
                 )
             except Exception as e:
-                await interaction.response.send_message(f"❌ Failed to create entry: {e}", ephemeral=True)
+                logger.error(f"Failed to create FAQ entry: {e}")
+                await interaction.response.send_message("❌ Failed to create entry. Please try again.", ephemeral=True)
 
     @faq.command(name="add", description="Add a new FAQ entry (admin)")
     async def faq_add(self, interaction: discord.Interaction):
@@ -416,7 +417,8 @@ class FAQ(commands.Cog):
                     f"id={self.entry_id} • {self.old_title} → {title} • by {interaction.user} ({interaction.user.id})",
                 )
             except Exception as e:
-                await interaction.response.send_message(f"❌ Failed to update entry: {e}", ephemeral=True)
+                logger.error(f"Failed to update FAQ entry: {e}")
+                await interaction.response.send_message("❌ Failed to update entry. Please try again.", ephemeral=True)
 
     @faq.command(name="edit", description="Edit a FAQ entry (admin)")
     @app_commands.describe(id="FAQ entry ID")
@@ -437,7 +439,7 @@ class FAQ(commands.Cog):
             return
         except Exception as e:
             logger.error(f"Database error in faq_edit: {e}")
-            await interaction.response.send_message(f"❌ Error fetching FAQ entry: {e}", ephemeral=True)
+            await interaction.response.send_message("❌ Database error. Please try again later.", ephemeral=True)
             return
         if not row:
             await interaction.response.send_message("❌ Entry not found.", ephemeral=True)

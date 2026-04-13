@@ -53,7 +53,8 @@ class CustomSlashCommands(commands.Cog):
             await channel.send(formatted_message)
             await interaction.response.send_message(f"Message sent to {channel.mention}!", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
+            logger.error(f"Error sending message to channel: {e}")
+            await interaction.response.send_message("An error occurred. Please try again.", ephemeral=True)
 
     @app_commands.command(
         name="embed",
@@ -201,8 +202,9 @@ class EmbedBuilderModal(Modal, title="Create Embed"):
                 ephemeral=True
             )
         except Exception as e:
+            logger.error(f"Error sending embed: {e}")
             await interaction.followup.send(
-                f"❌ Error sending embed: {e}",
+                "❌ Failed to send embed. Please try again.",
                 ephemeral=True
             )
 

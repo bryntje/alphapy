@@ -753,7 +753,8 @@ class TicketBot(AlphaCog):
                     guild_id=guild_id,
                 )
             except Exception as e:
-                await channel.send(f"❌ Failed to generate summary: {e}")
+                logger.error(f"Failed to generate ticket summary: {e}")
+                await channel.send("❌ Failed to generate summary. Please try again.")
                 return None
 
             embed = EmbedBuilder.success(
@@ -1154,7 +1155,8 @@ class TicketBot(AlphaCog):
             await interaction.followup.send("❌ Database connection error. Please try again later.", ephemeral=True)
             return
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to update status: {e}", ephemeral=True)
+            logger.error(f"Failed to update ticket status: {e}")
+            await interaction.followup.send("❌ Failed to update status. Please try again.", ephemeral=True)
             return
 
         await interaction.followup.send(f"✅ Ticket `{ticket_id}` status set to **{new_status}**.", ephemeral=True)
@@ -1497,7 +1499,8 @@ class TicketActionView(discord.ui.View):
                     guild_id=guild_id,
                 )
             except Exception as e:
-                await channel.send(f"❌ Failed to generate summary: {e}")
+                logger.error(f"Failed to generate ticket summary: {e}")
+                await channel.send("❌ Failed to generate summary. Please try again.")
                 return None
 
             embed = EmbedBuilder.success(
@@ -1594,7 +1597,8 @@ class TicketActionView(discord.ui.View):
                                 level="success",
                             )
                         except Exception as e:
-                            await interaction.response.send_message(f"❌ Failed to add FAQ: {e}", ephemeral=True)
+                            logger.error(f"Failed to add FAQ from ticket: {e}")
+                            await interaction.response.send_message("❌ Failed to add FAQ entry. Please try again.", ephemeral=True)
 
                 btn = discord.ui.Button(label="Add to FAQ", style=discord.ButtonStyle.success)
                 btn.callback = add_faq_callback  # type: ignore
@@ -1641,7 +1645,8 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ Database connection error. Please try again later.", ephemeral=True)
             return
         except Exception as e:
-            await interaction.response.send_message(f"❌ Claim failed: {e}", ephemeral=True)
+            logger.error(f"Failed to claim ticket: {e}")
+            await interaction.response.send_message("❌ Failed to claim ticket. Please try again.", ephemeral=True)
             return
 
         if not row:
@@ -1690,7 +1695,8 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ Database connection error. Please try again later.", ephemeral=True)
             return
         except Exception as e:
-            await interaction.response.send_message(f"❌ Close failed: {e}", ephemeral=True)
+            logger.error(f"Failed to close ticket: {e}")
+            await interaction.response.send_message("❌ Failed to close ticket. Please try again.", ephemeral=True)
             return
 
         if not row:
@@ -1718,7 +1724,8 @@ class TicketActionView(discord.ui.View):
                     pass
 
         except Exception as e:
-            await interaction.followup.send(f"⚠️ Channel lock/rename failed: {e}")
+            logger.error(f"Failed to lock/rename ticket channel: {e}")
+            await interaction.followup.send("⚠️ Failed to lock/rename channel. Please try again.")
 
         # Disable claim/close, enable delete (admin-only enforcement in handler)
         for child in self.children:
@@ -1780,7 +1787,8 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("✅ Status set to waiting_for_user.", ephemeral=True)
             await self._log(interaction, "🕒 Ticket status", f"id={self.ticket_id} → waiting_for_user")
         except Exception as e:
-            await interaction.response.send_message(f"❌ Failed to update status: {e}", ephemeral=True)
+            logger.error(f"Failed to update ticket status (waiting): {e}")
+            await interaction.response.send_message("❌ Failed to update status. Please try again.", ephemeral=True)
 
     @discord.ui.button(label="🚩 Escalate", style=discord.ButtonStyle.secondary, custom_id="ticket_escalate_btn")
     async def escalate_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -1806,7 +1814,8 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("✅ Ticket escalated.", ephemeral=True)
             await self._log(interaction, "🚩 Ticket escalated", f"id={self.ticket_id} • to={escalated_to or '-'}")
         except Exception as e:
-            await interaction.response.send_message(f"❌ Failed to escalate: {e}", ephemeral=True)
+            logger.error(f"Failed to escalate ticket: {e}")
+            await interaction.response.send_message("❌ Failed to escalate ticket. Please try again.", ephemeral=True)
 
     @discord.ui.button(label="🗄 Archive ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_archive_btn", disabled=True)
     async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -1831,7 +1840,8 @@ class TicketActionView(discord.ui.View):
                     int(self.ticket_id),
                 )
         except Exception as e:
-            await interaction.followup.send(f"❌ Archiving failed: {e}", ephemeral=True)
+            logger.error(f"Failed to archive ticket: {e}")
+            await interaction.followup.send("❌ Failed to archive ticket. Please try again.", ephemeral=True)
             return
 
         # Delete the channel after archiving to keep Discord tidy
@@ -1841,7 +1851,8 @@ class TicketActionView(discord.ui.View):
                 await interaction.followup.send("🗄 Archiving ticket channel…", ephemeral=True)
                 await ch.delete(reason=f"Ticket {self.ticket_id} archived by {interaction.user}")
         except Exception as e:
-            await interaction.followup.send(f"⚠️ Channel delete failed: {e}", ephemeral=True)
+            logger.error(f"Failed to delete ticket channel: {e}")
+            await interaction.followup.send("⚠️ Failed to delete channel. Please try again.", ephemeral=True)
 
         # Log archiving (summaries remain in DB)
         # Wrap in try-except to prevent interaction failure if logging fails
@@ -1904,7 +1915,8 @@ class TicketActionView(discord.ui.View):
                 include_reflections=False,
             )
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to get suggestion: {e}", ephemeral=True)
+            logger.error(f"Failed to get AI suggestion: {e}")
+            await interaction.followup.send("❌ Failed to get suggestion. Please try again.", ephemeral=True)
             return
         embed = EmbedBuilder.status(
             title="💡 Suggested reply",

@@ -2502,7 +2502,8 @@ class Configuration(AlphaCog):
             async with acquire_safe(pool) as conn:
                 rows = await conn.fetch(query, *params)
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to load logs: {e}", ephemeral=True)
+            logger.error(f"Failed to load automod logs: {e}")
+            await interaction.followup.send("❌ Failed to load logs. Please try again.", ephemeral=True)
             return
 
         if not rows:
@@ -2563,7 +2564,8 @@ class Configuration(AlphaCog):
                     rule_row["action_id"],
                 )
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to update severity: {e}", ephemeral=True)
+            logger.error(f"Failed to update automod severity: {e}")
+            await interaction.followup.send("❌ Failed to update severity. Please try again.", ephemeral=True)
             return
 
         if hasattr(self, "rule_processor") and self.rule_processor:

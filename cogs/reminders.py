@@ -283,7 +283,8 @@ class ReminderCog(AlphaCog):
                 origin_message_id = str(message_id)
 
             except Exception as e:
-                await interaction.followup.send(f"❌ Error parsing embed: `{e}`", ephemeral=True)
+                logger.error(f"Error parsing embed: {e}")
+                await interaction.followup.send("❌ Failed to parse embed. Please try again.", ephemeral=True)
                 return
 
         # ⏰ Tijd moet zeker bestaan
@@ -377,7 +378,7 @@ class ReminderCog(AlphaCog):
             return
         except Exception as e:
             logger.exception("Error creating reminder")
-            await interaction.followup.send(f"❌ Error creating reminder: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Failed to create reminder. Please try again.", ephemeral=True)
             return
         await self.send_log_embed(
             title="🟢 Reminder created",
@@ -522,7 +523,7 @@ class ReminderCog(AlphaCog):
                 self._image_reminder_timestamps[rkey] = ts_list[-config.IMAGE_REMINDER_RATE_LIMIT_COUNT:]
         except Exception as e:
             logger.exception("Error creating live session reminder")
-            await interaction.followup.send(f"❌ Error creating live session: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Failed to create live session. Please try again.", ephemeral=True)
             return
 
         await interaction.followup.send(
@@ -676,7 +677,7 @@ class ReminderCog(AlphaCog):
                 await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             logger.exception("Error fetching reminders")
-            await interaction.followup.send(f"⚠️ Error fetching reminders: `{e}`")
+            await interaction.followup.send("⚠️ Failed to fetch reminders. Please try again.", ephemeral=True)
 
     @app_commands.command(name="reminder_delete", description="🗑️ Delete a reminder by ID")
     @app_commands.describe(reminder_id="The ID of the reminder you want to delete")
@@ -711,7 +712,7 @@ class ReminderCog(AlphaCog):
             return
         except Exception as e:
             logger.exception("Error deleting reminder")
-            await interaction.followup.send(f"❌ Error deleting reminder: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Failed to delete reminder. Please try again.", ephemeral=True)
             return
         await interaction.followup.send(
             f"🗑️ Reminder **{row['name']}** (ID: `{reminder_id}`) was successfully deleted."
@@ -750,7 +751,7 @@ class ReminderCog(AlphaCog):
             return
         except Exception as e:
             logger.exception("Error fetching reminder for edit")
-            await interaction.response.send_message(f"❌ Error fetching reminder: {e}", ephemeral=True)
+            await interaction.response.send_message("❌ Failed to fetch reminder. Please try again.", ephemeral=True)
             return
 
         if not row:
@@ -1423,7 +1424,7 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
             return
         except Exception as e:
             logger.exception("Error updating reminder")
-            await interaction.followup.send(f"❌ Error updating reminder: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Failed to update reminder. Please try again.", ephemeral=True)
             return
 
         # Log the edit

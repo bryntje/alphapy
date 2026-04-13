@@ -95,7 +95,7 @@ class Exports(commands.Cog):
             return
         except Exception as e:
             logger.error(f"Database error in export_faq: {e}")
-            await interaction.followup.send(f"❌ Error exporting FAQ: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Database error. Please try again later.", ephemeral=True)
             return
         csv_rows = []
         for r in rows:

@@ -135,6 +135,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "All /api/* routes are publicly accessible. Set API_KEY or SUPABASE_URL to require auth."
         )
 
+    # Warn about unset webhook secrets — missing secrets mean those endpoints
+    # accept unauthenticated requests, which is a security risk in production.
+    _webhook_secrets = {
+        "SUPABASE_WEBHOOK_SECRET": "Supabase auth / GDPR erasure webhook",
+        "PREMIUM_INVALIDATE_WEBHOOK_SECRET": "premium invalidation webhook",
+        "APP_REFLECTIONS_WEBHOOK_SECRET": "reflections sync webhook",
+        "FOUNDER_WEBHOOK_SECRET": "founder DM webhook",
+        "LEGAL_UPDATE_WEBHOOK_SECRET": "legal update webhook",
+    }
+    for _env_var, _description in _webhook_secrets.items():
+        if not getattr(config, _env_var, None):
+            logger.warning(
+                "⚠️  %s is not set — the %s is unauthenticated. "
+                "Set this secret in production to require HMAC validation.",
+                _env_var,
+                _description,
+            )
+
     # Log MAIN_GUILD_ID configuration
     if hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
         logger.info(f"🏠 MAIN_GUILD_ID configured: {config.MAIN_GUILD_ID} (API endpoints will filter to this guild by default)")
