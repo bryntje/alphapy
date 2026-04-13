@@ -144,6 +144,7 @@ class StartupManager:
             "cogs.ticketbot",
             "cogs.faq",
             "cogs.exports",
+            "cogs.delete_my_data",
             "cogs.migrations",
             "cogs.verification",
             "cogs.automod",
