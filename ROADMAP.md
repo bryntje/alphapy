@@ -1,8 +1,24 @@
-# 🧬 Innersync • Alphapy Roadmap v3.3.0 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.3.1 "Enterprise Ready"
 
-**Release v3.3.0 Complete!** 🎉 Verification overhaul (manual approve/reject, reference image, AI context), growth check-in sharing and history.
+**Release v3.3.1 Complete!** 🔒 Security hardening patch — auth bypass fix, async JWT, CVE dependency updates, error disclosure elimination.
 
-This document outlines the evolution from v3.3.0 forward.
+This document outlines the evolution from v3.3.1 forward.
+
+## ✅ COMPLETED: Security Hardening (v3.3.1)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Patch release focused entirely on security remediation from the 2026-04-13 internal security audit:
+- **Auth bypass fixed**: `X-User-ID` header fallback removed — identity exclusively from verified JWT
+- **Async JWT**: `verify_supabase_token` no longer blocks the FastAPI event loop
+- **CVE deps**: 7 CVEs resolved across `cryptography`, `pyopenssl`, `PyMuPDF`, `requests`
+- **Privilege escalation**: `/migrate downgrade` restricted to bot owners only
+- **Error disclosure**: 28 user-facing exception strings replaced with generic messages across 8 cog files
+- **SQL safety**: Alembic migration 013 uses `sa.text()` + bind params
+- **Config hygiene**: `OWNER_IDS` and `ADMIN_ROLE_ID` moved to env vars
+- **Rate limiting**: Health/metrics endpoints now included in rate limiting
+- **Observability**: Startup warnings for unauthenticated API mode and unset webhook secrets
+- **Docs**: Application-level security reference added to `docs/SECURITY.md`
 
 ## ✅ COMPLETED: Verification Overhaul & Growth Check-in Improvements (v3.3.0)
 

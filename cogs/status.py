@@ -87,7 +87,7 @@ async def release_cmd(interaction: discord.Interaction):
         await interaction.followup.send(embed=embed)
     except Exception as e:
         logger.exception("release_cmd failed")
-        await interaction.followup.send(f"Failed to read release notes: {e}")
+        await interaction.followup.send("Failed to read release notes. Please try again later.")
 
 @app_commands.command(name="health", description="Show configuration and system status")
 async def health_cmd(interaction: discord.Interaction):

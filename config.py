@@ -108,9 +108,19 @@ GITHUB_REPO = (os.getenv("GITHUB_REPO") or "").strip().rstrip("/")
 # Optional: token for GitHub API (e.g. /release, repo links) to avoid rate limits
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-# Admin And Owner
-OWNER_IDS = [367270193585455104]
-ADMIN_ROLE_ID = [1160511689289125925]
+# Admin And Owner — set OWNER_IDS / ADMIN_ROLE_ID in .env as comma-separated IDs.
+# Defaults below are kept as fallbacks so existing deployments don't break immediately,
+# but you should move these values to environment variables.
+OWNER_IDS = [
+    int(x.strip())
+    for x in os.getenv("OWNER_IDS", "367270193585455104").split(",")
+    if x.strip()
+]
+ADMIN_ROLE_ID = [
+    int(x.strip())
+    for x in os.getenv("ADMIN_ROLE_ID", "1160511689289125925").split(",")
+    if x.strip()
+]
 
 # Image reminder rate limiting
 IMAGE_REMINDER_RATE_LIMIT_WINDOW = int(os.getenv("IMAGE_REMINDER_RATE_LIMIT_WINDOW", "3600"))  # seconds

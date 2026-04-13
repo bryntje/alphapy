@@ -21,6 +21,7 @@ unregistered (stored via set_raw) and are NOT touched here.
 
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 
@@ -41,7 +42,8 @@ _STALE_KEYS = [
 def upgrade() -> None:
     for scope, key in _STALE_KEYS:
         op.execute(
-            f"DELETE FROM bot_settings WHERE scope = '{scope}' AND key = '{key}'"
+            sa.text("DELETE FROM bot_settings WHERE scope = :scope AND key = :key"),
+            {"scope": scope, "key": key},
         )
 
 

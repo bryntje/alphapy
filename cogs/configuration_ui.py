@@ -439,4 +439,4 @@ class ReorderQuestionsModal(discord.ui.Modal, title="Reorder Questions"):
 
         except Exception as e:
             logger.exception(f"❌ Error reordering questions: {e}")
-            await interaction.followup.send(f"❌ Failed to reorder questions: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Failed to reorder questions. Please try again.", ephemeral=True)

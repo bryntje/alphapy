@@ -1,3 +1,77 @@
+# Security Reference
+
+---
+
+## Application-level security
+
+### API authentication (`api.py`)
+
+The FastAPI layer uses two authentication mechanisms, applied in order:
+
+1. **Supabase JWT** — `Authorization: Bearer <token>` header. Token is validated by calling `SUPABASE_URL/auth/v1/user` using an async HTTP client (non-blocking).
+2. **Static API key** — `X-Api-Key` header. Only checked if JWT validation fails and `API_KEY` is set.
+
+If neither `API_KEY` nor `SUPABASE_URL` are configured, the API runs in **unauthenticated mode** and logs a startup warning. This mode is intentional for local development only — always set at least one auth mechanism in production.
+
+**Never trust `X-User-ID` or similar forwarded-identity headers.** User identity is always derived from verified JWT claims only.
+
+### Webhook HMAC validation (`webhooks/common.py`)
+
+All inbound webhooks (Supabase auth, premium invalidation, GDPR erasure, reflections, founder, legal-update) are verified with `HMAC-SHA256`. The shared utility `validate_webhook_signature()` uses `hmac.compare_digest` to prevent timing attacks.
+
+If the secret for a webhook is not configured, validation is skipped and a debug log is emitted. For production:
+- `SUPABASE_WEBHOOK_SECRET` — required for GDPR erasure and Supabase auth events
+- `PREMIUM_INVALIDATE_WEBHOOK_SECRET` — required for premium invalidation
+- `APP_REFLECTIONS_WEBHOOK_SECRET` — required for reflection sync
+
+Leaving these unset in production means those endpoints are publicly triggerable.
+
+### Rate limiting (`api.py` — `RateLimitMiddleware`)
+
+In-memory, IP-based sliding-window rate limiter applied to all endpoints:
+
+| Endpoint type | Limit |
+|---|---|
+| Health/metrics probes | 60 req/min |
+| Read requests (GET) | 30 req/min |
+| Write requests (POST/PUT/DELETE) | 10 req/min |
+
+The in-memory store is cleaned every 10 minutes. Note: this is a single-instance limiter — it does not share state across multiple API replicas.
+
+### Input sanitization (`utils/sanitizer.py`)
+
+- `safe_embed_text()` — strips mentions, filters dangerous URL protocols, escapes Discord markdown. Must be used for all user-supplied content placed in embeds.
+- `safe_prompt()` — detects jailbreak patterns and neutralizes them before passing to LLM APIs.
+- `safe_log_message()` — removes control characters and truncates before logging.
+
+### Owner/admin IDs (`config.py`)
+
+Bot owner and admin role IDs are loaded from environment variables `OWNER_IDS` and `ADMIN_ROLE_ID` (comma-separated integers). Hardcoding these values in source code is not allowed. The fallback defaults are left in place for backward compatibility, but must be overridden in production via env vars.
+
+### Dependency security
+
+Known-vulnerable transitive dependencies are pinned explicitly in `requirements.txt`:
+
+```
+cryptography>=46.0.6
+pyopenssl>=26.0.0
+requests>=2.33.0
+```
+
+Run `pip-audit -r requirements.txt` regularly to catch new CVEs. Dependabot or Renovate can automate this.
+
+### Privileged Discord commands
+
+- **`/migrate downgrade`** — restricted to `OWNER_IDS` only (not guild admins). Triggers `alembic downgrade -1` which is a destructive database operation.
+- All admin commands use `validate_admin()` from `utils/validators.py`.
+- Owner-only commands use `requires_owner()` decorator or an explicit `OWNER_IDS` check.
+
+### Error disclosure
+
+Internal exceptions must not be forwarded to Discord users or API clients. Log the full exception server-side with `logger.error(...)` and send only a generic message to the client (e.g. `"Database error. Please try again later."`).
+
+---
+
 # Google Cloud Security Best Practices
 
 This document describes security best practices for Google Cloud credentials and API keys within the Alphapy project, in line with Google Cloud Security recommendations.

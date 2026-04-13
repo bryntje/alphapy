@@ -57,7 +57,7 @@ async def verify_api_key(
 
     if authorization:
         try:
-            claims = verify_supabase_token(authorization)
+            claims = await verify_supabase_token(authorization)
         except HTTPException:
             # Invalid JWT; fall back to API key check if configured.
             claims = None
@@ -80,22 +80,18 @@ async def verify_api_key(
 async def get_authenticated_user_id(
     request: Request,
     authorization: Optional[str] = Header(None),
-    x_user_id: Optional[str] = Header(None),
 ) -> str:
-    """Extract authenticated user ID from JWT or headers."""
+    """Extract authenticated user ID from a verified Supabase JWT."""
     claims = getattr(request.state, "supabase_claims", None)
 
     if not claims and authorization:
         try:
-            claims = verify_supabase_token(authorization)
+            claims = await verify_supabase_token(authorization)
         except HTTPException:
             claims = None
 
     if claims and "sub" in claims:
         return str(claims["sub"])
-
-    if x_user_id:
-        return x_user_id
 
     raise HTTPException(status_code=401, detail="Missing authentication context")
 
@@ -130,6 +126,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.db_pool = db_pool
     logger.info("✅ DB pool created")
     
+    # Warn if API is running without any authentication configured
+    _api_key_set = bool(getattr(config, "API_KEY", None))
+    _supabase_configured = bool(getattr(config, "SUPABASE_URL", None))
+    if not _api_key_set and not _supabase_configured:
+        logger.warning(
+            "⚠️  API running in UNAUTHENTICATED mode — API_KEY and SUPABASE_URL are both unset. "
+            "All /api/* routes are publicly accessible. Set API_KEY or SUPABASE_URL to require auth."
+        )
+
+    # Warn about unset webhook secrets — missing secrets mean those endpoints
+    # accept unauthenticated requests, which is a security risk in production.
+    # Note: we log only the env var *name*, never its value.
+    if not getattr(config, "SUPABASE_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  SUPABASE_WEBHOOK_SECRET is not set — Supabase auth/GDPR erasure webhook is unauthenticated.")
+    if not getattr(config, "PREMIUM_INVALIDATE_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  PREMIUM_INVALIDATE_WEBHOOK_SECRET is not set — premium invalidation webhook is unauthenticated.")
+    if not getattr(config, "APP_REFLECTIONS_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  APP_REFLECTIONS_WEBHOOK_SECRET is not set — reflections sync webhook is unauthenticated.")
+    if not getattr(config, "FOUNDER_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  FOUNDER_WEBHOOK_SECRET is not set — founder DM webhook is unauthenticated.")
+    if not getattr(config, "LEGAL_UPDATE_WEBHOOK_SECRET", None):
+        logger.warning("⚠️  LEGAL_UPDATE_WEBHOOK_SECRET is not set — legal update webhook is unauthenticated.")
+
     # Log MAIN_GUILD_ID configuration
     if hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
         logger.info(f"🏠 MAIN_GUILD_ID configured: {config.MAIN_GUILD_ID} (API endpoints will filter to this guild by default)")
@@ -276,34 +295,39 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """IP-based rate limiting middleware for API endpoints."""
     
     async def dispatch(self, request: StarletteRequest, call_next):
-        # Skip rate limiting voor health/metrics endpoints
-        if request.url.path.startswith("/health") or request.url.path.startswith("/metrics") or request.url.path == "/status":
-            return await call_next(request)
-        
         # Get client IP
         client_ip = request.client.host if request.client else "unknown"
-        
+
         # Clean old entries (older than 1 minute)
         current_time = time.time()
         _ip_rate_limits[client_ip] = [
-            ts for ts in _ip_rate_limits[client_ip] 
+            ts for ts in _ip_rate_limits[client_ip]
             if current_time - ts < 60.0
         ]
-        
-        # Check rate limit (per endpoint type)
-        endpoint_type = "write" if request.method in ["POST", "PUT", "DELETE"] else "read"
-        limit = 30 if endpoint_type == "read" else 10  # 30 reads/min, 10 writes/min per IP
-        
+
+        # Health/metrics get a generous limit; write endpoints are stricter
+        is_health = (
+            request.url.path.startswith("/health")
+            or request.url.path.startswith("/metrics")
+            or request.url.path == "/status"
+        )
+        if is_health:
+            limit = 60  # 60 requests/min for health probes
+        elif request.method in ["POST", "PUT", "DELETE"]:
+            limit = 10  # 10 writes/min per IP
+        else:
+            limit = 30  # 30 reads/min per IP
+
         if len(_ip_rate_limits[client_ip]) >= limit:
             return Response(
                 content=f'{{"detail": "Rate limit exceeded. Max {limit} requests per minute per IP."}}',
                 status_code=429,
                 media_type="application/json"
             )
-        
+
         # Record this request
         _ip_rate_limits[client_ip].append(current_time)
-        
+
         return await call_next(request)
 
 
