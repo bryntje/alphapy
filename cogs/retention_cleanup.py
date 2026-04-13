@@ -72,7 +72,7 @@ class RetentionCleanupCog(commands.Cog):
             logger.info("RetentionCleanup: %s audit_logs rows deleted (>%dd)", result, _RETENTION_DAYS)
 
             result = await conn.execute(
-                "DELETE FROM faq_search_logs WHERE searched_at < NOW() - make_interval(days => $1)",
+                "DELETE FROM faq_search_logs WHERE created_at < NOW() - make_interval(days => $1)",
                 _RETENTION_DAYS,
             )
             logger.info("RetentionCleanup: %s faq_search_logs rows deleted (>%dd)", result, _RETENTION_DAYS)
