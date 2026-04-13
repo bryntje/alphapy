@@ -8,7 +8,6 @@ import config
 
 logger = logging.getLogger(__name__)
 
-
 def _prepare_token(raw_header: str) -> str:
     token = raw_header.strip()
     if token.lower().startswith("bearer "):
@@ -16,7 +15,7 @@ def _prepare_token(raw_header: str) -> str:
     return token
 
 
-def verify_supabase_token(authorization_header: Optional[str]) -> Dict[str, Any]:
+async def verify_supabase_token(authorization_header: Optional[str]) -> Dict[str, Any]:
     """Validate a Supabase JWT by calling Supabase's /auth/v1/user endpoint."""
 
     if not authorization_header:
@@ -40,22 +39,19 @@ def verify_supabase_token(authorization_header: Optional[str]) -> Dict[str, Any]
     }
 
     try:
-        with httpx.Client(timeout=5) as client:
-            response = client.get(auth_url, headers=headers)
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(auth_url, headers=headers)
         if response.status_code != 200:
-            # Check if it's an expired token (common, not an error)
             response_body = response.text
             is_expired = "expired" in response_body.lower() or "bad_jwt" in response_body.lower()
-            
+
             if is_expired:
-                # Expired tokens are normal - log as debug, not warning
                 logger.debug(
                     "Supabase token expired (normal): status=%s body=%s",
                     response.status_code,
                     response_body,
                 )
             else:
-                # Other validation failures are warnings
                 logger.warning(
                     "Supabase token validation failed: status=%s body=%s",
                     response.status_code,

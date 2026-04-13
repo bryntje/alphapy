@@ -40,6 +40,10 @@ class Migrations(commands.Cog):
             result = await self._run_migration("upgrade", "head")
             await interaction.followup.send(f"```\n{result}\n```", ephemeral=True)
         elif action.lower() == "downgrade":
+            owner_ids = getattr(config, "OWNER_IDS", [])
+            if interaction.user.id not in owner_ids:
+                await interaction.followup.send("❌ Database downgrade is restricted to bot owners only.", ephemeral=True)
+                return
             result = await self._run_migration("downgrade", "-1")
             await interaction.followup.send(f"```\n⚠️ Downgrade executed:\n{result}\n```", ephemeral=True)
         elif action.lower() == "history":

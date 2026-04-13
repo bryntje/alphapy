@@ -68,7 +68,7 @@ class Exports(commands.Cog):
             return
         except Exception as e:
             logger.error(f"Database error in export_tickets: {e}")
-            await interaction.followup.send(f"❌ Error exporting tickets: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Database error. Please try again later.", ephemeral=True)
             return
         csv_rows = [dict(r) for r in rows]
         fieldnames = ["id", "user_id", "username", "status", "created_at", "updated_at", "claimed_by", "channel_id"]
