@@ -108,17 +108,16 @@ GITHUB_REPO = (os.getenv("GITHUB_REPO") or "").strip().rstrip("/")
 # Optional: token for GitHub API (e.g. /release, repo links) to avoid rate limits
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-# Admin And Owner — set OWNER_IDS / ADMIN_ROLE_ID in .env as comma-separated IDs.
-# Defaults below are kept as fallbacks so existing deployments don't break immediately,
-# but you should move these values to environment variables.
+# Admin And Owner — set OWNER_IDS / ADMIN_ROLE_ID in your deployment env vars
+# as comma-separated Discord snowflake IDs.
 OWNER_IDS = [
     int(x.strip())
-    for x in os.getenv("OWNER_IDS", "367270193585455104").split(",")
+    for x in os.getenv("OWNER_IDS", "").split(",")
     if x.strip()
 ]
 ADMIN_ROLE_ID = [
     int(x.strip())
-    for x in os.getenv("ADMIN_ROLE_ID", "1160511689289125925").split(",")
+    for x in os.getenv("ADMIN_ROLE_ID", "").split(",")
     if x.strip()
 ]
 
