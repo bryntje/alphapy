@@ -12,6 +12,22 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.3.1] - 2026-04-13
+
+### Fixed
+- **Security — auth bypass**: Removed `X-User-ID` header fallback from `get_authenticated_user_id`; user identity is now derived exclusively from verified Supabase JWT claims
+- **Security — event loop blocking**: `verify_supabase_token` switched from sync `httpx.Client` to async `httpx.AsyncClient`, preventing the JWT validation call from blocking the FastAPI event loop
+- **Security — vulnerable dependencies**: Pinned `cryptography≥46.0.6`, `pyopenssl≥26.0.0`, `PyMuPDF≥1.26.7`, `requests≥2.33.0` — resolves 7 CVEs across 4 packages
+- **Security — privilege escalation**: `/migrate downgrade` restricted to `OWNER_IDS` only; was previously accessible to all guild admins
+- **Security — error disclosure**: Raw exception strings (`{e}`) removed from all user-facing Discord messages across 8 cog files (28 instances in `reminders.py`, `ticketbot.py`, `faq.py`, `exports.py`, `configuration.py`, `configuration_ui.py`, `slash_utils.py`, `status.py`); full exception is logged server-side
+- **Security — SQL pattern**: Alembic migration 013 SQL replaced with `sa.text()` + bind params instead of f-string interpolation
+- **Security — hardcoded IDs**: `OWNER_IDS` and `ADMIN_ROLE_ID` moved to env vars (`OWNER_IDS`, `ADMIN_ROLE_ID`); hardcoded fallback values retained for backward compatibility
+- **Security — rate limiting**: Health/metrics endpoints (`/health`, `/metrics`, `/status`) now rate-limited at 60 req/min instead of bypassing the limiter entirely
+- **Observability**: API startup now logs `⚠️` warnings for each unset critical webhook secret (`SUPABASE_WEBHOOK_SECRET`, `PREMIUM_INVALIDATE_WEBHOOK_SECRET`, `APP_REFLECTIONS_WEBHOOK_SECRET`, `FOUNDER_WEBHOOK_SECRET`, `LEGAL_UPDATE_WEBHOOK_SECRET`) and for unauthenticated API mode
+- **Docs**: `docs/SECURITY.md` expanded with a full application-level security reference section (API auth, webhook HMAC, rate limiting, input sanitization, error handling, SQL, privileged commands)
+
+---
+
 ## [3.3.0] - 2026-04-12
 
 ### Added
