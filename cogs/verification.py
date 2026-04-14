@@ -1,7 +1,7 @@
 import asyncio
 import json
 import re
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Literal, Optional, Dict, Any, cast
 
 import asyncpg
@@ -98,6 +98,9 @@ class VerificationCog(AlphaCog):
                 await conn.execute(
                     "ALTER TABLE verification_tickets ADD COLUMN IF NOT EXISTS rejection_reason TEXT;"
                 )
+                await conn.execute(
+                    "ALTER TABLE verification_tickets ADD COLUMN IF NOT EXISTS payment_date DATE;"
+                )
 
             logger.info("VerificationCog: DB ready (verification_tickets)")
             log_database_event("DB_READY", details="VerificationCog database fully initialized")
@@ -150,6 +153,14 @@ class VerificationCog(AlphaCog):
 
     def _get_ai_prompt_context(self, guild_id: int) -> str:
         return self.settings_helper.get_str("verification", "ai_prompt_context", guild_id, fallback="")
+
+    def _get_max_payment_age_days(self, guild_id: int) -> int:
+        value = self.settings_helper.get_int("verification", "max_payment_age_days", guild_id, fallback=0)
+        return int(value) if value and value > 0 else 35
+
+    def _get_reviewer_role_id(self, guild_id: int) -> Optional[int]:
+        value = self.settings_helper.get_int("verification", "reviewer_role_id", guild_id, fallback=0)
+        return int(value) if value else None
 
     async def _get_reference_image_url(self, guild_id: int) -> Optional[str]:
         """Fetch a fresh URL for the stored reference image by re-fetching its Discord message."""
@@ -374,6 +385,7 @@ class VerificationCog(AlphaCog):
             description=(
                 "Please upload **one clear screenshot** of your payment or subscription confirmation.\n\n"
                 "- Make sure the **amount** and **date** are visible.\n"
+                "- Make sure your **name or account username** is visible.\n"
                 "- You may blur sensitive details like card numbers.\n\n"
                 "Once you upload the screenshot, our AI will review it."
             ),
@@ -410,6 +422,7 @@ class VerificationCog(AlphaCog):
         ai_reason: Optional[str],
         resolved_by_user_id: Optional[int] = None,
         rejection_reason: Optional[str] = None,
+        payment_date: Optional[date] = None,
     ) -> None:
         if not is_pool_healthy(self.db):
             return
@@ -424,7 +437,8 @@ class VerificationCog(AlphaCog):
                         ai_reason = $4,
                         resolved_at = CASE WHEN $1 <> 'pending' THEN NOW() ELSE resolved_at END,
                         resolved_by_user_id = COALESCE($6, resolved_by_user_id),
-                        rejection_reason = COALESCE($7, rejection_reason)
+                        rejection_reason = COALESCE($7, rejection_reason),
+                        payment_date = COALESCE($8, payment_date)
                     WHERE channel_id = $5
                     """,
                     status,
@@ -434,6 +448,7 @@ class VerificationCog(AlphaCog):
                     channel_id,
                     resolved_by_user_id,
                     rejection_reason,
+                    payment_date,
                 )
         except RuntimeError:
             logger.debug("VerificationCog: database pool not available when updating ticket")
@@ -620,27 +635,66 @@ class VerificationCog(AlphaCog):
         # Build verification prompt
         vision_model = self._get_vision_model(guild_id)
         reference_image_url = await self._get_reference_image_url(guild_id)
+        max_payment_age_days = self._get_max_payment_age_days(guild_id)
+        today_iso = date.today().isoformat()
+        discord_display_name = safe_prompt(message.author.display_name)
+        discord_username = safe_prompt(message.author.name)
+
+        identity_block = (
+            f'\nThe user\'s Discord display name is: "{discord_display_name}".\n'
+            f'The user\'s Discord username is: "{discord_username}".\n\n'
+            "Check whether any name, username, or account ID visible in the screenshot could correspond to this Discord user.\n"
+            'Set identifier_match to "match" if something in the screenshot (name, username, user ID) plausibly corresponds to this Discord user, '
+            '"mismatch" if a name or ID IS clearly visible but does NOT match, '
+            'or "not_visible" if no name, username, or account ID is readable in the screenshot.\n'
+        )
 
         if reference_image_url:
             prompt = (
                 "You are given two images.\n"
                 "- Image 1: submitted by a user who wants access.\n"
                 "- Image 2: a reference example set by the server admin that defines what an acceptable submission looks like.\n\n"
-                "Your only task is to decide whether Image 1 matches Image 2 closely enough.\n"
-                "The admin has defined Image 2 as the standard — you must not question whether it is a valid document.\n"
-                "Set can_verify to true if Image 1 shows the same kind of document or screen as Image 2, even if details differ slightly.\n"
-                "Set needs_manual_review to true only if Image 1 is clearly a different type of document, or if it is too blurry or cropped to compare.\n\n"
+                f"Today's date is {today_iso}. The maximum allowed payment age is {max_payment_age_days} days.\n\n"
+                "Step 1 — Document match: decide whether Image 1 shows the same kind of document or screen as Image 2.\n"
+                "Step 2 — Classify Image 1 as one of two proof types:\n"
+                '  - "payment": a receipt or transaction confirmation with a visible payment date.\n'
+                '  - "subscription": an account or billing page showing an active subscription (e.g. "Status: Active", a future next-billing date, active plan count) — no payment date required.\n'
+                "Step 3 — Validate:\n"
+                '  - If proof_type is "payment": the payment date must be within the allowed window. If older, set can_verify to false. If date is unreadable, set needs_manual_review to true.\n'
+                '  - If proof_type is "subscription": set can_verify to true if the screenshot clearly shows an active, paid subscription right now.\n'
+                "Step 4 — Identity check:\n"
+                + identity_block +
+                "\nSet can_verify to true only if Steps 1, 3, and 4 all pass (identifier_match must not be \"mismatch\").\n"
+                "Set needs_manual_review to true if the image is too blurry/cropped to compare, a payment date is required but unreadable, or identifier_match is \"not_visible\".\n\n"
                 "Respond in JSON only, no other text:\n"
-                '{"can_verify": boolean, "needs_manual_review": boolean, "reason": "one sentence max, no PII"}'
+                '{"can_verify": boolean, "needs_manual_review": boolean, "proof_type": "payment" | "subscription" | "unknown", '
+                '"identifier_match": "match" | "mismatch" | "not_visible", "reason": "one sentence max, no PII", "payment_date": "YYYY-MM-DD or null"}'
             )
         else:
             prompt = (
-                "You are a payment verification assistant. Decide whether the submitted screenshot is a valid proof of payment or subscription confirmation.\n\n"
-                "Respond in **JSON only**, no other text:\n"
-                '{\n  "can_verify": boolean,\n  "needs_manual_review": boolean,\n  "reason": string\n}\n\n'
-                "- `can_verify`: true if the screenshot clearly shows a completed payment, active subscription, or order confirmation.\n"
-                "- `needs_manual_review`: true only if the screenshot is too blurry, cropped, or ambiguous to make a decision.\n"
-                "- `reason`: one sentence, no card numbers, IBANs, email addresses, or other PII."
+                "You are a payment verification assistant. Classify what the screenshot shows and decide whether it proves the user has an active, paid subscription.\n\n"
+                f"Today's date is {today_iso}. The maximum allowed payment age is {max_payment_age_days} days.\n\n"
+                "Classify the screenshot as one of two proof types:\n"
+                '- "payment": a payment receipt, transaction confirmation, or order summary that shows a completed charge with a visible date.\n'
+                '- "subscription": an account or billing page that shows an active subscription without a specific payment date\n'
+                '  (e.g. "Status: Active", a future next-billing date like "Next billing: May 11", active plan count, active subscription badge).\n\n'
+                "Rules:\n"
+                '- If proof_type is "payment": set can_verify to true only if a payment date is visible AND within the allowed window. Set to false if older.\n'
+                '- If proof_type is "subscription": set can_verify to true if the screenshot clearly shows an active, paid subscription right now. No payment date required.\n'
+                "- Set needs_manual_review to true if the screenshot is too blurry, cropped, or ambiguous to make a confident decision.\n\n"
+                "Identity check:\n"
+                + identity_block +
+                "\nRespond in **JSON only**, no other text:\n"
+                "{\n"
+                '  "can_verify": boolean,\n'
+                '  "needs_manual_review": boolean,\n'
+                '  "proof_type": "payment" | "subscription" | "unknown",\n'
+                '  "identifier_match": "match" | "mismatch" | "not_visible",\n'
+                '  "reason": "one sentence, no PII",\n'
+                '  "payment_date": "YYYY-MM-DD or null"\n'
+                "}\n\n"
+                '- payment_date: the transaction date if proof_type is "payment", otherwise null.\n'
+                '- can_verify must be false if identifier_match is "mismatch".'
             )
 
         ai_prompt_context = self._get_ai_prompt_context(guild_id)
@@ -683,6 +737,7 @@ class VerificationCog(AlphaCog):
         can_verify = False
         needs_manual_review = True
         reason = "Unclear AI result."
+        parsed: Dict[str, Any] = {}
 
         try:
             raw = (result_text or "").strip().lstrip("\ufeff")  # strip BOM if present
@@ -728,6 +783,56 @@ class VerificationCog(AlphaCog):
                 (result_text or "")[:80],
             )
 
+        # Server-side validation — branches on proof_type
+        extracted_payment_date: Optional[date] = None
+        proof_type = parsed.get("proof_type", "unknown") if isinstance(parsed, dict) else "unknown"
+
+        if proof_type == "subscription":
+            # Active-subscription proof: no date check needed — trust the AI's can_verify decision
+            pass
+        else:
+            # proof_type == "payment" or "unknown": apply date recency check
+            try:
+                payment_date_str = parsed.get("payment_date") if isinstance(parsed, dict) else None
+                if isinstance(payment_date_str, str) and payment_date_str.strip() and payment_date_str.strip().lower() != "null":
+                    extracted_payment_date = date.fromisoformat(payment_date_str.strip())
+                    cutoff = date.today() - timedelta(days=max_payment_age_days)
+                    if extracted_payment_date < cutoff:
+                        # AI may have passed it but the date is provably too old — hard reject
+                        can_verify = False
+                        needs_manual_review = False
+                        reason = (
+                            f"Payment date ({extracted_payment_date.isoformat()}) is outside the "
+                            f"allowed {max_payment_age_days}-day window. Please submit a more recent proof of payment."
+                        )
+                        logger.info(
+                            "VerificationCog: server-side date check rejected payment (date=%s, cutoff=%s, guild=%s)",
+                            extracted_payment_date,
+                            cutoff,
+                            guild_id,
+                        )
+                elif can_verify and not needs_manual_review:
+                    # AI approved a payment receipt but no date was readable — escalate to manual review
+                    needs_manual_review = True
+                    reason = "Payment date could not be determined from the screenshot. Manual review required."
+            except (ValueError, AttributeError):
+                pass  # Malformed date string from AI — fall through to AI's own decision
+
+        # Server-side identity check (belt-and-suspenders on top of AI identifier_match)
+        identifier_match = parsed.get("identifier_match", "not_visible") if isinstance(parsed, dict) else "not_visible"
+        if identifier_match == "mismatch":
+            can_verify = False
+            needs_manual_review = False
+            reason = "The name or account ID in the screenshot does not match your Discord identity. Please submit a screenshot from your own account."
+            logger.info(
+                "VerificationCog: identity mismatch rejected (user=%s, guild=%s)",
+                message.author.id,
+                guild_id,
+            )
+        elif identifier_match == "not_visible" and can_verify and not needs_manual_review:
+            needs_manual_review = True
+            reason = "Could not verify your identity from the screenshot. Please make sure your name or account username is visible. Manual review required."
+
         # Update DB
         await self._update_verification_ticket(
             channel_id=int(message.channel.id),
@@ -735,6 +840,7 @@ class VerificationCog(AlphaCog):
             ai_can_verify=can_verify,
             ai_needs_manual_review=needs_manual_review,
             ai_reason=reason,
+            payment_date=extracted_payment_date,
         )
 
         # Act on result
@@ -759,7 +865,13 @@ class VerificationCog(AlphaCog):
                     f"Reason: {safe_embed_text(reason, 512)}"
                 ),
             )
-            await channel.send(embed=warn_embed, view=ManualReviewView(self, timeout=None))
+            reviewer_role_id = self._get_reviewer_role_id(guild_id)
+            reviewer_mention = f"<@&{reviewer_role_id}>" if reviewer_role_id else None
+            await channel.send(
+                content=reviewer_mention,
+                embed=warn_embed,
+                view=ManualReviewView(self, timeout=None),
+            )
 
             await self.send_log_embed(
                 title="⚠️ Verification needs manual review",

@@ -148,7 +148,7 @@ class Configuration(AlphaCog):
         view.message = cast(Any, message)
         log_with_guild(f"Setup wizard started (guild_id={guild_id}, user_id={user_id})", guild_id, "debug")
 
-    @fyi_group.command(name="reset", description="Clear an FYI flag so the next trigger will send again (testing)")
+    @fyi_group.command(name="reset", description="Clear a FYI flag.")
     @app_commands.choices(key=[app_commands.Choice(name=k, value=k) for k in sorted(FYI_TIPS_KEYS)])
     @requires_admin()
     async def fyi_reset(
@@ -246,7 +246,7 @@ class Configuration(AlphaCog):
             f"`system.log_channel_id` reset to default by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @system_group.command(name="set_rules_channel", description="Set the rules and onboarding channel (welcome + Start button)")
+    @system_group.command(name="set_rules_channel", description="Set the onboarding channel.")
     @requires_admin()
     async def system_set_rules_channel(
         self,
@@ -265,7 +265,7 @@ class Configuration(AlphaCog):
             f"`system.rules_channel_id` set to {channel.mention} by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @system_group.command(name="reset_rules_channel", description="Reset rules and onboarding channel to default value")
+    @system_group.command(name="reset_rules_channel", description="Reset the onboarding channel.")
     @requires_admin()
     async def system_reset_rules_channel(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -306,7 +306,7 @@ class Configuration(AlphaCog):
             f"`system.log_level` set to `{level.value}` by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @system_group.command(name="reset_log_level", description="Reset log level to default (verbose)")
+    @system_group.command(name="reset_log_level", description="Reset log level to default.")
     @requires_admin()
     async def system_reset_log_level(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -356,7 +356,7 @@ class Configuration(AlphaCog):
             f"`embedwatcher.announcements_channel_id` → {channel.mention} by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @embedwatcher_group.command(name="reset_announcements", description="Reset announcement channel to default")
+    @embedwatcher_group.command(name="reset_announcements", description="Reset announcement channel.")
     @requires_admin()
     async def embedwatcher_reset_announcements(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -409,7 +409,7 @@ class Configuration(AlphaCog):
             interaction.guild.id
         )
     
-    @embedwatcher_group.command(name="set_non_embed", description="Enable/disable non-embed message parsing")
+    @embedwatcher_group.command(name="set_non_embed", description="Toggle non-embed message parsing.")
     @requires_admin()
     async def embedwatcher_set_non_embed(
         self,
@@ -448,7 +448,7 @@ class Configuration(AlphaCog):
             interaction.guild.id
         )
     
-    @embedwatcher_group.command(name="set_process_bot_messages", description="Enable/disable processing of bot's own messages")
+    @embedwatcher_group.command(name="set_process_bot_messages", description="Toggle bot message processing.")
     @requires_admin()
     async def embedwatcher_set_process_bot_messages(
         self,
@@ -469,7 +469,7 @@ class Configuration(AlphaCog):
             interaction.guild.id
         )
     
-    @embedwatcher_group.command(name="reset_process_bot_messages", description="Reset process_bot_messages setting to default")
+    @embedwatcher_group.command(name="reset_process_bot_messages", description="Reset bot message processing.")
     @requires_admin()
     async def embedwatcher_reset_process_bot_messages(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -664,7 +664,7 @@ class Configuration(AlphaCog):
             interaction.guild_id,
         )
 
-    @gpt_group.command(name="reset_model", description="Reset Grok model to default (bot owner only)")
+    @gpt_group.command(name="reset_model", description="Reset Grok model to default.")
     @app_commands.describe(
         guild_id="Target guild ID — use this to reset the model for a guild you are not in",
     )
@@ -750,7 +750,7 @@ class Configuration(AlphaCog):
             f"`invites.enabled` → True by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @invites_group.command(name="disable", description="Enable/disable de invite tracker uit")
+    @invites_group.command(name="disable", description="Disable the invite tracker.")
     @requires_admin()
     async def invites_disable(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -963,7 +963,7 @@ class Configuration(AlphaCog):
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    @verification_group.command(name="set_verified_role", description="Set the role given after successful verification")
+    @verification_group.command(name="set_verified_role", description="Set the verified role.")
     @requires_admin()
     async def verification_set_verified_role(
         self,
@@ -1001,7 +1001,7 @@ class Configuration(AlphaCog):
             interaction.guild.id,
         )
 
-    @verification_group.command(name="set_category", description="Set the category for verification channels")
+    @verification_group.command(name="set_category", description="Set verification channel category.")
     @requires_admin()
     async def verification_set_category(
         self,
@@ -1021,7 +1021,7 @@ class Configuration(AlphaCog):
             interaction.guild.id,
         )
 
-    @verification_group.command(name="reset_category", description="Reset verification category to default")
+    @verification_group.command(name="reset_category", description="Reset verification category.")
     @requires_admin()
     async def verification_reset_category(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -1039,7 +1039,7 @@ class Configuration(AlphaCog):
             interaction.guild.id,
         )
 
-    @verification_group.command(name="set_vision_model", description="Set the vision-capable model for verification")
+    @verification_group.command(name="set_vision_model", description="Set the AI vision model.")
     @requires_admin()
     async def verification_set_vision_model(
         self,
@@ -1091,7 +1091,7 @@ class Configuration(AlphaCog):
 
     @verification_group.command(
         name="set_ai_prompt_context",
-        description="Set extra context for the AI verifier (e.g. what a valid payment looks like).",
+        description="Extra context for the AI verifier.",
     )
     @requires_admin()
     @app_commands.describe(context="Context text shown to the AI alongside every screenshot (max 1000 chars).")
@@ -1131,8 +1131,91 @@ class Configuration(AlphaCog):
         )
 
     @verification_group.command(
+        name="set_reviewer_role",
+        description="Role to tag for manual review.",
+    )
+    @requires_admin()
+    @app_commands.describe(role="Role to ping on manual review.")
+    async def verification_set_reviewer_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.set("verification", "reviewer_role_id", role.id, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Reviewer role set to {role.mention}. They will be tagged when manual verification review is needed.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.reviewer_role_id` → {role.mention} by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(
+        name="reset_reviewer_role",
+        description="Clear the reviewer role.",
+    )
+    @requires_admin()
+    async def verification_reset_reviewer_role(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.clear("verification", "reviewer_role_id", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("↩️ Reviewer role cleared. Manual review notifications will no longer tag a role.", ephemeral=True)
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.reviewer_role_id` cleared by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(
+        name="set_max_payment_age",
+        description="Payment screenshot max age.",
+    )
+    @requires_admin()
+    @app_commands.describe(days="Max age in days (1–365).")
+    async def verification_set_max_payment_age(
+        self,
+        interaction: discord.Interaction,
+        days: int,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        if not 1 <= days <= 365:
+            await interaction.followup.send("❌ Days must be between 1 and 365.", ephemeral=True)
+            return
+        await self.settings.set("verification", "max_payment_age_days", days, interaction.guild.id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Payment age limit set to **{days} days**. Screenshots older than that will be rejected.",
+            ephemeral=True,
+        )
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.max_payment_age_days` → `{days}` by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(
+        name="reset_max_payment_age",
+        description="Reset payment max age.",
+    )
+    @requires_admin()
+    async def verification_reset_max_payment_age(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await self.settings.clear("verification", "max_payment_age_days", interaction.guild.id, interaction.user.id)
+        await interaction.followup.send("↩️ Payment age limit reset to default (35 days).", ephemeral=True)
+        await self._send_audit_log(
+            "✅ Verification",
+            f"`verification.max_payment_age_days` reset to default by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
+    @verification_group.command(
         name="set_reference_image",
-        description="Upload a reference payment screenshot the AI uses to judge submissions.",
+        description="Upload a reference screenshot.",
     )
     @requires_admin()
     @app_commands.describe(image="A clear example of a valid payment confirmation for your community.")
@@ -1191,7 +1274,7 @@ class Configuration(AlphaCog):
             interaction.guild.id,
         )
 
-    @verification_group.command(name="reset_reference_image", description="Remove the reference payment screenshot.")
+    @verification_group.command(name="reset_reference_image", description="Remove reference screenshot.")
     @requires_admin()
     async def verification_reset_reference_image(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -1236,7 +1319,7 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @gdpr_group.command(name="enable", description="Enable/disable GDPR functionaliteit in")
+    @gdpr_group.command(name="enable", description="Enable GDPR features.")
     @requires_admin()
     async def gdpr_enable(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -1248,7 +1331,7 @@ class Configuration(AlphaCog):
             f"`gdpr.enabled` → True by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @gdpr_group.command(name="disable", description="Enable/disable GDPR functionaliteit uit")
+    @gdpr_group.command(name="disable", description="Disable GDPR features.")
     @requires_admin()
     async def gdpr_disable(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -1407,7 +1490,7 @@ class Configuration(AlphaCog):
             f"Mode set to '{mode}' by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @onboarding_group.command(name="set_role", description="Set role to assign after onboarding completion")
+    @onboarding_group.command(name="set_role", description="Set post-onboarding role.")
     @requires_admin()
     async def onboarding_set_role(
         self,
@@ -1439,7 +1522,7 @@ class Configuration(AlphaCog):
             interaction.guild.id
         )
 
-    @onboarding_group.command(name="set_join_role", description="Set role to assign immediately when a user joins (temporary join role)")
+    @onboarding_group.command(name="set_join_role", description="Set temporary join role.")
     @requires_admin()
     async def onboarding_set_join_role(
         self,
@@ -1459,7 +1542,7 @@ class Configuration(AlphaCog):
             interaction.guild.id
         )
 
-    @onboarding_group.command(name="reset_join_role", description="Remove join role assignment on user join")
+    @onboarding_group.command(name="reset_join_role", description="Remove join role assignment.")
     @requires_admin()
     async def onboarding_reset_join_role(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -1620,7 +1703,7 @@ class Configuration(AlphaCog):
         )
         else:
             await interaction.followup.send("❌ Database not available.", ephemeral=True)
-    @onboarding_group.command(name="reset_questions", description="Reset to default onboarding questions")
+    @onboarding_group.command(name="reset_questions", description="Reset onboarding questions.")
     @requires_admin()
     async def onboarding_reset_questions(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -1645,7 +1728,7 @@ class Configuration(AlphaCog):
         else:
             await interaction.followup.send("❌ Database not available.", ephemeral=True)
 
-    @onboarding_group.command(name="panel_post", description="Post an onboarding panel with a Start button")
+    @onboarding_group.command(name="panel_post", description="Post onboarding panel.")
     @requires_admin()
     async def onboarding_panel_post(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None) -> None:
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1672,7 +1755,7 @@ class Configuration(AlphaCog):
         await target.send(embed=embed, view=view)
         await interaction.followup.send("✅ Onboarding panel posted.", ephemeral=True)
 
-    @onboarding_group.command(name="reorder", description="Reorder onboarding questions by entering question IDs in desired order")
+    @onboarding_group.command(name="reorder", description="Reorder onboarding questions.")
     @requires_admin()
     async def onboarding_reorder(self, interaction: discord.Interaction) -> None:
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1744,7 +1827,7 @@ class Configuration(AlphaCog):
         await interaction.followup.send(f"✅ Auto-moderation log channel set to {channel.mention}.", ephemeral=True)
         log_guild_action(interaction.guild.id, f"Auto-moderation log channel set to {channel.mention}", user=str(interaction.user))
 
-    @automod_group.command(name="reset_log_channel", description="Reset auto-moderation log channel to default")
+    @automod_group.command(name="reset_log_channel", description="Reset auto-mod log channel.")
     @requires_admin()
     async def automod_reset_log_channel(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
@@ -2134,7 +2217,7 @@ class Configuration(AlphaCog):
         )
         log_guild_action(interaction.guild.id, f"Auto-moderation regex rule created: {name}", user=str(interaction.user))
 
-    @automod_group.command(name="add_ai_rule", description="Add an AI-powered content rule (premium)")
+    @automod_group.command(name="add_ai_rule", description="Add AI content rule (premium).")
     @requires_admin()
     async def automod_add_ai_rule(
         self,
@@ -2217,7 +2300,7 @@ class Configuration(AlphaCog):
             )
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    @automod_group.command(name="delete_rule", description="Delete an auto-moderation rule by ID")
+    @automod_group.command(name="delete_rule", description="Delete an auto-mod rule.")
     @requires_admin()
     async def automod_delete_rule(self, interaction: discord.Interaction, rule_id: int) -> None:
         if not interaction.guild:
@@ -2233,7 +2316,7 @@ class Configuration(AlphaCog):
         await interaction.followup.send(f"✅ Rule `{rule_id}` deleted.", ephemeral=True)
         log_guild_action(interaction.guild.id, f"Auto-moderation rule deleted: {rule_id}", user=str(interaction.user))
 
-    @automod_group.command(name="enable_rule", description="Enable an auto-moderation rule by ID")
+    @automod_group.command(name="enable_rule", description="Enable an auto-mod rule.")
     @requires_admin()
     async def automod_enable_rule(self, interaction: discord.Interaction, rule_id: int) -> None:
         if not interaction.guild:
@@ -2253,7 +2336,7 @@ class Configuration(AlphaCog):
         await interaction.followup.send(f"✅ Rule `{rule_id}` enabled.", ephemeral=True)
         log_guild_action(interaction.guild.id, f"Auto-moderation rule enabled: {rule_id}", user=str(interaction.user))
 
-    @automod_group.command(name="disable_rule", description="Disable an auto-moderation rule by ID")
+    @automod_group.command(name="disable_rule", description="Disable an auto-mod rule.")
     @requires_admin()
     async def automod_disable_rule(self, interaction: discord.Interaction, rule_id: int) -> None:
         if not interaction.guild:
@@ -2442,7 +2525,7 @@ class Configuration(AlphaCog):
         )
         log_guild_action(interaction.guild.id, f"Auto-moderation rule updated: {rule_id}", user=str(interaction.user))
 
-    @automod_group.command(name="logs", description="Show recent auto-moderation logs with optional filters")
+    @automod_group.command(name="logs", description="Show auto-moderation logs.")
     @requires_admin()
     async def automod_logs(
         self,
@@ -2528,7 +2611,7 @@ class Configuration(AlphaCog):
             )
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    @automod_group.command(name="set_severity", description="Set rule priority/severity (higher = processed first)")
+    @automod_group.command(name="set_severity", description="Set rule priority/severity.")
     @requires_admin()
     async def automod_set_severity(
         self,
@@ -2578,7 +2661,7 @@ class Configuration(AlphaCog):
         )
         log_guild_action(interaction.guild.id, f"Auto-moderation rule severity updated: {rule_id} → {severity}", user=str(interaction.user))
 
-    @growth_group.command(name="set_channel", description="Set the channel where shared Growth Check-ins are posted")
+    @growth_group.command(name="set_channel", description="Set the Growth Check-in channel.")
     @requires_admin()
     async def growth_set_channel(
         self,
@@ -2606,7 +2689,7 @@ class Configuration(AlphaCog):
                 ephemeral=True,
             )
 
-    @growth_group.command(name="reset_channel", description="Remove the Growth Check-in channel configuration")
+    @growth_group.command(name="reset_channel", description="Reset Growth Check-in channel.")
     @requires_admin()
     async def growth_reset_channel(self, interaction: discord.Interaction) -> None:
         assert interaction.guild is not None  # Guaranteed by @requires_admin()

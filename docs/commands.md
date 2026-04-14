@@ -647,6 +647,28 @@ Close a verification channel without approving or rejecting (neutral closure).
 
 ---
 
+### `/config verification set_max_payment_age <days>`
+Set the maximum age (in days) a payment screenshot may be. Payments dated older than this window are automatically rejected.
+
+**Options:**
+- `days` — Integer between 1 and 365. Default when not set: **35 days**.
+
+**Behavior:**
+- The AI prompt is sent today's date and the configured window. The AI must extract the `payment_date` from the screenshot.
+- A server-side check validates the extracted date independently — if older than the window, the submission is hard-rejected even if the AI said it was valid.
+- If the date is unreadable and the AI was confident, the submission is escalated to manual review instead of auto-approved.
+
+**Permissions:** Owner/Admin
+
+---
+
+### `/config verification reset_max_payment_age`
+Reset the payment age limit to the default (35 days).
+
+**Permissions:** Owner/Admin
+
+---
+
 ### Approve / Reject buttons
 
 When the AI cannot auto-verify a screenshot, it posts a **Manual review required** embed with **Approve** and **Reject** buttons (admin-only).

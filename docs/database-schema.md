@@ -301,6 +301,9 @@ AI-assisted verification ticket metadata for payment/checkout verification.
 - `ai_reason` (TEXT): Short, sanitized explanation of the AI decision (no raw payment details)
 - `created_at` (TIMESTAMPTZ, DEFAULT NOW()): When the verification was created
 - `resolved_at` (TIMESTAMPTZ): When the verification was completed (NULL while pending)
+- `resolved_by_user_id` (BIGINT): Discord ID of the admin who resolved a manual review (NULL if auto-resolved)
+- `rejection_reason` (TEXT): Reason shown to the user on rejection
+- `payment_date` (DATE): Date extracted from the payment screenshot by the AI (NULL if unreadable or not yet populated)
 
 **Indexes:**
 - `idx_verification_tickets_guild_status` on `(guild_id, status)`
