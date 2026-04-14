@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed (Breaking)
-- **`/config` command consolidation** — Reduced the `/config` tree from 101 to 69 subcommands to stay within Discord's 8 000-character command-payload limit:
+- **`/config` command consolidation** — Reduced the `/config` tree from 101 to 71 subcommands to stay within Discord's 8 000-character command-payload limit:
   - All `reset_X` commands removed. Resetting is now done by calling `set_X` **without a value** (Discord shows the parameter as optional with `[...]`).
   - All `enable` / `disable` command pairs replaced by a single `toggle <enabled: bool>` command per group (invites, reminders, gdpr, onboarding, automod).
   - `automod enable_rule` + `disable_rule` replaced by `automod set_rule_enabled <rule_id> <true|false>`.
@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - **Verification — identity check**: The Discord display name and username are now passed to the AI with every verification. The AI returns `identifier_match` (`match` / `mismatch` / `not_visible`). A mismatch (visible name/ID in screenshot clearly doesn't match the Discord user) is a hard reject. If no identifier is readable but the AI was confident, the submission escalates to manual review. The intro embed now also instructs users to keep their name or account username visible.
 
 ### Fixed
+- **Bot — CheckFailure unhandled**: `on_app_command_error` was decorated with `@bot.event` instead of `@bot.tree.error`, so it was never invoked for slash command errors. Discord.py's default tree handler logged "Ignoring exception" at ERROR level with no response sent to the user. Corrected the decorator; permission/check failures (e.g. owner-only commands) now send an ephemeral message to the user and log at WARNING level.
 - **GDPR — accept button broken**: `GDPRButton.callback()` referenced undefined variable `ctx`; replaced with `interaction.guild_id`. No GDPR acceptance was ever stored when users clicked "I Agree".
 - **GDPR — erasure gaps**: `gdpr_acceptance`, `gpt_usage`, and `ticket_summaries` were missing from the Supabase `USER_DELETED` erasure flow (`_purge_railway_data`). `ticket_summaries` is now deleted via a subquery before its parent `support_tickets` rows are removed.
 - **GDPR — terms version mismatch**: `terms_acceptance` version was hardcoded as `"2026-02-27"` but the Privacy Policy was last updated `2026-03-02`. Corrected via a `CURRENT_TERMS_VERSION` constant; existing acceptors will be re-prompted on next `/premium` use.
