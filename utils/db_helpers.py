@@ -50,7 +50,8 @@ async def acquire_safe(
     except (
         pg_exceptions.ConnectionDoesNotExistError,
         pg_exceptions.InterfaceError,
-        ConnectionResetError
+        ConnectionResetError,
+        TimeoutError,
     ) as e:
         if on_error:
             try:

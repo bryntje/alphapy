@@ -989,6 +989,9 @@ class ReminderCog(AlphaCog):
                     next_date=next_date,
                     next_day=next_day,
                 )
+        except TimeoutError as e:
+            logger.warning(f"⚠️ Reminder loop: connection reset timed out (transient): {e}")
+            return
         except (pg_exceptions.InterfaceError, pg_exceptions.ConnectionDoesNotExistError, ConnectionResetError) as conn_err:
             await self._handle_connection_lost(conn_err)
             try:
