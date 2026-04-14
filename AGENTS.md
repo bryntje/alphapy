@@ -90,9 +90,13 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ## ✅ Agent: Verification
 - **Path**: `cogs/verification.py`, `cogs/configuration.py`
 - **Purpose**: Lets guilds run their own payment verification: a public area plus a paid area gated by a "verified" role. Members submit a payment screenshot (for the guild’s products, events, or access); after AI or manual review they receive the verified role and access. This is **not** for verifying Alphapy premium—it is a premium **feature** of Alphapy that guilds can use for their own payment gating.
-- **Flow**: Screenshot → vision JSON (`can_verify` / `needs_manual_review`) → auto-approve via `_resolve_verification` OR manual review embed with Approve/Reject buttons (`ManualReviewView`). All resolution paths go through `_resolve_verification`, which assigns roles, updates the DB (including `resolved_by_user_id`), sends a standardised log summary, and deletes the channel after 5 seconds.
+- **Flow**: Screenshot → vision JSON (`can_verify` / `needs_manual_review` / `payment_date`) → server-side recency check → auto-approve via `_resolve_verification` OR manual review embed with Approve/Reject buttons (`ManualReviewView`). All resolution paths go through `_resolve_verification`, which assigns roles, updates the DB (including `resolved_by_user_id`), sends a standardised log summary, and deletes the channel after 5 seconds.
 - **Manual review**: When AI is uncertain, a `ManualReviewView` embed is posted with admin-only Approve (green) and Reject (red) buttons. Reject opens a modal (`RejectReasonModal`) for an optional reason shown to the user.
 - **AI context**: Admins can configure `verification.ai_prompt_context` via `/config verification set_ai_prompt_context` to tell the AI what a valid payment looks like for their community. This text is appended to the base vision prompt.
+- **Payment recency**: The AI prompt includes today's date and the configured window. The AI must extract `payment_date` (YYYY-MM-DD) from the screenshot. A server-side check then validates the date independently — if older than the window, the submission is hard-rejected even if the AI said `can_verify: true`. If no date can be read and AI was confident, it is escalated to manual review. Default window: 35 days. Configurable per guild via `/config verification set_max_payment_age <days>` (setting: `verification.max_payment_age_days`).
+- **Proof types**: The AI classifies screenshots as `"payment"` (receipt with date) or `"subscription"` (account/billing page showing active status, next billing date — no payment date required). Date recency only applies to `"payment"` type.
+- **Reviewer role**: When the AI triggers manual review, the configured `verification.reviewer_role_id` is tagged (`content=@role`) in the verification channel alongside the review embed. Falls back to no tag if not set. Configurable via `/config verification set_reviewer_role`.
+- **Identity check**: The Discord display name and username are injected into the AI prompt. The AI returns `identifier_match: "match" | "mismatch" | "not_visible"`. A `"mismatch"` (visible name/ID in screenshot doesn't match the Discord user) is a hard server-side reject. A `"not_visible"` escalates an otherwise-confident AI decision to manual review. The intro embed instructs users to ensure their name or account username is visible.
 - **Key**: Conservative vision model, no screenshots stored; log summaries contain no payment details (user, outcome, resolver, timestamp only)
 - **Premium**: Only guilds with an active Alphapy premium subscription can use verification (`guild_has_premium`). The member clicking Start verification does not need Alphapy premium—they are proving payment to the guild to get the verified role.
 
@@ -228,7 +232,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **alphapy** (3045 symbols, 10490 relationships, 262 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **alphapy** (3095 symbols, 10503 relationships, 266 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

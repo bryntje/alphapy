@@ -397,6 +397,25 @@ settings_service.register(
 )
 settings_service.register(
     SettingDefinition(
+        scope="verification",
+        key="max_payment_age_days",
+        description="Maximum age in days a payment screenshot may be (default: 35). Payments older than this are rejected.",
+        value_type="int",
+        default=35,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="verification",
+        key="reviewer_role_id",
+        description="Role that gets tagged in the verification channel when manual review is required.",
+        value_type="role",
+        default=None,
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
         scope="growth",
         key="log_channel_id",
         description="Channel where shared Growth Check-in posts are published.",
