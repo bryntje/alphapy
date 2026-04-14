@@ -161,13 +161,16 @@ Tracks user acceptance of the Terms of Service and Privacy Policy for GDPR compl
 Guild GDPR agreement acceptance (the "I Agree" button in the GDPR channel).
 
 **Columns:**
-- `user_id` (BIGINT, PRIMARY KEY): Discord user ID
+- `user_id` (BIGINT, NOT NULL): Discord user ID
+- `guild_id` (BIGINT, NOT NULL): Discord guild ID — scopes acceptances per server (added migration 018)
 - `accepted` (INTEGER, NOT NULL, DEFAULT 0): 1 = accepted, 0 = not accepted
 - `timestamp` (TIMESTAMP, NOT NULL, DEFAULT CURRENT_TIMESTAMP): When the user clicked "I Agree"
 
+**Primary Key:** `(user_id, guild_id)`
+
 **Notes:**
-- Written by `cogs/gdpr.py` when a user clicks the "I Agree" button on the GDPR Data Processing Agreement embed
-- Formalised in Alembic migration 016 (was previously created ad-hoc by `cogs/migrate_gdpr.py`)
+- Written by `cogs/gdpr.py` / `utils/gdpr_helpers.py` when a user clicks the "I Agree" button on the GDPR embed
+- Formalised in Alembic migration 016; `guild_id` column added in migration 018
 - Deleted as part of GDPR erasure when a user's Supabase account is deleted (`webhooks/supabase.py:_purge_railway_data`) or when the user runs `/delete_my_data`
 
 ---
@@ -534,6 +537,118 @@ All tables have appropriate indexes for common query patterns:
 - **Audit logs**: No automatic cleanup (can be configured per guild)
 - **Ticket summaries**: No automatic cleanup
 - **Other tables**: No automatic cleanup (manual maintenance recommended)
+
+---
+
+### `automod_actions`
+
+Reusable action definitions for the auto-moderation system. Referenced by rules via FK.
+
+**Columns:**
+- `id` (SERIAL, PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL): Discord guild ID
+- `action_type` (TEXT, NOT NULL): `delete`, `warn`, `mute`, `timeout`, `ban`
+- `severity` (INTEGER, DEFAULT 1): Severity level (1–5)
+- `config` (JSONB, NOT NULL): Action-specific config (e.g. timeout duration)
+- `is_premium` (BOOLEAN, DEFAULT false): Whether this action requires premium
+- `created_by` (BIGINT): User ID who created the action
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW())
+
+**Indexes:** `idx_automod_actions_guild` on `(guild_id)`
+
+**Notes:** Added in migration 009. Created before `automod_rules` to satisfy the FK constraint.
+
+---
+
+### `automod_rules`
+
+Per-guild content moderation rules. Each rule references one action via FK.
+
+**Columns:**
+- `id` (SERIAL, PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL): Discord guild ID
+- `rule_type` (TEXT, NOT NULL): `spam`, `content`, `ai`, `regex`
+- `name` (TEXT, NOT NULL): Human-readable rule name
+- `enabled` (BOOLEAN, DEFAULT true)
+- `config` (JSONB, NOT NULL): Rule-specific config (patterns, thresholds, etc.)
+- `action_id` (INTEGER, FK → `automod_actions.id`): Action to take on trigger
+- `created_by` (BIGINT)
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW())
+- `updated_at` (TIMESTAMPTZ, DEFAULT NOW())
+- `is_premium` (BOOLEAN, DEFAULT false)
+
+**Indexes:**
+- `idx_automod_rules_guild_enabled` on `(guild_id, enabled)`
+- `idx_automod_rules_type` on `(rule_type)`
+
+**Notes:** Managed via `/config automod` subcommands. Toggle individual rules with `/config automod set_rule_enabled`.
+
+---
+
+### `automod_logs`
+
+Audit log of every auto-moderation trigger.
+
+**Columns:**
+- `id` (SERIAL, PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL)
+- `user_id` (BIGINT, NOT NULL): User who triggered the rule
+- `message_id` (BIGINT): Offending message ID (nullable)
+- `channel_id` (BIGINT): Channel where the trigger occurred (nullable)
+- `rule_id` (INTEGER, FK → `automod_rules.id`)
+- `action_taken` (TEXT, NOT NULL): Action that was executed
+- `message_content` (TEXT): Captured message text (nullable)
+- `ai_analysis` (JSONB): AI analysis result if `rule_type = 'ai'` (nullable)
+- `context` (JSONB): Additional context payload (nullable)
+- `moderator_id` (BIGINT): Set when action was a manual override (nullable)
+- `timestamp` (TIMESTAMPTZ, DEFAULT NOW())
+- `appeal_status` (TEXT, DEFAULT `'none'`): `none`, `pending`, `approved`, `denied`
+
+**Indexes:**
+- `idx_automod_logs_guild_user` on `(guild_id, user_id)`
+- `idx_automod_logs_timestamp` on `(timestamp)`
+- `idx_automod_logs_rule` on `(rule_id)`
+
+---
+
+### `automod_stats`
+
+Daily aggregated statistics per guild per rule, used by `/config automod stats` and dashboard analytics.
+
+**Columns:**
+- `id` (SERIAL, PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL)
+- `rule_id` (INTEGER, FK → `automod_rules.id`)
+- `date` (DATE, NOT NULL)
+- `triggers_count` (INTEGER, DEFAULT 0)
+- `false_positives` (INTEGER, DEFAULT 0)
+- `avg_response_time` (FLOAT)
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW())
+
+**Unique constraint:** `(guild_id, rule_id, date)`
+
+**Indexes:** `idx_automod_stats_date` on `(date)`
+
+---
+
+### `automod_user_history`
+
+Running violation totals per user per rule type. Used for escalating action thresholds.
+
+**Columns:**
+- `id` (SERIAL, PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL)
+- `user_id` (BIGINT, NOT NULL)
+- `rule_type` (TEXT, NOT NULL)
+- `violation_count` (INTEGER, DEFAULT 1)
+- `last_violation` (TIMESTAMPTZ, DEFAULT NOW())
+- `total_points` (INTEGER, DEFAULT 0)
+- `context` (JSONB)
+- `updated_at` (TIMESTAMPTZ, DEFAULT NOW())
+
+**Unique constraint:** `(guild_id, user_id, rule_type)`
+
+**Indexes:** `idx_automod_user_history_guild_user` on `(guild_id, user_id)`
 
 ---
 
