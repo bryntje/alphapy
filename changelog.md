@@ -5,18 +5,33 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+---
+
+## [3.5.0] - 2026-04-14
+
+### Added
 - **`/config gdpr post`**: New slash command (admin-only) replaces the legacy `!postgdpr` owner-only prefix command. Posts the GDPR agreement embed to the configured channel and pins it. The server name is now inserted dynamically from `guild.name` instead of being hardcoded.
 - **`/config gdpr set_acceptance_role [@role]`**: Configure a role to automatically assign to members when they click "I Agree" on the GDPR embed. Useful for unlocking onboarding channels via Discord's channel permissions. Leave empty to clear.
 - **`utils/gdpr_helpers.py`**: Shared module extracted from `cogs/gdpr.py` to avoid circular imports — contains `GDPRView`, `GDPRButton`, `store_gdpr_acceptance`, and `build_gdpr_text`.
 - **Migration 018**: Adds `guild_id BIGINT` column to `gdpr_acceptance`, scoping acceptances per guild.
 - **API `GET /api/dashboard/{guild_id}/gdpr`**: Returns `{ acceptance_count }` for the guild (admin-authenticated).
 - **Dashboard route `GET /api/dashboard/guild/[guildId]/gdpr`**: Next.js API route proxying GDPR stats to the dashboard.
+- **Ticket transcript on archive**: When an admin archives a ticket, the full channel history (up to 500 messages, oldest-first) is exported as a `ticket-{id}-transcript.txt` file and sent to the configured log channel before the Discord channel is deleted. Includes message content, attachments, and embed titles with timestamps.
 
 ### Removed
 - **`!postgdpr` prefix command**: Replaced by `/config gdpr post`.
 
 ### Fixed
-- Dutch strings in `cogs/gdpr.py` and `cogs/configuration.py` replaced with English equivalents.
+- **Dutch strings**: `cogs/gdpr.py` and `cogs/configuration.py` Dutch strings replaced with English equivalents.
+- **Ticket category stale cache**: `create_ticket_for_user` now calls `await guild.fetch_channel()` instead of `guild.get_channel()` (cache) to verify the configured ticket category still exists on Discord. A deleted or missing category now returns a clear user-facing error instead of a 400 traceback.
+- **Ticket channel creation guard**: `guild.create_text_channel()` is now wrapped in a `discord.HTTPException` handler as a last-resort fallback, surfacing a helpful ephemeral error to the user.
+- **Ticket panel text**: Default panel embed copy made generic (was Innersync-specific). Innersync footer unchanged.
+- **DB pool — `TimeoutError` on connection reset**: `asyncpg` occasionally times out resetting a connection's state during `pool.release()`. `acquire_safe` now catches `TimeoutError` alongside other connection errors. The reminder loop handles it explicitly at `WARNING` level instead of logging a full `ERROR` traceback for a transient event.
 
 ---
 

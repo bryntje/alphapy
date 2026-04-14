@@ -4,6 +4,7 @@ from discord import app_commands
 from discord.app_commands import checks as app_checks
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
+import io
 import json
 import asyncio
 import time
@@ -1825,6 +1826,56 @@ class TicketActionView(discord.ui.View):
             logger.error(f"Failed to escalate ticket: {e}")
             await interaction.response.send_message("❌ Failed to escalate ticket. Please try again.", ephemeral=True)
 
+    async def _send_transcript(self, channel: discord.TextChannel, guild_id: int) -> None:
+        """Fetch the channel history and send a plain-text transcript to the log channel."""
+        if not self.cog:
+            return
+        log_channel_id = self.cog._get_log_channel_id(guild_id)
+        if not log_channel_id:
+            return
+        log_channel = self.bot.get_channel(log_channel_id)
+        if not log_channel or not hasattr(log_channel, "send"):
+            return
+
+        buf = io.StringIO()
+        buf.write(f"=== Ticket #{self.ticket_id} Transcript ===\n")
+        buf.write(f"Channel : #{channel.name}\n")
+        buf.write(f"Guild ID: {guild_id}\n")
+        buf.write(f"Exported: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n")
+        buf.write("=" * 48 + "\n\n")
+
+        try:
+            async for msg in channel.history(limit=500, oldest_first=True):
+                ts = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                author = f"{msg.author} ({msg.author.id})"
+                content = msg.content or ""
+                buf.write(f"[{ts}] {author}\n")
+                if content:
+                    buf.write(f"  {content}\n")
+                for att in msg.attachments:
+                    buf.write(f"  [Attachment: {att.filename} — {att.url}]\n")
+                for emb in msg.embeds:
+                    emb_title = emb.title or "(embed)"
+                    buf.write(f"  [Embed: {emb_title}]\n")
+                buf.write("\n")
+        except Exception as e:
+            logger.warning(f"⚠️ TicketBot: could not fetch history for transcript (ticket {self.ticket_id}): {e}")
+            return
+
+        transcript_bytes = buf.getvalue().encode("utf-8")
+        file = discord.File(
+            fp=io.BytesIO(transcript_bytes),
+            filename=f"ticket-{self.ticket_id}-transcript.txt",
+        )
+        try:
+            log_text_channel = cast(discord.TextChannel, log_channel)
+            await log_text_channel.send(
+                content=f"🗄 Transcript for ticket #{self.ticket_id}",
+                file=file,
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ TicketBot: failed to send transcript for ticket {self.ticket_id}: {e}")
+
     @discord.ui.button(label="🗄 Archive ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_archive_btn", disabled=True)
     async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         # Admin-only
@@ -1852,9 +1903,13 @@ class TicketActionView(discord.ui.View):
             await interaction.followup.send("❌ Failed to archive ticket. Please try again.", ephemeral=True)
             return
 
+        # Send transcript to log channel before deleting
+        ch = interaction.channel
+        if isinstance(ch, discord.TextChannel) and interaction.guild:
+            await self._send_transcript(ch, interaction.guild.id)
+
         # Delete the channel after archiving to keep Discord tidy
         try:
-            ch = interaction.channel
             if isinstance(ch, discord.TextChannel):
                 await interaction.followup.send("🗄 Archiving ticket channel…", ephemeral=True)
                 await ch.delete(reason=f"Ticket {self.ticket_id} archived by {interaction.user}")
