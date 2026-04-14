@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+---
+
+## [3.4.0] - 2026-04-14
+
 ### Changed (Breaking)
 - **`/config` command consolidation** — Reduced the `/config` tree from 101 to 71 subcommands to stay within Discord's 8 000-character command-payload limit:
   - All `reset_X` commands removed. Resetting is now done by calling `set_X` **without a value** (Discord shows the parameter as optional with `[...]`).
