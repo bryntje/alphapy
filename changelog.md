@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed (Breaking)
+- **`/config` command consolidation** — Reduced the `/config` tree from 101 to 69 subcommands to stay within Discord's 8 000-character command-payload limit:
+  - All `reset_X` commands removed. Resetting is now done by calling `set_X` **without a value** (Discord shows the parameter as optional with `[...]`).
+  - All `enable` / `disable` command pairs replaced by a single `toggle <enabled: bool>` command per group (invites, reminders, gdpr, onboarding, automod).
+  - `automod enable_rule` + `disable_rule` replaced by `automod set_rule_enabled <rule_id> <true|false>`.
+  - `growth reset_channel` removed; `growth set_channel` with no argument now clears the setting.
+  - `GrowthChannelSetupView` (the UI picker shown when no channel was provided) removed.
+
 ### Added
 - **`/delete_my_data`**: New slash command for self-service GDPR erasure. Any user can permanently delete all their personal data from Alphapy's database (onboarding, tickets, audit logs, AI usage records, reflections, consent records, etc.) via a two-step ephemeral confirmation flow. Does not affect Discord or Supabase accounts. Premium subscription records are retained per Belgian tax law (7 years).
 - **Retention cleanup**: Daily background task automatically deletes `audit_logs` and `faq_search_logs` records older than 90 days, satisfying GDPR data minimisation requirements.

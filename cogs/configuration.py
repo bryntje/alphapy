@@ -209,81 +209,67 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @system_group.command(name="set_log_channel", description="Set the log channel")
+    @system_group.command(name="set_log_channel", description="Set the log channel (leave empty to reset)")
     @requires_admin()
+    @app_commands.describe(channel="Channel for bot logs. Leave empty to reset to default.")
     async def system_set_log_channel(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel,
+        channel: Optional[discord.TextChannel] = None,
     ):
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("system", "log_channel_id", channel.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Log channel set to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting updated",
-            f"`system.log_channel_id` set to {channel.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @system_group.command(name="reset_log_channel", description="Reset log channel to default value")
+        if channel is not None:
+            await self.settings.set("system", "log_channel_id", channel.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Log channel set to {channel.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "⚙️ Setting updated",
+                f"`system.log_channel_id` set to {channel.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("system", "log_channel_id", interaction.guild.id, interaction.user.id)
+            default_value = self.settings.get("system", "log_channel_id", interaction.guild.id)
+            formatted = f"<#{default_value}>" if default_value else "—"
+            await interaction.followup.send(f"↩️ Log channel reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "⚙️ Setting reset",
+                f"`system.log_channel_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+
+    @system_group.command(name="set_rules_channel", description="Set the rules/onboarding channel (leave empty to reset)")
     @requires_admin()
-    async def system_reset_log_channel(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("system", "log_channel_id", interaction.guild.id, interaction.user.id)
-        default_value = self.settings.get("system", "log_channel_id", interaction.guild.id)
-        formatted = f"<#{default_value}>" if default_value else "—"
-        await interaction.followup.send(
-            f"↩️ Log channel reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting reset",
-            f"`system.log_channel_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @system_group.command(name="set_rules_channel", description="Set the onboarding channel.")
-    @requires_admin()
+    @app_commands.describe(channel="Rules and onboarding channel. Leave empty to reset to default.")
     async def system_set_rules_channel(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel,
+        channel: Optional[discord.TextChannel] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("system", "rules_channel_id", channel.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Rules channel set to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting updated",
-            f"`system.rules_channel_id` set to {channel.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @system_group.command(name="reset_rules_channel", description="Reset the onboarding channel.")
+        if channel is not None:
+            await self.settings.set("system", "rules_channel_id", channel.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Rules channel set to {channel.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "⚙️ Setting updated",
+                f"`system.rules_channel_id` set to {channel.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("system", "rules_channel_id", interaction.guild.id, interaction.user.id)
+            default_value = self.settings.get("system", "rules_channel_id", interaction.guild.id)
+            formatted = f"<#{default_value}>" if default_value else "—"
+            await interaction.followup.send(f"↩️ Rules channel reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "⚙️ Setting reset",
+                f"`system.rules_channel_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+
+    @system_group.command(name="set_log_level", description="Set log verbosity (leave empty to reset)")
     @requires_admin()
-    async def system_reset_rules_channel(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("system", "rules_channel_id", interaction.guild.id, interaction.user.id)
-        default_value = self.settings.get("system", "rules_channel_id", interaction.guild.id)
-        formatted = f"<#{default_value}>" if default_value else "—"
-        await interaction.followup.send(
-            f"↩️ Rules channel reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting reset",
-            f"`system.rules_channel_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @system_group.command(name="set_log_level", description="Set log verbosity level")
-    @requires_admin()
+    @app_commands.describe(level="Log verbosity level. Leave empty to reset to default.")
     @app_commands.choices(level=[
         app_commands.Choice(name="Verbose - All logs", value="verbose"),
         app_commands.Choice(name="Normal - No debug", value="normal"),
@@ -292,36 +278,27 @@ class Configuration(AlphaCog):
     async def system_set_log_level(
         self,
         interaction: discord.Interaction,
-        level: app_commands.Choice[str],
+        level: Optional[app_commands.Choice[str]] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("system", "log_level", level.value, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Log level set to **{level.name}**.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting updated",
-            f"`system.log_level` set to `{level.value}` by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @system_group.command(name="reset_log_level", description="Reset log level to default.")
-    @requires_admin()
-    async def system_reset_log_level(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("system", "log_level", interaction.guild.id, interaction.user.id)
-        default_level = self.settings.get("system", "log_level", interaction.guild.id)
-        await interaction.followup.send(
-            f"↩️ Log level reset to default: **{default_level}**.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting reset",
-            f"`system.log_level` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if level is not None:
+            await self.settings.set("system", "log_level", level.value, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Log level set to **{level.name}**.", ephemeral=True)
+            await self._send_audit_log(
+                "⚙️ Setting updated",
+                f"`system.log_level` set to `{level.value}` by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("system", "log_level", interaction.guild.id, interaction.user.id)
+            default_level = self.settings.get("system", "log_level", interaction.guild.id)
+            await interaction.followup.send(f"↩️ Log level reset to default: **{default_level}**.", ephemeral=True)
+            await self._send_audit_log(
+                "⚙️ Setting reset",
+                f"`system.log_level` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
     @embedwatcher_group.command(name="show", description="Show embed watcher settings")
     @requires_admin()
     async def embedwatcher_show(self, interaction: discord.Interaction) -> None:
@@ -337,168 +314,122 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @embedwatcher_group.command(name="set_announcements", description="Choose the channel to monitor")
+    @embedwatcher_group.command(name="set_announcements", description="Set the channel to monitor (leave empty to reset)")
     @requires_admin()
+    @app_commands.describe(channel="Channel to watch for event embeds. Leave empty to reset.")
     async def embedwatcher_set_announcements(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel,
+        channel: Optional[discord.TextChannel] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("embedwatcher", "announcements_channel_id", channel.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Announcement channel set to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔔 Embed watcher",
-            f"`embedwatcher.announcements_channel_id` → {channel.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @embedwatcher_group.command(name="reset_announcements", description="Reset announcement channel.")
+        if channel is not None:
+            await self.settings.set("embedwatcher", "announcements_channel_id", channel.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Announcement channel set to {channel.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "🔔 Embed watcher",
+                f"`embedwatcher.announcements_channel_id` → {channel.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("embedwatcher", "announcements_channel_id", interaction.guild.id, interaction.user.id)
+            default_value = self.settings.get("embedwatcher", "announcements_channel_id", interaction.guild.id)
+            formatted = f"<#{default_value}>" if default_value else "—"
+            await interaction.followup.send(f"↩️ Announcement channel reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "🔔 Embed watcher",
+                f"`embedwatcher.announcements_channel_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+
+    @embedwatcher_group.command(name="set_offset", description="Set reminder offset in minutes (leave empty to reset)")
     @requires_admin()
-    async def embedwatcher_reset_announcements(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("embedwatcher", "announcements_channel_id", interaction.guild.id, interaction.user.id)
-        default_value = self.settings.get("embedwatcher", "announcements_channel_id", interaction.guild.id)
-        formatted = f"<#{default_value}>" if default_value else "—"
-        await interaction.followup.send(
-            f"↩️ Announcement channel reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔔 Embed watcher",
-            f"`embedwatcher.announcements_channel_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @embedwatcher_group.command(name="set_offset", description="Set reminder offset (minutes)")
-    @requires_admin()
+    @app_commands.describe(minutes="Offset in minutes (0–4320). Leave empty to reset to default.")
     async def embedwatcher_set_offset(
         self,
         interaction: discord.Interaction,
-        minutes: app_commands.Range[int, 0, 4320],
+        minutes: Optional[app_commands.Range[int, 0, 4320]] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("embedwatcher", "reminder_offset_minutes", minutes, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Reminder offset set to {minutes} minutes.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔁 Reminder offset",
-            f"`embedwatcher.reminder_offset_minutes` → {minutes} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @embedwatcher_group.command(name="reset_offset", description="Reset reminder offset to default")
+        if minutes is not None:
+            await self.settings.set("embedwatcher", "reminder_offset_minutes", minutes, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Reminder offset set to {minutes} minutes.", ephemeral=True)
+            await self._send_audit_log(
+                "🔁 Reminder offset",
+                f"`embedwatcher.reminder_offset_minutes` → {minutes} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("embedwatcher", "reminder_offset_minutes", interaction.guild.id, interaction.user.id)
+            default_minutes = self.settings.get("embedwatcher", "reminder_offset_minutes", interaction.guild.id)
+            await interaction.followup.send(f"↩️ Reminder offset reset to default: {default_minutes} minutes.", ephemeral=True)
+            await self._send_audit_log(
+                "🔁 Reminder offset",
+                f"`embedwatcher.reminder_offset_minutes` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+
+    @embedwatcher_group.command(name="set_non_embed", description="Enable/disable non-embed message parsing (leave empty to reset)")
     @requires_admin()
-    async def embedwatcher_reset_offset(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("embedwatcher", "reminder_offset_minutes", interaction.guild.id, interaction.user.id)
-        default_minutes = self.settings.get("embedwatcher", "reminder_offset_minutes", interaction.guild.id)
-        await interaction.followup.send(
-            f"✅ Reminder offset reset to default: {default_minutes} minutes.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔁 Reminder offset",
-            f"`embedwatcher.reminder_offset_minutes` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    
-    @embedwatcher_group.command(name="set_non_embed", description="Toggle non-embed message parsing.")
-    @requires_admin()
+    @app_commands.describe(enabled="True to enable, False to disable. Leave empty to reset to default.")
     async def embedwatcher_set_non_embed(
         self,
         interaction: discord.Interaction,
-        enabled: bool,
+        enabled: Optional[bool] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("embedwatcher", "non_embed_enabled", enabled, interaction.guild.id, interaction.user.id)
-        status = "enabled" if enabled else "disabled"
-        await interaction.followup.send(
-            f"✅ Non-embed message parsing {status}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔔 Embed watcher",
-            f"`embedwatcher.non_embed_enabled` → {enabled} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    
-    @embedwatcher_group.command(name="reset_non_embed", description="Reset non-embed setting to default")
+        if enabled is not None:
+            await self.settings.set("embedwatcher", "non_embed_enabled", enabled, interaction.guild.id, interaction.user.id)
+            status = "enabled" if enabled else "disabled"
+            await interaction.followup.send(f"✅ Non-embed message parsing {status}.", ephemeral=True)
+            await self._send_audit_log(
+                "🔔 Embed watcher",
+                f"`embedwatcher.non_embed_enabled` → {enabled} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("embedwatcher", "non_embed_enabled", interaction.guild.id, interaction.user.id)
+            default_value = self.settings.get("embedwatcher", "non_embed_enabled", interaction.guild.id)
+            status = "enabled" if default_value else "disabled"
+            await interaction.followup.send(f"↩️ Non-embed message parsing reset to default: {status}.", ephemeral=True)
+            await self._send_audit_log(
+                "🔔 Embed watcher",
+                f"`embedwatcher.non_embed_enabled` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+
+    @embedwatcher_group.command(name="set_process_bot_messages", description="Enable/disable processing of bot messages (leave empty to reset)")
     @requires_admin()
-    async def embedwatcher_reset_non_embed(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("embedwatcher", "non_embed_enabled", interaction.guild.id, interaction.user.id)
-        default_value = self.settings.get("embedwatcher", "non_embed_enabled", interaction.guild.id)
-        status = "ingeschakeld" if default_value else "uitgeschakeld"
-        await interaction.followup.send(
-            f"✅ Non-embed message parsing reset to default: {status}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔔 Embed watcher",
-            f"`embedwatcher.non_embed_enabled` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    
-    @embedwatcher_group.command(name="set_process_bot_messages", description="Toggle bot message processing.")
-    @requires_admin()
+    @app_commands.describe(enabled="True to enable, False to disable. Leave empty to reset to default.")
     async def embedwatcher_set_process_bot_messages(
         self,
         interaction: discord.Interaction,
-        enabled: bool,
+        enabled: Optional[bool] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("embedwatcher", "process_bot_messages", enabled, interaction.guild.id, interaction.user.id)
-        status = "enabled" if enabled else "disabled"
-        await interaction.followup.send(
-            f"✅ Processing of bot's own messages {status}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔔 Embed watcher",
-            f"`embedwatcher.process_bot_messages` → {enabled} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    
-    @embedwatcher_group.command(name="reset_process_bot_messages", description="Reset bot message processing.")
-    @requires_admin()
-    async def embedwatcher_reset_process_bot_messages(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("embedwatcher", "process_bot_messages", interaction.guild.id, interaction.user.id)
-        default_value = self.settings.get("embedwatcher", "process_bot_messages", interaction.guild.id)
-        status = "ingeschakeld" if default_value else "uitgeschakeld"
-        await interaction.followup.send(
-            f"✅ Processing of bot's own messages reset to default: {status}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔔 Embed watcher",
-            f"`embedwatcher.process_bot_messages` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("embedwatcher", "reminder_offset_minutes", interaction.guild.id, interaction.user.id)
-        default_minutes = self.settings.get("embedwatcher", "reminder_offset_minutes", interaction.guild.id)
-        await interaction.followup.send(
-            f"↩️ Reminder offset reset to default: {default_minutes} minutes.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔁 Reminder offset",
-            f"`embedwatcher.reminder_offset_minutes` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if enabled is not None:
+            await self.settings.set("embedwatcher", "process_bot_messages", enabled, interaction.guild.id, interaction.user.id)
+            status = "enabled" if enabled else "disabled"
+            await interaction.followup.send(f"✅ Processing of bot's own messages {status}.", ephemeral=True)
+            await self._send_audit_log(
+                "🔔 Embed watcher",
+                f"`embedwatcher.process_bot_messages` → {enabled} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("embedwatcher", "process_bot_messages", interaction.guild.id, interaction.user.id)
+            default_value = self.settings.get("embedwatcher", "process_bot_messages", interaction.guild.id)
+            status = "enabled" if default_value else "disabled"
+            await interaction.followup.send(f"↩️ Processing of bot messages reset to default: {status}.", ephemeral=True)
+            await self._send_audit_log(
+                "🔔 Embed watcher",
+                f"`embedwatcher.process_bot_messages` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
     @ticketbot_group.command(name="show", description="Show TicketBot settings")
     @requires_admin()
     async def ticketbot_show(self, interaction: discord.Interaction) -> None:
@@ -514,114 +445,92 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @ticketbot_group.command(name="set_category", description="Set the ticketcategorie in")
+    @ticketbot_group.command(name="set_category", description="Set the ticket category (leave empty to reset)")
     @requires_admin()
+    @app_commands.describe(category="Category for ticket channels. Leave empty to reset.")
     async def ticketbot_set_category(
         self,
         interaction: discord.Interaction,
-        category: discord.CategoryChannel,
+        category: Optional[discord.CategoryChannel] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("ticketbot", "category_id", category.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Ticket category set to {category.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎟️ TicketBot",
-            f"`ticketbot.category_id` → {category.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @ticketbot_group.command(name="reset_category", description="Reset ticket category to default")
+        if category is not None:
+            await self.settings.set("ticketbot", "category_id", category.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Ticket category set to {category.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "🎟️ TicketBot",
+                f"`ticketbot.category_id` → {category.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("ticketbot", "category_id", interaction.guild.id, interaction.user.id)
+            default_category_id = self.settings.get("ticketbot", "category_id", interaction.guild.id)
+            formatted = f"<#{default_category_id}>" if default_category_id else "—"
+            await interaction.followup.send(f"↩️ Ticket category reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "🎟️ TicketBot",
+                f"`ticketbot.category_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+
+    @ticketbot_group.command(name="set_staff_role", description="Set the support role (leave empty to reset)")
     @requires_admin()
-    async def ticketbot_reset_category(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("ticketbot", "category_id", interaction.guild.id, interaction.user.id)
-        default_category_id = self.settings.get("ticketbot", "category_id", interaction.guild.id)
-        formatted = f"<#{default_category_id}>" if default_category_id else "—"
-        await interaction.followup.send(
-            f"↩️ Ticket category reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎟️ TicketBot",
-            f"`ticketbot.category_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @ticketbot_group.command(name="set_staff_role", description="Set the supportrol in")
-    @requires_admin()
+    @app_commands.describe(role="Role assigned to support staff. Leave empty to reset.")
     async def ticketbot_set_staff_role(
         self,
         interaction: discord.Interaction,
-        role: discord.Role,
+        role: Optional[discord.Role] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("ticketbot", "staff_role_id", role.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Support role set to {role.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎟️ TicketBot",
-            f"`ticketbot.staff_role_id` → {role.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @ticketbot_group.command(name="reset_staff_role", description="Reset support role to default")
+        if role is not None:
+            await self.settings.set("ticketbot", "staff_role_id", role.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Support role set to {role.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "🎟️ TicketBot",
+                f"`ticketbot.staff_role_id` → {role.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("ticketbot", "staff_role_id", interaction.guild.id, interaction.user.id)
+            default_role_id = self.settings.get("ticketbot", "staff_role_id", interaction.guild.id)
+            formatted = f"<@&{default_role_id}>" if default_role_id else "—"
+            await interaction.followup.send(f"↩️ Support role reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "🎟️ TicketBot",
+                f"`ticketbot.staff_role_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+
+    @ticketbot_group.command(name="set_escalation_role", description="Set the escalation role (leave empty to reset)")
     @requires_admin()
-    async def ticketbot_reset_staff_role(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("ticketbot", "staff_role_id", interaction.guild.id, interaction.user.id)
-        default_role_id = self.settings.get("ticketbot", "staff_role_id", interaction.guild.id)
-        formatted = f"<@&{default_role_id}>" if default_role_id else "—"
-        await interaction.followup.send(
-            f"↩️ Support role reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎟️ TicketBot",
-            f"`ticketbot.staff_role_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @ticketbot_group.command(name="set_escalation_role", description="Set the escalatierol in")
-    @requires_admin()
+    @app_commands.describe(role="Role for escalated tickets. Leave empty to reset.")
     async def ticketbot_set_escalation_role(
         self,
         interaction: discord.Interaction,
-        role: discord.Role,
+        role: Optional[discord.Role] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("ticketbot", "escalation_role_id", role.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Escalation role set to {role.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎟️ TicketBot",
-            f"`ticketbot.escalation_role_id` → {role.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @ticketbot_group.command(name="reset_escalation_role", description="Reset escalation role to default")
-    @requires_admin()
-    async def ticketbot_reset_escalation_role(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("ticketbot", "escalation_role_id", interaction.guild.id, interaction.user.id)
-        default_role_id = self.settings.get("ticketbot", "escalation_role_id", interaction.guild.id)
-        formatted = f"<@&{default_role_id}>" if default_role_id else "—"
-        await interaction.followup.send(
-            f"↩️ Escalation role reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎟️ TicketBot",
-            f"`ticketbot.escalation_role_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if role is not None:
+            await self.settings.set("ticketbot", "escalation_role_id", role.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Escalation role set to {role.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "🎟️ TicketBot",
+                f"`ticketbot.escalation_role_id` → {role.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("ticketbot", "escalation_role_id", interaction.guild.id, interaction.user.id)
+            default_role_id = self.settings.get("ticketbot", "escalation_role_id", interaction.guild.id)
+            formatted = f"<@&{default_role_id}>" if default_role_id else "—"
+            await interaction.followup.send(f"↩️ Escalation role reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "🎟️ TicketBot",
+                f"`ticketbot.escalation_role_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
     @gpt_group.command(name="show", description="Show Grok / AI settings")
     @requires_admin()
     async def gpt_show(self, interaction: discord.Interaction) -> None:
@@ -637,92 +546,70 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @gpt_group.command(name="set_model", description="Set the Grok model (bot owner only)")
+    @gpt_group.command(name="set_model", description="Set the Grok model (bot owner only; leave empty to reset)")
     @app_commands.describe(
-        model="The Grok model to use (e.g. grok-3, grok-4-1-fast-reasoning)",
+        model="Grok model name (e.g. grok-3). Leave empty to reset to default.",
         guild_id="Target guild ID — use this to set the model for a guild you are not in",
     )
-    async def gpt_set_model(self, interaction: discord.Interaction, model: str, guild_id: Optional[str] = None) -> None:
+    async def gpt_set_model(self, interaction: discord.Interaction, model: Optional[str] = None, guild_id: Optional[str] = None) -> None:
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id not in config.OWNER_IDS:
             await interaction.followup.send("❌ This command is restricted to bot owners.", ephemeral=True)
-            return
-        model_clean = model.strip()
-        if not model_clean:
-            await interaction.followup.send("❌ Model name cannot be empty.", ephemeral=True)
             return
         effective_guild_id, guild_id_error = self._resolve_guild_id(interaction, guild_id)
         if guild_id_error:
             await interaction.followup.send(guild_id_error, ephemeral=True)
             return
-        await self.settings.set("gpt", "model", model_clean, effective_guild_id, interaction.user.id)
         guild_label = f"guild `{effective_guild_id}`" if effective_guild_id != interaction.guild_id else "this guild"
-        await interaction.followup.send(f"✅ Grok model set to `{model_clean}` for {guild_label}.", ephemeral=True)
-        await self._send_audit_log(
-            "🤖 Grok",
-            f"`gpt.model` → `{model_clean}` for guild `{effective_guild_id}` by {interaction.user.mention}.",
-            interaction.guild_id,
-        )
+        if model is not None:
+            model_clean = model.strip()
+            if not model_clean:
+                await interaction.followup.send("❌ Model name cannot be empty.", ephemeral=True)
+                return
+            await self.settings.set("gpt", "model", model_clean, effective_guild_id, interaction.user.id)
+            await interaction.followup.send(f"✅ Grok model set to `{model_clean}` for {guild_label}.", ephemeral=True)
+            await self._send_audit_log(
+                "🤖 Grok",
+                f"`gpt.model` → `{model_clean}` for guild `{effective_guild_id}` by {interaction.user.mention}.",
+                interaction.guild_id,
+            )
+        else:
+            await self.settings.clear("gpt", "model", effective_guild_id, interaction.user.id)
+            default_model = self.settings.get("gpt", "model", effective_guild_id)
+            await interaction.followup.send(f"↩️ Grok model reset to default (`{default_model}`) for {guild_label}.", ephemeral=True)
+            await self._send_audit_log(
+                "🤖 Grok",
+                f"`gpt.model` reset to default for guild `{effective_guild_id}` by {interaction.user.mention}.",
+                interaction.guild_id,
+            )
 
-    @gpt_group.command(name="reset_model", description="Reset Grok model to default.")
-    @app_commands.describe(
-        guild_id="Target guild ID — use this to reset the model for a guild you are not in",
-    )
-    async def gpt_reset_model(self, interaction: discord.Interaction, guild_id: Optional[str] = None) -> None:
-        await interaction.response.defer(ephemeral=True)
-        if interaction.user.id not in config.OWNER_IDS:
-            await interaction.followup.send("❌ This command is restricted to bot owners.", ephemeral=True)
-            return
-        effective_guild_id, guild_id_error = self._resolve_guild_id(interaction, guild_id)
-        if guild_id_error:
-            await interaction.followup.send(guild_id_error, ephemeral=True)
-            return
-        await self.settings.clear("gpt", "model", effective_guild_id, interaction.user.id)
-        default_model = self.settings.get("gpt", "model", effective_guild_id)
-        guild_label = f"guild `{effective_guild_id}`" if effective_guild_id != interaction.guild_id else "this guild"
-        await interaction.followup.send(
-            f"↩️ Grok model reset to default (`{default_model}`) for {guild_label}.", ephemeral=True
-        )
-        await self._send_audit_log(
-            "🤖 Grok",
-            f"`gpt.model` reset to default for guild `{effective_guild_id}` by {interaction.user.mention}.",
-            interaction.guild_id,
-        )
-    @gpt_group.command(name="set_temperature", description="Set the Grok temperature")
+    @gpt_group.command(name="set_temperature", description="Set the Grok temperature (leave empty to reset)")
     @requires_admin()
+    @app_commands.describe(temperature="Temperature 0.0–2.0. Leave empty to reset to default.")
     async def gpt_set_temperature(
         self,
         interaction: discord.Interaction,
-        temperature: app_commands.Range[float, 0.0, 2.0],
+        temperature: Optional[app_commands.Range[float, 0.0, 2.0]] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("gpt", "temperature", float(temperature), interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Grok temperature set to `{temperature}`.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🤖 Grok",
-            f"`gpt.temperature` → {temperature} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @gpt_group.command(name="reset_temperature", description="Reset Grok temperature to default")
-    @requires_admin()
-    async def gpt_reset_temperature(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("gpt", "temperature", interaction.guild.id, interaction.user.id)
-        default_temp = self.settings.get("gpt", "temperature", interaction.guild.id)
-        await interaction.followup.send(
-            f"↩️ Grok temperature reset to default: `{default_temp}`.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🤖 Grok",
-            f"`gpt.temperature` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if temperature is not None:
+            await self.settings.set("gpt", "temperature", float(temperature), interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Grok temperature set to `{temperature}`.", ephemeral=True)
+            await self._send_audit_log(
+                "🤖 Grok",
+                f"`gpt.temperature` → {temperature} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("gpt", "temperature", interaction.guild.id, interaction.user.id)
+            default_temp = self.settings.get("gpt", "temperature", interaction.guild.id)
+            await interaction.followup.send(f"↩️ Grok temperature reset to default: `{default_temp}`.", ephemeral=True)
+            await self._send_audit_log(
+                "🤖 Grok",
+                f"`gpt.temperature` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
     @invites_group.command(name="show", description="Show invite tracker settings")
     @requires_admin()
     async def invites_show(self, interaction: discord.Interaction) -> None:
@@ -738,68 +625,55 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @invites_group.command(name="enable", description="Enable/disable de invite tracker in")
+    @invites_group.command(name="toggle", description="Enable or disable the invite tracker")
     @requires_admin()
-    async def invites_enable(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(enabled="True to enable, False to disable.")
+    async def invites_toggle(self, interaction: discord.Interaction, enabled: bool) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("invites", "enabled", True, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("✅ Invite tracker enabled.", ephemeral=True)
+        await self.settings.set("invites", "enabled", enabled, interaction.guild.id, interaction.user.id)
+        state = "enabled" if enabled else "disabled"
+        await interaction.followup.send(f"✅ Invite tracker {state}.", ephemeral=True)
         await self._send_audit_log(
             "🎉 Invites",
-            f"`invites.enabled` → True by {interaction.user.mention}.",
-            interaction.guild.id
+            f"`invites.enabled` → {enabled} by {interaction.user.mention}.",
+            interaction.guild.id,
         )
-    @invites_group.command(name="disable", description="Disable the invite tracker.")
+
+    @invites_group.command(name="set_channel", description="Set the invite announcement channel (leave empty to reset)")
     @requires_admin()
-    async def invites_disable(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("invites", "enabled", False, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("🛑 Invite tracker disabled.", ephemeral=True)
-        await self._send_audit_log(
-            "🎉 Invites",
-            f"`invites.enabled` → False by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @invites_group.command(name="set_channel", description="Set the invite announcement channel")
-    @requires_admin()
+    @app_commands.describe(channel="Channel for invite announcements. Leave empty to reset.")
     async def invites_set_channel(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel,
+        channel: Optional[discord.TextChannel] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("invites", "announcement_channel_id", channel.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Invite announcements channel set to {channel.mention}.",
-            ephemeral=True,
+        if channel is not None:
+            await self.settings.set("invites", "announcement_channel_id", channel.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Invite announcements channel set to {channel.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "🎉 Invites",
+                f"`invites.announcement_channel_id` → {channel.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("invites", "announcement_channel_id", interaction.guild.id, interaction.user.id)
+            default_channel = self.settings.get("invites", "announcement_channel_id", interaction.guild.id)
+            formatted = f"<#{default_channel}>" if default_channel else "—"
+            await interaction.followup.send(f"↩️ Invite channel reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "🎉 Invites",
+                f"`invites.announcement_channel_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id
         )
-        await self._send_audit_log(
-            "🎉 Invites",
-            f"`invites.announcement_channel_id` → {channel.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @invites_group.command(name="reset_channel", description="Reset invite channel to default")
+    @invites_group.command(name="set_template", description="Set or reset invite message template")
     @requires_admin()
-    async def invites_reset_channel(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("invites", "announcement_channel_id", interaction.guild.id, interaction.user.id)
-        default_channel = self.settings.get("invites", "announcement_channel_id", interaction.guild.id)
-        formatted = f"<#{default_channel}>" if default_channel else "—"
-        await interaction.followup.send(
-            f"↩️ Invite channel reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎉 Invites",
-            f"`invites.announcement_channel_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @invites_group.command(name="set_template", description="Set the invite bericht in")
-    @requires_admin()
+    @app_commands.describe(
+        variant="Template variant to update.",
+        template="Message template. Leave empty to reset to default.",
+    )
     @app_commands.choices(
         variant=[
             app_commands.Choice(name="Met inviter", value="with"),
@@ -810,48 +684,27 @@ class Configuration(AlphaCog):
         self,
         interaction: discord.Interaction,
         variant: app_commands.Choice[str],
-        template: str,
+        template: Optional[str] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
         key = "with_inviter_template" if variant.value == "with" else "no_inviter_template"
-        await self.settings.set("invites", key, template, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Invite template voor `{variant.name}` bijgewerkt.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎉 Invites",
-            f"`invites.{key}` ingesteld by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @invites_group.command(name="reset_template", description="Reset invite template to default")
-    @requires_admin()
-    @app_commands.choices(
-        variant=[
-            app_commands.Choice(name="Met inviter", value="with"),
-            app_commands.Choice(name="Zonder inviter", value="without"),
-        ]
-    )
-    async def invites_reset_template(
-        self,
-        interaction: discord.Interaction,
-        variant: app_commands.Choice[str],
-    ):
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        key = "with_inviter_template" if variant.value == "with" else "no_inviter_template"
-        await self.settings.clear("invites", key, interaction.guild.id, interaction.user.id)
-        default_value = self.settings.get("invites", key, interaction.guild.id)
-        await interaction.followup.send(
-            f"↩️ Invite template voor `{variant.name}` reset to default.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🎉 Invites",
-            f"`invites.{key}` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if template is not None:
+            await self.settings.set("invites", key, template, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Invite template for `{variant.name}` updated.", ephemeral=True)
+            await self._send_audit_log(
+                "🎉 Invites",
+                f"`invites.{key}` set by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("invites", key, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"↩️ Invite template for `{variant.name}` reset to default.", ephemeral=True)
+            await self._send_audit_log(
+                "🎉 Invites",
+                f"`invites.{key}` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
     @reminders_group.command(name="show", description="Show reminder settings")
     @requires_admin()
     async def reminders_show(self, interaction: discord.Interaction) -> None:
@@ -867,66 +720,49 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @reminders_group.command(name="enable", description="Enable/disable reminders in")
+    @reminders_group.command(name="toggle", description="Enable or disable reminders")
     @requires_admin()
-    async def reminders_enable(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(enabled="True to enable, False to disable.")
+    async def reminders_toggle(self, interaction: discord.Interaction, enabled: bool) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("reminders", "enabled", True, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("✅ Reminders ingeschakeld.", ephemeral=True)
+        await self.settings.set("reminders", "enabled", enabled, interaction.guild.id, interaction.user.id)
+        state = "enabled" if enabled else "disabled"
+        await interaction.followup.send(f"✅ Reminders {state}.", ephemeral=True)
         await self._send_audit_log(
             "⏰ Reminders",
-            f"`reminders.enabled` → True by {interaction.user.mention}.",
-            interaction.guild.id
+            f"`reminders.enabled` → {enabled} by {interaction.user.mention}.",
+            interaction.guild.id,
         )
-    @reminders_group.command(name="disable", description="Enable/disable reminders uit")
+
+    @reminders_group.command(name="set_default_channel", description="Set default reminder channel (leave empty to reset)")
     @requires_admin()
-    async def reminders_disable(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("reminders", "enabled", False, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("🛑 Reminders uitgeschakeld.", ephemeral=True)
-        await self._send_audit_log(
-            "⏰ Reminders",
-            f"`reminders.enabled` → False by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @reminders_group.command(name="set_default_channel", description="Set a default reminder channel")
-    @requires_admin()
+    @app_commands.describe(channel="Default channel for reminders. Leave empty to reset.")
     async def reminders_set_default_channel(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel,
+        channel: Optional[discord.TextChannel] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("reminders", "default_channel_id", channel.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Default reminder channel set to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⏰ Reminders",
-            f"`reminders.default_channel_id` → {channel.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @reminders_group.command(name="reset_default_channel", description="Reset default reminder channel")
-    @requires_admin()
-    async def reminders_reset_default_channel(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("reminders", "default_channel_id", interaction.guild.id, interaction.user.id)
-        default_value = self.settings.get("reminders", "default_channel_id", interaction.guild.id)
-        formatted = f"<#{default_value}>" if default_value else "—"
-        await interaction.followup.send(
-            f"↩️ Default channel reset to: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⏰ Reminders",
-            f"`reminders.default_channel_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if channel is not None:
+            await self.settings.set("reminders", "default_channel_id", channel.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Default reminder channel set to {channel.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "⏰ Reminders",
+                f"`reminders.default_channel_id` → {channel.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("reminders", "default_channel_id", interaction.guild.id, interaction.user.id)
+            default_value = self.settings.get("reminders", "default_channel_id", interaction.guild.id)
+            formatted = f"<#{default_value}>" if default_value else "—"
+            await interaction.followup.send(f"↩️ Default channel reset to: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "⏰ Reminders",
+                f"`reminders.default_channel_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
     @reminders_group.command(name="set_everyone", description="Sta @everyone mentions toe of niet")
     @requires_admin()
     async def reminders_set_everyone(
@@ -963,255 +799,206 @@ class Configuration(AlphaCog):
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    @verification_group.command(name="set_verified_role", description="Set the verified role.")
+    @verification_group.command(name="set_verified_role", description="Set role given after verification (leave empty to reset)")
     @requires_admin()
+    @app_commands.describe(role="Role to assign after verification. Leave empty to reset.")
     async def verification_set_verified_role(
         self,
         interaction: discord.Interaction,
-        role: discord.Role,
+        role: Optional[discord.Role] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("verification", "verified_role_id", role.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Verified role set to {role.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.verified_role_id` → {role.mention} by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
+        if role is not None:
+            await self.settings.set("verification", "verified_role_id", role.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Verified role set to {role.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.verified_role_id` → {role.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("verification", "verified_role_id", interaction.guild.id, interaction.user.id)
+            default_role_id = self.settings.get("verification", "verified_role_id", interaction.guild.id)
+            formatted = f"<@&{default_role_id}>" if default_role_id else "—"
+            await interaction.followup.send(f"↩️ Verified role reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.verified_role_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
-    @verification_group.command(name="reset_verified_role", description="Reset verified role to default")
+    @verification_group.command(name="set_category", description="Set category for verification channels (leave empty to reset)")
     @requires_admin()
-    async def verification_reset_verified_role(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("verification", "verified_role_id", interaction.guild.id, interaction.user.id)
-        default_role_id = self.settings.get("verification", "verified_role_id", interaction.guild.id)
-        formatted = f"<@&{default_role_id}>" if default_role_id else "—"
-        await interaction.followup.send(
-            f"↩️ Verified role reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.verified_role_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
-
-    @verification_group.command(name="set_category", description="Set verification channel category.")
-    @requires_admin()
+    @app_commands.describe(category="Category for verification channels. Leave empty to reset.")
     async def verification_set_category(
         self,
         interaction: discord.Interaction,
-        category: discord.CategoryChannel,
+        category: Optional[discord.CategoryChannel] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("verification", "category_id", category.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Verification category set to {category.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.category_id` → {category.mention} by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
+        if category is not None:
+            await self.settings.set("verification", "category_id", category.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Verification category set to {category.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.category_id` → {category.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("verification", "category_id", interaction.guild.id, interaction.user.id)
+            default_category_id = self.settings.get("verification", "category_id", interaction.guild.id)
+            formatted = f"<#{default_category_id}>" if default_category_id else "—"
+            await interaction.followup.send(f"↩️ Verification category reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.category_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
-    @verification_group.command(name="reset_category", description="Reset verification category.")
+    @verification_group.command(name="set_vision_model", description="Set the vision model for verification (leave empty to reset)")
     @requires_admin()
-    async def verification_reset_category(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("verification", "category_id", interaction.guild.id, interaction.user.id)
-        default_category_id = self.settings.get("verification", "category_id", interaction.guild.id)
-        formatted = f"<#{default_category_id}>" if default_category_id else "—"
-        await interaction.followup.send(
-            f"↩️ Verification category reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.category_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
-
-    @verification_group.command(name="set_vision_model", description="Set the AI vision model.")
-    @requires_admin()
+    @app_commands.describe(model="Vision-capable model name. Leave empty to reset to default.")
     async def verification_set_vision_model(
         self,
         interaction: discord.Interaction,
-        model: str,
+        model: Optional[str] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        model_clean = model.strip()
-        if not model_clean:
-            await interaction.followup.send("❌ Model name cannot be empty.", ephemeral=True)
-            return
-
-        await self.settings.set("verification", "vision_model", model_clean, interaction.guild.id, interaction.user.id)
-
-        # Warn only for known text-only models (Grok 4.x and newer all support image input)
-        text_only_models = {"grok-3", "grok-3-mini", "grok-3-fast", "grok-2", "grok-2-mini"}
-        vision_note = (
-            "\n⚠️ This model is text-only and does not support image inputs — verification will fail."
-        ) if model_clean.lower() in text_only_models else ""
-
-        await interaction.followup.send(
-            f"✅ Verification vision model set to `{model_clean}`.{vision_note}",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.vision_model` → `{model_clean}` by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
-
-    @verification_group.command(name="reset_vision_model", description="Reset vision model to default")
-    @requires_admin()
-    async def verification_reset_vision_model(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("verification", "vision_model", interaction.guild.id, interaction.user.id)
-        default_model = self.settings.get("verification", "vision_model", interaction.guild.id)
-        formatted = f"`{default_model}`" if default_model else "—"
-        await interaction.followup.send(
-            f"↩️ Verification vision model reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.vision_model` reset to default by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
+        if model is not None:
+            model_clean = model.strip()
+            if not model_clean:
+                await interaction.followup.send("❌ Model name cannot be empty.", ephemeral=True)
+                return
+            await self.settings.set("verification", "vision_model", model_clean, interaction.guild.id, interaction.user.id)
+            text_only_models = {"grok-3", "grok-3-mini", "grok-3-fast", "grok-2", "grok-2-mini"}
+            vision_note = (
+                "\n⚠️ This model is text-only and does not support image inputs — verification will fail."
+            ) if model_clean.lower() in text_only_models else ""
+            await interaction.followup.send(f"✅ Verification vision model set to `{model_clean}`.{vision_note}", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.vision_model` → `{model_clean}` by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("verification", "vision_model", interaction.guild.id, interaction.user.id)
+            default_model = self.settings.get("verification", "vision_model", interaction.guild.id)
+            formatted = f"`{default_model}`" if default_model else "—"
+            await interaction.followup.send(f"↩️ Verification vision model reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.vision_model` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
     @verification_group.command(
         name="set_ai_prompt_context",
-        description="Extra context for the AI verifier.",
+        description="Set extra AI verifier context (leave empty to clear).",
     )
     @requires_admin()
-    @app_commands.describe(context="Context text shown to the AI alongside every screenshot (max 1000 chars).")
+    @app_commands.describe(context="Context shown to the AI with every screenshot (max 1000 chars). Leave empty to clear.")
     async def verification_set_ai_prompt_context(
         self,
         interaction: discord.Interaction,
-        context: str,
+        context: Optional[str] = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        context_clean = context.strip()[:1000]
-        if not context_clean:
-            await interaction.followup.send("❌ Context cannot be empty.", ephemeral=True)
-            return
-        await self.settings.set("verification", "ai_prompt_context", context_clean, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ AI prompt context set:\n> {safe_embed_text(context_clean, 200)}",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.ai_prompt_context` updated by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
-
-    @verification_group.command(name="reset_ai_prompt_context", description="Clear the AI verifier context.")
-    @requires_admin()
-    async def verification_reset_ai_prompt_context(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("verification", "ai_prompt_context", interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("↩️ AI prompt context cleared.", ephemeral=True)
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.ai_prompt_context` cleared by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
+        if context is not None:
+            context_clean = context.strip()[:1000]
+            if not context_clean:
+                await interaction.followup.send("❌ Context cannot be empty.", ephemeral=True)
+                return
+            await self.settings.set("verification", "ai_prompt_context", context_clean, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(
+                f"✅ AI prompt context set:\n> {safe_embed_text(context_clean, 200)}",
+                ephemeral=True,
+            )
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.ai_prompt_context` updated by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("verification", "ai_prompt_context", interaction.guild.id, interaction.user.id)
+            await interaction.followup.send("↩️ AI prompt context cleared.", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.ai_prompt_context` cleared by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
     @verification_group.command(
         name="set_reviewer_role",
-        description="Role to tag for manual review.",
+        description="Role to tag for manual review (leave empty to clear).",
     )
     @requires_admin()
-    @app_commands.describe(role="Role to ping on manual review.")
+    @app_commands.describe(role="Role to ping on manual review. Leave empty to clear.")
     async def verification_set_reviewer_role(
         self,
         interaction: discord.Interaction,
-        role: discord.Role,
+        role: Optional[discord.Role] = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("verification", "reviewer_role_id", role.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Reviewer role set to {role.mention}. They will be tagged when manual verification review is needed.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.reviewer_role_id` → {role.mention} by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
-
-    @verification_group.command(
-        name="reset_reviewer_role",
-        description="Clear the reviewer role.",
-    )
-    @requires_admin()
-    async def verification_reset_reviewer_role(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("verification", "reviewer_role_id", interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("↩️ Reviewer role cleared. Manual review notifications will no longer tag a role.", ephemeral=True)
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.reviewer_role_id` cleared by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
+        if role is not None:
+            await self.settings.set("verification", "reviewer_role_id", role.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(
+                f"✅ Reviewer role set to {role.mention}. They will be tagged when manual verification review is needed.",
+                ephemeral=True,
+            )
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.reviewer_role_id` → {role.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("verification", "reviewer_role_id", interaction.guild.id, interaction.user.id)
+            await interaction.followup.send("↩️ Reviewer role cleared. Manual review notifications will no longer tag a role.", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.reviewer_role_id` cleared by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
     @verification_group.command(
         name="set_max_payment_age",
-        description="Payment screenshot max age.",
+        description="Set payment screenshot max age in days (leave empty to reset).",
     )
     @requires_admin()
-    @app_commands.describe(days="Max age in days (1–365).")
+    @app_commands.describe(days="Max age in days (1–365). Leave empty to reset to default (35).")
     async def verification_set_max_payment_age(
         self,
         interaction: discord.Interaction,
-        days: int,
+        days: Optional[int] = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        if not 1 <= days <= 365:
-            await interaction.followup.send("❌ Days must be between 1 and 365.", ephemeral=True)
-            return
-        await self.settings.set("verification", "max_payment_age_days", days, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Payment age limit set to **{days} days**. Screenshots older than that will be rejected.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.max_payment_age_days` → `{days}` by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
-
-    @verification_group.command(
-        name="reset_max_payment_age",
-        description="Reset payment max age.",
-    )
-    @requires_admin()
-    async def verification_reset_max_payment_age(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("verification", "max_payment_age_days", interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("↩️ Payment age limit reset to default (35 days).", ephemeral=True)
-        await self._send_audit_log(
-            "✅ Verification",
-            f"`verification.max_payment_age_days` reset to default by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
+        if days is not None:
+            if not 1 <= days <= 365:
+                await interaction.followup.send("❌ Days must be between 1 and 365.", ephemeral=True)
+                return
+            await self.settings.set("verification", "max_payment_age_days", days, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(
+                f"✅ Payment age limit set to **{days} days**. Screenshots older than that will be rejected.",
+                ephemeral=True,
+            )
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.max_payment_age_days` → `{days}` by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("verification", "max_payment_age_days", interaction.guild.id, interaction.user.id)
+            await interaction.followup.send("↩️ Payment age limit reset to default (35 days).", ephemeral=True)
+            await self._send_audit_log(
+                "✅ Verification",
+                f"`verification.max_payment_age_days` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
     @verification_group.command(
         name="set_reference_image",
@@ -1319,66 +1106,49 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @gdpr_group.command(name="enable", description="Enable GDPR features.")
+    @gdpr_group.command(name="toggle", description="Enable or disable GDPR functionality")
     @requires_admin()
-    async def gdpr_enable(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(enabled="True to enable, False to disable.")
+    async def gdpr_toggle(self, interaction: discord.Interaction, enabled: bool) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("gdpr", "enabled", True, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("✅ GDPR functionality enabled.", ephemeral=True)
+        await self.settings.set("gdpr", "enabled", enabled, interaction.guild.id, interaction.user.id)
+        state = "enabled" if enabled else "disabled"
+        await interaction.followup.send(f"✅ GDPR functionality {state}.", ephemeral=True)
         await self._send_audit_log(
             "🔒 GDPR",
-            f"`gdpr.enabled` → True by {interaction.user.mention}.",
-            interaction.guild.id
+            f"`gdpr.enabled` → {enabled} by {interaction.user.mention}.",
+            interaction.guild.id,
         )
-    @gdpr_group.command(name="disable", description="Disable GDPR features.")
+
+    @gdpr_group.command(name="set_channel", description="Set the GDPR channel (leave empty to reset)")
     @requires_admin()
-    async def gdpr_disable(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("gdpr", "enabled", False, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("🛑 GDPR functionality disabled.", ephemeral=True)
-        await self._send_audit_log(
-            "🔒 GDPR",
-            f"`gdpr.enabled` → False by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @gdpr_group.command(name="set_channel", description="Set the GDPR channel in")
-    @requires_admin()
+    @app_commands.describe(channel="GDPR request channel. Leave empty to reset.")
     async def gdpr_set_channel(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel,
+        channel: Optional[discord.TextChannel] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("gdpr", "channel_id", channel.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ GDPR channel set to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔒 GDPR",
-            f"`gdpr.channel_id` → {channel.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @gdpr_group.command(name="reset_channel", description="Reset GDPR channel naar standaard")
-    @requires_admin()
-    async def gdpr_reset_channel(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("gdpr", "channel_id", interaction.guild.id, interaction.user.id)
-        default_channel = self.settings.get("gdpr", "channel_id", interaction.guild.id)
-        formatted = f"<#{default_channel}>" if default_channel else "—"
-        await interaction.followup.send(
-            f"↩️ GDPR channel reset to default: {formatted}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "🔒 GDPR",
-            f"`gdpr.channel_id` reset to default by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if channel is not None:
+            await self.settings.set("gdpr", "channel_id", channel.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ GDPR channel set to {channel.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "🔒 GDPR",
+                f"`gdpr.channel_id` → {channel.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("gdpr", "channel_id", interaction.guild.id, interaction.user.id)
+            default_channel = self.settings.get("gdpr", "channel_id", interaction.guild.id)
+            formatted = f"<#{default_channel}>" if default_channel else "—"
+            await interaction.followup.send(f"↩️ GDPR channel reset to default: {formatted}.", ephemeral=True)
+            await self._send_audit_log(
+                "🔒 GDPR",
+                f"`gdpr.channel_id` reset to default by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
     @onboarding_group.command(name="show", description="Show onboarding configuration")
     @requires_admin()
     async def onboarding_show(self, interaction: discord.Interaction) -> None:
@@ -1443,29 +1213,19 @@ class Configuration(AlphaCog):
             else:
                 lines.append("\n❌ Onboarding module not available")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @onboarding_group.command(name="enable", description="Enable onboarding for this server")
+    @onboarding_group.command(name="toggle", description="Enable or disable onboarding for this server")
     @requires_admin()
-    async def onboarding_enable(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(enabled="True to enable, False to disable.")
+    async def onboarding_toggle(self, interaction: discord.Interaction, enabled: bool) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("onboarding", "enabled", True, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("✅ Onboarding enabled.", ephemeral=True)
+        await self.settings.set("onboarding", "enabled", enabled, interaction.guild.id, interaction.user.id)
+        state = "enabled" if enabled else "disabled"
+        await interaction.followup.send(f"✅ Onboarding {state}.", ephemeral=True)
         await self._send_audit_log(
             "📝 Onboarding",
-            f"Onboarding enabled by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @onboarding_group.command(name="disable", description="Disable onboarding for this server")
-    @requires_admin()
-    async def onboarding_disable(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("onboarding", "enabled", False, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("🛑 Onboarding disabled.", ephemeral=True)
-        await self._send_audit_log(
-            "📝 Onboarding",
-            f"Onboarding disabled by {interaction.user.mention}.",
-            interaction.guild.id
+            f"Onboarding {state} by {interaction.user.mention}.",
+            interaction.guild.id,
         )
     @onboarding_group.command(name="set_mode", description="Set onboarding mode")
     @app_commands.describe(mode="Choose the onboarding flow type")
@@ -1490,70 +1250,59 @@ class Configuration(AlphaCog):
             f"Mode set to '{mode}' by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @onboarding_group.command(name="set_role", description="Set post-onboarding role.")
+    @onboarding_group.command(name="set_role", description="Set completion role (leave empty to remove)")
     @requires_admin()
+    @app_commands.describe(role="Role assigned after onboarding completion. Leave empty to remove.")
     async def onboarding_set_role(
         self,
         interaction: discord.Interaction,
-        role: discord.Role,
+        role: Optional[discord.Role] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("onboarding", "completion_role_id", role.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Completion role set to {role.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "📝 Onboarding",
-            f"Completion role set to {role.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-    @onboarding_group.command(name="reset_role", description="Remove completion role assignment")
-    @requires_admin()
-    async def onboarding_reset_role(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("onboarding", "completion_role_id", interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("↩️ Completion role removed.", ephemeral=True)
-        await self._send_audit_log(
-            "📝 Onboarding",
-            f"Completion role reset by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if role is not None:
+            await self.settings.set("onboarding", "completion_role_id", role.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Completion role set to {role.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Completion role set to {role.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("onboarding", "completion_role_id", interaction.guild.id, interaction.user.id)
+            await interaction.followup.send("↩️ Completion role removed.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Completion role reset by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
-    @onboarding_group.command(name="set_join_role", description="Set temporary join role.")
+    @onboarding_group.command(name="set_join_role", description="Set temporary join role (leave empty to remove)")
     @requires_admin()
+    @app_commands.describe(role="Role assigned immediately on join. Leave empty to remove.")
     async def onboarding_set_join_role(
         self,
         interaction: discord.Interaction,
-        role: discord.Role,
+        role: Optional[discord.Role] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.set("onboarding", "join_role_id", role.id, interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            f"✅ Join role set to {role.mention}.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "📝 Onboarding",
-            f"Join role set to {role.mention} by {interaction.user.mention}.",
-            interaction.guild.id
-        )
-
-    @onboarding_group.command(name="reset_join_role", description="Remove join role assignment.")
-    @requires_admin()
-    async def onboarding_reset_join_role(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await self.settings.clear("onboarding", "join_role_id", interaction.guild.id, interaction.user.id)
-        await interaction.followup.send("↩️ Join role removed.", ephemeral=True)
-        await self._send_audit_log(
-            "📝 Onboarding",
-            f"Join role reset by {interaction.user.mention}.",
-            interaction.guild.id
-        )
+        if role is not None:
+            await self.settings.set("onboarding", "join_role_id", role.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(f"✅ Join role set to {role.mention}.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Join role set to {role.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("onboarding", "join_role_id", interaction.guild.id, interaction.user.id)
+            await interaction.followup.send("↩️ Join role removed.", ephemeral=True)
+            await self._send_audit_log(
+                "📝 Onboarding",
+                f"Join role reset by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
     @onboarding_group.command(name="add_question", description="Add a new onboarding question")
     @requires_admin()
@@ -1792,51 +1541,37 @@ class Configuration(AlphaCog):
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    @automod_group.command(name="enable", description="Enable auto-moderation")
+    @automod_group.command(name="toggle", description="Enable or disable auto-moderation")
     @requires_admin()
-    async def automod_enable(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(enabled="True to enable, False to disable.")
+    async def automod_toggle(self, interaction: discord.Interaction, enabled: bool) -> None:
         if not interaction.guild:
             await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await self.settings.set("automod", "enabled", True, guild_id=interaction.guild.id, updated_by=interaction.user.id)
-        await interaction.followup.send("✅ Auto-moderation enabled for this server.", ephemeral=True)
-        log_guild_action(interaction.guild.id, "Auto-moderation enabled", user=str(interaction.user))
+        await self.settings.set("automod", "enabled", enabled, guild_id=interaction.guild.id, updated_by=interaction.user.id)
+        state = "enabled" if enabled else "disabled"
+        await interaction.followup.send(f"✅ Auto-moderation {state} for this server.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation {state}", user=str(interaction.user))
 
-    @automod_group.command(name="disable", description="Disable auto-moderation")
+    @automod_group.command(name="set_log_channel", description="Set auto-moderation log channel (leave empty to reset)")
     @requires_admin()
-    async def automod_disable(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
-        await self.settings.set("automod", "enabled", False, guild_id=interaction.guild.id, updated_by=interaction.user.id)
-        await interaction.followup.send("⚠️ Auto-moderation disabled for this server.", ephemeral=True)
-        log_guild_action(interaction.guild.id, "Auto-moderation disabled", user=str(interaction.user))
-
-    @automod_group.command(name="set_log_channel", description="Set auto-moderation log channel")
-    @requires_admin()
+    @app_commands.describe(channel="Channel for automod logs. Leave empty to reset.")
     async def automod_set_log_channel(
-        self, interaction: discord.Interaction, channel: discord.TextChannel
+        self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await self.settings.set("automod", "log_channel_id", channel.id, guild_id=interaction.guild.id, updated_by=interaction.user.id)
-        await interaction.followup.send(f"✅ Auto-moderation log channel set to {channel.mention}.", ephemeral=True)
-        log_guild_action(interaction.guild.id, f"Auto-moderation log channel set to {channel.mention}", user=str(interaction.user))
-
-    @automod_group.command(name="reset_log_channel", description="Reset auto-mod log channel.")
-    @requires_admin()
-    async def automod_reset_log_channel(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
-        await self.settings.clear("automod", "log_channel_id", guild_id=interaction.guild.id, updated_by=interaction.user.id)
-        await interaction.followup.send("✅ Auto-moderation log channel reset to default.", ephemeral=True)
-        log_guild_action(interaction.guild.id, "Auto-moderation log channel reset", user=str(interaction.user))
+        if channel is not None:
+            await self.settings.set("automod", "log_channel_id", channel.id, guild_id=interaction.guild.id, updated_by=interaction.user.id)
+            await interaction.followup.send(f"✅ Auto-moderation log channel set to {channel.mention}.", ephemeral=True)
+            log_guild_action(interaction.guild.id, f"Auto-moderation log channel set to {channel.mention}", user=str(interaction.user))
+        else:
+            await self.settings.clear("automod", "log_channel_id", guild_id=interaction.guild.id, updated_by=interaction.user.id)
+            await interaction.followup.send("↩️ Auto-moderation log channel reset to default.", ephemeral=True)
+            log_guild_action(interaction.guild.id, "Auto-moderation log channel reset", user=str(interaction.user))
 
     @automod_group.command(name="add_spam_rule", description="Add a spam frequency rule")
     @requires_admin()
@@ -2316,9 +2051,10 @@ class Configuration(AlphaCog):
         await interaction.followup.send(f"✅ Rule `{rule_id}` deleted.", ephemeral=True)
         log_guild_action(interaction.guild.id, f"Auto-moderation rule deleted: {rule_id}", user=str(interaction.user))
 
-    @automod_group.command(name="enable_rule", description="Enable an auto-mod rule.")
+    @automod_group.command(name="set_rule_enabled", description="Enable or disable an auto-moderation rule by ID")
     @requires_admin()
-    async def automod_enable_rule(self, interaction: discord.Interaction, rule_id: int) -> None:
+    @app_commands.describe(rule_id="ID of the rule to update.", enabled="True to enable, False to disable.")
+    async def automod_set_rule_enabled(self, interaction: discord.Interaction, rule_id: int, enabled: bool) -> None:
         if not interaction.guild:
             await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
             return
@@ -2327,34 +2063,15 @@ class Configuration(AlphaCog):
         updated = await self.rule_processor.update_rule(
             guild_id=interaction.guild.id,
             rule_id=rule_id,
-            enabled=True,
+            enabled=enabled,
         )
         if not updated:
             await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
             return
 
-        await interaction.followup.send(f"✅ Rule `{rule_id}` enabled.", ephemeral=True)
-        log_guild_action(interaction.guild.id, f"Auto-moderation rule enabled: {rule_id}", user=str(interaction.user))
-
-    @automod_group.command(name="disable_rule", description="Disable an auto-mod rule.")
-    @requires_admin()
-    async def automod_disable_rule(self, interaction: discord.Interaction, rule_id: int) -> None:
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        updated = await self.rule_processor.update_rule(
-            guild_id=interaction.guild.id,
-            rule_id=rule_id,
-            enabled=False,
-        )
-        if not updated:
-            await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
-            return
-
-        await interaction.followup.send(f"✅ Rule `{rule_id}` disabled.", ephemeral=True)
-        log_guild_action(interaction.guild.id, f"Auto-moderation rule disabled: {rule_id}", user=str(interaction.user))
+        state = "enabled" if enabled else "disabled"
+        await interaction.followup.send(f"✅ Rule `{rule_id}` {state}.", ephemeral=True)
+        log_guild_action(interaction.guild.id, f"Auto-moderation rule {state}: {rule_id}", user=str(interaction.user))
 
     @automod_group.command(name="edit_rule", description="Edit an auto-moderation rule")
     @requires_admin()
@@ -2661,49 +2378,35 @@ class Configuration(AlphaCog):
         )
         log_guild_action(interaction.guild.id, f"Auto-moderation rule severity updated: {rule_id} → {severity}", user=str(interaction.user))
 
-    @growth_group.command(name="set_channel", description="Set the Growth Check-in channel.")
+    @growth_group.command(name="set_channel", description="Set Growth Check-in channel (leave empty to remove)")
     @requires_admin()
+    @app_commands.describe(channel="Channel for shared Growth Check-ins. Leave empty to remove configuration.")
     async def growth_set_channel(
         self,
         interaction: discord.Interaction,
         channel: Optional[discord.TextChannel] = None,
     ) -> None:
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        await interaction.response.defer(ephemeral=True)
         if channel is not None:
-            await interaction.response.defer(ephemeral=True)
             await self.settings.set("growth", "log_channel_id", channel.id, interaction.guild.id, interaction.user.id)
-            await interaction.followup.send(
-                f"✅ Growth Check-in channel set to {channel.mention}.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(f"✅ Growth Check-in channel set to {channel.mention}.", ephemeral=True)
             await self._send_audit_log(
                 "⚙️ Setting updated",
                 f"`growth.log_channel_id` set to {channel.mention} by {interaction.user.mention}.",
                 interaction.guild.id,
             )
         else:
-            view = GrowthChannelSetupView(self.settings, interaction.guild, interaction.user)
-            await interaction.response.send_message(
-                "Pick an existing channel or let me create a dedicated **#growth-checkins** channel:",
-                view=view,
+            await self.settings.clear("growth", "log_channel_id", interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(
+                "↩️ Growth Check-in channel removed. Sharing option will no longer appear.",
                 ephemeral=True,
             )
-
-    @growth_group.command(name="reset_channel", description="Reset Growth Check-in channel.")
-    @requires_admin()
-    async def growth_reset_channel(self, interaction: discord.Interaction) -> None:
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        await interaction.response.defer(ephemeral=True)
-        await self.settings.clear("growth", "log_channel_id", interaction.guild.id, interaction.user.id)
-        await interaction.followup.send(
-            "↩️ Growth Check-in channel removed. Sharing option will no longer appear.",
-            ephemeral=True,
-        )
-        await self._send_audit_log(
-            "⚙️ Setting reset",
-            f"`growth.log_channel_id` cleared by {interaction.user.mention}.",
-            interaction.guild.id,
-        )
+            await self._send_audit_log(
+                "⚙️ Setting reset",
+                f"`growth.log_channel_id` cleared by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
 
     def _resolve_guild_id(
         self, interaction: discord.Interaction, guild_id_str: Optional[str]
@@ -2751,55 +2454,6 @@ class Configuration(AlphaCog):
             log_guild_action(guild_id, "AUDIT_LOG", details=f"config: {title}")
         except Exception as e:
             log_with_guild(f"Could not send audit log: {e}", guild_id, "error")
-
-
-class GrowthChannelSetupView(discord.ui.View):
-    """Shown when /config growth set_channel is called without a channel argument.
-
-    Lets the admin pick an existing channel or create a new #growth-checkins channel.
-    """
-
-    def __init__(self, settings, guild: discord.Guild, actor: discord.Member):
-        super().__init__(timeout=120)
-        self.settings = settings
-        self.guild = guild
-        self.actor = actor
-
-    @discord.ui.select(
-        cls=discord.ui.ChannelSelect,
-        channel_types=[discord.ChannelType.text],
-        placeholder="Pick an existing channel…",
-        min_values=1,
-        max_values=1,
-    )
-    async def channel_select(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
-        channel = select.values[0]
-        await self.settings.set("growth", "log_channel_id", channel.id, self.guild.id, self.actor.id)
-        await interaction.response.edit_message(
-            content=f"✅ Growth Check-in channel set to {channel.mention}.",
-            view=None,
-        )
-        self.stop()
-
-    @discord.ui.button(label="Create #growth-checkins", style=discord.ButtonStyle.primary, emoji="🌱")
-    async def create_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        try:
-            channel = await self.guild.create_text_channel(
-                "growth-checkins",
-                reason=f"Growth Check-in channel created by {self.actor} via /config growth set_channel",
-            )
-            await self.settings.set("growth", "log_channel_id", channel.id, self.guild.id, self.actor.id)
-            await interaction.edit_original_response(
-                content=f"✅ Created and configured {channel.mention} as the Growth Check-in channel.",
-                view=None,
-            )
-        except discord.Forbidden:
-            await interaction.edit_original_response(
-                content="❌ I don't have permission to create channels. Please create one manually and use `/config growth set_channel #channel`.",
-                view=None,
-            )
-        self.stop()
 
 
 async def setup(bot: commands.Bot):

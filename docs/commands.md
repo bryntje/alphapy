@@ -168,66 +168,55 @@ Manage bot settings (multi-scope configuration system).
 
 - **`/config start`** – Start the interactive server setup. The bot guides you step-by-step through the main settings (log channel, rules channel, onboarding, embed watcher, invites, GDPR, ticket category, staff role). Choose a channel or role from the dropdown or click **Skip**. All prompts in English.
 
+> **Tip:** For all `set_*` commands, omitting the optional parameter resets the value to its default.
+> For `toggle` commands, pass `True` to enable or `False` to disable.
+
 **Subcommands:**
 
 #### System Settings
 - `/config system show` - Show current system settings
-- `/config system set_log_channel <#channel>` - Set log channel
-- `/config system set_rules_channel <#channel>` - Set rules and onboarding channel (welcome + Start button)
-- `/config system reset_log_channel` - Reset log channel
-- `/config system reset_rules_channel` - Reset rules and onboarding channel
+- `/config system set_log_channel [#channel]` - Set log channel; leave empty to reset
+- `/config system set_rules_channel [#channel]` - Set rules/onboarding channel; leave empty to reset
+- `/config system set_log_level [level]` - Set log verbosity (Verbose/Normal/Critical); leave empty to reset
 
 #### Embed Watcher Settings
 - `/config embedwatcher show` - Show current settings
-- `/config embedwatcher set_announcements <#channel>` - Set channel to monitor for announcement embeds
-- `/config embedwatcher reset_announcements` - Reset announcements channel
-- `/config embedwatcher set_offset <minutes>` - Set reminder offset (default: 60)
-- `/config embedwatcher reset_offset` - Reset offset to default
-- `/config embedwatcher set_non_embed` - Enable/disable parsing of non-embed messages
-- `/config embedwatcher reset_non_embed` - Reset non-embed setting
-- `/config embedwatcher set_process_bot_messages` - Enable/disable processing bot's own messages
-- `/config embedwatcher reset_process_bot_messages` - Reset process_bot_messages to default
+- `/config embedwatcher set_announcements [#channel]` - Set channel to monitor; leave empty to reset
+- `/config embedwatcher set_offset [minutes]` - Set reminder offset (0–4320 min); leave empty to reset
+- `/config embedwatcher set_non_embed [true|false]` - Enable/disable non-embed message parsing; leave empty to reset
+- `/config embedwatcher set_process_bot_messages [true|false]` - Enable/disable processing bot's own messages; leave empty to reset
 
 #### Reminder Settings
 - `/config reminders show` - Show current settings
-- `/config reminders enable|disable` - Enable/disable reminders
-- `/config reminders set_default_channel <#channel>` - Set default reminder channel
-- `/config reminders reset_default_channel` - Reset default reminder channel
+- `/config reminders toggle <true|false>` - Enable or disable reminders
+- `/config reminders set_default_channel [#channel]` - Set default reminder channel; leave empty to reset
 - `/config reminders set_everyone <true|false>` - Allow or disallow @everyone mentions in reminders
 
 #### TicketBot Settings
 - `/config ticketbot show` - Show current settings
-- `/config ticketbot set_category <#category>` - Set ticket category
-- `/config ticketbot reset_category` - Reset ticket category
-- `/config ticketbot set_staff_role @<role>` - Set staff role
-- `/config ticketbot reset_staff_role` - Reset staff role
-- `/config ticketbot set_escalation_role @<role>` - Set escalation role
-- `/config ticketbot reset_escalation_role` - Reset escalation role
+- `/config ticketbot set_category [#category]` - Set ticket category; leave empty to reset
+- `/config ticketbot set_staff_role [@role]` - Set staff role; leave empty to reset
+- `/config ticketbot set_escalation_role [@role]` - Set escalation role; leave empty to reset
 
 #### Grok / AI Settings
 - `/config gpt show` - Show current settings
-- `/config gpt set_model <model-name>` - Set AI model (e.g. grok-3)
-- `/config gpt reset_model` - Reset model to default
-- `/config gpt set_temperature <0.0-2.0>` - Set AI creativity level
-- `/config gpt reset_temperature` - Reset temperature to default
+- `/config gpt set_model [model-name]` - Set AI model (e.g. grok-3); leave empty to reset (bot owner only)
+- `/config gpt set_temperature [0.0–2.0]` - Set AI creativity level; leave empty to reset
 
 #### Invites Settings
 - `/config invites show` - Show current settings
-- `/config invites enable|disable` - Enable/disable invite tracking
-- `/config invites set_channel <#channel>` - Set invite announcement channel
-- `/config invites reset_channel` - Reset invite channel
-- `/config invites set_template <variant> <template>` - Set invite message (variant: with inviter / without inviter)
-- `/config invites reset_template <variant>` - Reset template to default (variant: with / without inviter)
+- `/config invites toggle <true|false>` - Enable or disable invite tracking
+- `/config invites set_channel [#channel]` - Set invite announcement channel; leave empty to reset
+- `/config invites set_template <variant> [template]` - Set invite message template (variant: with/without inviter); leave template empty to reset
 
 #### GDPR Settings
 - `/config gdpr show` - Show current settings
-- `/config gdpr enable|disable` - Enable/disable GDPR features
-- `/config gdpr set_channel <#channel>` - Set GDPR channel
-- `/config gdpr reset_channel` - Reset GDPR channel
+- `/config gdpr toggle <true|false>` - Enable or disable GDPR features
+- `/config gdpr set_channel [#channel]` - Set GDPR channel; leave empty to reset
 
 #### Onboarding Settings
 - `/config onboarding show` - Show current onboarding configuration
-- `/config onboarding enable|disable` - Enable/disable onboarding
+- `/config onboarding toggle <true|false>` - Enable or disable onboarding
 - `/config onboarding set_mode <mode>` - Set mode (Disabled, Rules Only, Rules + Questions, Questions Only)
 - `/config onboarding add_question <step> <question> [question_type] [required]` - Add a question (step 1–20; types: select, multiselect, text, email)
 - `/config onboarding delete_question <step>` - Delete question at position
@@ -235,12 +224,43 @@ Manage bot settings (multi-scope configuration system).
 - `/config onboarding add_rule <rule_order> <title> <description> [thumbnail_url] [image_url]` - Add a rule (position 1–20; optional image URLs)
 - `/config onboarding delete_rule <rule_order>` - Delete rule at position
 - `/config onboarding reset_rules` - Reset to empty rules
-- `/config onboarding set_role <#role>` - Set completion role
-- `/config onboarding reset_role` - Remove completion role
-- `/config onboarding set_join_role <@role>` - Set temporary join role assigned immediately when a user joins (removed after onboarding or verification)
-- `/config onboarding reset_join_role` - Remove join role configuration
+- `/config onboarding set_role [@role]` - Set completion role; leave empty to remove
+- `/config onboarding set_join_role [@role]` - Set temporary join role; leave empty to remove
 - `/config onboarding panel_post [channel]` - Post onboarding panel with Start button (optional channel; uses current if omitted)
 - `/config onboarding reorder` - Reorder questions (opens modal to enter question IDs in desired order)
+
+#### Verification Settings
+- `/config verification show` - Show current settings
+- `/config verification set_verified_role [@role]` - Set role given after verification; leave empty to reset
+- `/config verification set_category [#category]` - Set category for verification channels; leave empty to reset
+- `/config verification set_vision_model [model]` - Set vision-capable AI model; leave empty to reset
+- `/config verification set_ai_prompt_context [text]` - Set extra AI context; leave empty to clear
+- `/config verification set_reviewer_role [@role]` - Set role tagged on manual review; leave empty to clear
+- `/config verification set_max_payment_age [days]` - Set max payment screenshot age in days (1–365); leave empty to reset to default (35)
+- `/config verification set_reference_image <image>` - Upload a reference payment screenshot for AI comparison
+- `/config verification reset_reference_image` - Remove the reference payment screenshot
+
+#### Auto-moderation Settings
+- `/config automod show` - Show current settings
+- `/config automod toggle <true|false>` - Enable or disable auto-moderation
+- `/config automod set_log_channel [#channel]` - Set automod log channel; leave empty to reset
+- `/config automod rules` - List all configured rules
+- `/config automod add_spam_rule <name> [max_messages] [time_window_seconds] [action_type]` - Add a spam frequency rule
+- `/config automod add_badwords_rule <name> <words> [action_type]` - Add a bad-words content rule
+- `/config automod add_links_rule <name> [allow_links] [whitelist] [blacklist] [action_type]` - Add a link filtering rule
+- `/config automod add_mentions_rule <name> [max_mentions] [action_type]` - Add a mention spam rule
+- `/config automod add_caps_rule <name> [min_length] [max_caps_ratio] [action_type]` - Add an excessive caps rule
+- `/config automod add_duplicate_rule <name> [max_duplicates] [action_type]` - Add a duplicate-message rule
+- `/config automod add_regex_rule <name> <patterns> [action_type]` - Add a regex content rule (premium)
+- `/config automod add_ai_rule <name> [action_type]` - Add an AI-powered content rule (premium)
+- `/config automod edit_rule <rule_id> [fields...]` - Edit an existing rule
+- `/config automod delete_rule <rule_id>` - Delete a rule by ID
+- `/config automod set_rule_enabled <rule_id> <true|false>` - Enable or disable a rule by ID
+- `/config automod set_severity <rule_id> <1–10>` - Set rule priority (higher = processed first)
+- `/config automod logs [limit] [user_id] [rule_id] [action_type] [days]` - Show recent automod logs
+
+#### Growth Settings
+- `/config growth set_channel [#channel]` - Set channel for shared Growth Check-ins; leave empty to remove
 
 #### FYI (contextual tips – admin testing)
 - `/config fyi reset <key>` - Clear an FYI flag so the next natural trigger will send that tip again (for testing). Key is chosen from a fixed list (e.g. `first_onboarding_done`, `first_guild_join`).
@@ -647,23 +667,16 @@ Close a verification channel without approving or rejecting (neutral closure).
 
 ---
 
-### `/config verification set_max_payment_age <days>`
-Set the maximum age (in days) a payment screenshot may be. Payments dated older than this window are automatically rejected.
+### `/config verification set_max_payment_age [days]`
+Set the maximum age (in days) a payment screenshot may be. Leave `days` empty to reset to the default (35 days).
 
 **Options:**
-- `days` — Integer between 1 and 365. Default when not set: **35 days**.
+- `days` — Integer between 1 and 365. Omit to reset to default.
 
 **Behavior:**
 - The AI prompt is sent today's date and the configured window. The AI must extract the `payment_date` from the screenshot.
 - A server-side check validates the extracted date independently — if older than the window, the submission is hard-rejected even if the AI said it was valid.
 - If the date is unreadable and the AI was confident, the submission is escalated to manual review instead of auto-approved.
-
-**Permissions:** Owner/Admin
-
----
-
-### `/config verification reset_max_payment_age`
-Reset the payment age limit to the default (35 days).
 
 **Permissions:** Owner/Admin
 

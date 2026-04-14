@@ -54,7 +54,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Premium**: Mockingbird spicy mode for premium users
 - **Reflection context**: Past reflections (Supabase `reflections_shared` + `app_reflections`) are automatically injected into the Grok prompt via `ask_gpt(include_reflections=True)`. The prompt explicitly instructs Grok to reference recurring patterns and progress.
 - **Sharing**: After the AI response, users see a `GrowthShareView` (ephemeral) with three options: share anonymously, share with display name, or keep private. The share posts a Discord embed (goal / obstacle / feeling / Grok response) to the configured `growth.log_channel_id`. If no channel is configured, the share option is not shown.
-- **Admin config**: `/config growth set_channel [#channel]` — omit `#channel` to get a picker (select existing or create new `#growth-checkins`). `/config growth reset_channel` removes the setting.
+- **Admin config**: `/config growth set_channel [#channel]` — provide a channel to set it, or omit to clear the configuration.
 
 ---
 
@@ -170,10 +170,10 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
   - AI-powered content analysis with Grok (custom policies, confidence thresholds)
   - Analytics dashboard (scaffolding)
 - **Configuration Commands** (`/config automod`):
-  - `show`, `enable`, `disable`
-  - `set_log_channel`, `reset_log_channel`
+  - `show`, `toggle <true|false>`
+  - `set_log_channel [#channel]` (leave empty to reset)
   - `add_spam_rule`, `add_badwords_rule`, `add_links_rule`, `add_mentions_rule`, `add_caps_rule`, `add_duplicate_rule`, `add_regex_rule`, `add_ai_rule`
-  - `rules`, `edit_rule`, `delete_rule`, `enable_rule`, `disable_rule`
+  - `rules`, `edit_rule`, `delete_rule`, `set_rule_enabled <rule_id> <true|false>`
   - `set_severity` (rule priority management, 1-10)
   - `logs` (with filters: user_id, rule_id, action_type, days)
 - **Status Command**: `/automod status`
