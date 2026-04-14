@@ -667,6 +667,20 @@ Close a verification channel without approving or rejecting (neutral closure).
 
 ---
 
+### `/config verification set_reviewer_role [@role]`
+Set the role that gets tagged when the AI triggers a manual review. Leave `role` empty to clear.
+
+**Options:**
+- `role` — A Discord role. Omit to remove the configured reviewer role.
+
+**Behavior:**
+- When the AI returns `needs_manual_review`, the bot pings this role in the verification channel alongside the review embed.
+- Falls back to no mention if not configured.
+
+**Permissions:** Administrator
+
+---
+
 ### `/config verification set_max_payment_age [days]`
 Set the maximum age (in days) a payment screenshot may be. Leave `days` empty to reset to the default (35 days).
 

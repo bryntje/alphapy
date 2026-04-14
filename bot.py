@@ -508,7 +508,7 @@ async def on_app_command_completion(interaction: discord.Interaction, command: d
         pass  # Don't break command execution if tracking fails
 
 
-@bot.event
+@bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
     """Handle app command errors globally."""
     # Extract common variables once
@@ -519,29 +519,39 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
     if isinstance(error, discord.app_commands.CommandOnCooldown):
         minutes = int(error.retry_after // 60)
         seconds = int(error.retry_after % 60)
-        
+
         if minutes > 0:
             time_str = f"{minutes} minute{'s' if minutes != 1 else ''} and {seconds} second{'s' if seconds != 1 else ''}"
         else:
             time_str = f"{seconds} second{'s' if seconds != 1 else ''}"
-        
+
         try:
             if interaction.response.is_done():
                 await interaction.followup.send(
-                    f"⏸️ **Cooldown active**\n\n"
-                    f"You can use this command again in {time_str}.",
-                    ephemeral=True
+                    f"⏸️ **Cooldown active**\n\nYou can use this command again in {time_str}.",
+                    ephemeral=True,
                 )
             else:
                 await interaction.response.send_message(
-                    f"⏸️ **Cooldown active**\n\n"
-                    f"You can use this command again in {time_str}.",
-                    ephemeral=True
+                    f"⏸️ **Cooldown active**\n\nYou can use this command again in {time_str}.",
+                    ephemeral=True,
                 )
         except Exception as e:
             logger.debug(f"Failed to send cooldown message: {e}")
-    
-    # Log to operational events for non-cooldown errors
+
+    # Handle permission/check failures with user-friendly message (not a real error)
+    elif isinstance(error, discord.app_commands.CheckFailure):
+        msg = str(error) if str(error) else "❌ You do not have permission to use this command."
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception as e:
+            logger.debug(f"Failed to send check failure message: {e}")
+        logger.warning(f"CheckFailure in '/{command_name}' (guild={guild_id}, user={interaction.user.id}): {error}")
+
+    # Log unexpected errors
     else:
         log_operational_event(
             EventType.COG_ERROR,
@@ -551,14 +561,12 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
                 "command": command_name,
                 "user_id": interaction.user.id,
                 "error_type": error.__class__.__name__,
-                "error": str(error)[:500]
-            }
+                "error": str(error)[:500],
+            },
         )
-        
-        # Add logger.error for consistency
         logger.error(
             f"⚠️ Error in slash command '/{command_name}' (guild={guild_id}): {error}",
-            exc_info=True
+            exc_info=True,
         )
     
     # Track failed command execution
