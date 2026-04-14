@@ -450,12 +450,11 @@ class TicketBot(AlphaCog):
             await interaction.response.send_message("❌ No channel specified.", ephemeral=True)
             return
         embed = discord.Embed(
-            title="Drop it here",
+            title="Open a support ticket",
             description=(
-                "Questions? Bugs? Ideas? Or something on your mind?\n\n"
-                "Click below and a private ticket opens. No queues, no hassle.\n"
-                "We'll fix it together. I read everything personally.\n\n"
-                "Stay raw 🐺"
+                "Have a question, issue, or idea? We're here to help.\n\n"
+                "Click the button below to open a private ticket.\n"
+                "A staff member will get back to you as soon as possible."
             ),
             color=discord.Color.from_rgb(30, 30, 50),
         )
@@ -527,7 +526,11 @@ class TicketBot(AlphaCog):
         if not category_id:
             await interaction.followup.send("❌ Ticket category not configured.")
             return
-        fetched = guild.get_channel(category_id) or await self.bot.fetch_channel(category_id)
+        try:
+            fetched = await guild.fetch_channel(category_id)
+        except (discord.NotFound, discord.Forbidden):
+            await interaction.followup.send("❌ Ticket category not found or inaccessible. Please contact an admin.")
+            return
         if not isinstance(fetched, discord.CategoryChannel):
             await interaction.followup.send("❌ Ticket category not found.")
             return
@@ -550,12 +553,17 @@ class TicketBot(AlphaCog):
                 read_message_history=True,
                 manage_messages=True,
             )
-        channel = await guild.create_text_channel(
-            name=f"ticket-{ticket_id}",
-            category=category,
-            overwrites=overwrites,
-            reason=f"Ticket {ticket_id} created by {user}"
-        )
+        try:
+            channel = await guild.create_text_channel(
+                name=f"ticket-{ticket_id}",
+                category=category,
+                overwrites=overwrites,
+                reason=f"Ticket {ticket_id} created by {user}"
+            )
+        except discord.HTTPException as e:
+            logger.error(f"🚨 TicketBot: failed to create channel for ticket {ticket_id}: {e}")
+            await interaction.followup.send("❌ Could not create ticket channel. The category may have been deleted — please contact an admin.", ephemeral=True)
+            return
         # Store channel id
         try:
             if row and "id" in row:
