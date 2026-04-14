@@ -75,8 +75,11 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ---
 
 ## 🔐 Agent: GDPRHandler
-- **Purpose**: Support for data rights
-- **Command**: `/export_onboarding`
+- **Purpose**: GDPR compliance — post the data processing agreement, track member acceptances
+- **Commands**: `/config gdpr post`, `/config gdpr toggle`, `/config gdpr set_channel`, `/config gdpr show`
+- **Shared helpers**: `utils/gdpr_helpers.py` — `GDPRView`, `GDPRButton`, `store_gdpr_acceptance`, `build_gdpr_text`
+- **Flow**: Admin runs `/config gdpr post` → embed posted and pinned in configured channel → members click "I Agree" → acceptance stored in `gdpr_acceptance` (scoped by `guild_id`)
+- **Dashboard**: `GET /api/dashboard/{guild_id}/gdpr` returns `{ acceptance_count }` (Railway DB)
 - **Future**: `/delete_my_data`
 
 ---
