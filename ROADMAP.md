@@ -1,8 +1,37 @@
-# 🧬 Innersync • Alphapy Roadmap v3.3.1 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.5.0 "Enterprise Ready"
 
-**Release v3.3.1 Complete!** 🔒 Security hardening patch — auth bypass fix, async JWT, CVE dependency updates, error disclosure elimination.
+**Release v3.5.0 Complete!** 🛡️ GDPR slash commands, ticket transcript archiving, and reliability fixes.
 
-This document outlines the evolution from v3.3.1 forward.
+This document outlines the evolution from v3.5.0 forward.
+
+## ✅ COMPLETED: GDPR Slash Commands & Reliability Fixes (v3.5.0)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Minor release converting GDPR management to slash commands and hardening the ticket and DB layers:
+- **GDPR**: `/config gdpr post` replaces `!postgdpr`; `/config gdpr set_acceptance_role` configures auto-role on consent; `utils/gdpr_helpers.py` extracted to avoid circular imports; migration 018 adds `guild_id` to `gdpr_acceptance`
+- **Tickets**: Transcript (up to 500 messages) exported as `.txt` to log channel before channel deletion on archive
+- **Tickets**: `guild.fetch_channel()` replaces stale-cache `guild.get_channel()` for category validation; `HTTPException` guard on channel creation
+- **Tickets**: Panel embed copy made generic (community-agnostic)
+- **DB**: `acquire_safe` catches `TimeoutError` from asyncpg connection reset; reminder loop logs it at `WARNING` instead of `ERROR`
+- **API**: `GET /api/dashboard/{guild_id}/gdpr` returns acceptance count for the guild
+
+---
+
+## ✅ COMPLETED: Config Consolidation & GDPR Compliance (v3.4.0)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Minor release consolidating `/config` commands and shipping GDPR compliance features:
+- **Config consolidation**: `/config` tree reduced from 101 to 71 subcommands; `reset_X` merged into `set_X` (no-value clears); `enable`/`disable` pairs replaced by `toggle <bool>`; `automod enable_rule`/`disable_rule` replaced by `set_rule_enabled`
+- **`/delete_my_data`**: Self-service GDPR erasure command for users
+- **Retention cleanup**: Daily background task deletes `audit_logs` and `faq_search_logs` older than 90 days
+- **Migration 016**: Formalises `gdpr_acceptance` table; drops unused `ip_address` column
+- **Verification**: Payment recency validation (configurable window, default 35 days); reviewer role; identity check (name/username match via AI)
+- **Migration 017**: Adds `payment_date DATE` to `verification_tickets`
+- **Bug fixes**: `on_app_command_error` decorator corrected; GDPR accept button `ctx` NameError; GDPR erasure gaps; terms version mismatch
+
+---
 
 ## ✅ COMPLETED: Security Hardening (v3.3.1)
 
