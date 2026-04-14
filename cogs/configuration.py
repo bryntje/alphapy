@@ -17,6 +17,7 @@ from utils.sanitizer import safe_embed_text
 from utils.timezone import BRUSSELS_TZ
 from cogs.reaction_roles import StartOnboardingView
 from utils.cog_base import AlphaCog
+from utils.gdpr_helpers import GDPRView, build_gdpr_text
 from cogs.configuration_ui import SetupStep, SETUP_STEPS, SetupWizardView, ReorderQuestionsModal
 from cogs.configuration_automod import (
     normalize_automod_action_type,
@@ -209,7 +210,7 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @system_group.command(name="set_log_channel", description="Set the log channel (leave empty to reset)")
+    @system_group.command(name="set_log_channel", description="Set the log channel")
     @requires_admin()
     @app_commands.describe(channel="Channel for bot logs. Leave empty to reset to default.")
     async def system_set_log_channel(
@@ -238,7 +239,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @system_group.command(name="set_rules_channel", description="Set the rules/onboarding channel (leave empty to reset)")
+    @system_group.command(name="set_rules_channel", description="Set the rules/onboarding channel")
     @requires_admin()
     @app_commands.describe(channel="Rules and onboarding channel. Leave empty to reset to default.")
     async def system_set_rules_channel(
@@ -267,7 +268,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @system_group.command(name="set_log_level", description="Set log verbosity (leave empty to reset)")
+    @system_group.command(name="set_log_level", description="Set log verbosity")
     @requires_admin()
     @app_commands.describe(level="Log verbosity level. Leave empty to reset to default.")
     @app_commands.choices(level=[
@@ -314,7 +315,7 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @embedwatcher_group.command(name="set_announcements", description="Set the channel to monitor (leave empty to reset)")
+    @embedwatcher_group.command(name="set_announcements", description="Set the channel to monitor")
     @requires_admin()
     @app_commands.describe(channel="Channel to watch for event embeds. Leave empty to reset.")
     async def embedwatcher_set_announcements(
@@ -343,7 +344,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @embedwatcher_group.command(name="set_offset", description="Set reminder offset in minutes (leave empty to reset)")
+    @embedwatcher_group.command(name="set_offset", description="Set reminder offset in minutes")
     @requires_admin()
     @app_commands.describe(minutes="Offset in minutes (0–4320). Leave empty to reset to default.")
     async def embedwatcher_set_offset(
@@ -371,7 +372,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @embedwatcher_group.command(name="set_non_embed", description="Enable/disable non-embed message parsing (leave empty to reset)")
+    @embedwatcher_group.command(name="set_non_embed", description="Enable/disable non-embed message parsing")
     @requires_admin()
     @app_commands.describe(enabled="True to enable, False to disable. Leave empty to reset to default.")
     async def embedwatcher_set_non_embed(
@@ -401,7 +402,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @embedwatcher_group.command(name="set_process_bot_messages", description="Enable/disable processing of bot messages (leave empty to reset)")
+    @embedwatcher_group.command(name="set_process_bot_messages", description="Enable/disable processing of bot messages")
     @requires_admin()
     @app_commands.describe(enabled="True to enable, False to disable. Leave empty to reset to default.")
     async def embedwatcher_set_process_bot_messages(
@@ -445,7 +446,7 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @ticketbot_group.command(name="set_category", description="Set the ticket category (leave empty to reset)")
+    @ticketbot_group.command(name="set_category", description="Set the ticket category")
     @requires_admin()
     @app_commands.describe(category="Category for ticket channels. Leave empty to reset.")
     async def ticketbot_set_category(
@@ -474,7 +475,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @ticketbot_group.command(name="set_staff_role", description="Set the support role (leave empty to reset)")
+    @ticketbot_group.command(name="set_staff_role", description="Set the support role")
     @requires_admin()
     @app_commands.describe(role="Role assigned to support staff. Leave empty to reset.")
     async def ticketbot_set_staff_role(
@@ -503,7 +504,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @ticketbot_group.command(name="set_escalation_role", description="Set the escalation role (leave empty to reset)")
+    @ticketbot_group.command(name="set_escalation_role", description="Set the escalation role")
     @requires_admin()
     @app_commands.describe(role="Role for escalated tickets. Leave empty to reset.")
     async def ticketbot_set_escalation_role(
@@ -546,7 +547,7 @@ class Configuration(AlphaCog):
             formatted = self._format_value(definition, value)
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @gpt_group.command(name="set_model", description="Set the Grok model (bot owner only; leave empty to reset)")
+    @gpt_group.command(name="set_model", description="Set the Grok model (bot owner only)")
     @app_commands.describe(
         model="Grok model name (e.g. grok-3). Leave empty to reset to default.",
         guild_id="Target guild ID — use this to set the model for a guild you are not in",
@@ -583,7 +584,7 @@ class Configuration(AlphaCog):
                 interaction.guild_id,
             )
 
-    @gpt_group.command(name="set_temperature", description="Set the Grok temperature (leave empty to reset)")
+    @gpt_group.command(name="set_temperature", description="Set the Grok temperature")
     @requires_admin()
     @app_commands.describe(temperature="Temperature 0.0–2.0. Leave empty to reset to default.")
     async def gpt_set_temperature(
@@ -640,7 +641,7 @@ class Configuration(AlphaCog):
             interaction.guild.id,
         )
 
-    @invites_group.command(name="set_channel", description="Set the invite announcement channel (leave empty to reset)")
+    @invites_group.command(name="set_channel", description="Set the invite announcement channel")
     @requires_admin()
     @app_commands.describe(channel="Channel for invite announcements. Leave empty to reset.")
     async def invites_set_channel(
@@ -735,7 +736,7 @@ class Configuration(AlphaCog):
             interaction.guild.id,
         )
 
-    @reminders_group.command(name="set_default_channel", description="Set default reminder channel (leave empty to reset)")
+    @reminders_group.command(name="set_default_channel", description="Set default reminder channel")
     @requires_admin()
     @app_commands.describe(channel="Default channel for reminders. Leave empty to reset.")
     async def reminders_set_default_channel(
@@ -799,7 +800,7 @@ class Configuration(AlphaCog):
             lines.append(f"{status} — `{definition.key}` → {formatted}")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    @verification_group.command(name="set_verified_role", description="Set role given after verification (leave empty to reset)")
+    @verification_group.command(name="set_verified_role", description="Set role given after verification")
     @requires_admin()
     @app_commands.describe(role="Role to assign after verification. Leave empty to reset.")
     async def verification_set_verified_role(
@@ -828,7 +829,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @verification_group.command(name="set_category", description="Set category for verification channels (leave empty to reset)")
+    @verification_group.command(name="set_category", description="Set category for verification channels")
     @requires_admin()
     @app_commands.describe(category="Category for verification channels. Leave empty to reset.")
     async def verification_set_category(
@@ -857,7 +858,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @verification_group.command(name="set_vision_model", description="Set the vision model for verification (leave empty to reset)")
+    @verification_group.command(name="set_vision_model", description="Set the vision model for verification")
     @requires_admin()
     @app_commands.describe(model="Vision-capable model name. Leave empty to reset to default.")
     async def verification_set_vision_model(
@@ -896,7 +897,7 @@ class Configuration(AlphaCog):
 
     @verification_group.command(
         name="set_ai_prompt_context",
-        description="Set extra AI verifier context (leave empty to clear).",
+        description="Set extra AI verifier context.",
     )
     @requires_admin()
     @app_commands.describe(context="Context shown to the AI with every screenshot (max 1000 chars). Leave empty to clear.")
@@ -933,7 +934,7 @@ class Configuration(AlphaCog):
 
     @verification_group.command(
         name="set_reviewer_role",
-        description="Role to tag for manual review (leave empty to clear).",
+        description="Role to tag for manual review.",
     )
     @requires_admin()
     @app_commands.describe(role="Role to ping on manual review. Leave empty to clear.")
@@ -966,7 +967,7 @@ class Configuration(AlphaCog):
 
     @verification_group.command(
         name="set_max_payment_age",
-        description="Set payment screenshot max age in days (leave empty to reset).",
+        description="Set payment screenshot max age in days.",
     )
     @requires_admin()
     @app_commands.describe(days="Max age in days (1–365). Leave empty to reset to default (35).")
@@ -1098,7 +1099,7 @@ class Configuration(AlphaCog):
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
         items = self.settings.list_scope("gdpr", interaction.guild.id)
         if not items:
-            await interaction.followup.send("⚠️ Geen GDPR settings geregistreerd.", ephemeral=True)
+            await interaction.followup.send("⚠️ No GDPR settings configured.", ephemeral=True)
             return
         lines = ["🔒 **GDPR settings**"]
         for definition, value, overridden in items:
@@ -1121,7 +1122,7 @@ class Configuration(AlphaCog):
             interaction.guild.id,
         )
 
-    @gdpr_group.command(name="set_channel", description="Set the GDPR channel (leave empty to reset)")
+    @gdpr_group.command(name="set_channel", description="Set the GDPR channel")
     @requires_admin()
     @app_commands.describe(channel="GDPR request channel. Leave empty to reset.")
     async def gdpr_set_channel(
@@ -1149,6 +1150,81 @@ class Configuration(AlphaCog):
                 f"`gdpr.channel_id` reset to default by {interaction.user.mention}.",
                 interaction.guild.id,
             )
+
+    @gdpr_group.command(name="set_acceptance_role", description="Role assigned when a member accepts the GDPR agreement")
+    @requires_admin()
+    @app_commands.describe(role="Role to assign on acceptance. Leave empty to clear.")
+    async def gdpr_set_acceptance_role(
+        self,
+        interaction: discord.Interaction,
+        role: Optional[discord.Role] = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+        if role is not None:
+            await self.settings.set("gdpr", "acceptance_role_id", role.id, interaction.guild.id, interaction.user.id)
+            await interaction.followup.send(
+                f"✅ GDPR acceptance role set to {role.mention}. Members will receive this role when they click \"I Agree\".",
+                ephemeral=True,
+            )
+            await self._send_audit_log(
+                "🔒 GDPR",
+                f"`gdpr.acceptance_role_id` → {role.mention} by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+        else:
+            await self.settings.clear("gdpr", "acceptance_role_id", interaction.guild.id, interaction.user.id)
+            await interaction.followup.send("↩️ GDPR acceptance role cleared. No role will be assigned on agreement.", ephemeral=True)
+            await self._send_audit_log(
+                "🔒 GDPR",
+                f"`gdpr.acceptance_role_id` cleared by {interaction.user.mention}.",
+                interaction.guild.id,
+            )
+
+    @gdpr_group.command(name="post", description="Post the GDPR agreement to the configured channel")
+    @requires_admin()
+    async def gdpr_post(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        assert interaction.guild is not None  # Guaranteed by @requires_admin()
+
+        enabled = self.settings.get("gdpr", "enabled", interaction.guild.id)
+        if not enabled:
+            await interaction.followup.send("⚠️ GDPR functionality is currently disabled.", ephemeral=True)
+            return
+
+        channel_id = self.settings.get("gdpr", "channel_id", interaction.guild.id)
+        if not channel_id:
+            await interaction.followup.send(
+                "⚠️ No GDPR channel configured. Use `/config gdpr set_channel` first.", ephemeral=True
+            )
+            return
+
+        channel = self.bot.get_channel(int(channel_id))
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(int(channel_id))
+            except Exception:
+                channel = None
+        if channel is None:
+            await interaction.followup.send("⚠️ GDPR channel not found.", ephemeral=True)
+            return
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            await interaction.followup.send("⚠️ GDPR channel must be a text channel.", ephemeral=True)
+            return
+
+        gdpr_text = build_gdpr_text(interaction.guild.name)
+        embed = EmbedBuilder.info(title="GDPR Data Processing Agreement", description=gdpr_text)
+        message = await channel.send(embed=embed, view=GDPRView(self.bot))
+        await message.pin()
+        await interaction.followup.send(
+            f"✅ GDPR agreement posted and pinned in {channel.mention}.", ephemeral=True
+        )
+        await self._send_audit_log(
+            "🔒 GDPR",
+            f"GDPR agreement posted in {channel.mention} by {interaction.user.mention}.",
+            interaction.guild.id,
+        )
+
     @onboarding_group.command(name="show", description="Show onboarding configuration")
     @requires_admin()
     async def onboarding_show(self, interaction: discord.Interaction) -> None:
@@ -1250,7 +1326,7 @@ class Configuration(AlphaCog):
             f"Mode set to '{mode}' by {interaction.user.mention}.",
             interaction.guild.id
         )
-    @onboarding_group.command(name="set_role", description="Set completion role (leave empty to remove)")
+    @onboarding_group.command(name="set_role", description="Set completion role")
     @requires_admin()
     @app_commands.describe(role="Role assigned after onboarding completion. Leave empty to remove.")
     async def onboarding_set_role(
@@ -1277,7 +1353,7 @@ class Configuration(AlphaCog):
                 interaction.guild.id,
             )
 
-    @onboarding_group.command(name="set_join_role", description="Set temporary join role (leave empty to remove)")
+    @onboarding_group.command(name="set_join_role", description="Set temporary join role")
     @requires_admin()
     @app_commands.describe(role="Role assigned immediately on join. Leave empty to remove.")
     async def onboarding_set_join_role(
@@ -1554,7 +1630,7 @@ class Configuration(AlphaCog):
         await interaction.followup.send(f"✅ Auto-moderation {state} for this server.", ephemeral=True)
         log_guild_action(interaction.guild.id, f"Auto-moderation {state}", user=str(interaction.user))
 
-    @automod_group.command(name="set_log_channel", description="Set auto-moderation log channel (leave empty to reset)")
+    @automod_group.command(name="set_log_channel", description="Set auto-moderation log channel")
     @requires_admin()
     @app_commands.describe(channel="Channel for automod logs. Leave empty to reset.")
     async def automod_set_log_channel(
@@ -2378,7 +2454,7 @@ class Configuration(AlphaCog):
         )
         log_guild_action(interaction.guild.id, f"Auto-moderation rule severity updated: {rule_id} → {severity}", user=str(interaction.user))
 
-    @growth_group.command(name="set_channel", description="Set Growth Check-in channel (leave empty to remove)")
+    @growth_group.command(name="set_channel", description="Set Growth Check-in channel")
     @requires_admin()
     @app_commands.describe(channel="Channel for shared Growth Check-ins. Leave empty to remove configuration.")
     async def growth_set_channel(

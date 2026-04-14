@@ -684,6 +684,22 @@ Update auto-moderation settings.
 }
 ```
 
+#### `GET /api/dashboard/{guild_id}/gdpr`
+
+Get GDPR acceptance statistics for a guild.
+
+**Authentication:** Required (Supabase JWT token + guild admin access)
+
+**Response:**
+```json
+{
+  "guild_id": 123456789,
+  "acceptance_count": 42
+}
+```
+
+---
+
 #### `GET /api/dashboard/logs`
 
 Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard. Requires guild admin access (verified via Supabase profile's Discord ID). Global events (e.g. `BOT_RECONNECT`, `BOT_DISCONNECT`) are included for any guild request.

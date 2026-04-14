@@ -213,6 +213,8 @@ Manage bot settings (multi-scope configuration system).
 - `/config gdpr show` - Show current settings
 - `/config gdpr toggle <true|false>` - Enable or disable GDPR features
 - `/config gdpr set_channel [#channel]` - Set GDPR channel; leave empty to reset
+- `/config gdpr set_acceptance_role [@role]` - Set a role to assign when a member clicks "I Agree"; leave empty to clear
+- `/config gdpr post` - Post the GDPR agreement embed to the configured channel and pin it (server name is inserted dynamically)
 
 #### Onboarding Settings
 - `/config onboarding show` - Show current onboarding configuration

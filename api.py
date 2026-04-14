@@ -2035,6 +2035,32 @@ async def update_guild_settings(
 
 
 # ---------------------------------------------------------------------------
+# GDPR Dashboard Endpoint
+# ---------------------------------------------------------------------------
+
+@router.get("/dashboard/{guild_id}/gdpr")
+async def get_gdpr_dashboard(
+    guild_id: int,
+    auth_user_id: str = Depends(get_authenticated_user_id),
+):
+    """Return GDPR acceptance statistics for the guild."""
+    await verify_guild_admin_access(guild_id, auth_user_id)
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    try:
+        async with db_pool.acquire() as conn:
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM gdpr_acceptance WHERE guild_id = $1 AND accepted = 1",
+                guild_id,
+            )
+        return {"guild_id": guild_id, "acceptance_count": int(count or 0)}
+    except Exception as exc:
+        logger.error("[GDPR] Dashboard fetch error: %s", exc)
+        raise HTTPException(status_code=500, detail="Error fetching GDPR data")
+
+
+# ---------------------------------------------------------------------------
 # Onboarding Questions & Rules Management Endpoints (Web Configuration Interface)
 # ---------------------------------------------------------------------------
 

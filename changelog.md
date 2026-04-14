@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`/config gdpr post`**: New slash command (admin-only) replaces the legacy `!postgdpr` owner-only prefix command. Posts the GDPR agreement embed to the configured channel and pins it. The server name is now inserted dynamically from `guild.name` instead of being hardcoded.
+- **`/config gdpr set_acceptance_role [@role]`**: Configure a role to automatically assign to members when they click "I Agree" on the GDPR embed. Useful for unlocking onboarding channels via Discord's channel permissions. Leave empty to clear.
+- **`utils/gdpr_helpers.py`**: Shared module extracted from `cogs/gdpr.py` to avoid circular imports — contains `GDPRView`, `GDPRButton`, `store_gdpr_acceptance`, and `build_gdpr_text`.
+- **Migration 018**: Adds `guild_id BIGINT` column to `gdpr_acceptance`, scoping acceptances per guild.
+- **API `GET /api/dashboard/{guild_id}/gdpr`**: Returns `{ acceptance_count }` for the guild (admin-authenticated).
+- **Dashboard route `GET /api/dashboard/guild/[guildId]/gdpr`**: Next.js API route proxying GDPR stats to the dashboard.
+
+### Removed
+- **`!postgdpr` prefix command**: Replaced by `/config gdpr post`.
+
+### Fixed
+- Dutch strings in `cogs/gdpr.py` and `cogs/configuration.py` replaced with English equivalents.
+
 ---
 
 ## [3.4.0] - 2026-04-14
