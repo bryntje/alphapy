@@ -137,7 +137,7 @@ class FAQ(commands.Cog):
 
     async def _log_embed(self, title: str, description: str) -> None:
         try:
-            channel = self.bot.get_channel(0)  # Moet geconfigureerd worden via /config system set_log_channel
+            channel = self.bot.get_channel(0)  # Must be configured via /config system set_log_channel
             if channel and hasattr(channel, "send"):
                 embed = EmbedBuilder.log(title=title, description=description)
                 text_channel = cast(discord.TextChannel, channel)

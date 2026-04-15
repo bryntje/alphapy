@@ -28,20 +28,20 @@ class ImportInvites(commands.Cog):
     @commands.command(name="import_invites")
     @commands.is_owner()
     async def import_invites(self, ctx):
-        """Importeer invites vanuit het invite-tracker kanaal."""
-        # Gebruik guild-specifieke announcement kanaal setting
+        """Import invites from the invite-tracker channel."""
+        # Use guild-specific announcement channel setting
         try:
             announcement_channel_id = int(self.bot.settings.get("invites", "announcement_channel_id", ctx.guild.id))
             if announcement_channel_id == 0:
-                await ctx.send("❌ Invite announcement kanaal niet geconfigureerd voor deze server. Stel eerst `/config invites announcement_channel_id #invites` in.")
+                await ctx.send("❌ Invite announcement channel not configured for this server. Set it first with `/config invites announcement_channel_id #invites`.")
                 return
         except (KeyError, ValueError):
-            await ctx.send("❌ Invite announcement kanaal niet geconfigureerd voor deze server. Stel eerst `/config invites announcement_channel_id #invites` in.")
+            await ctx.send("❌ Invite announcement channel not configured for this server. Set it first with `/config invites announcement_channel_id #invites`.")
             return
 
         channel = self.bot.get_channel(announcement_channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await ctx.send("Invite announcement kanaal niet gevonden! Configureer eerst `/config invites announcement_channel_id` voor deze server.")
+            await ctx.send("Invite announcement channel not found! Configure it first with `/config invites announcement_channel_id` for this server.")
             return
 
         invite_counts = {}
@@ -50,7 +50,7 @@ class ImportInvites(commands.Cog):
 
 
         logger.debug("Channel check: %s (ID: %s) for guild %s", channel, announcement_channel_id, ctx.guild.name)
-        async for message in channel.history(limit=1000):  # Pas aan indien nodig
+        async for message in channel.history(limit=1000):  # Adjust limit if needed
             match = pattern_invited.search(message.content) or pattern_joined.search(message.content)
             logger.debug("Message found: %s", message.content)
             if match:
@@ -77,7 +77,7 @@ class ImportInvites(commands.Cog):
                 )
                 logger.debug("Imported: user_id=%s invite_count=%s", inviter, count)
         
-        await ctx.send("✅ Import voltooid!")
+        await ctx.send("✅ Import complete!")
 
 async def setup(bot: commands.Bot):
     cog = ImportInvites(bot)

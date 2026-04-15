@@ -29,23 +29,23 @@ class ImportData(commands.Cog):
     @commands.command(name="import_onboarding")
     @commands.is_owner()
     async def import_onboarding(self, ctx):
-        """Importeer onboarding data uit embed berichten in het logkanaal."""
-        # Gebruik guild-specifieke log kanaal setting
+        """Import onboarding data from embed messages in the log channel."""
+        # Use guild-specific log channel setting
         try:
             log_channel_id = int(self.bot.settings.get("system", "log_channel_id", ctx.guild.id))
             if log_channel_id == 0:
-                await ctx.send("❌ Log kanaal niet geconfigureerd voor deze server. Stel eerst `/config system set_log_channel #logs` in.")
+                await ctx.send("❌ Log channel not configured for this server. Set it first with `/config system set_log_channel #logs`.")
                 return
         except (KeyError, ValueError):
-            await ctx.send("❌ Log kanaal niet geconfigureerd voor deze server. Stel eerst `/config system set_log_channel #logs` in.")
+            await ctx.send("❌ Log channel not configured for this server. Set it first with `/config system set_log_channel #logs`.")
             return
 
         channel = self.bot.get_channel(log_channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await ctx.send("Log kanaal niet gevonden! Configureer eerst `/config system log_channel_id` voor deze server.")
+            await ctx.send("Log channel not found! Configure it first with `/config system log_channel_id` for this server.")
             return
 
-        async for message in channel.history(limit=1000):  # Pas aan indien nodig
+        async for message in channel.history(limit=1000):  # Adjust limit if needed
             if not message.embeds:
                 continue
 
@@ -84,7 +84,7 @@ class ImportData(commands.Cog):
                 )
             logger.debug("Imported user_id=%s", user_id)
         
-        await ctx.send("✅ Import voltooid!")
+        await ctx.send("✅ Import complete!")
 
 async def setup(bot: commands.Bot):
     cog = ImportData(bot)

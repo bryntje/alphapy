@@ -23,7 +23,7 @@ class LeaderHelp(commands.Cog):
         name="leaderhelp",
         description="Get AI-powered leadership guidance for challenges, team growth, or doubts."
     )
-    @app_checks.cooldown(3, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 3 per minuut
+    @app_checks.cooldown(3, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 3 per minute
     async def leaderhelp(self, interaction: discord.Interaction):
         await interaction.response.send_message(
             "What kind of support do you want?",
