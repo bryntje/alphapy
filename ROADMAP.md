@@ -1,8 +1,25 @@
-# 🧬 Innersync • Alphapy Roadmap v3.5.0 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.6.0 "Enterprise Ready"
 
-**Release v3.5.0 Complete!** 🛡️ GDPR slash commands, ticket transcript archiving, and reliability fixes.
+**Release v3.6.0 Complete!** ⚡ Settings hot-reload, config audit trail, automod analytics, embed-based `/config show` commands, and bot–dashboard schema parity.
 
-This document outlines the evolution from v3.5.0 forward.
+This document outlines the evolution from v3.6.0 forward.
+
+## ✅ COMPLETED: Settings Hot-Reload & Dashboard Parity (v3.6.0)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Minor release completing bot–dashboard schema parity and polishing the settings infrastructure:
+- **Settings hot-reload**: `GlobalSettingListener` + `add_global_listener()` in `SettingsService`; `CachedSettingsHelper` auto-evicts stale LRU entries on every change — no restart needed for config changes to take effect
+- **Config audit trail**: `config_audit_log` table (migration 019); `SettingsService.set()` writes audit rows; dashboard history/rollback endpoints now backed by real data
+- **Automod analytics**: `false_positive_rate`, `avg_response_time`, `trend` (7-day daily counts), `export_metrics()`, and `export_logs()` implemented with real DB queries
+- **Growth checkins**: `growth_checkins` table added (migration 020), resolving dashboard growth tab error
+- **`/config show` embeds**: All 10 show handlers now return paginated embeds with `SettingsPageView` (Prev/Next buttons when > 10 settings)
+- **TicketBot pool**: Migrated to shared `get_bot_db_pool()`, removing private `DatabaseManager`
+- **English strings**: 8 Dutch strings fixed across 6 cog files
+- **Bug fix**: Ticket metrics snapshot `$6` parameter type error resolved
+- **Dashboard refactor**: `page.tsx` split from 3806 → 1034 lines into 35 focused components
+
+---
 
 ## ✅ COMPLETED: GDPR Slash Commands & Reliability Fixes (v3.5.0)
 
@@ -184,10 +201,10 @@ Transform the extensive slash command configuration system into a user-friendly 
 | --- | --- | --- |
 | 0 | ✅ Done | Settings foundation (`SettingsService`, `/config` shell, embed watcher + reminders wired in) |
 | 1 | ✅ Done | Expand setting registrations (reminder scheduler options, Grok/LLM throttles, invite templates, GDPR toggles) |
-| 2 | 🔄 Next | Slashcommand UX polish: paginated `/config … show`, richer validation, autocomplete for channel/role targets |
-| 3 | 🔄 Next | Service listeners + cache refresh so cogs react instantly without restart; unify DB connection pooling |
-| 4 | 🔄 In progress | Observability & safety: FastAPI `/health` probe live; next up—config audit trail to DB and unit tests for coercion |
-| 5 | 🔄 Next | Launch checklist + docs update: whitepaper excerpt, CHANGELOG, admin hand-off guide |
+| 2 | ✅ Done | Slashcommand UX polish: paginated `/config … show` with `SettingsPageView`, embed-based output for all 10 show handlers |
+| 3 | ✅ Done | Service listeners + cache refresh (`GlobalSettingListener`, auto-invalidating LRU); TicketBot migrated to shared DB pool |
+| 4 | ✅ Done | Observability: config audit trail to DB (migration 019); automod analytics implemented; growth checkins table (migration 020) |
+| 5 | 🔄 Next | Launch checklist + docs update: whitepaper excerpt, admin hand-off guide |
 
 ### Implementation Checklist
 - [x] Create `SettingsService` with typed definitions and DB-backed overrides.
