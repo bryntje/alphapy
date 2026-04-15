@@ -10,6 +10,7 @@ from discord.ext import commands
 from discord.app_commands import checks as app_checks
 
 from gpt.helpers import ask_gpt, log_gpt_error, log_gpt_success
+from utils.db_helpers import acquire_safe, get_bot_db_pool
 from utils.sanitizer import safe_embed_text
 from utils.supabase_client import (
     SupabaseConfigurationError,
@@ -256,6 +257,25 @@ Keep your response under 250 words. End with a complete sentence.
                     )
 
             asyncio.create_task(_store_reflection())
+
+            async def _log_checkin_to_railway() -> None:
+                try:
+                    pool = get_bot_db_pool(interaction.client)
+                    if not pool:
+                        return
+                    async with acquire_safe(pool) as conn:
+                        await conn.execute(
+                            """
+                            INSERT INTO growth_checkins (guild_id, user_id, shared)
+                            VALUES ($1, $2, FALSE)
+                            """,
+                            guild_id or 0,
+                            interaction.user.id,
+                        )
+                except Exception as exc:
+                    logger.debug("Failed to log growth check-in to Railway: %s", exc)
+
+            asyncio.create_task(_log_checkin_to_railway())
         except Exception:
             await interaction.followup.send(
                 "❌ Something went wrong while processing your check-in. Please try again later.",
