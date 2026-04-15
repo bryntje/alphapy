@@ -29,6 +29,12 @@ class MockSettingsService:
         """Clear a setting."""
         self._settings.pop((scope, key, guild_id), None)
 
+    def add_listener(self, scope: str, key: str, listener) -> None:
+        """No-op stub — listeners not needed in tests."""
+
+    def add_global_listener(self, listener) -> None:
+        """No-op stub — global listeners not needed in tests."""
+
 
 class MockBot:
     """Mock Discord bot for testing."""

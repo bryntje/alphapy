@@ -36,6 +36,17 @@ class ReminderCog(AlphaCog):
         self._image_reminder_timestamps: Dict[Tuple[int, int], List[float]] = {}
         self.bot.loop.create_task(self.setup())
 
+    def cog_load(self) -> None:
+        """Subscribe to key reminder settings so changes take effect immediately."""
+        async def _on_default_channel_changed(value: Any) -> None:
+            logger.info(f"Reminders: default_channel_id changed to {value}")
+
+        async def _on_enabled_changed(value: Any) -> None:
+            logger.info(f"Reminders: module enabled changed to {value}")
+
+        self.settings.add_listener("reminders", "default_channel_id", _on_default_channel_changed)
+        self.settings.add_listener("reminders", "enabled", _on_enabled_changed)
+
     async def setup(self) -> None:
         await self.bot.wait_until_ready()
         try:
