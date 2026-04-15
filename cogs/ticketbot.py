@@ -886,7 +886,7 @@ class TicketBot(AlphaCog):
                 await conn.execute(
                     """
                     INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by, topics)
-                    VALUES ($1::jsonb, $2, $3::jsonb, $4, $5, CASE WHEN $6 IS NULL THEN NULL ELSE $6::jsonb END)
+                    VALUES ($1::jsonb, $2, $3::jsonb, $4, $5, $6::jsonb)
                     """,
                     snapshot_json,
                     scope,
