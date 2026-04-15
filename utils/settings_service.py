@@ -10,6 +10,8 @@ from utils.operational_logs import log_operational_event, EventType
 
 
 SettingListener = Callable[[Any], Coroutine[Any, Any, None]]
+# Global listener receives (scope, key, guild_id, new_value) for every setting change.
+GlobalSettingListener = Callable[[str, str, int, Any], Coroutine[Any, Any, None]]
 
 
 def _unwrap_quoted_scalar_str(value: str) -> str:
@@ -43,6 +45,7 @@ class SettingsService:
         self._overrides: Dict[Tuple[int, str, str], Any] = {}
         self._raw_overrides: Dict[Tuple[int, str, str], Any] = {}  # in-memory raw (e.g. fyi) when pool unavailable
         self._listeners: Dict[Tuple[str, str], List[SettingListener]] = {}
+        self._global_listeners: List[GlobalSettingListener] = []
         self._ready = False
 
     def register(self, definition: SettingDefinition) -> None:
@@ -211,7 +214,7 @@ class SettingsService:
         if not self._dsn or not self._pool:
             # Run in-memory mode (useful for tests) if no database is configured.
             self._overrides[(guild_id, scope, key)] = coerced
-            await self._notify(scope, key, coerced)
+            await self._notify(scope, key, guild_id, coerced)
             return coerced
 
         payload = json.dumps(coerced)
@@ -284,8 +287,8 @@ class SettingsService:
                 raise retry_error
 
         self._overrides[(guild_id, scope, key)] = coerced
-        await self._notify(scope, key, coerced)
-        
+        await self._notify(scope, key, guild_id, coerced)
+
         # Log to operational events
         log_operational_event(
             EventType.SETTINGS_CHANGED,
@@ -420,7 +423,7 @@ class SettingsService:
 
         self._overrides.pop((guild_id, scope, key), None)
         value = self.get(scope, key, guild_id)
-        await self._notify(scope, key, value)
+        await self._notify(scope, key, guild_id, value)
         
         # Log to operational events
         log_operational_event(
@@ -441,13 +444,17 @@ class SettingsService:
         listeners = self._listeners.setdefault(composite_key, [])
         listeners.append(listener)
 
-    async def _notify(self, scope: str, key: str, value: Any) -> None:
-        listeners = self._listeners.get((scope, key))
-        if not listeners:
-            return
+    def add_global_listener(self, listener: GlobalSettingListener) -> None:
+        """Register a listener that fires on every setting change with (scope, key, guild_id, value)."""
+        self._global_listeners.append(listener)
 
-        for listener in listeners:
-            asyncio.create_task(listener(value))
+    async def _notify(self, scope: str, key: str, guild_id: int, value: Any) -> None:
+        per_key = self._listeners.get((scope, key))
+        if per_key:
+            for listener in per_key:
+                asyncio.create_task(listener(value))
+        for listener in self._global_listeners:
+            asyncio.create_task(listener(scope, key, guild_id, value))
 
     def _coerce_value(self, value: Any, definition: SettingDefinition) -> Any:
         if value is None:

@@ -13,7 +13,7 @@ import re
 from typing import Optional, List, Dict, Any, cast
 from utils.settings_service import SettingsService
 from utils.settings_helpers import CachedSettingsHelper
-from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
 from utils.cog_base import AlphaCog
 from utils.validators import validate_admin
 from utils.embed_builder import EmbedBuilder
@@ -43,17 +43,17 @@ class TicketBot(AlphaCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
         self.db: Optional[asyncpg.Pool] = None
-        # In-memory cooldown tracking voor suggest_reply button
+        # In-memory cooldown tracking for suggest_reply button
         self._suggest_reply_cooldowns: Dict[int, float] = {}  # user_id -> last_used_timestamp
         self._max_cooldown_entries = 1000
         self._max_cooldown_age = 3600  # 1 hour - remove stale entries
-        # Start async setup zonder de event loop te blokkeren
+        # Start async setup without blocking the event loop
         self.bot.loop.create_task(self.setup_db())
         # Register persistent view so the ticket button keeps working after restarts
         try:
             self.bot.add_view(TicketOpenView(self, timeout=None))
         except Exception as e:
-            logger.warning(f"⚠️ TicketBot: kon TicketOpenView niet registreren: {e}")
+            logger.warning(f"⚠️ TicketBot: could not register TicketOpenView: {e}")
         
         # Note: check_idle_tickets task will be started in cog_load hook
 
@@ -76,18 +76,18 @@ class TicketBot(AlphaCog):
             logger.debug(f"Ticket cooldowns: Evicted {excess} oldest entries, size now: {len(self._suggest_reply_cooldowns)}")
     
     async def setup_db(self) -> None:
-        """Initialize database connection and ensure table exists."""
-        try:
-            dsn = getattr(config, "DATABASE_URL", None) or ""
-            if not dsn:
-                logger.warning("TicketBot: DATABASE_URL not set, skipping pool creation")
-                return
-            from utils.database_helpers import DatabaseManager
-            self._db_manager = DatabaseManager("ticketbot", {"DATABASE_URL": dsn})
-            pool = await self._db_manager.ensure_pool()
-            log_database_event("DB_CONNECTED", details="TicketBot database pool created")
+        """Initialize database connection using the shared bot pool and ensure schema is current."""
+        pool = get_bot_db_pool(self.bot)
+        if pool is None:
+            logger.error("TicketBot: shared DB pool not available")
+            self.db = None
+            return
 
-            async with self._db_manager.connection() as conn:
+        self.db = pool
+        log_database_event("DB_CONNECTED", details="TicketBot using shared bot database pool")
+
+        try:
+            async with acquire_safe(self.db) as conn:
                 await conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS support_tickets (
@@ -101,14 +101,13 @@ class TicketBot(AlphaCog):
                     );
                     """
                 )
-                # New column for ticket channel
+                # Backwards-compatible column additions
                 try:
                     await conn.execute(
                         "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS channel_id BIGINT;"
                     )
                 except Exception as e:
-                    logger.warning(f"⚠️ TicketBot: kon kolom channel_id niet toevoegen: {e}")
-                # Backwards compatible schema upgrades
+                    logger.warning(f"⚠️ TicketBot: could not add column channel_id: {e}")
                 try:
                     await conn.execute(
                         "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claimed_by BIGINT;"
@@ -117,8 +116,8 @@ class TicketBot(AlphaCog):
                         "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;"
                     )
                 except Exception as e:
-                    logger.warning(f"⚠️ TicketBot: kon schema niet upgraden: {e}")
-                # Indexen voor snellere queries later
+                    logger.warning(f"⚠️ TicketBot: could not upgrade schema: {e}")
+                # Indexes for faster queries
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_id);"
                 )
@@ -128,7 +127,7 @@ class TicketBot(AlphaCog):
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_support_tickets_channel_id ON support_tickets(channel_id);"
                 )
-                # Status workflow columns (M2)
+                # Status workflow columns
                 try:
                     await conn.execute(
                         "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();"
@@ -147,7 +146,7 @@ class TicketBot(AlphaCog):
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_support_tickets_updated_at ON support_tickets(updated_at);"
                 )
-                # Handige index voor claims
+                # Index for claims
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_support_tickets_claimed_by ON support_tickets(claimed_by);"
                 )
@@ -178,7 +177,7 @@ class TicketBot(AlphaCog):
                     );
                     """
                 )
-                # Metrics snapshots (optional)
+                # Metrics snapshots
                 await conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS ticket_metrics (
@@ -197,19 +196,12 @@ class TicketBot(AlphaCog):
                     await conn.execute("ALTER TABLE ticket_metrics ADD COLUMN IF NOT EXISTS topics JSONB;")
                 except Exception:
                     pass
-            
-            self.db = pool
+
             logger.info("TicketBot: DB ready (support_tickets)")
             log_database_event("DB_READY", details="TicketBot database fully initialized")
         except Exception as e:
             log_database_event("DB_INIT_ERROR", details=f"TicketBot setup failed: {e}")
             logger.error(f"TicketBot: DB init error: {e}")
-            if getattr(self, "_db_manager", None) and self._db_manager._pool:
-                try:
-                    await self._db_manager._pool.close()
-                except Exception:
-                    pass
-                self._db_manager._pool = None
             self.db = None
 
     async def send_log_embed(self, title: str, description: str, level: str = "info", guild_id: int = 0) -> None:
@@ -243,7 +235,7 @@ class TicketBot(AlphaCog):
                 log_with_guild(f"Log channel {channel_id} not found or not accessible", guild_id, "warning")
 
         except Exception as e:
-            log_with_guild(f"Kon ticketbot log embed niet versturen: {e}", guild_id, "error")
+            log_with_guild(f"Could not send ticketbot log embed: {e}", guild_id, "error")
 
     @app_commands.command(name="ticket", description="Create a support ticket")
     @app_checks.cooldown(1, 30.0)  # simple user cooldown
@@ -256,11 +248,11 @@ class TicketBot(AlphaCog):
         - Logs to `WATCHER_LOG_CHANNEL`
         """
         if not interaction.guild:
-            await interaction.response.send_message("❌ Deze command werkt alleen in een server.", ephemeral=True)
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
-        # Zorg dat DB klaar is
+        # Ensure DB is ready
         if not is_pool_healthy(self.db):
             try:
                 await self.setup_db()
@@ -289,12 +281,6 @@ class TicketBot(AlphaCog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-            if getattr(self, "_db_manager", None) and self._db_manager._pool:
-                try:
-                    await self._db_manager._pool.close()
-                except Exception:
-                    pass
-                self._db_manager._pool = None
             self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.")
@@ -341,7 +327,7 @@ class TicketBot(AlphaCog):
 
             category_id = self._get_ticket_category_id(guild.id)
             if not category_id:
-                raise RuntimeError("Ticket categorie niet ingesteld")
+                raise RuntimeError("Ticket category not configured")
             fetched_channel = guild.get_channel(category_id) or await self.bot.fetch_channel(category_id)
             if not isinstance(fetched_channel, discord.CategoryChannel):
                 raise RuntimeError("Category channel not found or not a category type")
@@ -386,7 +372,7 @@ class TicketBot(AlphaCog):
             except RuntimeError:
                 logger.warning("⚠️ TicketBot: Database pool not available for channel_id update")
             except Exception as e:
-                logger.warning(f"⚠️ TicketBot: kon channel_id niet opslaan: {e}")
+                logger.warning(f"⚠️ TicketBot: could not save channel_id: {e}")
 
             # Initial message in the ticket channel using EmbedBuilder
             ch_embed = EmbedBuilder.success(
@@ -496,12 +482,6 @@ class TicketBot(AlphaCog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-            if getattr(self, "_db_manager", None) and self._db_manager._pool:
-                try:
-                    await self._db_manager._pool.close()
-                except Exception:
-                    pass
-                self._db_manager._pool = None
             self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.")
@@ -906,7 +886,7 @@ class TicketBot(AlphaCog):
                 await conn.execute(
                     """
                     INSERT INTO ticket_metrics (snapshot, scope, counts, average_cycle_time, triggered_by, topics)
-                    VALUES ($1::jsonb, $2, $3::jsonb, $4, $5, CASE WHEN $6 IS NULL THEN NULL ELSE $6::jsonb END)
+                    VALUES ($1::jsonb, $2, $3::jsonb, $4, $5, $6::jsonb)
                     """,
                     snapshot_json,
                     scope,
@@ -1153,12 +1133,6 @@ class TicketBot(AlphaCog):
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
-            if getattr(self, "_db_manager", None) and self._db_manager._pool:
-                try:
-                    await self._db_manager._pool.close()
-                except Exception:
-                    pass
-                self._db_manager._pool = None
             self.db = None
             logger.warning(f"Database connection error: {conn_err}")
             await interaction.followup.send("❌ Database connection error. Please try again later.", ephemeral=True)
@@ -1418,18 +1392,21 @@ class TicketBot(AlphaCog):
             await asyncio.sleep(2)
 
     def cog_load(self):
-        """Called when the cog is loaded - start the idle ticket check task."""
+        """Called when the cog is loaded - start idle check task and subscribe to settings."""
         if not self.check_idle_tickets.is_running():
             self.check_idle_tickets.start()
 
+        async def _on_category_changed(value: Any) -> None:
+            logger.info(f"TicketBot: ticket category_id changed to {value}")
+
+        async def _on_staff_role_changed(value: Any) -> None:
+            logger.info(f"TicketBot: staff_role_id changed to {value}")
+
+        self.settings.add_listener("ticketbot", "category_id", _on_category_changed)
+        self.settings.add_listener("ticketbot", "staff_role_id", _on_staff_role_changed)
+
     async def cog_unload(self):
-        """Called when the cog is unloaded - close the database pool."""
-        if getattr(self, "_db_manager", None) and self._db_manager._pool:
-            try:
-                await self._db_manager._pool.close()
-            except Exception:
-                pass
-            self._db_manager._pool = None
+        """Called when the cog is unloaded - clear shared pool reference only."""
         self.db = None
 
 
@@ -1632,7 +1609,7 @@ class TicketActionView(discord.ui.View):
     @discord.ui.button(label="🎟️ Claim ticket", style=discord.ButtonStyle.primary, custom_id="ticket_claim_btn")
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._is_staff(interaction):
-            await interaction.response.send_message("⛔ Je hebt geen rechten om te claimen.", ephemeral=True)
+            await interaction.response.send_message("⛔ You do not have permission to claim this ticket.", ephemeral=True)
             return
         if not self.cog or not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not available.", ephemeral=True)

@@ -28,7 +28,7 @@ class CachedSettingsHelper:
     def __init__(self, settings: SettingsService, max_cache_size: int = 500):
         """
         Initialize the cached settings helper.
-        
+
         Args:
             settings: The SettingsService instance to wrap
             max_cache_size: Maximum number of entries in cache (default: 500)
@@ -37,6 +37,13 @@ class CachedSettingsHelper:
         self._cache: OrderedDict[tuple[str, str, int], Any] = OrderedDict()
         self._cache_enabled = True
         self._max_cache_size = max_cache_size
+
+        # Auto-invalidate this helper's LRU cache whenever any setting changes so
+        # cogs always read the current value without needing an explicit TTL.
+        async def _on_setting_changed(scope: str, key: str, guild_id: int, value: Any) -> None:
+            self._cache.pop(self._get_cache_key(scope, key, guild_id), None)
+
+        settings.add_global_listener(_on_setting_changed)
     
     def _get_cache_key(self, scope: str, key: str, guild_id: int) -> tuple[str, str, int]:
         """Generate cache key from scope, key, and guild_id."""
@@ -234,7 +241,7 @@ class CachedSettingsHelper:
         if not service._dsn or not service._pool:
             for (scope, key), coerced_value in coerced.items():
                 service._overrides[(guild_id, scope, key)] = coerced_value
-                await service._notify(scope, key, coerced_value)
+                await service._notify(scope, key, guild_id, coerced_value)
             return
 
         # Single transaction — one DB roundtrip for all keys.
@@ -256,11 +263,10 @@ class CachedSettingsHelper:
             logger.error(f"set_bulk: transaction failed: {e}")
             raise
 
-        # Update in-memory overrides, invalidate local cache, and fire listeners.
+        # Update in-memory overrides and fire listeners (global listener handles cache invalidation).
         for (scope, key), coerced_value in coerced.items():
             service._overrides[(guild_id, scope, key)] = coerced_value
-            self._cache.pop(self._get_cache_key(scope, key, guild_id), None)
-            await service._notify(scope, key, coerced_value)
+            await service._notify(scope, key, guild_id, coerced_value)
     
     async def invalidate_cache(self, scope: str, key: str, guild_id: int) -> None:
         """

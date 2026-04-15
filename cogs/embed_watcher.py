@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import config
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
-from typing import Optional, Tuple, List, cast
+from typing import Any, Optional, Tuple, List, cast
 from utils.logger import logger
 from utils.timezone import BRUSSELS_TZ
 from utils.settings_service import SettingsService
@@ -49,6 +49,17 @@ class EmbedReminderWatcher(AlphaCog):
             self.db = None
         else:
             self.db = pool
+
+    def cog_load(self) -> None:
+        """Subscribe to key embedwatcher settings so changes take effect immediately."""
+        async def _on_announcements_channel_changed(value: Any) -> None:
+            logger.info(f"EmbedWatcher: announcements_channel_id changed to {value}")
+
+        async def _on_offset_changed(value: Any) -> None:
+            logger.info(f"EmbedWatcher: reminder_offset_minutes changed to {value}")
+
+        self.settings.add_listener("embedwatcher", "announcements_channel_id", _on_announcements_channel_changed)
+        self.settings.add_listener("embedwatcher", "reminder_offset_minutes", _on_offset_changed)
 
     async def cog_unload(self) -> None:
         """Called when the cog is unloaded - clear local pool reference only (pool is shared)."""
