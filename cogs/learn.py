@@ -21,7 +21,7 @@ class LearnTopic(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="learn_topic", description="Ask a topic and get a short, clear explanation from Grok.")
-    @app_checks.cooldown(3, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 3 per minuut
+    @app_checks.cooldown(3, 60.0, key=lambda i: (i.guild.id, i.user.id) if i.guild else i.user.id)  # 3 per minute
     @app_commands.describe(topic="e.g. RSI, scalping, risk management…")
     async def learn_topic(self, interaction: discord.Interaction, topic: str):
         guild_id = interaction.guild.id if interaction.guild else None

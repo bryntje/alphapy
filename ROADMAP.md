@@ -199,10 +199,10 @@ Transform the extensive slash command configuration system into a user-friendly 
 - [x] Document admin workflow in `docs/configuration.md` and surface summary in CHANGELOG.
 
 ### Key Decisions & Open Questions
-- **Database migrations:** voorlopig blijven we bij cog-level `CREATE TABLE IF NOT EXISTS`; zodra we meer schemawijzigingen stapelen, herbekijken we een migrationtool.
-- **Permission tiers:** geen extra rol nodig; owners/admins blijven de enige configuratiemanagers.
-- **Secret storage:** secrets (`BOT_TOKEN`, `OPENAI_API_KEY`, DB credentials) blijven in `.env`/secrets manager; alles wat runtime bijsturing vereist (kanalen, offsets, toggles) gaat via de settings-service.
-- **Rollout volgorde:** we houden de volgorde embed/reminders → ticketbot → Grok → invites → GDPR → overige utilities aan.
+- **Database migrations:** For now we stay with Alembic for all schema changes; we revisit if the migration chain grows unwieldy.
+- **Permission tiers:** No extra role needed; owners/admins remain the only configuration managers.
+- **Secret storage:** Secrets (`BOT_TOKEN`, `OPENAI_API_KEY`, DB credentials) stay in `.env`/secrets manager; everything that requires runtime control (channels, offsets, toggles) goes via the settings-service.
+- **Rollout order:** We keep the order embed/reminders → ticketbot → Grok → invites → GDPR → other utilities.
 
 ---
 

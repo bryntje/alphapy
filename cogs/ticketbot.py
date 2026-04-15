@@ -101,7 +101,7 @@ class TicketBot(AlphaCog):
                     );
                     """
                 )
-                # Nieuwe kolom voor ticketkanaal
+                # New column for ticket channel
                 try:
                     await conn.execute(
                         "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS channel_id BIGINT;"
@@ -1682,7 +1682,7 @@ class TicketActionView(discord.ui.View):
     @discord.ui.button(label="🔒 Close ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_btn")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._is_staff(interaction):
-            await interaction.response.send_message("⛔ Je hebt geen rechten om te sluiten.", ephemeral=True)
+            await interaction.response.send_message("⛔ You do not have permission to close this ticket.", ephemeral=True)
             return
         if not self.cog or not is_pool_healthy(self.cog.db):
             await interaction.response.send_message("❌ Database not available.", ephemeral=True)
@@ -1953,7 +1953,7 @@ class TicketActionView(discord.ui.View):
             last_used = self.cog._suggest_reply_cooldowns.get(interaction.user.id, 0)
             if current_time - last_used < 5.0:
                 await interaction.response.send_message(
-                    "⏳ Even wachten... Supabase die weer eens een edge-case vindt als 100 replies in een burst. Probeer over 5 seconden opnieuw.",
+                    "⏳ Please wait a moment before using Suggest reply again. Try again in 5 seconds.",
                     ephemeral=True
                 )
                 return

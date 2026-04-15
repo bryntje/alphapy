@@ -11,7 +11,7 @@ class GDPRMigration(commands.Cog):
         self.bot = bot
 
     async def setup_database(self):
-        """Maakt de GDPR-tabel aan als deze nog niet bestaat."""
+        """Creates the GDPR table if it does not exist."""
         pg_conn = await asyncpg.connect(config.DATABASE_URL)
 
         await pg_conn.execute("""
@@ -29,30 +29,30 @@ class GDPRMigration(commands.Cog):
     @commands.command(name="migrate_gdpr")
     @commands.is_owner()
     async def migrate_gdpr(self, ctx):
-        """Migreert GDPR-gegevens van SQLite naar PostgreSQL."""
-        await ctx.send("📦 GDPR-migratie gestart... Dit kan even duren!")
+        """Migrates GDPR data from SQLite to PostgreSQL."""
+        await ctx.send("📦 GDPR migration started... This may take a moment!")
         await self.setup_database()
 
-        # ✅ Stap 1: Connectie met SQLite
+        # ✅ Step 1: Connect to SQLite
         sqlite_conn = sqlite3.connect("onboarding.db")
         sqlite_cursor = sqlite_conn.cursor()
 
-        # ✅ Stap 2: GDPR-data ophalen
+        # ✅ Step 2: Fetch GDPR data
         sqlite_cursor.execute("SELECT user_id, accepted, timestamp FROM gdpr_acceptance")
         data = sqlite_cursor.fetchall()
 
         if not data:
-            await ctx.send("❌ Geen GDPR-data gevonden in SQLite.")
+            await ctx.send("❌ No GDPR data found in SQLite.")
             return
 
-        await ctx.send(f"📦 {len(data)} GDPR-records gevonden, starten met migratie...")
+        await ctx.send(f"📦 {len(data)} GDPR records found, starting migration...")
 
-        # ✅ Stap 3: Connectie met PostgreSQL
+        # ✅ Step 3: Connect to PostgreSQL
         pg_conn = await asyncpg.connect(config.DATABASE_URL)
 
         for user_id, accepted, timestamp in data:
             timestamp = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
-            # ✅ Stap 4: GDPR-data invoegen in PostgreSQL
+            # ✅ Step 4: Insert GDPR data into PostgreSQL
             await pg_conn.execute(
                 """
                 INSERT INTO gdpr_acceptance (user_id, accepted, timestamp)
@@ -62,11 +62,11 @@ class GDPRMigration(commands.Cog):
                 int(user_id), accepted, timestamp
             )
 
-        # ✅ Stap 5: Connecties sluiten
+        # ✅ Step 5: Close connections
         await pg_conn.close()
         sqlite_conn.close()
 
-        await ctx.send("✅ GDPR-migratie voltooid! 🎉")
+        await ctx.send("✅ GDPR migration complete! 🎉")
 
 async def setup(bot):
     await bot.add_cog(GDPRMigration(bot))
