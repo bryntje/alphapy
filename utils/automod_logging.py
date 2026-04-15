@@ -363,13 +363,36 @@ class AutoModLogger:
         
         return f"[{timestamp}] User {user_id} - {action} (Rule {rule_id})"
         
-    async def export_logs(self, guild_id: int, days: int = 30, format: str = 'json') -> str:
-        """Export logs for a guild in specified format."""
+    async def export_logs(self, guild_id: int, days: int = 30, format: str = 'csv') -> str:
+        """Export violation logs for a guild as CSV."""
         try:
-            # This would need database access
-            # For now, return empty string
-            return ""
-            
+            pool = self._get_pool()
+            if not pool:
+                return ""
+            async with acquire_safe(pool) as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, guild_id, user_id, channel_id, rule_id,
+                           action_taken, appeal_status, timestamp
+                    FROM automod_logs
+                    WHERE guild_id = $1
+                      AND timestamp > NOW() - ($2::text || ' days')::interval
+                    ORDER BY timestamp DESC
+                    """,
+                    guild_id,
+                    days,
+                )
+            if not rows:
+                return ""
+            import csv
+            import io
+            fieldnames = ["id", "guild_id", "user_id", "channel_id", "rule_id",
+                          "action_taken", "appeal_status", "timestamp"]
+            buf = io.StringIO()
+            writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows([dict(r) for r in rows])
+            return buf.getvalue()
         except Exception as e:
-            log.error(f"Error exporting logs: {e}")
+            log.error(f"Error exporting logs for guild {guild_id}: {e}")
             return ""
