@@ -199,17 +199,7 @@ class Configuration(AlphaCog):
             await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by the check above
-        items = self.settings.list_scope("system", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ No system settings registered.", ephemeral=True)
-            return
-        lines = ["🛠️ **System settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "system", "🛠️ System settings")
     @system_group.command(name="set_log_channel", description="Set the log channel")
     @requires_admin()
     @app_commands.describe(channel="Channel for bot logs. Leave empty to reset to default.")
@@ -304,17 +294,8 @@ class Configuration(AlphaCog):
     @requires_admin()
     async def embedwatcher_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        items = self.settings.list_scope("embedwatcher", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ No embed watcher settings found.", ephemeral=True)
-            return
-        lines = ["📣 **Embed watcher settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "embedwatcher", "📣 Embed watcher settings")
+
     @embedwatcher_group.command(name="set_announcements", description="Set the channel to monitor")
     @requires_admin()
     @app_commands.describe(channel="Channel to watch for event embeds. Leave empty to reset.")
@@ -435,17 +416,7 @@ class Configuration(AlphaCog):
     @requires_admin()
     async def ticketbot_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        items = self.settings.list_scope("ticketbot", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ No TicketBot settings registered.", ephemeral=True)
-            return
-        lines = ["🎟️ **TicketBot settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "ticketbot", "🎟️ TicketBot settings")
     @ticketbot_group.command(name="set_category", description="Set the ticket category")
     @requires_admin()
     @app_commands.describe(category="Category for ticket channels. Leave empty to reset.")
@@ -536,17 +507,7 @@ class Configuration(AlphaCog):
     @requires_admin()
     async def gpt_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        items = self.settings.list_scope("gpt", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ No Grok/AI settings registered.", ephemeral=True)
-            return
-        lines = ["🤖 **Grok / AI settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "gpt", "🤖 Grok / AI settings")
     @gpt_group.command(name="set_model", description="Set the Grok model (bot owner only)")
     @app_commands.describe(
         model="Grok model name (e.g. grok-3). Leave empty to reset to default.",
@@ -615,17 +576,7 @@ class Configuration(AlphaCog):
     @requires_admin()
     async def invites_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        items = self.settings.list_scope("invites", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ No invite settings registered.", ephemeral=True)
-            return
-        lines = ["🎉 **Invite tracker settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "invites", "🎉 Invite tracker settings")
     @invites_group.command(name="toggle", description="Enable or disable the invite tracker")
     @requires_admin()
     @app_commands.describe(enabled="True to enable, False to disable.")
@@ -710,17 +661,7 @@ class Configuration(AlphaCog):
     @requires_admin()
     async def reminders_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        items = self.settings.list_scope("reminders", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ Geen reminder settings geregistreerd.", ephemeral=True)
-            return
-        lines = ["⏰ **Reminder settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "reminders", "⏰ Reminder settings")
     @reminders_group.command(name="toggle", description="Enable or disable reminders")
     @requires_admin()
     @app_commands.describe(enabled="True to enable, False to disable.")
@@ -788,17 +729,7 @@ class Configuration(AlphaCog):
     @requires_admin()
     async def verification_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        items = self.settings.list_scope("verification", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ No verification settings registered.", ephemeral=True)
-            return
-        lines = ["✅ **Verification settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "verification", "✅ Verification settings")
 
     @verification_group.command(name="set_verified_role", description="Set role given after verification")
     @requires_admin()
@@ -1096,17 +1027,7 @@ class Configuration(AlphaCog):
     @requires_admin()
     async def gdpr_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        items = self.settings.list_scope("gdpr", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ No GDPR settings configured.", ephemeral=True)
-            return
-        lines = ["🔒 **GDPR settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "gdpr", "🔒 GDPR settings")
     @gdpr_group.command(name="toggle", description="Enable or disable GDPR functionality")
     @requires_admin()
     @app_commands.describe(enabled="True to enable, False to disable.")
@@ -1230,14 +1151,15 @@ class Configuration(AlphaCog):
     async def onboarding_show(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
-        # Get onboarding settings
+
         enabled = self.settings.get("onboarding", "enabled", interaction.guild.id)
         mode = self.settings.get("onboarding", "mode", interaction.guild.id)
         completion_role_id = self.settings.get("onboarding", "completion_role_id", interaction.guild.id)
-        lines = ["📝 **Onboarding Configuration**"]
-        lines.append(f"**Enabled:** {'✅ Yes' if enabled else '❌ No'}")
-        lines.append(f"**Mode:** {mode}")
-        # Join role (assigned on join, removed on final access role)
+
+        embed = discord.Embed(title="📝 Onboarding configuration", color=0x5865F2)
+        embed.add_field(name="Enabled", value="✅ Yes" if enabled else "❌ No", inline=True)
+        embed.add_field(name="Mode", value=f"`{mode}`", inline=True)
+
         join_role_id = self.settings.get("onboarding", "join_role_id", interaction.guild.id)
         try:
             join_role_id_int = int(join_role_id) if join_role_id else 0
@@ -1245,50 +1167,56 @@ class Configuration(AlphaCog):
             join_role_id_int = 0
         if join_role_id_int:
             join_role = interaction.guild.get_role(join_role_id_int)
-            lines.append(f"**Join Role:** {join_role.mention if join_role else f'<@&{join_role_id_int}>'}")
+            embed.add_field(name="Join role", value=join_role.mention if join_role else f"<@&{join_role_id_int}>", inline=True)
         else:
-            lines.append("**Join Role:** Not set")
+            embed.add_field(name="Join role", value="Not set", inline=True)
+
         if completion_role_id and completion_role_id != 0:
             role = interaction.guild.get_role(completion_role_id)
-            lines.append(f"**Completion Role:** {role.mention if role else f'<@&{completion_role_id}>'}")
+            embed.add_field(name="Completion role", value=role.mention if role else f"<@&{completion_role_id}>", inline=True)
         else:
-            lines.append("**Completion Role:** Not set")
-        # Show rules if mode includes rules
+            embed.add_field(name="Completion role", value="Not set", inline=True)
+
+        # Rules (when mode includes them)
         if mode in ["rules_only", "rules_with_questions"]:
-            onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+            onboarding_cog = self.bot.get_cog("Onboarding")
             if onboarding_cog:
                 rules = await onboarding_cog.get_guild_rules(interaction.guild.id)
                 if rules:
-                    lines.append("\n**Rules:**")
+                    rule_lines = []
                     for i, rule in enumerate(rules, 1):
                         t = rule["title"] if isinstance(rule, dict) else rule[0]
-                        d = rule["description"] if isinstance(rule, dict) else rule[1]
-                        extra = ""
+                        extras = []
                         if isinstance(rule, dict):
                             if rule.get("thumbnail_url"):
-                                extra += " [thumb]"
+                                extras.append("thumb")
                             if rule.get("image_url"):
-                                extra += " [img]"
-                        lines.append(f"{i}. **{t}** - {d}{extra}")
+                                extras.append("img")
+                        suffix = f" [{', '.join(extras)}]" if extras else ""
+                        rule_lines.append(f"{i}. **{t}**{suffix}")
+                    embed.add_field(name=f"Rules ({len(rules)})", value="\n".join(rule_lines[:10]), inline=False)
                 else:
-                    lines.append("\n⚠️ No rules configured")
+                    embed.add_field(name="Rules", value="⚠️ None configured", inline=False)
             else:
-                lines.append("\n❌ Onboarding module not available")
-        # Show questions only if mode includes questions
+                embed.add_field(name="Rules", value="❌ Onboarding module not loaded", inline=False)
+
+        # Questions (when mode includes them)
         if mode in ["rules_with_questions", "questions_only"]:
-            onboarding_cog = getattr(self.bot, "get_cog", lambda name: None)("Onboarding")
+            onboarding_cog = self.bot.get_cog("Onboarding")
             if onboarding_cog:
                 questions = await onboarding_cog.get_guild_questions(interaction.guild.id)
                 if questions:
-                    lines.append("\n**Questions:**")
+                    q_lines = []
                     for i, q in enumerate(questions, 1):
-                        q_type = "Multiple Choice" if q.get("multiple") else ("Text Input" if q.get("type") == "email" else "Single Choice")
-                        lines.append(f"{i}. **{q['question']}** ({q_type})")
+                        q_type = "Multi" if q.get("multiple") else ("Email" if q.get("type") == "email" else "Single")
+                        q_lines.append(f"{i}. {q['question']} *({q_type})*")
+                    embed.add_field(name=f"Questions ({len(questions)})", value="\n".join(q_lines[:10]), inline=False)
                 else:
-                    lines.append("\n⚠️ No questions configured")
+                    embed.add_field(name="Questions", value="⚠️ None configured", inline=False)
             else:
-                lines.append("\n❌ Onboarding module not available")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+                embed.add_field(name="Questions", value="❌ Onboarding module not loaded", inline=False)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
     @onboarding_group.command(name="toggle", description="Enable or disable onboarding for this server")
     @requires_admin()
     @app_commands.describe(enabled="True to enable, False to disable.")
@@ -1606,16 +1534,7 @@ class Configuration(AlphaCog):
             await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        items = self.settings.list_scope("automod", interaction.guild.id)
-        if not items:
-            await interaction.followup.send("⚠️ No auto-moderation settings registered.", ephemeral=True)
-            return
-        lines = ["🛡️ **Auto-moderation settings**"]
-        for definition, value, overridden in items:
-            status = "✅ override" if overridden else "🔹 default"
-            formatted = self._format_value(definition, value)
-            lines.append(f"{status} — `{definition.key}` → {formatted}")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self._reply_settings(interaction, "automod", "🛡️ Auto-moderation settings")
 
     @automod_group.command(name="toggle", description="Enable or disable auto-moderation")
     @requires_admin()
@@ -2496,6 +2415,85 @@ class Configuration(AlphaCog):
         if interaction.guild_id is not None:
             return interaction.guild_id, None
         return None, "❌ No guild context. Provide a `guild_id` when using this command in DMs."
+
+    # ------------------------------------------------------------------ #
+    #  Settings show — shared embed helpers                               #
+    # ------------------------------------------------------------------ #
+
+    _SETTINGS_PAGE_SIZE = 10
+
+    def _settings_embed(self, title: str, items: list, page: int) -> discord.Embed:
+        """Build a paginated embed for a settings scope."""
+        page_size = self._SETTINGS_PAGE_SIZE
+        start = page * page_size
+        slice_ = items[start : start + page_size]
+        embed = discord.Embed(title=title, color=0x5865F2)
+        for definition, value, overridden in slice_:
+            badge = "✅" if overridden else "🔹"
+            formatted = self._format_value(definition, value)
+            embed.add_field(
+                name=f"{badge} `{definition.key}`",
+                value=formatted,
+                inline=False,
+            )
+        total_pages = max(1, (len(items) + page_size - 1) // page_size)
+        count = len(items)
+        embed.set_footer(text=f"Page {page + 1}/{total_pages} · {count} setting{'s' if count != 1 else ''}")
+        return embed
+
+    async def _reply_settings(self, interaction: discord.Interaction, scope: str, title: str) -> None:
+        """Fetch a settings scope and send it as a paginated embed."""
+        assert interaction.guild is not None
+        items = self.settings.list_scope(scope, interaction.guild.id)
+        if not items:
+            await interaction.followup.send(f"⚠️ No `{scope}` settings registered.", ephemeral=True)
+            return
+        embed = self._settings_embed(title, items, page=0)
+        if len(items) > self._SETTINGS_PAGE_SIZE:
+            view = Configuration.SettingsPageView(self, title, items)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+    class SettingsPageView(discord.ui.View):
+        """Reusable prev/next paginator for settings scopes."""
+
+        def __init__(self, cog: "Configuration", title: str, items: list, page: int = 0):
+            super().__init__(timeout=180)
+            self.cog = cog
+            self.title = title
+            self.items = items
+            self.page = page
+            self._sync_buttons()
+
+        def _sync_buttons(self) -> None:
+            page_size = Configuration._SETTINGS_PAGE_SIZE
+            total_pages = max(1, (len(self.items) + page_size - 1) // page_size)
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    if child.custom_id == "cfg_prev":
+                        child.disabled = self.page <= 0
+                    if child.custom_id == "cfg_next":
+                        child.disabled = self.page >= total_pages - 1
+
+        async def _update(self, interaction: discord.Interaction) -> None:
+            self._sync_buttons()
+            embed = self.cog._settings_embed(self.title, self.items, self.page)
+            await interaction.response.edit_message(embed=embed, view=self)
+
+        @discord.ui.button(label="⬅ Prev", style=discord.ButtonStyle.secondary, custom_id="cfg_prev")
+        async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if self.page > 0:
+                self.page -= 1
+            await self._update(interaction)
+
+        @discord.ui.button(label="Next ➡", style=discord.ButtonStyle.primary, custom_id="cfg_next")
+        async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+            page_size = Configuration._SETTINGS_PAGE_SIZE
+            total_pages = max(1, (len(self.items) + page_size - 1) // page_size)
+            if self.page < total_pages - 1:
+                self.page += 1
+            await self._update(interaction)
 
     def _format_value(self, definition: SettingDefinition, value: Any) -> str:
         if value is None:
