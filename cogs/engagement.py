@@ -124,7 +124,7 @@ async def _get_award_configs(bot: commands.Bot, guild_id: int) -> List[Dict[str,
     food_channels = await _get_food_channel_ids(bot, guild_id)
     defaults = [
         {"key": "motivator", "label": "📣 Motivator",          "subtitle": "Most messages",           "filter": "non_food"},
-        {"key": "knaller",   "label": "💥 Knaller of the week", "subtitle": "Most messages with image", "filter": "image"},
+        {"key": "sharpshooter", "label": "💥 Sharpshooter of the week", "subtitle": "Most messages with image", "filter": "image"},
         {"key": "star",      "label": "⭐ Star of the week",    "subtitle": "Most reactions on a photo","filter": "reactions"},
     ]
     if food_channels:

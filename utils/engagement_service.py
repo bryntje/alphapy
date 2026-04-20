@@ -3,7 +3,7 @@ Engagement Service
 
 Business logic for the Engagement module:
   - Challenges  (message-count leaderboard or random-draw contests)
-  - Weekly Awards (motivator, foodfluencer, knaller, star — configurable per guild)
+  - Weekly Awards (motivator, foodfluencer, sharpshooter, star — configurable per guild)
   - Streaks     (daily activity streak with optional nickname suffix)
   - Badges      (per-guild role-linked badge history)
   - OG Claims   (reaction-based limited claim with cap + deadline)

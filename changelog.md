@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **Engagement module** (`cogs/engagement.py`, `utils/engagement_service.py`): Community gamification system with five independently toggleable features per guild (all off by default):
   - **Challenges** (`challenges_enabled`) — timed message-count contests per channel; modes: `leaderboard` or `random`. Active challenges rehydrate from DB on restart. Commands: `/challenge start|end|cancel|status|edit`.
-  - **Weekly Awards** (`weekly_enabled`) — indexes messages (`has_image`, `is_food`) and reactions via `on_message` / `on_raw_reaction_add`. Award categories are configurable per guild as JSON (default: Motivator, Foodfluencer, Knaller, Star). Triggered via `/weekly compute` or a scheduler.
+  - **Weekly Awards** (`weekly_enabled`) — indexes messages (`has_image`, `is_food`) and reactions via `on_message` / `on_raw_reaction_add`. Award categories are configurable per guild as JSON (default: Motivator, Foodfluencer, Sharpshooter, Star). Triggered via `/weekly compute` or a scheduler.
   - **Badges** (`badges_enabled`) — per-guild badge history with optional Discord role assignment. Commands: `/badge give|list`. Roles configured via `/engagement set_badge_role`.
   - **Streaks** (`streaks_enabled`) — daily activity streak counter with optional nickname suffix (`streaks_nicknames` setting): `Name | 🐣 day 3`, `🔥 week 2`, `👑 month 1`.
   - **OG Claims** (`og_enabled`) — reaction-based limited-spot claim system. Cap, message text, and badge role are configurable. Commands: `/og setup|status`.

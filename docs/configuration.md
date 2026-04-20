@@ -240,7 +240,7 @@ Key chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`).
 
 Features for `toggle`: `challenges`, `weekly`, `badges`, `streaks`, `og_claims`.
 
-Badge keys for `set_badge_role`: `winner`, `og`, `motivator`, `foodfluencer`, `knaller`, `star`.
+Badge keys for `set_badge_role`: `winner`, `og`, `motivator`, `foodfluencer`, `sharpshooter`, `star`.
 
 `set_weekly_awards` accepts a JSON list of award category objects:
 ```json
@@ -249,7 +249,7 @@ Badge keys for `set_badge_role`: `winner`, `og`, `motivator`, `foodfluencer`, `k
   {"key": "star",      "label": "⭐ Star",       "subtitle": "Most reactions on a photo", "filter": "reactions"}
 ]
 ```
-Filters: `non_food`, `food`, `image`, `reactions`. Defaults to 4 awards (Motivator, Foodfluencer, Knaller, Star) if not configured.
+Filters: `non_food`, `food`, `image`, `reactions`. Defaults to 4 awards (Motivator, Foodfluencer, Sharpshooter, Star) if not configured (Foodfluencer only included when food channels are set).
 
 ## Template Placeholders
 

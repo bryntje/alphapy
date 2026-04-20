@@ -2651,7 +2651,7 @@ class Configuration(AlphaCog):
             f"  winner — {fmt_role(await g('badge_role_winner'))}",
             f"  motivator — {fmt_role(await g('badge_role_motivator'))}",
             f"  foodfluencer — {fmt_role(await g('badge_role_foodfluencer'))}",
-            f"  knaller — {fmt_role(await g('badge_role_knaller'))}",
+            f"  sharpshooter — {fmt_role(await g('badge_role_sharpshooter'))}",
             f"  star — {fmt_role(await g('badge_role_star'))}",
         ]
         embed = discord.Embed(
@@ -2802,7 +2802,7 @@ class Configuration(AlphaCog):
         description="Link a Discord role to a badge key",
     )
     @app_commands.describe(
-        badge_key="Badge key e.g. winner, og, motivator, foodfluencer, knaller, star",
+        badge_key="Badge key e.g. winner, og, motivator, foodfluencer, sharpshooter, star",
         role="Role to assign when this badge is awarded (leave empty to clear)",
     )
     @requires_admin()

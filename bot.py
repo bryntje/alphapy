@@ -502,7 +502,7 @@ settings_service.register(
     )
 )
 # Badge role settings — one per well-known badge key
-for _badge_key in ("winner", "og", "motivator", "foodfluencer", "knaller", "star"):
+for _badge_key in ("winner", "og", "motivator", "foodfluencer", "sharpshooter", "star"):
     settings_service.register(
         SettingDefinition(
             scope="engagement",
