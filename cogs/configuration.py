@@ -2649,36 +2649,40 @@ class Configuration(AlphaCog):
         def fmt_role(v: Any) -> str:
             return f"<@&{int(v)}>" if v else "Not set"
 
-        lines = [
-            f"**challenges_enabled** — {fmt_bool(await g('challenges_enabled', False))}",
-            f"**weekly_enabled** — {fmt_bool(await g('weekly_enabled', False))}",
-            f"**badges_enabled** — {fmt_bool(await g('badges_enabled', False))}",
-            f"**streaks_enabled** — {fmt_bool(await g('streaks_enabled', False))}",
-            f"**og_enabled** — {fmt_bool(await g('og_enabled', False))}",
-            "",
-            f"**challenge_winner_role_id** — {fmt_role(await g('challenge_winner_role_id'))}",
-            "",
-            f"**weekly_award_channel_id** — {fmt_channel(await g('weekly_award_channel_id'))}",
-            f"**weekly_food_channel_ids** — `{await g('weekly_food_channel_ids', 'Not set')}`",
-            f"**weekly_award_configs** — `{await g('weekly_award_configs', 'default (4 awards)')}`",
-            "",
-            f"**streaks_nicknames** — {fmt_bool(await g('streaks_nicknames', False))}",
-            "",
-            f"**og_cap** — `{await g('og_cap', 50)}`",
-            f"**og_claim_text** — `{await g('og_claim_text', 'default')}`",
-            "",
-            "**badge roles** (badge_role_<key>):",
-            f"  og — {fmt_role(await g('badge_role_og'))}",
-            f"  winner — {fmt_role(await g('badge_role_winner'))}",
-            f"  motivator — {fmt_role(await g('badge_role_motivator'))}",
-            f"  foodfluencer — {fmt_role(await g('badge_role_foodfluencer'))}",
-            f"  sharpshooter — {fmt_role(await g('badge_role_sharpshooter'))}",
-            f"  star — {fmt_role(await g('badge_role_star'))}",
-        ]
-        embed = discord.Embed(
+        # Gather values
+        challenges = await g('challenges_enabled', False)
+        weekly = await g('weekly_enabled', False)
+        badges = await g('badges_enabled', False)
+        streaks = await g('streaks_enabled', False)
+        og = await g('og_enabled', False)
+
+        winner_role = await g('challenge_winner_role_id')
+        og_role = await g('badge_role_og')
+
+        weekly_channel = await g('weekly_award_channel_id')
+        food_channels = await g('weekly_food_channel_ids', 'Not set')
+
+        streaks_nick = await g('streaks_nicknames', False)
+        og_cap = await g('og_cap', 50)
+
+        badge_roles = {
+            'og': await g('badge_role_og'),
+            'winner': await g('badge_role_winner'),
+            'motivator': await g('badge_role_motivator'),
+            'foodfluencer': await g('badge_role_foodfluencer'),
+            'sharpshooter': await g('badge_role_sharpshooter'),
+            'star': await g('badge_role_star'),
+        }
+
+        embed = EmbedBuilder.info(
             title="⚡ Engagement Settings",
-            description="\n".join(lines),
-            color=discord.Color.blurple(),
+            fields=[
+                {"name": "Enabled", "value": f"Challenges {fmt_bool(challenges)}  Weekly {fmt_bool(weekly)}  Badges {fmt_bool(badges)}  Streaks {fmt_bool(streaks)}  OG {fmt_bool(og)}", "inline": False},
+                {"name": "Roles", "value": f"Winner role  {fmt_role(winner_role)}\nOG role   {fmt_role(og_role)}", "inline": False},
+                {"name": "Channels", "value": f"Weekly award channel  {fmt_channel(weekly_channel)}\nWeekly food channels  `{food_channels}`", "inline": False},
+                {"name": "Streaks", "value": f"Nicknames enabled  {fmt_bool(streaks_nick)}\nOG cap     {og_cap}", "inline": False},
+                {"name": f"Badges ({sum(1 for r in badge_roles.values() if r)} total)", "value": "\n".join(f"{k} — {fmt_role(v)}" for k, v in badge_roles.items()), "inline": False},
+            ]
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
