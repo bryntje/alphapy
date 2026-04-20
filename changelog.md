@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - **Engagement audit logs**: Added comprehensive logging for all settings changes, including who made the change, matching the format used in other configuration commands.
 - **Setup wizard messages**: Updated references to use the new top-level command structure instead of the old `/config <scope>` format.
 - **Command references**: Updated all remaining hardcoded `/config <scope>` references throughout the codebase to use the new top-level commands (e.g., `/engagement toggle`, `/onboarding show`, `/system set_log_channel`, etc.).
+- **Engagement show redesign**: Redesigned `/engagement show` to use grouped embed sections (Enabled, Roles, Channels, Streaks, Badges) matching the premium style of onboarding and other configuration displays.
 - **Automod status labels**: Improved to 'Enabled' and 'Premium enabled' for better clarity and distinction from individual settings.
 
 ---
