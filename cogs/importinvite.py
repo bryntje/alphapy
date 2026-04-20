@@ -33,15 +33,15 @@ class ImportInvites(commands.Cog):
         try:
             announcement_channel_id = int(self.bot.settings.get("invites", "announcement_channel_id", ctx.guild.id))
             if announcement_channel_id == 0:
-                await ctx.send("❌ Invite announcement channel not configured for this server. Set it first with `/config invites announcement_channel_id #invites`.")
+                await ctx.send("❌ Invite announcement channel not configured for this server. Set it first with `/invites set_channel #invites`.")
                 return
         except (KeyError, ValueError):
-            await ctx.send("❌ Invite announcement channel not configured for this server. Set it first with `/config invites announcement_channel_id #invites`.")
+            await ctx.send("❌ Invite announcement channel not configured for this server. Set it first with `/invites set_channel #invites`.")
             return
 
         channel = self.bot.get_channel(announcement_channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await ctx.send("Invite announcement channel not found! Configure it first with `/config invites announcement_channel_id` for this server.")
+            await ctx.send("Invite announcement channel not found! Configure it first with `/invites set_channel` for this server.")
             return
 
         invite_counts = {}

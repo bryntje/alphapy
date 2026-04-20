@@ -39,65 +39,85 @@ class Configuration(AlphaCog):
         default_permissions=discord.Permissions(administrator=True),
         guild_only=True,
     )
+    _admin_perms = discord.Permissions(administrator=True)
+
     system_group = app_commands.Group(
         name="system",
         description="System settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     embedwatcher_group = app_commands.Group(
         name="embedwatcher",
         description="Embed watcher settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     ticketbot_group = app_commands.Group(
         name="ticketbot",
         description="TicketBot settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     gpt_group = app_commands.Group(
         name="gpt",
         description="Grok / AI settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     invites_group = app_commands.Group(
         name="invites",
         description="Invite tracker settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     reminders_group = app_commands.Group(
         name="reminders",
         description="Reminder settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     gdpr_group = app_commands.Group(
         name="gdpr",
         description="GDPR settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     onboarding_group = app_commands.Group(
         name="onboarding",
         description="Onboarding configuration",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     fyi_group = app_commands.Group(
         name="fyi",
         description="Contextual FYI tips (admin testing)",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     verification_group = app_commands.Group(
         name="verification",
         description="Verification settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     automod_group = app_commands.Group(
         name="automod",
         description="Auto-moderation settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     growth_group = app_commands.Group(
         name="growth",
         description="Growth Check-in settings",
-        parent=config,
+        default_permissions=_admin_perms,
+        guild_only=True,
+    )
+    engagement_group = app_commands.Group(
+        name="engagement",
+        description="Engagement module settings (challenges, weekly awards, streaks, badges, OG claims)",
+        default_permissions=_admin_perms,
+        guild_only=True,
     )
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
@@ -1116,7 +1136,7 @@ class Configuration(AlphaCog):
         channel_id = self.settings.get("gdpr", "channel_id", interaction.guild.id)
         if not channel_id:
             await interaction.followup.send(
-                "⚠️ No GDPR channel configured. Use `/config gdpr set_channel` first.", ephemeral=True
+                "⚠️ No GDPR channel configured. Use `/gdpr set_channel` first.", ephemeral=True
             )
             return
 
@@ -1493,7 +1513,7 @@ class Configuration(AlphaCog):
         # Check if onboarding is enabled for this guild
         enabled = self.settings.get("onboarding", "enabled", interaction.guild.id)
         if not enabled:
-            await interaction.response.send_message("⚠️ Onboarding is not enabled for this server. Enable it first with `/config onboarding enable`.", ephemeral=True)
+            await interaction.response.send_message("⚠️ Onboarding is not enabled for this server. Enable it first with `/onboarding enable`.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -1526,6 +1546,48 @@ class Configuration(AlphaCog):
         # Show modal with current order
         modal = ReorderQuestionsModal(onboarding_cog, interaction.guild.id, questions)
         await interaction.response.send_modal(modal)
+
+    @automod_group.command(name="status", description="Check auto-moderation status")
+    @requires_admin()
+    async def automod_status(self, interaction: discord.Interaction) -> None:
+        """Show current auto-moderation status."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+        guild_id = interaction.guild.id
+        await interaction.response.defer(ephemeral=True)
+        try:
+            from utils.automod_rules import RuleProcessor
+            from utils.premium_guard import guild_has_premium
+            from utils.embed_builder import EmbedBuilder
+            rules = await self.rule_processor.get_active_rules(guild_id)
+            premium_status = await guild_has_premium(guild_id)
+            automod_enabled = self.settings.get("automod", "enabled", guild_id=guild_id)
+            embed = EmbedBuilder.info(
+                title="Auto-Moderation Status",
+                fields=[
+                    {"name": "Status",          "value": "✅ Module enabled" if automod_enabled else "❌ Module disabled", "inline": True},
+                    {"name": "Active Rules",     "value": str(len(rules)), "inline": True},
+                    {"name": "Premium Features", "value": "✅ Premium enabled" if premium_status else "❌ Premium disabled", "inline": True},
+                ],
+            )
+            rule_counts: dict = {}
+            for rule in rules:
+                rt = rule.get("rule_type", "unknown")
+                rule_counts[rt] = rule_counts.get(rt, 0) + 1
+            if rule_counts:
+                embed.add_field(
+                    name="Rules by Type",
+                    value="\n".join(f"• {rt}: {cnt}" for rt, cnt in rule_counts.items()),
+                    inline=False,
+                )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in automod status command: {e}")
+            try:
+                await interaction.followup.send("❌ Failed to retrieve auto-mod status.", ephemeral=True)
+            except Exception:
+                pass
 
     @automod_group.command(name="show", description="Show auto-moderation settings")
     @requires_admin()
@@ -2422,23 +2484,27 @@ class Configuration(AlphaCog):
 
     _SETTINGS_PAGE_SIZE = 10
 
-    def _settings_embed(self, title: str, items: list, page: int) -> discord.Embed:
+    def _settings_embed(self, title: str, items: list, page: int, scope: str = "") -> discord.Embed:
         """Build a paginated embed for a settings scope."""
         page_size = self._SETTINGS_PAGE_SIZE
         start = page * page_size
         slice_ = items[start : start + page_size]
         embed = discord.Embed(title=title, color=0x5865F2)
         for definition, value, overridden in slice_:
-            badge = "✅" if overridden else "🔹"
             formatted = self._format_value(definition, value)
+            display_name = self._humanize_key(definition.key)
             embed.add_field(
-                name=f"{badge} `{definition.key}`",
+                name=display_name,
                 value=formatted,
                 inline=False,
             )
         total_pages = max(1, (len(items) + page_size - 1) // page_size)
         count = len(items)
-        embed.set_footer(text=f"Page {page + 1}/{total_pages} · {count} setting{'s' if count != 1 else ''}")
+        count_label = f"{count} setting{'s' if count != 1 else ''}"
+        if total_pages > 1:
+            embed.set_footer(text=f"Page {page + 1}/{total_pages} · {count_label}")
+        else:
+            embed.set_footer(text=count_label)
         return embed
 
     async def _reply_settings(self, interaction: discord.Interaction, scope: str, title: str) -> None:
@@ -2448,9 +2514,11 @@ class Configuration(AlphaCog):
         if not items:
             await interaction.followup.send(f"⚠️ No `{scope}` settings registered.", ephemeral=True)
             return
-        embed = self._settings_embed(title, items, page=0)
+        # Sort items to put "enabled" first if present, then alphabetically
+        items.sort(key=lambda x: (x[0].key != "enabled", x[0].key))
+        embed = self._settings_embed(title, items, page=0, scope=scope)
         if len(items) > self._SETTINGS_PAGE_SIZE:
-            view = Configuration.SettingsPageView(self, title, items)
+            view = Configuration.SettingsPageView(self, title, items, scope=scope)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         else:
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -2458,12 +2526,13 @@ class Configuration(AlphaCog):
     class SettingsPageView(discord.ui.View):
         """Reusable prev/next paginator for settings scopes."""
 
-        def __init__(self, cog: "Configuration", title: str, items: list, page: int = 0):
+        def __init__(self, cog: "Configuration", title: str, items: list, page: int = 0, scope: str = ""):
             super().__init__(timeout=180)
             self.cog = cog
             self.title = title
             self.items = items
             self.page = page
+            self.scope = scope
             self._sync_buttons()
 
         def _sync_buttons(self) -> None:
@@ -2478,7 +2547,7 @@ class Configuration(AlphaCog):
 
         async def _update(self, interaction: discord.Interaction) -> None:
             self._sync_buttons()
-            embed = self.cog._settings_embed(self.title, self.items, self.page)
+            embed = self.cog._settings_embed(self.title, self.items, self.page, scope=self.scope)
             await interaction.response.edit_message(embed=embed, view=self)
 
         @discord.ui.button(label="⬅ Prev", style=discord.ButtonStyle.secondary, custom_id="cfg_prev")
@@ -2495,15 +2564,32 @@ class Configuration(AlphaCog):
                 self.page += 1
             await self._update(interaction)
 
+    def _humanize_key(self, key: str) -> str:
+        """Convert a setting key to a human-readable display name."""
+        # Special cases
+        if key == "enabled":
+            return "Enabled"
+        # General humanization
+        words = key.replace('_', ' ').split()
+        humanized = []
+        for word in words:
+            if word.lower() in ('id', 'ids'):
+                continue  # Skip ID suffixes
+            humanized.append(word.capitalize())
+        return ' '.join(humanized)
+
     def _format_value(self, definition: SettingDefinition, value: Any) -> str:
         if value is None:
-            return "—"
+            return "Not set"
         if definition.value_type == "channel":
-            return f"<#{int(value)}>" if value else "—"
+            return f"<#{int(value)}>" if value else "Not set"
         if definition.value_type == "role":
-            return f"<@&{int(value)}>"
-        if definition.value_type == "bool":
-            return "✅ on" if value else "🚫 off"
+            return f"<@&{int(value)}>" if value else "Not set"
+        if definition.value_type in ("bool", "boolean"):
+            return "✅ Yes" if value else "❌ No"
+        # For message fields, no backticks; for others, add backticks
+        if "message" in definition.key.lower():
+            return str(value)
         return f"`{value}`"
     async def _send_audit_log(self, title: str, message: str, guild_id: Optional[int] = None) -> None:
         """Send audit log to the correct guild's log channel. Config changes are always logged (critical)."""
@@ -2528,6 +2614,338 @@ class Configuration(AlphaCog):
             log_guild_action(guild_id, "AUDIT_LOG", details=f"config: {title}")
         except Exception as e:
             log_with_guild(f"Could not send audit log: {e}", guild_id, "error")
+
+
+    # -------------------------------------------------------------------------
+    # /config engagement — Engagement module
+    # -------------------------------------------------------------------------
+
+    @engagement_group.command(
+        name="show",
+        description="Show all Engagement settings for this server",
+    )
+    @requires_admin()
+    async def engagement_show(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        s = self.settings
+
+        async def g(key: str, default: Any = None) -> Any:
+            try:
+                val = await s.get(guild_id, "engagement", key)
+                return val if val is not None else default
+            except Exception:
+                return default
+
+        def fmt_bool(v: Any) -> str:
+            return "✅ Yes" if v else "❌ No"
+
+        def fmt_channel(v: Any) -> str:
+            return f"<#{int(v)}>" if v else "Not set"
+
+        def fmt_role(v: Any) -> str:
+            return f"<@&{int(v)}>" if v else "Not set"
+
+        # Gather values
+        challenges = await g('challenges_enabled', False)
+        weekly = await g('weekly_enabled', False)
+        badges = await g('badges_enabled', False)
+        streaks = await g('streaks_enabled', False)
+        og = await g('og_enabled', False)
+
+        winner_role = await g('challenge_winner_role_id')
+        og_role = await g('badge_role_og')
+
+        weekly_channel = await g('weekly_award_channel_id')
+        food_channels = await g('weekly_food_channel_ids', 'Not set')
+
+        streaks_nick = await g('streaks_nicknames', False)
+        og_cap = await g('og_cap', 50)
+
+        badge_roles = {
+            'og': await g('badge_role_og'),
+            'winner': await g('badge_role_winner'),
+            'motivator': await g('badge_role_motivator'),
+            'foodfluencer': await g('badge_role_foodfluencer'),
+            'sharpshooter': await g('badge_role_sharpshooter'),
+            'star': await g('badge_role_star'),
+        }
+
+        embed = EmbedBuilder.info(
+            title="⚡ Engagement Settings",
+            fields=[
+                {"name": "Features", "value": f"{'✅' if challenges else '❌'} Challenges  {'✅' if weekly else '❌'} Weekly  {'✅' if badges else '❌'} Badges\n{'✅' if streaks else '❌'} Streaks  {'✅' if og else '❌'} OG", "inline": False},
+                {"name": "Roles", "value": f"Winner role  {fmt_role(winner_role)}\nOG role   {fmt_role(og_role)}", "inline": False},
+                {"name": "Channels", "value": f"Weekly award channel  {fmt_channel(weekly_channel)}\nWeekly food channels  {food_channels}", "inline": False},
+                {"name": "Streaks", "value": f"Nicknames enabled  {fmt_bool(streaks_nick)}\nOG cap     {og_cap}", "inline": False},
+                {"name": f"Badges ({sum(1 for r in badge_roles.values() if r)} total)", "value": "\n".join(f"{k}   {fmt_role(v)}" for k, v in badge_roles.items()), "inline": False},
+            ]
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @engagement_group.command(
+        name="toggle",
+        description="Enable or disable an Engagement feature for this server",
+    )
+    @app_commands.describe(
+        feature="Which feature to toggle",
+        enabled="true to enable, false to disable",
+    )
+    @app_commands.choices(feature=[
+        app_commands.Choice(name="challenges",  value="challenges_enabled"),
+        app_commands.Choice(name="weekly",      value="weekly_enabled"),
+        app_commands.Choice(name="badges",      value="badges_enabled"),
+        app_commands.Choice(name="streaks",     value="streaks_enabled"),
+        app_commands.Choice(name="og_claims",   value="og_enabled"),
+    ])
+    @requires_admin()
+    async def engagement_toggle(
+        self,
+        interaction: discord.Interaction,
+        feature: app_commands.Choice[str],
+        enabled: bool,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        await self.settings.set("engagement", feature.value, enabled, guild_id)
+        state = "enabled" if enabled else "disabled"
+        await interaction.followup.send(
+            f"**{feature.name}** {state} for this server.", ephemeral=True
+        )
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.{feature.value}` → {enabled} by {interaction.user.mention}.",
+            guild_id,
+        )
+
+    @engagement_group.command(
+        name="set_challenge_winner_role",
+        description="Set the role awarded to challenge winners",
+    )
+    @app_commands.describe(role="Role to assign to challenge winners (leave empty to clear)")
+    @requires_admin()
+    async def engagement_set_challenge_winner_role(
+        self,
+        interaction: discord.Interaction,
+        role: Optional[discord.Role] = None,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        await self.settings.set("engagement", "challenge_winner_role_id", role.id if role else None, guild_id)
+        msg = f"Challenge winner role set to {role.mention}." if role else "Challenge winner role cleared."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.challenge_winner_role_id` → {role.id if role else None} by {interaction.user.mention}.",
+            guild_id,
+        )
+
+    @engagement_group.command(
+        name="set_weekly_channel",
+        description="Set the channel where weekly award announcements are posted",
+    )
+    @app_commands.describe(channel="Announcement channel (leave empty to clear)")
+    @requires_admin()
+    async def engagement_set_weekly_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: Optional[discord.TextChannel] = None,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        await self.settings.set("engagement", "weekly_award_channel_id", channel.id if channel else None, guild_id)
+        msg = f"Weekly award channel set to {channel.mention}." if channel else "Weekly award channel cleared."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.weekly_award_channel_id` → {channel.id if channel else None} by {interaction.user.mention}.",
+            guild_id,
+        )
+
+    @engagement_group.command(
+        name="set_food_channels",
+        description="Set which channels count as food channels for weekly awards (comma-separated IDs)",
+    )
+    @app_commands.describe(channel_ids="Comma-separated channel IDs, e.g. 123456,789012 (leave empty to clear)")
+    @requires_admin()
+    async def engagement_set_food_channels(
+        self,
+        interaction: discord.Interaction,
+        channel_ids: Optional[str] = None,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        await self.settings.set("engagement", "weekly_food_channel_ids", channel_ids or "", guild_id)
+        msg = f"Food channels set to: `{channel_ids}`." if channel_ids else "Food channels cleared."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.weekly_food_channel_ids` → {channel_ids or ''} by {interaction.user.mention}.",
+            guild_id,
+        )
+
+    @engagement_group.command(
+        name="set_weekly_awards",
+        description="Set the weekly award categories as JSON (advanced)",
+    )
+    @app_commands.describe(
+        json_config=(
+            'JSON list of award configs. Each item: {"key":"x","label":"📣 X","subtitle":"...","filter":"non_food|food|image|reactions"}'
+        )
+    )
+    @requires_admin()
+    async def engagement_set_weekly_awards(
+        self,
+        interaction: discord.Interaction,
+        json_config: str,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        import json as _json
+        try:
+            parsed = _json.loads(json_config)
+            if not isinstance(parsed, list):
+                raise ValueError("Expected a JSON list")
+            required_keys = {"key", "label", "filter"}
+            for item in parsed:
+                if not required_keys.issubset(item.keys()):
+                    raise ValueError(f"Each item needs: {required_keys}")
+        except Exception as exc:
+            await interaction.followup.send(f"Invalid JSON: {exc}", ephemeral=True)
+            return
+        guild_id = interaction.guild.id
+        await self.settings.set("engagement", "weekly_award_configs", json_config, guild_id)
+        await interaction.followup.send(f"Weekly award configs updated ({len(parsed)} awards).", ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.weekly_award_configs` updated by {interaction.user.mention}.",
+            guild_id,
+        )
+
+    @engagement_group.command(
+        name="set_badge_role",
+        description="Link a Discord role to a badge key",
+    )
+    @app_commands.describe(
+        badge_key="Badge key e.g. winner, og, motivator, foodfluencer, sharpshooter, star",
+        role="Role to assign when this badge is awarded (leave empty to clear)",
+    )
+    @requires_admin()
+    async def engagement_set_badge_role(
+        self,
+        interaction: discord.Interaction,
+        badge_key: str,
+        role: Optional[discord.Role] = None,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        key = badge_key.lower().strip()
+        setting_key = f"badge_role_{key}"
+        await self.settings.set("engagement", setting_key, role.id if role else None, guild_id)
+        msg = f"Badge **{key}** linked to {role.mention}." if role else f"Badge **{key}** role cleared."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.{setting_key}` → {role.id if role else None} by {interaction.user.mention}.",
+            guild_id,
+        )
+
+    @engagement_group.command(
+        name="set_og_cap",
+        description="Set the maximum number of OG claims",
+    )
+    @app_commands.describe(cap="Maximum number of OG claims (default: 50)")
+    @requires_admin()
+    async def engagement_set_og_cap(
+        self,
+        interaction: discord.Interaction,
+        cap: int,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        if cap < 1:
+            await interaction.response.send_message("Cap must be at least 1.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        await self.settings.set("engagement", "og_cap", cap, guild_id)
+        await interaction.followup.send(f"OG claim cap set to **{cap}**.", ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.og_cap` → {cap} by {interaction.user.mention}.",
+            guild_id,
+        )
+
+    @engagement_group.command(
+        name="set_og_text",
+        description="Set the message text posted when running /og setup",
+    )
+    @app_commands.describe(text="The OG claim message text (leave empty to reset to default)")
+    @requires_admin()
+    async def engagement_set_og_text(
+        self,
+        interaction: discord.Interaction,
+        text: Optional[str] = None,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        await self.settings.set("engagement", "og_claim_text", text or "", guild_id)
+        msg = "OG claim text updated." if text else "OG claim text reset to default."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.og_claim_text` → {text or ''} by {interaction.user.mention}.",
+            guild_id,
+        )
+
+    @engagement_group.command(
+        name="set_streaks_nicknames",
+        description="Toggle automatic nickname suffixes for streaks (e.g. 'Name | 🔥 week 2')",
+    )
+    @app_commands.describe(enabled="true to enable nickname suffixes, false to disable")
+    @requires_admin()
+    async def engagement_set_streaks_nicknames(
+        self,
+        interaction: discord.Interaction,
+        enabled: bool,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        await self.settings.set("engagement", "streaks_nicknames", enabled, guild_id)
+        state = "enabled" if enabled else "disabled"
+        await interaction.followup.send(f"Streak nickname suffixes {state}.", ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.streaks_nicknames` → {enabled} by {interaction.user.mention}.",
+            guild_id,
+        )
 
 
 async def setup(bot: commands.Bot):

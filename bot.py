@@ -423,6 +423,96 @@ settings_service.register(
         default=0,  # Must be configured per guild
     )
 )
+# --- Engagement module settings ---
+for _eng_feature in ("challenges", "weekly", "badges", "streaks", "og"):
+    settings_service.register(
+        SettingDefinition(
+            scope="engagement",
+            key=f"{_eng_feature}_enabled",
+            description=f"Enable the {_eng_feature} feature of the Engagement module.",
+            value_type="bool",
+            default=False,
+        )
+    )
+settings_service.register(
+    SettingDefinition(
+        scope="engagement",
+        key="challenge_winner_role_id",
+        description="Role assigned to challenge winners.",
+        value_type="role",
+        default=None,
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="engagement",
+        key="weekly_award_channel_id",
+        description="Channel where weekly award announcements are posted.",
+        value_type="channel",
+        default=0,
+        allow_null=True,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="engagement",
+        key="weekly_food_channel_ids",
+        description="Comma-separated channel IDs that count as food channels for weekly awards.",
+        value_type="str",
+        default="",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="engagement",
+        key="weekly_award_configs",
+        description="JSON list of weekly award category definitions (key, label, subtitle, filter).",
+        value_type="str",
+        default="",
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="engagement",
+        key="streaks_nicknames",
+        description="Whether to append streak suffix to member nicknames (e.g. 'Name | 🔥 week 2').",
+        value_type="bool",
+        default=False,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="engagement",
+        key="og_cap",
+        description="Maximum number of OG claims allowed.",
+        value_type="int",
+        default=50,
+        min_value=1,
+        max_value=10000,
+    )
+)
+settings_service.register(
+    SettingDefinition(
+        scope="engagement",
+        key="og_claim_text",
+        description="Message text posted by /og setup when the OG claim message is created.",
+        value_type="str",
+        default="",
+    )
+)
+# Badge role settings — one per well-known badge key
+for _badge_key in ("winner", "og", "motivator", "foodfluencer", "sharpshooter", "star"):
+    settings_service.register(
+        SettingDefinition(
+            scope="engagement",
+            key=f"badge_role_{_badge_key}",
+            description=f"Discord role linked to the '{_badge_key}' badge.",
+            value_type="role",
+            default=None,
+            allow_null=True,
+        )
+    )
 
 # Event: Bot is ready
 @bot.event

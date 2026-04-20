@@ -150,6 +150,7 @@ class StartupManager:
             "cogs.automod",
             "cogs.custom_commands",
             "cogs.retention_cleanup",
+            "cogs.engagement",
         ]
         
         loaded: list[str] = []

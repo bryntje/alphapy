@@ -65,7 +65,7 @@ class StartOnboardingButton(discord.ui.Button):
                         title="⚠️ Onboarding: No rules configured",
                         description=f"No onboarding rules are set for this server. User {member.mention} attempted to start onboarding."
                     )
-                    log_embed.add_field(name="Action", value="Use `/config onboarding add_rule` to add rules.", inline=False)
+                    log_embed.add_field(name="Action", value="Use `/onboarding add_rule` to add rules.", inline=False)
                     await log_channel.send(embed=log_embed)
 
                 log_operational_event(
