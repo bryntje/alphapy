@@ -187,7 +187,7 @@ class ChallengeGroup(app_commands.Group):
         if not await _is_enabled(self.cog.bot, interaction.guild.id, "challenges"):
             await interaction.response.send_message(
                 "Challenges are not enabled for this server. "
-                "An admin can enable them via `/config engagement challenges_enabled true`.",
+                "An admin can enable them via `/engagement toggle challenges true`.",
                 ephemeral=True,
             )
             return
@@ -534,7 +534,7 @@ class BadgeGroup(app_commands.Group):
             return
         if not await _is_enabled(self.cog.bot, interaction.guild.id, "badges"):
             await interaction.response.send_message(
-                "Badges are not enabled. Enable via `/config engagement badges_enabled true`.",
+                "Badges are not enabled. Enable via `/engagement toggle badges true`.",
                 ephemeral=True,
             )
             return
@@ -704,7 +704,7 @@ class WeeklyGroup(app_commands.Group):
             return
         if not await _is_enabled(self.cog.bot, interaction.guild.id, "weekly"):
             await interaction.response.send_message(
-                "Weekly awards are not enabled. Enable via `/config engagement weekly_enabled true`.",
+                "Weekly awards are not enabled. Enable via `/engagement toggle weekly true`.",
                 ephemeral=True,
             )
             return
@@ -743,7 +743,7 @@ class WeeklyGroup(app_commands.Group):
 class EngagementCog(commands.Cog):
     """
     Engagement module — challenges, weekly awards, streaks, badges and OG claims.
-    Each feature is independently enabled per guild via /config engagement.
+    Each feature is independently enabled per guild via /engagement toggle.
     """
 
     def __init__(self, bot: commands.Bot):

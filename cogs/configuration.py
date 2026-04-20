@@ -1136,7 +1136,7 @@ class Configuration(AlphaCog):
         channel_id = self.settings.get("gdpr", "channel_id", interaction.guild.id)
         if not channel_id:
             await interaction.followup.send(
-                "⚠️ No GDPR channel configured. Use `/config gdpr set_channel` first.", ephemeral=True
+                "⚠️ No GDPR channel configured. Use `/gdpr set_channel` first.", ephemeral=True
             )
             return
 
@@ -1513,7 +1513,7 @@ class Configuration(AlphaCog):
         # Check if onboarding is enabled for this guild
         enabled = self.settings.get("onboarding", "enabled", interaction.guild.id)
         if not enabled:
-            await interaction.response.send_message("⚠️ Onboarding is not enabled for this server. Enable it first with `/config onboarding enable`.", ephemeral=True)
+            await interaction.response.send_message("⚠️ Onboarding is not enabled for this server. Enable it first with `/onboarding enable`.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)

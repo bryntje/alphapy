@@ -34,15 +34,15 @@ class ImportData(commands.Cog):
         try:
             log_channel_id = int(self.bot.settings.get("system", "log_channel_id", ctx.guild.id))
             if log_channel_id == 0:
-                await ctx.send("❌ Log channel not configured for this server. Set it first with `/config system set_log_channel #logs`.")
+                await ctx.send("❌ Log channel not configured for this server. Set it first with `/system set_log_channel #logs`.")
                 return
         except (KeyError, ValueError):
-            await ctx.send("❌ Log channel not configured for this server. Set it first with `/config system set_log_channel #logs`.")
+            await ctx.send("❌ Log channel not configured for this server. Set it first with `/system set_log_channel #logs`.")
             return
 
         channel = self.bot.get_channel(log_channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await ctx.send("Log channel not found! Configure it first with `/config system log_channel_id` for this server.")
+            await ctx.send("Log channel not found! Configure it first with `/system set_log_channel` for this server.")
             return
 
         async for message in channel.history(limit=1000):  # Adjust limit if needed

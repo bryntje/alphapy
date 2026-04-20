@@ -38,13 +38,13 @@ FYI_CONTENT: Dict[str, Dict[str, str]] = {
     },
     "first_onboarding_done": {
         "title": "📋 FYI: Onboarding settings",
-        "description": "You can manage onboarding rules and the completion role with `/config onboarding show`. Add or edit rules with `add_rule`, and set the role members get after completing onboarding.",
-        "footer": "Use /config onboarding to adjust rules and role.",
+        "description": "You can manage onboarding rules and the completion role with `/onboarding show`. Add or edit rules with `add_rule`, and set the role members get after completing onboarding.",
+        "footer": "Use /onboarding commands to adjust rules and role.",
     },
     "first_config_wizard_complete": {
         "title": "✅ Setup complete",
-        "description": "You can change any setting later with `/config <scope> show`. Key scopes: **onboarding** (rules, role), **system** (log channel), **reminders** (if enabled).",
-        "footer": "Use /config to change settings anytime.",
+        "description": "You can change any setting later with `/<scope> show`. Key scopes: **onboarding** (rules, role), **system** (log channel), **reminders** (if enabled).",
+        "footer": "Use the respective /<scope> commands to change settings anytime.",
     },
     "first_reminder": {
         "title": "⏰ FYI: Reminders",
@@ -58,7 +58,7 @@ FYI_CONTENT: Dict[str, Dict[str, str]] = {
     },
     "first_ticket": {
         "title": "🎫 FYI: Tickets",
-        "description": "Staff can claim and close tickets from the buttons in the ticket channel. Use `/config` to adjust ticket category or panel settings.",
+        "description": "Staff can claim and close tickets from the buttons in the ticket channel. Use `/ticketbot` commands to adjust ticket category or panel settings.",
         "footer": "Use the ticket channel buttons to claim or close.",
     },
     "first_gpt": {
@@ -78,7 +78,7 @@ FYI_CONTENT: Dict[str, Dict[str, str]] = {
     },
     "first_add_rule_no_image": {
         "title": "📜 FYI: Onboarding rules",
-        "description": "You can add optional **thumbnail_url** and **image_url** to rules for richer onboarding. Use `/config onboarding add_rule` with those parameters.",
+        "description": "You can add optional **thumbnail_url** and **image_url** to rules for richer onboarding. Use `/onboarding add_rule` with those parameters.",
         "footer": "Add thumbnail_url or image_url for richer rules.",
     },
 }
