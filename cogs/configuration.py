@@ -2641,13 +2641,13 @@ class Configuration(AlphaCog):
                 return default
 
         def fmt_bool(v: Any) -> str:
-            return "✅ enabled" if v else "🚫 disabled"
+            return "✅ Yes" if v else "❌ No"
 
         def fmt_channel(v: Any) -> str:
-            return f"<#{int(v)}>" if v else "—"
+            return f"<#{int(v)}>" if v else "Not set"
 
         def fmt_role(v: Any) -> str:
-            return f"<@&{int(v)}>" if v else "—"
+            return f"<@&{int(v)}>" if v else "Not set"
 
         lines = [
             f"**challenges_enabled** — {fmt_bool(await g('challenges_enabled', False))}",
@@ -2659,7 +2659,7 @@ class Configuration(AlphaCog):
             f"**challenge_winner_role_id** — {fmt_role(await g('challenge_winner_role_id'))}",
             "",
             f"**weekly_award_channel_id** — {fmt_channel(await g('weekly_award_channel_id'))}",
-            f"**weekly_food_channel_ids** — `{await g('weekly_food_channel_ids', '—')}`",
+            f"**weekly_food_channel_ids** — `{await g('weekly_food_channel_ids', 'Not set')}`",
             f"**weekly_award_configs** — `{await g('weekly_award_configs', 'default (4 awards)')}`",
             "",
             f"**streaks_nicknames** — {fmt_bool(await g('streaks_nicknames', False))}",
