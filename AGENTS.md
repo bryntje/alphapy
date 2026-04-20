@@ -186,6 +186,27 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
+## ⚡ Agent: Engagement
+- **Path**: `cogs/engagement.py`, `utils/engagement_service.py`
+- **Purpose**: Community engagement gamification module. Every feature is independently enabled per guild via `/config engagement toggle`. All data is multi-guild scoped.
+- **Features** (all off by default):
+  - **Challenges** (`challenges_enabled`) — timed message-count contests per channel. Modes: `leaderboard` (most messages wins) or `random` (random draw). Rehydrates active challenges from DB on bot restart.
+  - **Weekly Awards** (`weekly_enabled`) — indexes messages (`has_image`, `is_food`) and reactions via `on_message` / `on_raw_reaction_add`. Award categories are configurable per guild (JSON). Default 4 awards: Motivator (non-food), Foodfluencer (food), Knaller (images), Star (reactions). Triggered manually with `/weekly compute` or automatically via a scheduler.
+  - **Badges** (`badges_enabled`) — per-guild badge history. `/badge give` links a badge to an optional Discord role. Badge roles are configured via `/config engagement set_badge_role`.
+  - **Streaks** (`streaks_enabled`) — daily activity streak counter. Optional nickname suffix (`streaks_nicknames` setting): `Name | 🐣 day 3`, `🔥 week 2`, `👑 month 1`.
+  - **OG Claims** (`og_enabled`) — reaction-based limited-spot claim system. Cap, message text, and badge role are all configurable. `/og setup` posts the claim message; `/og status` shows remaining spots.
+- **Commands**:
+  - `/challenge start|end|cancel|status|edit`
+  - `/badge give|list`
+  - `/og setup|status`
+  - `/weekly compute`
+  - `/config engagement show|toggle|set_challenge_winner_role|set_weekly_channel|set_food_channels|set_weekly_awards|set_badge_role|set_og_cap|set_og_text|set_streaks_nicknames`
+- **DB tables**: `engagement_badges`, `engagement_og_claims`, `engagement_og_setup`, `engagement_challenges`, `engagement_participants`, `engagement_weekly_messages`, `engagement_weekly_awards`, `engagement_weekly_results`, `engagement_streaks` (migration: `020_engagement_system`)
+- **Settings scope**: `engagement.*` (all registered in `bot.py`)
+- **Triggers**: `on_message` (challenge counts + weekly indexing + streaks), `on_raw_reaction_add` (weekly reactions + OG claims), `on_ready` (challenge rehydration + OG message ID cache)
+
+---
+
 ## 💬 Agent: Custom Commands
 - **Path**: `cogs/custom_commands.py`
 - **Purpose**: Guild-defined automated message responses triggered by message patterns
@@ -235,7 +256,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **alphapy** (3091 symbols, 10503 relationships, 265 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **alphapy** (3156 symbols, 10863 relationships, 271 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

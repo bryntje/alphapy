@@ -328,76 +328,7 @@ class AutoModeration(AlphaCog):
         except Exception as e:
             logger.error(f"Error updating user history: {e}")
             
-    # Auto-moderation commands (following Alphapy patterns)
-    automod = app_commands.Group(name="automod", description="Auto-moderation settings")
-    
-    @automod.command(name="status", description="Check auto-moderation status")
-    @requires_admin()
-    async def automod_status(self, interaction: discord.Interaction):
-        """Show current auto-moderation status."""
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
-            return
-            
-        guild_id = interaction.guild.id
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            rules = await self.rule_processor.get_active_rules(guild_id)
-            premium_status = await guild_has_premium(guild_id)
-            automod_enabled = self.settings.get("automod", "enabled", guild_id=guild_id)
-            
-            embed = EmbedBuilder.info(
-                title="Auto-Moderation Status",
-                fields=[
-                    {
-                        'name': 'Status',
-                        'value': '✅ Enabled' if automod_enabled else '❌ Disabled',
-                        'inline': True
-                    },
-                    {
-                        'name': 'Active Rules',
-                        'value': str(len(rules)),
-                        'inline': True
-                    },
-                    {
-                        'name': 'Premium Features',
-                        'value': '✅ Enabled' if premium_status else '❌ Disabled',
-                        'inline': True
-                    }
-                ]
-            )
-            
-            # Count rules by type
-            rule_counts = {}
-            for rule in rules:
-                rule_type = rule.get('rule_type', 'unknown')
-                rule_counts[rule_type] = rule_counts.get(rule_type, 0) + 1
-                
-            if rule_counts:
-                rules_text = "\n".join([f"• {rule_type}: {count}" for rule_type, count in rule_counts.items()])
-                embed.add_field(name="Rules by Type", value=rules_text, inline=False)
-                
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-            # Log operational event
-            log_operational_event(
-                EventType.SETTINGS_CHANGED,
-                f"Auto-mod status checked for guild {guild_id}",
-                guild_id=guild_id,
-                details={
-                    'rules_count': len(rules), 
-                    'premium': premium_status,
-                    'enabled': automod_enabled
-                }
-            )
-            
-        except Exception as e:
-            logger.error(f"Error in automod status command: {e}")
-            try:
-                await interaction.followup.send("❌ Failed to retrieve auto-mod status.", ephemeral=True)
-            except Exception:
-                pass
+    # automod status command lives in cogs/configuration.py under automod_group
 
 
 async def setup(bot: commands.Bot):
