@@ -106,7 +106,10 @@ async def _get_award_configs(bot: commands.Bot, guild_id: int) -> List[Dict[str,
     """
     Load configured weekly award categories for a guild.
     Stored as JSON in engagement.weekly_award_configs.
-    Falls back to the default 4-award setup when not configured.
+
+    Falls back to a dynamic default set when not configured:
+    - 'food' filter awards are only included when food channels are configured.
+    - Custom JSON configs are returned as-is; the admin owns that setup.
     """
     raw = await _get_setting(bot, guild_id, "weekly_award_configs")
     if raw:
@@ -116,13 +119,22 @@ async def _get_award_configs(bot: commands.Bot, guild_id: int) -> List[Dict[str,
                 return configs
         except Exception:
             pass
-    # Default award set
-    return [
-        {"key": "motivator",    "label": "📣 Motivator",       "subtitle": "Most non-food messages",     "filter": "non_food"},
-        {"key": "foodfluencer", "label": "🍎 Foodfluencer",     "subtitle": "Most food-channel messages", "filter": "food"},
-        {"key": "knaller",      "label": "💥 Knaller of the week", "subtitle": "Most messages with image", "filter": "image"},
-        {"key": "star",         "label": "⭐ Star of the week", "subtitle": "Most reactions on a photo", "filter": "reactions"},
+
+    # Build default award set — omit food filter if no food channels are configured
+    food_channels = await _get_food_channel_ids(bot, guild_id)
+    defaults = [
+        {"key": "motivator", "label": "📣 Motivator",          "subtitle": "Most messages",           "filter": "non_food"},
+        {"key": "knaller",   "label": "💥 Knaller of the week", "subtitle": "Most messages with image", "filter": "image"},
+        {"key": "star",      "label": "⭐ Star of the week",    "subtitle": "Most reactions on a photo","filter": "reactions"},
     ]
+    if food_channels:
+        defaults.insert(1, {
+            "key": "foodfluencer",
+            "label": "🍎 Foodfluencer",
+            "subtitle": "Most food-channel messages",
+            "filter": "food",
+        })
+    return defaults
 
 
 async def _get_food_channel_ids(bot: commands.Bot, guild_id: int) -> set:
