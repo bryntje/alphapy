@@ -18,6 +18,7 @@ import asyncio
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
+from utils.embed_builder import EmbedBuilder
 from typing import Any, Dict, List, Optional, Tuple
 
 import asyncpg
@@ -734,10 +735,9 @@ async def finalize_and_announce_challenge(
         if guild:
             winner_member = guild.get_member(winner_id)
         mention = winner_member.mention if winner_member else f"<@{winner_id}>"
-        embed = discord.Embed(
+        embed = EmbedBuilder.success(
             title=f"🏆 {title}",
             description=f"Congratulations {mention}! 🎉\nWon with **{winner_count} messages**!",
-            color=discord.Color.green(),
         )
         target = channel if isinstance(channel, discord.TextChannel) else None
         if target is None and guild:

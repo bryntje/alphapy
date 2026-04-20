@@ -30,6 +30,7 @@ from discord.ext import commands
 
 from utils.db_helpers import get_bot_db_pool
 from utils.logger import logger
+from utils.embed_builder import EmbedBuilder
 from utils.engagement_service import (
     # Streaks
     get_streak,
@@ -320,10 +321,9 @@ class ChallengeGroup(app_commands.Group):
                 filled = int(round(pct * 20))
                 progress_bar = "█" * filled + "░" * (20 - filled)
 
-            embed = discord.Embed(
+            embed = EmbedBuilder.info(
                 title=f"📊 Challenge Status — #{chal_id}",
                 description=f"Status: Active\nMode: {mode}\nParticipants: {participants_count}",
-                color=discord.Color.blurple(),
             )
             if title:
                 embed.add_field(name="Title", value=title, inline=False)
@@ -589,9 +589,8 @@ class BadgeGroup(app_commands.Group):
         if pool:
             badges = await get_user_badges(pool, interaction.guild.id, target.id)
 
-        embed = discord.Embed(
+        embed = EmbedBuilder.info(
             title=f"🎖 Badges — {target.display_name}",
-            color=discord.Color.gold(),
         )
         embed.description = "\n".join(f"• {b}" for b in badges) if badges else "No badges yet."
         await interaction.response.send_message(embed=embed, ephemeral=True)
