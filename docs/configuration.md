@@ -14,223 +14,242 @@ Alternatively, run the following commands in order:
 
 ### 1. System Configuration
 ```bash
-# Set the log channel for bot messages and errors
-/config system set_log_channel #logs
-
-# Set the rules and onboarding channel (welcome message + Start button)
-/config system set_rules_channel #rules
+/system set_log_channel #logs
+/system set_rules_channel #rules
 ```
 
 ### 2. Feature-Specific Configuration
 
 #### Embed Watcher (Auto-Reminders)
 ```bash
-# Set channel to monitor for announcement embeds
-/config embedwatcher set_announcements #announcements
+/embedwatcher set_announcements #announcements
 ```
 
 #### Invite Tracker
 ```bash
-# Set channel for invite announcements
-/config invites set_channel #invites
+/invites set_channel #invites
 ```
 
 #### GDPR Compliance
 ```bash
-# Set channel for GDPR documents
-/config gdpr set_channel #gdpr
+/gdpr set_channel #gdpr
 ```
 
 #### Ticket System
 ```bash
-# Set category for ticket channels (required)
-/config ticketbot set_category [category]
-
-# Set staff role for ticket access
-/config ticketbot set_staff_role @Staff
-
-# Set escalation role for urgent tickets
-/config ticketbot set_escalation_role @Moderators
+/ticketbot set_category [category]
+/ticketbot set_staff_role @Staff
+/ticketbot set_escalation_role @Moderators
 ```
 
 #### Verification (AI-assisted payment checks)
 ```bash
-# Set category for verification channels (required)
-/config verification set_category [category]
+/verification set_category [category]
+/verification set_verified_role @Verified
 
-# Set role to assign after successful verification
-/config verification set_verified_role @Verified
+# Optional: override vision model
+/verification set_vision_model grok-4
 
-# Optional: override vision-capable model for this guild
-/config verification set_vision_model grok-4
-
-# Optional: tell the AI what a valid payment looks like for your community
-/config verification set_ai_prompt_context "Valid payments come from Stripe for the Alphapips membership. The screenshot must show the amount and date."
+# Optional: tell the AI what valid payments look like
+/verification set_ai_prompt_context "Valid payments come from Stripe for the membership."
 ```
 
 ### 3. Optional Settings
 
 #### Reminders
 ```bash
-# Allow @everyone mentions in reminders (use carefully!)
-/config reminders set_everyone true
-
-# Set default channel for manual reminders
-/config reminders set_default_channel #general
+/reminders set_everyone true
+/reminders set_default_channel #general
 ```
 
 #### Grok / AI Settings
 ```bash
-# Choose AI model (e.g. grok-3)
-/config gpt set_model grok-3
+/gpt set_model grok-3
+/gpt set_temperature 0.7
+```
 
-# Set creativity level (0.0-2.0)
-/config gpt set_temperature 0.7
+#### Engagement
+```bash
+# Enable the features you want
+/engagement toggle challenges true
+/engagement toggle weekly true
+/engagement set_weekly_channel #awards
+/engagement set_challenge_winner_role @Champion
 ```
 
 ## Configuration Commands Reference
 
-### Global Pattern
-All commands require administrator permissions and are guild-specific:
+> Each feature area has its own top-level command group. All commands require Administrator and are guild-specific.
 
 ```
-/config scopes                    # List all available scopes
-/config <scope> show              # Show current settings for this guild
+/config scopes    — List all registered setting scopes
+/config start     — Interactive setup wizard
+/<scope> show     — Show current settings for that scope
 ```
 
-### System Scope
+### System — `/system`
 ```
-/config system show
-/config system set_log_channel <#channel>
-/config system reset_log_channel
-/config system set_rules_channel <#channel>
-/config system reset_rules_channel
-```
-
-### Embed Watcher Scope
-```
-/config embedwatcher show
-/config embedwatcher set_announcements <#channel>
-/config embedwatcher reset_announcements
-/config embedwatcher set_offset <minutes>
-/config embedwatcher reset_offset
-/config embedwatcher set_non_embed <true|false>
-/config embedwatcher reset_non_embed
-/config embedwatcher set_process_bot_messages <true|false>
-/config embedwatcher reset_process_bot_messages
+/system show
+/system set_log_channel [#channel]
+/system set_rules_channel [#channel]
+/system set_log_level [verbose|normal|critical]
 ```
 
-### Reminders Scope
+### Embed Watcher — `/embedwatcher`
 ```
-/config reminders show
-/config reminders enable|disable
-/config reminders set_default_channel <#channel>
-/config reminders reset_default_channel
-/config reminders set_everyone <true|false>
-```
-
-### TicketBot Scope
-```
-/config ticketbot show
-/config ticketbot set_category <#category>
-/config ticketbot reset_category
-/config ticketbot set_staff_role @<role>
-/config ticketbot reset_staff_role
-/config ticketbot set_escalation_role @<role>
-/config ticketbot reset_escalation_role
+/embedwatcher show
+/embedwatcher set_announcements [#channel]
+/embedwatcher set_offset [minutes]
+/embedwatcher set_non_embed [true|false]
+/embedwatcher set_process_bot_messages [true|false]
 ```
 
-### Grok / AI Scope
+### Reminders — `/reminders`
 ```
-/config gpt show
-/config gpt set_model <model-name>
-/config gpt reset_model
-/config gpt set_temperature <0.0-2.0>
-/config gpt reset_temperature
-```
-
-### Invites Scope
-```
-/config invites show
-/config invites enable|disable
-/config invites set_channel <#channel>
-/config invites reset_channel
-/config invites set_template <variant> <template>
-/config invites reset_template <variant>
-```
-Variant is "with inviter" or "without inviter" (dropdown).
-
-### GDPR Scope
-```
-/config gdpr show
-/config gdpr enable|disable
-/config gdpr set_channel <#channel>
-/config gdpr reset_channel
+/reminders show
+/reminders toggle <true|false>
+/reminders set_default_channel [#channel]
+/reminders set_everyone <true|false>
 ```
 
-### Growth Scope
+### TicketBot — `/ticketbot`
 ```
-/config growth set_channel [#channel]   — omit #channel to get a picker (select existing or create new #growth-checkins)
-/config growth reset_channel            — removes the setting; share option disappears from /growthcheckin
+/ticketbot show
+/ticketbot set_category [#category]
+/ticketbot set_staff_role [@role]
+/ticketbot set_escalation_role [@role]
 ```
 
-### Onboarding Scope
+### Grok / AI — `/gpt`
 ```
-/config onboarding show
-/config onboarding enable|disable
-/config onboarding set_mode <mode>
-/config onboarding add_question <step> <question> [question_type] [required]
-/config onboarding delete_question <step>
-/config onboarding reset_questions
-/config onboarding add_rule <rule_order> <title> <description> [thumbnail_url] [image_url]
-/config onboarding delete_rule <rule_order>
-/config onboarding reset_rules
-/config onboarding set_role <#role>
-/config onboarding reset_role
-/config onboarding panel_post [channel]
-/config onboarding reorder
+/gpt show
+/gpt set_model [model-name]
+/gpt set_temperature [0.0–2.0]
 ```
-`reorder` opens a modal to enter question IDs in the desired order. `panel_post` optionally takes a channel; otherwise posts in the current channel.
 
-**Onboarding modes** (via `mode`):
-- **Disabled** – No onboarding
-- **Rules Only** – Role assigned when rules are accepted (no questions)
-- **Rules + Questions** – Role assigned only after all questions (and personalization steps) are completed
-- **Questions Only** – Role assigned only after all questions (and personalization steps) are completed
-
-When questions are used, users also complete two fixed personalization steps: opt-in for personalized reminders and preferred language; stored in `onboarding.responses` as `personalized_opt_in` and `preferred_language`.
-
-Rules support optional images: `thumbnail_url` (shown right) and `image_url` (shown at bottom). If no rules are configured, users see an error and a log is sent to the log channel.
-
-### FYI (contextual tips – testing)
-The bot sends short FYI tips when certain first-time events happen (e.g. first onboarding completed, first reminder, first ticket, bot joined server). Tips are sent at most once per guild per type and respect a 24h per-guild cooldown. For testing or to re-send a tip:
+### Invites — `/invites`
 ```
-/config fyi reset <key>   # Clear the flag so the next trigger will send again
-/config fyi send <key>    # Force-send the tip to the log channel now
+/invites show
+/invites toggle <true|false>
+/invites set_channel [#channel]
+/invites set_template <variant> [template]
 ```
-Key is chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`). Administrator only.
+Variant is `with inviter` or `without inviter` (dropdown).
 
-### Verification Scope
+### GDPR — `/gdpr`
 ```
-/config verification show
-/config verification set_verified_role @<role>
-/config verification reset_verified_role
-/config verification set_category <#category>
-/config verification reset_category
-/config verification set_vision_model <model-name>
-/config verification reset_vision_model
-/config verification set_ai_prompt_context <text>
-/config verification reset_ai_prompt_context
-/config verification set_reference_image [image attachment]
-/config verification reset_reference_image
+/gdpr show
+/gdpr toggle <true|false>
+/gdpr set_channel [#channel]
+/gdpr set_acceptance_role [@role]
+/gdpr post
+```
+
+### Growth — `/growth`
+```
+/growth set_channel [#channel]   — omit to clear; share option disappears from /growthcheckin
+```
+
+### Onboarding — `/onboarding`
+```
+/onboarding show
+/onboarding toggle <true|false>
+/onboarding set_mode <mode>
+/onboarding add_question <step> <question> [type] [required]
+/onboarding delete_question <step>
+/onboarding reset_questions
+/onboarding add_rule <order> <title> <description> [thumbnail_url] [image_url]
+/onboarding delete_rule <order>
+/onboarding reset_rules
+/onboarding set_role [@role]
+/onboarding set_join_role [@role]
+/onboarding panel_post [#channel]
+/onboarding reorder
+```
+
+**Onboarding modes:**
+- **Disabled** — No onboarding
+- **Rules Only** — Role assigned when rules are accepted
+- **Rules + Questions** — Role assigned after all questions and personalization steps
+- **Questions Only** — Role assigned after all questions and personalization steps
+
+When questions are used, users also complete two fixed personalization steps: opt-in for personalized reminders and preferred language (`personalized_opt_in`, `preferred_language` in `onboarding.responses`).
+
+Rules support optional images: `thumbnail_url` (shown right) and `image_url` (shown at bottom).
+
+### FYI — `/fyi`
+```
+/fyi reset <key>   — Clear the flag so the next trigger will resend the tip
+/fyi send <key>    — Force-send the tip to the log channel now
+```
+Key chosen from a dropdown (e.g. `first_onboarding_done`, `first_guild_join`).
+
+### Verification — `/verification`
+```
+/verification show
+/verification set_verified_role [@role]
+/verification set_category [#category]
+/verification set_vision_model [model]
+/verification set_ai_prompt_context [text]
+/verification set_reviewer_role [@role]
+/verification set_max_payment_age [days]
+/verification set_reference_image <image attachment>
+/verification reset_reference_image
 ```
 
 **Notes:**
-- `verified_role_id` is the role granted after successful AI verification.
-- `category_id` must be a category where the bot can create private verification channels.
-- `vision_model` can be used to select a specific vision-capable model (e.g. `grok-4`, `grok-2-vision-latest`); if unset, the default model from `/config gpt` / `LLM_PROVIDER` is used.
-- `ai_prompt_context` is optional extra context appended to the AI prompt on every screenshot review (max 1000 chars). Use this to describe what a valid payment looks like for your community, e.g. `"Valid payments come from Stripe for the Alphapips membership. The screenshot must show the amount and date."`
-- `reference_image` accepts an image attachment directly. The bot stores the image in the log channel so the URL stays refreshable across bot restarts. When set, the AI receives both the user's screenshot and the reference image and explicitly compares them. Clear with `reset_reference_image` (this also deletes the stored message).
+- `set_vision_model` — specific vision-capable model (e.g. `grok-4`); defaults to `LLM_PROVIDER` model if unset.
+- `set_ai_prompt_context` — extra context appended to every AI screenshot review (max 1000 chars). Describe what a valid payment looks like for your community.
+- `set_reference_image` — the bot stores the image in the log channel for URL persistence across restarts. The AI compares user screenshots against it. Clear with `reset_reference_image`.
+
+### Auto-moderation — `/automod`
+```
+/automod status
+/automod show
+/automod toggle <true|false>
+/automod set_log_channel [#channel]
+/automod rules
+/automod add_spam_rule <name> [max_messages] [window_seconds] [action]
+/automod add_badwords_rule <name> <words> [action]
+/automod add_links_rule <name> [allow_links] [whitelist] [blacklist] [action]
+/automod add_mentions_rule <name> [max_mentions] [action]
+/automod add_caps_rule <name> [min_length] [max_ratio] [action]
+/automod add_duplicate_rule <name> [max_duplicates] [action]
+/automod add_regex_rule <name> <patterns> [action]    — premium
+/automod add_ai_rule <name> [action]                  — premium
+/automod edit_rule <rule_id> [fields...]
+/automod delete_rule <rule_id>
+/automod set_rule_enabled <rule_id> <true|false>
+/automod set_severity <rule_id> <1–10>
+/automod logs [limit] [user_id] [rule_id] [action] [days]
+```
+
+### Engagement — `/engagement`
+```
+/engagement show
+/engagement toggle <feature> <true|false>
+/engagement set_challenge_winner_role [@role]
+/engagement set_weekly_channel [#channel]
+/engagement set_food_channels [ids]
+/engagement set_weekly_awards <json>
+/engagement set_badge_role <badge_key> [@role]
+/engagement set_og_cap <number>
+/engagement set_og_text [text]
+/engagement set_streaks_nicknames <true|false>
+```
+
+Features for `toggle`: `challenges`, `weekly`, `badges`, `streaks`, `og_claims`.
+
+Badge keys for `set_badge_role`: `winner`, `og`, `motivator`, `foodfluencer`, `knaller`, `star`.
+
+`set_weekly_awards` accepts a JSON list of award category objects:
+```json
+[
+  {"key": "motivator", "label": "📣 Motivator", "subtitle": "Most non-food messages", "filter": "non_food"},
+  {"key": "star",      "label": "⭐ Star",       "subtitle": "Most reactions on a photo", "filter": "reactions"}
+]
+```
+Filters: `non_food`, `food`, `image`, `reactions`. Defaults to 4 awards (Motivator, Foodfluencer, Knaller, Star) if not configured.
 
 ## Template Placeholders
 
