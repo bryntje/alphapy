@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - **Engagement settings**: Fixed parameter order in all settings.set calls to prevent KeyError on toggle and configuration commands.
 - **Engagement documentation**: Updated command references in docstrings and error messages to reflect the new top-level command structure.
 - **Engagement embeds**: Switched to EmbedBuilder for consistent styling with timestamps, proper colors, and AGENTS.md compliance across challenge announcements, status displays, and badge lists.
+- **Engagement audit logs**: Added comprehensive logging for all settings changes, including who made the change, matching the format used in other configuration commands.
 - **Automod status labels**: Improved to 'Module enabled' and 'Premium enabled' for better clarity and distinction from individual settings.
 
 ---
