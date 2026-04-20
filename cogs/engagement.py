@@ -8,11 +8,11 @@ Provides community engagement features for guilds:
   - /og         — limited reaction-based OG claim system
 
 Each feature is independently toggled per guild via:
-  /config engagement challenges_enabled true|false
-  /config engagement weekly_enabled     true|false
-  /config engagement badges_enabled     true|false
-  /config engagement streaks_enabled    true|false
-  /config engagement og_enabled         true|false
+  /engagement toggle challenges true|false
+  /engagement toggle weekly      true|false
+  /engagement toggle badges      true|false
+  /engagement toggle streaks     true|false
+  /engagement toggle og_claims   true|false
 
 on_message: indexes messages for weekly awards, tracks challenge counts, updates streaks.
 on_raw_reaction_add: increments reaction counts for weekly awards and handles OG claims.
@@ -621,7 +621,7 @@ class OGGroup(app_commands.Group):
             return
         if not await _is_enabled(self.cog.bot, interaction.guild.id, "og"):
             await interaction.response.send_message(
-                "OG claims are not enabled. Enable via `/config engagement og_enabled true`.",
+                "OG claims are not enabled. Enable via `/engagement toggle og_claims true`.",
                 ephemeral=True,
             )
             return
