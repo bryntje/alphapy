@@ -1566,7 +1566,7 @@ class Configuration(AlphaCog):
             embed = EmbedBuilder.info(
                 title="Auto-Moderation Status",
                 fields=[
-                    {"name": "Status",          "value": "✅ Enabled" if automod_enabled else "❌ Disabled", "inline": True},
+                    {"name": "Status",          "value": "✅ Module enabled" if automod_enabled else "❌ Module disabled", "inline": True},
                     {"name": "Active Rules",     "value": str(len(rules)), "inline": True},
                     {"name": "Premium Features", "value": "✅ Enabled" if premium_status else "❌ Disabled", "inline": True},
                 ],
