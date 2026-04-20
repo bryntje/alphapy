@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - **Engagement show formatting**: Updated to use 'Not set' for empty fields and consistent boolean display (✅ Yes / ❌ No), matching other configuration commands.
 - **Engagement settings**: Fixed parameter order in all settings.set calls to prevent KeyError on toggle and configuration commands.
 - **Engagement documentation**: Updated command references in docstrings and error messages to reflect the new top-level command structure.
+- **Engagement embeds**: Switched to EmbedBuilder for consistent styling with timestamps, proper colors, and AGENTS.md compliance across challenge announcements, status displays, and badge lists.
 - **Automod status labels**: Improved to 'Module enabled' and 'Premium enabled' for better clarity and distinction from individual settings.
 
 ---
