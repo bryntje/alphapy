@@ -187,19 +187,33 @@ If a migration fails partway through:
 
 ## Current Schema
 
-The baseline migration (`001_initial_schema.py`) includes:
+**Current migration head:** `021_cleanup_module_status`
 
-- `bot_settings` - Guild-specific bot configuration
-- `settings_history` - Audit trail for settings changes
-- `reminders` - Reminder system data
-- `onboarding` - User onboarding responses
-- `guild_onboarding_questions` - Onboarding question definitions
-- `guild_rules` - Guild rules
-- `support_tickets` - Support ticket system
-- `faq_entries` - FAQ entries
-- `faq_search_logs` - FAQ search analytics
-- `audit_logs` - Command usage analytics
-- `health_check_history` - Health check trend data
+Tables added across all migrations:
+
+| Migration | Tables / Changes |
+|---|---|
+| `001_initial_schema` | `bot_settings`, `settings_history`, `reminders`, `onboarding`, `guild_onboarding_questions`, `guild_rules`, `support_tickets`, `faq_entries`, `faq_search_logs`, `audit_logs`, `health_check_history` |
+| `002` | `guild_rules` image columns |
+| `003` | `premium_subs` |
+| `004` | `reminders.image_url` |
+| `005` | Premium one-active-per-user constraint |
+| `006` | `terms_acceptance` |
+| `007` | Premium RLS policies |
+| `008` | `app_reflections` |
+| `009` | `automod_rules`, `automod_actions`, `automod_logs`, `automod_stats`, `automod_user_history` |
+| `010` | `custom_commands` |
+| `011` | `reminders.sent_message_id` |
+| `012` | Guild ID indexes |
+| `013` | Cleanup stale `bot_settings` rows (embedwatcher, guild.module_status, module_status.gdpr, system.onboarding_channel_id) |
+| `014` | `gpt_usage` |
+| `015` | `premium_subs.expiry_warning_sent_at` |
+| `016` | `gdpr_acceptance`, `config_audit_log` |
+| `017` | `verification_tickets.payment_date` |
+| `018` | `gdpr_acceptance.guild_id` |
+| `019` | `growth_checkins` |
+| `020_engagement_system` | `engagement_badges`, `engagement_og_claims`, `engagement_og_setup`, `engagement_challenges`, `engagement_participants`, `engagement_weekly_messages`, `engagement_weekly_awards`, `engagement_weekly_results`, `engagement_streaks` |
+| `021_cleanup_module_status` | Removes all remaining `module_status.*` rows from `bot_settings` (scope fully obsolete) |
 
 ## References
 

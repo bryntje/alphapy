@@ -652,6 +652,161 @@ Running violation totals per user per rule type. Used for escalating action thre
 
 ---
 
+---
+
+## Engagement Tables
+
+Added in migration `020_engagement_system`. All tables are multi-guild scoped via `guild_id`.
+
+### `engagement_badges`
+
+Per-user, per-guild badge history.
+
+**Columns:**
+- `id` (BIGSERIAL PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL)
+- `user_id` (BIGINT, NOT NULL)
+- `badge_key` (TEXT, NOT NULL): e.g. `winner`, `og`, `motivator`
+- `assigned_at` (TIMESTAMPTZ, DEFAULT NOW())
+
+**Indexes:** `idx_eng_badges_guild_user` on `(guild_id, user_id)`
+
+---
+
+### `engagement_og_claims`
+
+Tracks which users have claimed an OG spot per guild.
+
+**Columns:**
+- `guild_id` (BIGINT, NOT NULL)
+- `user_id` (BIGINT, NOT NULL)
+- `claimed_at` (TIMESTAMPTZ, DEFAULT NOW())
+
+**Primary Key:** `(guild_id, user_id)`
+
+**Indexes:** `idx_eng_og_claims_guild` on `(guild_id)`
+
+---
+
+### `engagement_og_setup`
+
+One row per guild storing the OG claim message location.
+
+**Columns:**
+- `guild_id` (BIGINT PRIMARY KEY)
+- `message_id` (BIGINT)
+- `channel_id` (BIGINT)
+- `updated_at` (TIMESTAMPTZ, DEFAULT NOW())
+
+---
+
+### `engagement_challenges`
+
+Challenge sessions per guild.
+
+**Columns:**
+- `id` (BIGSERIAL PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL)
+- `channel_id` (BIGINT): Channel where messages are counted
+- `mode` (TEXT, DEFAULT `'leaderboard'`): `leaderboard` or `random`
+- `title` (TEXT)
+- `active` (BOOLEAN, DEFAULT TRUE)
+- `started_at` (TIMESTAMPTZ, DEFAULT NOW())
+- `ends_at` (TIMESTAMPTZ)
+- `ended_at` (TIMESTAMPTZ)
+- `winner_id` (BIGINT)
+- `messages_count` (INT)
+
+**Indexes:** `idx_eng_challenges_guild_active` on `(guild_id, active)`
+
+---
+
+### `engagement_participants`
+
+Per-challenge participant message counts.
+
+**Columns:**
+- `id` (BIGSERIAL PRIMARY KEY)
+- `challenge_id` (BIGINT, NOT NULL, FK → `engagement_challenges.id` ON DELETE CASCADE)
+- `user_id` (BIGINT, NOT NULL)
+- `message_count` (INT, DEFAULT 0)
+
+**Unique:** `(challenge_id, user_id)`
+
+**Indexes:** `idx_eng_participants_challenge` on `(challenge_id)`
+
+---
+
+### `engagement_weekly_messages`
+
+Indexed messages for weekly award computation.
+
+**Columns:**
+- `id` (BIGSERIAL PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL)
+- `message_id` (BIGINT, NOT NULL)
+- `channel_id` (BIGINT, NOT NULL)
+- `user_id` (BIGINT, NOT NULL)
+- `created_at` (TIMESTAMPTZ, NOT NULL)
+- `has_image` (BOOLEAN, DEFAULT FALSE)
+- `is_food` (BOOLEAN, DEFAULT FALSE)
+- `reactions_count` (INT, DEFAULT 0)
+
+**Unique:** `(guild_id, message_id)`
+
+**Indexes:** `idx_eng_weekly_msgs_guild_created` on `(guild_id, created_at)`
+
+---
+
+### `engagement_weekly_awards`
+
+Weekly award period bookkeeping per guild.
+
+**Columns:**
+- `id` (BIGSERIAL PRIMARY KEY)
+- `guild_id` (BIGINT, NOT NULL)
+- `week_start` (DATE, NOT NULL)
+- `week_end` (DATE, NOT NULL)
+
+**Unique:** `(guild_id, week_start, week_end)`
+
+**Indexes:** `idx_eng_weekly_awards_guild` on `(guild_id)`
+
+---
+
+### `engagement_weekly_results`
+
+Per-period winner records.
+
+**Columns:**
+- `id` (BIGSERIAL PRIMARY KEY)
+- `week_id` (BIGINT, NOT NULL, FK → `engagement_weekly_awards.id` ON DELETE CASCADE)
+- `award_key` (TEXT, NOT NULL): e.g. `motivator`, `star`
+- `user_id` (BIGINT, NOT NULL)
+- `metric` (INT): Score used to determine winner
+- `message_id` (BIGINT): Winning message ID (reactions filter only)
+
+**Unique:** `(week_id, award_key)`
+
+---
+
+### `engagement_streaks`
+
+Daily activity streak per user per guild.
+
+**Columns:**
+- `guild_id` (BIGINT, NOT NULL)
+- `user_id` (BIGINT, NOT NULL)
+- `last_day` (DATE): Last date a message was sent
+- `current_days` (INT, DEFAULT 0): Current streak length
+- `base_nickname` (TEXT): Stored base nickname (without suffix)
+
+**Primary Key:** `(guild_id, user_id)`
+
+**Indexes:** `idx_eng_streaks_guild` on `(guild_id)`
+
+---
+
 ## Backup Recommendations
 
 Regular backups should include:

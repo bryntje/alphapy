@@ -12,14 +12,21 @@
 - `cogs/verification.py`: AI vision payment verification
 - `cogs/ticketbot.py`: support tickets with GPT summary + FAQ proposal
 - `cogs/premium.py`: tier guard + transfer
-- `cogs/automod.py` + `configuration.py` (automod_group): automated content moderation with rule engine
+- `cogs/automod.py` + `configuration.py` (`automod_group`): automated content moderation with rule engine
+- `cogs/engagement.py` + `utils/engagement_service.py`: community gamification (challenges, weekly awards, streaks, badges, OG claims)
 - `api.py`: dashboard endpoints + telemetry ingest job (subsystem='alphapy')
-- `utils/`: lifecycle, db_helpers, sanitizer, embed_builder, command_tracker, fyi_tips, automod_rules, automod_logging, automod_analytics
+- `utils/`: lifecycle, db_helpers, sanitizer, embed_builder, command_tracker, fyi_tips, automod_rules, automod_logging, automod_analytics, engagement_service
+
+## Command structure
+- All configuration groups are **standalone top-level command groups** with `default_permissions=administrator` — `/automod`, `/verification`, `/onboarding`, `/engagement`, `/system`, `/embedwatcher`, `/ticketbot`, `/gpt`, `/invites`, `/reminders`, `/gdpr`, `/growth`, `/fyi`
+- `/config` is reserved for cross-scope utilities: `start` (setup wizard) and `scopes`
+- All groups are defined as class-level `app_commands.Group` attributes in `cogs/configuration.py` and loaded via `cogs.configuration`
 
 ## Database Architecture
 - Multiple asyncpg pools (FastAPI + per-cog dedicated)
 - Central `bot_settings` + `audit_logs` + feature tables (reminders, onboarding, support_tickets, automod_rules, automod_logs, etc.)
 - Auto-moderation: 5 tables (`automod_actions`, `automod_rules`, `automod_logs`, `automod_stats`, `automod_user_history`) with indexes for performance
+- Engagement: 9 tables (`engagement_badges`, `engagement_og_claims`, `engagement_og_setup`, `engagement_challenges`, `engagement_participants`, `engagement_weekly_messages`, `engagement_weekly_awards`, `engagement_weekly_results`, `engagement_streaks`) — all multi-guild scoped
 - Command tracking via batch queue in the bot event loop
 - See `docs/database-schema.md` for full tables
 

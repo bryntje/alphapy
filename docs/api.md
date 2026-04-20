@@ -378,13 +378,7 @@ Save or update an onboarding question.
 
 **Request Body:** Same structure as GET response
 
-#### `PUT /api/dashboard/{guild_id}/onboarding/questions/{question_id}`
 
-Update an onboarding question.
-
-**Authentication:** Required (Supabase JWT token + guild admin access)
-
-**Request Body:** Same structure as GET response (all fields optional except `question_type`)
 
 #### `DELETE /api/dashboard/{guild_id}/onboarding/questions/{question_id}`
 
@@ -418,12 +412,6 @@ Get all onboarding rules for a guild.
 #### `POST /api/dashboard/{guild_id}/onboarding/rules`
 
 Save or update an onboarding rule.
-
-**Authentication:** Required (Supabase JWT token + guild admin access)
-
-#### `PUT /api/dashboard/{guild_id}/onboarding/rules/{rule_id}`
-
-Update an onboarding rule.
 
 **Authentication:** Required (Supabase JWT token + guild admin access)
 
@@ -863,6 +851,44 @@ Triggered by a GitHub Action when `docs/terms-of-service.md` or `docs/privacy-po
 
 **Response:** `200` with `{"status": "acknowledged", "sent": "tos, pp"}`. Returns `{"status": "skipped", "reason": "..."}` if `MAIN_GUILD_ID` is not set or no target channel is configured.
 
+---
+
+### `POST /webhooks/premium-invalidate`
+
+Clears the premium cache for a user so the next check refetches from Core-API/DB. Sent by Core-API on subscription changes (new purchase, cancellation, transfer).
+
+**Headers:** `X-Webhook-Signature` (HMAC-SHA256; secret: `PREMIUM_INVALIDATE_WEBHOOK_SECRET`, falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`)
+
+**Request body:**
+```json
+{
+  "user_id": 123456789,
+  "guild_id": 987654321
+}
+```
+
+- `guild_id` is optional — if omitted, cache is cleared for all guilds for that user.
+
+**Response:** `200` with `{"status": "ok"}`.
+
+---
+
+### `POST /webhooks/founder`
+
+Sends a founder welcome DM to a Discord user. Triggered by Core-API when a founder purchase is confirmed.
+
+**Headers:** `X-Webhook-Signature` (HMAC-SHA256; secret: `FOUNDER_WEBHOOK_SECRET`, falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`)
+
+**Request body:**
+```json
+{
+  "user_id": 123456789,
+  "message": "Optional custom message to include in the DM"
+}
+```
+
+**Response:** `200` with `{"status": "ok"}` or `{"status": "dm_failed"}` if the user has DMs disabled.
+
 ## Error Responses
 
 All endpoints may return standard HTTP error codes:
@@ -906,6 +932,8 @@ Version information is included in health check responses and can be queried via
 - **onboarding**: User onboarding flow
 - **ticketbot**: Ticket system configuration
 - **verification**: Payment verification setup
+- **engagement**: Challenges, weekly awards, streaks, badges, OG claims
+- **growth**: Growth Check-in channel
 
 ### Auto-Moderation Rule Types
 

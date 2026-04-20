@@ -204,9 +204,6 @@ Cancel the active challenge without determining a winner.
 #### `/challenge status`
 Show remaining time, participant count, progress bar and top 5 leaderboard.
 
-**Parameters:**
-- `challenge_id` (optional): Specific challenge ID
-
 ---
 
 #### `/challenge edit`
@@ -577,7 +574,7 @@ After the response, an optional share prompt appears (ephemeral):
 - **Share with my name** — same embed with display name and avatar.
 - **Keep private** — dismisses the prompt.
 
-The share option only appears if a growth channel has been configured by an admin (`/config growth set_channel`). All sharing is opt-in per interaction.
+The share option only appears if a growth channel has been configured by an admin (`/growth set_channel`). All sharing is opt-in per interaction.
 
 **Cooldown:** 2 uses per 5 minutes per user per guild.
 
@@ -817,7 +814,7 @@ Close a verification channel without approving or rejecting (neutral closure).
 
 ---
 
-### `/config verification set_reviewer_role [@role]`
+### `/verification set_reviewer_role [@role]`
 Set the role that gets tagged when the AI triggers a manual review. Leave `role` empty to clear.
 
 **Options:**
@@ -831,7 +828,7 @@ Set the role that gets tagged when the AI triggers a manual review. Leave `role`
 
 ---
 
-### `/config verification set_max_payment_age [days]`
+### `/verification set_max_payment_age [days]`
 Set the maximum age (in days) a payment screenshot may be. Leave `days` empty to reset to the default (35 days).
 
 **Options:**
@@ -842,7 +839,7 @@ Set the maximum age (in days) a payment screenshot may be. Leave `days` empty to
 - A server-side check validates the extracted date independently — if older than the window, the submission is hard-rejected even if the AI said it was valid.
 - If the date is unreadable and the AI was confident, the submission is escalated to manual review instead of auto-approved.
 
-**Permissions:** Owner/Admin
+**Permissions:** Administrator
 
 ---
 

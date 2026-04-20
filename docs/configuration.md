@@ -262,14 +262,14 @@ For invite templates, you can use:
 
 Example:
 ```
-/config invites set_template "With inviter" "{member} joined! {inviter} now has {count} invites."
+/invites set_template "with" "{member} joined! {inviter} now has {count} invites."
 ```
 
 ## Troubleshooting
 
 ### "Channel not configured" errors
 - Run the setup commands above for your server
-- Check `/config system show` to verify settings
+- Check `/system show` to verify settings
 
 ### Bot not responding to embeds/announcements
 - Verify `/config embedwatcher set_announcements` is set to the correct channel
