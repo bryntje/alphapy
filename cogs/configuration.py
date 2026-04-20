@@ -2715,9 +2715,9 @@ class Configuration(AlphaCog):
             f"**{feature.name}** {state} for this server.", ephemeral=True
         )
         await self._send_audit_log(
-            "Engagement toggle",
-            f"{feature.name} → {state}",
-            guild_id=guild_id,
+            "🎉 Engagement",
+            f"`engagement.{feature.value}` → {enabled} by {interaction.user.mention}.",
+            guild_id,
         )
 
     @engagement_group.command(
@@ -2739,7 +2739,11 @@ class Configuration(AlphaCog):
         await self.settings.set("engagement", "challenge_winner_role_id", role.id if role else None, guild_id)
         msg = f"Challenge winner role set to {role.mention}." if role else "Challenge winner role cleared."
         await interaction.followup.send(msg, ephemeral=True)
-        await self._send_audit_log("Engagement", f"challenge_winner_role → {role.name if role else 'cleared'}", guild_id=guild_id)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.challenge_winner_role_id` → {role.id if role else None} by {interaction.user.mention}.",
+            guild_id,
+        )
 
     @engagement_group.command(
         name="set_weekly_channel",
@@ -2760,7 +2764,11 @@ class Configuration(AlphaCog):
         await self.settings.set("engagement", "weekly_award_channel_id", channel.id if channel else None, guild_id)
         msg = f"Weekly award channel set to {channel.mention}." if channel else "Weekly award channel cleared."
         await interaction.followup.send(msg, ephemeral=True)
-        await self._send_audit_log("Engagement", f"weekly_award_channel → {channel.mention if channel else 'cleared'}", guild_id=guild_id)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.weekly_award_channel_id` → {channel.id if channel else None} by {interaction.user.mention}.",
+            guild_id,
+        )
 
     @engagement_group.command(
         name="set_food_channels",
@@ -2781,6 +2789,11 @@ class Configuration(AlphaCog):
         await self.settings.set("engagement", "weekly_food_channel_ids", channel_ids or "", guild_id)
         msg = f"Food channels set to: `{channel_ids}`." if channel_ids else "Food channels cleared."
         await interaction.followup.send(msg, ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.weekly_food_channel_ids` → {channel_ids or ''} by {interaction.user.mention}.",
+            guild_id,
+        )
 
     @engagement_group.command(
         name="set_weekly_awards",
@@ -2816,7 +2829,11 @@ class Configuration(AlphaCog):
         guild_id = interaction.guild.id
         await self.settings.set("engagement", "weekly_award_configs", json_config, guild_id)
         await interaction.followup.send(f"Weekly award configs updated ({len(parsed)} awards).", ephemeral=True)
-        await self._send_audit_log("Engagement", "weekly_award_configs updated", guild_id=guild_id)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.weekly_award_configs` updated by {interaction.user.mention}.",
+            guild_id,
+        )
 
     @engagement_group.command(
         name="set_badge_role",
@@ -2844,9 +2861,9 @@ class Configuration(AlphaCog):
         msg = f"Badge **{key}** linked to {role.mention}." if role else f"Badge **{key}** role cleared."
         await interaction.followup.send(msg, ephemeral=True)
         await self._send_audit_log(
-            "Engagement",
-            f"badge_role_{key} → {role.name if role else 'cleared'}",
-            guild_id=guild_id,
+            "🎉 Engagement",
+            f"`engagement.{setting_key}` → {role.id if role else None} by {interaction.user.mention}.",
+            guild_id,
         )
 
     @engagement_group.command(
@@ -2870,7 +2887,11 @@ class Configuration(AlphaCog):
         guild_id = interaction.guild.id
         await self.settings.set("engagement", "og_cap", cap, guild_id)
         await interaction.followup.send(f"OG claim cap set to **{cap}**.", ephemeral=True)
-        await self._send_audit_log("Engagement", f"og_cap → {cap}", guild_id=guild_id)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.og_cap` → {cap} by {interaction.user.mention}.",
+            guild_id,
+        )
 
     @engagement_group.command(
         name="set_og_text",
@@ -2891,6 +2912,11 @@ class Configuration(AlphaCog):
         await self.settings.set("engagement", "og_claim_text", text or "", guild_id)
         msg = "OG claim text updated." if text else "OG claim text reset to default."
         await interaction.followup.send(msg, ephemeral=True)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.og_claim_text` → {text or ''} by {interaction.user.mention}.",
+            guild_id,
+        )
 
     @engagement_group.command(
         name="set_streaks_nicknames",
@@ -2911,7 +2937,11 @@ class Configuration(AlphaCog):
         await self.settings.set("engagement", "streaks_nicknames", enabled, guild_id)
         state = "enabled" if enabled else "disabled"
         await interaction.followup.send(f"Streak nickname suffixes {state}.", ephemeral=True)
-        await self._send_audit_log("Engagement", f"streaks_nicknames → {state}", guild_id=guild_id)
+        await self._send_audit_log(
+            "🎉 Engagement",
+            f"`engagement.streaks_nicknames` → {enabled} by {interaction.user.mention}.",
+            guild_id,
+        )
 
 
 async def setup(bot: commands.Bot):
