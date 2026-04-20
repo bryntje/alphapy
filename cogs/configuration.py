@@ -2493,7 +2493,7 @@ class Configuration(AlphaCog):
         for definition, value, overridden in slice_:
             formatted = self._format_value(definition, value)
             embed.add_field(
-                name=f"`{definition.key}`",
+                name=f"{definition.key}",
                 value=formatted,
                 inline=False,
             )
@@ -2569,7 +2569,7 @@ class Configuration(AlphaCog):
             return f"<@&{int(value)}>" if value else "—"
         if definition.value_type in ("bool", "boolean"):
             return "enabled" if value else "disabled"
-        return f"`{value}`"
+        return str(value)
     async def _send_audit_log(self, title: str, message: str, guild_id: Optional[int] = None) -> None:
         """Send audit log to the correct guild's log channel. Config changes are always logged (critical)."""
         if guild_id is None:
