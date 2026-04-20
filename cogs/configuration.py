@@ -1568,7 +1568,7 @@ class Configuration(AlphaCog):
                 fields=[
                     {"name": "Status",          "value": "✅ Module enabled" if automod_enabled else "❌ Module disabled", "inline": True},
                     {"name": "Active Rules",     "value": str(len(rules)), "inline": True},
-                    {"name": "Premium Features", "value": "✅ Enabled" if premium_status else "❌ Disabled", "inline": True},
+                    {"name": "Premium Features", "value": "✅ Premium enabled" if premium_status else "❌ Premium disabled", "inline": True},
                 ],
             )
             rule_counts: dict = {}
@@ -2484,7 +2484,7 @@ class Configuration(AlphaCog):
 
     _SETTINGS_PAGE_SIZE = 10
 
-    def _settings_embed(self, title: str, items: list, page: int) -> discord.Embed:
+    def _settings_embed(self, title: str, items: list, page: int, scope: str = "") -> discord.Embed:
         """Build a paginated embed for a settings scope."""
         page_size = self._SETTINGS_PAGE_SIZE
         start = page * page_size
@@ -2492,8 +2492,9 @@ class Configuration(AlphaCog):
         embed = discord.Embed(title=title, color=0x5865F2)
         for definition, value, overridden in slice_:
             formatted = self._format_value(definition, value)
+            display_name = self._humanize_key(definition.key)
             embed.add_field(
-                name=f"{definition.key}",
+                name=display_name,
                 value=formatted,
                 inline=False,
             )
@@ -2513,9 +2514,11 @@ class Configuration(AlphaCog):
         if not items:
             await interaction.followup.send(f"⚠️ No `{scope}` settings registered.", ephemeral=True)
             return
-        embed = self._settings_embed(title, items, page=0)
+        # Sort items to put "enabled" first if present, then alphabetically
+        items.sort(key=lambda x: (x[0].key != "enabled", x[0].key))
+        embed = self._settings_embed(title, items, page=0, scope=scope)
         if len(items) > self._SETTINGS_PAGE_SIZE:
-            view = Configuration.SettingsPageView(self, title, items)
+            view = Configuration.SettingsPageView(self, title, items, scope=scope)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         else:
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -2523,12 +2526,13 @@ class Configuration(AlphaCog):
     class SettingsPageView(discord.ui.View):
         """Reusable prev/next paginator for settings scopes."""
 
-        def __init__(self, cog: "Configuration", title: str, items: list, page: int = 0):
+        def __init__(self, cog: "Configuration", title: str, items: list, page: int = 0, scope: str = ""):
             super().__init__(timeout=180)
             self.cog = cog
             self.title = title
             self.items = items
             self.page = page
+            self.scope = scope
             self._sync_buttons()
 
         def _sync_buttons(self) -> None:
@@ -2543,7 +2547,7 @@ class Configuration(AlphaCog):
 
         async def _update(self, interaction: discord.Interaction) -> None:
             self._sync_buttons()
-            embed = self.cog._settings_embed(self.title, self.items, self.page)
+            embed = self.cog._settings_embed(self.title, self.items, self.page, scope=self.scope)
             await interaction.response.edit_message(embed=embed, view=self)
 
         @discord.ui.button(label="⬅ Prev", style=discord.ButtonStyle.secondary, custom_id="cfg_prev")
@@ -2560,16 +2564,33 @@ class Configuration(AlphaCog):
                 self.page += 1
             await self._update(interaction)
 
+    def _humanize_key(self, key: str) -> str:
+        """Convert a setting key to a human-readable display name."""
+        # Special cases
+        if key == "enabled":
+            return "Enabled"
+        # General humanization
+        words = key.replace('_', ' ').split()
+        humanized = []
+        for word in words:
+            if word.lower() in ('id', 'ids'):
+                continue  # Skip ID suffixes
+            humanized.append(word.capitalize())
+        return ' '.join(humanized)
+
     def _format_value(self, definition: SettingDefinition, value: Any) -> str:
         if value is None:
-            return "—"
+            return "Not set"
         if definition.value_type == "channel":
-            return f"<#{int(value)}>" if value else "—"
+            return f"<#{int(value)}>" if value else "Not set"
         if definition.value_type == "role":
-            return f"<@&{int(value)}>" if value else "—"
+            return f"<@&{int(value)}>" if value else "Not set"
         if definition.value_type in ("bool", "boolean"):
-            return "enabled" if value else "disabled"
-        return str(value)
+            return "✅ Yes" if value else "❌ No"
+        # For message fields, no backticks; for others, add backticks
+        if "message" in definition.key.lower():
+            return str(value)
+        return f"`{value}`"
     async def _send_audit_log(self, title: str, message: str, guild_id: Optional[int] = None) -> None:
         """Send audit log to the correct guild's log channel. Config changes are always logged (critical)."""
         if guild_id is None:
