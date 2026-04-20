@@ -2677,7 +2677,7 @@ class Configuration(AlphaCog):
         embed = EmbedBuilder.info(
             title="⚡ Engagement Settings",
             fields=[
-                {"name": "Enabled", "value": f"Challenges {fmt_bool(challenges)}  Weekly {fmt_bool(weekly)}  Badges {fmt_bool(badges)}  Streaks {fmt_bool(streaks)}  OG {fmt_bool(og)}", "inline": False},
+                {"name": "Enabled", "value": f"Challenges {fmt_bool(challenges)}  Weekly {fmt_bool(weekly)}  Badges {fmt_bool(badges)}\nStreaks {fmt_bool(streaks)}  OG {fmt_bool(og)}", "inline": False},
                 {"name": "Roles", "value": f"Winner role  {fmt_role(winner_role)}\nOG role   {fmt_role(og_role)}", "inline": False},
                 {"name": "Channels", "value": f"Weekly award channel  {fmt_channel(weekly_channel)}\nWeekly food channels  {food_channels}", "inline": False},
                 {"name": "Streaks", "value": f"Nicknames enabled  {fmt_bool(streaks_nick)}\nOG cap     {og_cap}", "inline": False},
