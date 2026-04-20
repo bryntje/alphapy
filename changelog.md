@@ -18,7 +18,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **`/config` group refactored**: All subgroups (`automod`, `verification`, `onboarding`, `engagement`, etc.) are now standalone top-level command groups with `default_permissions=administrator` and `guild_only=True`. The `/config` group itself only retains `start` and `scopes`. Fixes Discord HTTP 400 error caused by the command group exceeding the 8000-byte payload limit.
 - **`/automod status`** moved from `cogs/automod.py` into the `automod_group` in `cogs/configuration.py` to resolve the duplicate group name conflict introduced by the refactor.
-- **Settings embed**: Field names no longer have emoji status badges. Booleans display as `enabled`/`disabled` instead of `✅ on`/`🚫 off`. Footer shows `Page X/Y · N settings` only on multi-page results; single-page shows `N settings` only.
+- **Settings embeds enhanced**: Field names are now humanized (e.g., 'log_channel_id' → 'Log Channel'). Boolean values show checkmarks (✅ Yes / ❌ No). Empty fields display 'Not set' instead of '—'. Messages have no backticks. 'Enabled' field appears first. Consistent premium styling across all /config show commands, matching onboarding quality.
+- **Automod status labels**: Improved to 'Module enabled' and 'Premium enabled' for better clarity and distinction from individual settings.
 
 ---
 
