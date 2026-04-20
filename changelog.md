@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - **`/automod status`** moved from `cogs/automod.py` into the `automod_group` in `cogs/configuration.py` to resolve the duplicate group name conflict introduced by the refactor.
 - **Settings embeds enhanced**: Field names are now humanized (e.g., 'log_channel_id' → 'Log Channel'). Boolean values show checkmarks (✅ Yes / ❌ No). Empty fields display 'Not set' instead of '—'. Messages have no backticks. 'Enabled' field appears first. Consistent premium styling across all /config show commands, matching onboarding quality.
 - **Engagement show formatting**: Updated to use 'Not set' for empty fields and consistent boolean display (✅ Yes / ❌ No), matching other configuration commands.
+- **Engagement settings**: Fixed parameter order in all settings.set calls to prevent KeyError on toggle and configuration commands.
 - **Automod status labels**: Improved to 'Module enabled' and 'Premium enabled' for better clarity and distinction from individual settings.
 
 ---
