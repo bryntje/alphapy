@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - **Engagement documentation**: Updated command references in docstrings and error messages to reflect the new top-level command structure.
 - **Engagement embeds**: Switched to EmbedBuilder for consistent styling with timestamps, proper colors, and AGENTS.md compliance across challenge announcements, status displays, and badge lists.
 - **Engagement audit logs**: Added comprehensive logging for all settings changes, including who made the change, matching the format used in other configuration commands.
+- **Setup wizard messages**: Updated references to use the new top-level command structure instead of the old `/config <scope>` format.
 - **Automod status labels**: Improved to 'Module enabled' and 'Premium enabled' for better clarity and distinction from individual settings.
 
 ---
