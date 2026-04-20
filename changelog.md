@@ -5,10 +5,40 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **Engagement module** (`cogs/engagement.py`, `utils/engagement_service.py`): Community gamification system with five independently toggleable features per guild (all off by default):
+  - **Challenges** (`challenges_enabled`) — timed message-count contests per channel; modes: `leaderboard` or `random`. Active challenges rehydrate from DB on restart. Commands: `/challenge start|end|cancel|status|edit`.
+  - **Weekly Awards** (`weekly_enabled`) — indexes messages (`has_image`, `is_food`) and reactions via `on_message` / `on_raw_reaction_add`. Award categories are configurable per guild as JSON (default: Motivator, Foodfluencer, Knaller, Star). Triggered via `/weekly compute` or a scheduler.
+  - **Badges** (`badges_enabled`) — per-guild badge history with optional Discord role assignment. Commands: `/badge give|list`. Roles configured via `/engagement set_badge_role`.
+  - **Streaks** (`streaks_enabled`) — daily activity streak counter with optional nickname suffix (`streaks_nicknames` setting): `Name | 🐣 day 3`, `🔥 week 2`, `👑 month 1`.
+  - **OG Claims** (`og_enabled`) — reaction-based limited-spot claim system. Cap, message text, and badge role are configurable. Commands: `/og setup|status`.
+- **`/engagement` config group**: `/engagement show|toggle|set_challenge_winner_role|set_weekly_channel|set_food_channels|set_weekly_awards|set_badge_role|set_og_cap|set_og_text|set_streaks_nicknames`
+- **Migration `020_engagement_system`**: 9 new `engagement_*` tables with `guild_id` scope — `engagement_badges`, `engagement_og_claims`, `engagement_og_setup`, `engagement_challenges`, `engagement_participants`, `engagement_weekly_messages`, `engagement_weekly_awards`, `engagement_weekly_results`, `engagement_streaks`.
+- **Migration `021_cleanup_module_status`**: Removes all remaining `module_status.*` rows from `bot_settings` — migration 013 only cleaned up `module_status.gdpr`; this covers all remaining keys that caused `UNKNOWN_SETTING` log noise on every startup.
+
+### Changed
+- **`/config` group refactored**: All subgroups (`automod`, `verification`, `onboarding`, `engagement`, etc.) are now standalone top-level command groups with `default_permissions=administrator` and `guild_only=True`. The `/config` group itself only retains `start` and `scopes`. Fixes Discord HTTP 400 error caused by the command group exceeding the 8000-byte payload limit.
+- **`/automod status`** moved from `cogs/automod.py` into the `automod_group` in `cogs/configuration.py` to resolve the duplicate group name conflict introduced by the refactor.
+- **Settings embed**: Field names no longer have emoji status badges. Booleans display as `enabled`/`disabled` instead of `✅ on`/`🚫 off`. Footer shows `Page X/Y · N settings` only on multi-page results; single-page shows `N settings` only.
+
+---
+
+## [3.6.0] - 2026-04-15
+
+### Added
+- **Settings hot-reload**: `SettingsService` gains `GlobalSettingListener` type and `add_global_listener()`. `CachedSettingsHelper` registers a global listener in `__init__` that auto-evicts stale LRU entries on every setting change — cogs now always read the current value without needing a TTL or explicit invalidation call.
+- **`/config * show` embeds**: All 10 `/config … show` handlers now return paginated `discord.Embed` responses (one field per setting, ✅/🔹 status badge, channel/role mentions rendered). A `SettingsPageView` (Prev/Next buttons) activates when a scope exceeds 10 keys. `onboarding_show` converted to embed fields.
+- **Config audit trail** (`migration 019`): New `config_audit_log` table records every setting change with `(guild_id, changed_by, scope, key, old_value, new_value, changed_at)`. `SettingsService.set()` writes to it alongside the existing `bot_settings` upsert. Dashboard API endpoints `GET /settings/history` and `POST /settings/rollback/{id}` now backed by real data.
+- **Automod analytics**: `utils/automod_analytics.py` — `false_positive_rate`, `avg_response_time`, `trend` (daily counts last 7 days as `{"YYYY-MM-DD": count}`), and `export_metrics()` / `export_logs()` implemented with real DB queries replacing placeholder values.
+- **Growth checkins** (`migration 020`): `growth_checkins` table added to the bot schema, resolving the missing-table error in the dashboard growth tab.
+- **Settings listeners in cogs**: `embed_watcher`, `reminders`, and `ticketbot` subscribe to their key settings via `add_listener()` in `cog_load()` — logs immediately when channel IDs, offsets, or enabled flags change.
+
+### Changed
+- **TicketBot DB pool**: Migrated from a private `DatabaseManager` pool to the shared `get_bot_db_pool()` (same pattern as `embed_watcher` and `reminders`). Removes per-error `_db_manager` cleanup across all error handlers.
 
 ### Fixed
-- (No changes yet)
+- **English strings**: 8 Dutch user-facing strings and comments replaced with English equivalents across `cogs/ticketbot.py`, `cogs/importdata.py`, `cogs/leadership.py`, `cogs/reminders.py`, `cogs/learn.py`, `cogs/contentgen.py`, and `ROADMAP.md`.
+- **Ticket metrics snapshot**: `CASE WHEN $6 IS NULL THEN NULL ELSE $6::jsonb END` replaced with `$6::jsonb` — asyncpg cannot infer the parameter type from a `CASE` expression when the value is `None`; direct cast resolves the `could not determine data type of parameter $6` error.
+- **`reminders_show` Dutch string**: "Geen reminder settings geregistreerd" removed (now handled by the generic `_reply_settings` helper).
 
 ---
 
