@@ -78,7 +78,7 @@ class SetupWizardView(discord.ui.View):
     def _build_complete_embed(self) -> discord.Embed:
         embed = discord.Embed(
             title="✅ Setup complete",
-            description="You can change any setting later with `/config <scope> show` and the set commands.",
+            description="You can change any setting later with the respective `/<scope>` show and set commands.",
             color=discord.Color.green(),
             timestamp=datetime.now(BRUSSELS_TZ),
         )
@@ -170,7 +170,7 @@ class SetupWizardView(discord.ui.View):
         except Exception as e:
             log_with_guild(f"Setup wizard settings.set failed: {e}", self.guild_id, "error")
             await interaction.followup.send(
-                "Failed to save this setting. You can set it later with `/config`.",
+                "Failed to save this setting. You can set it later with the respective `/<scope>` commands.",
                 ephemeral=True,
             )
             return
