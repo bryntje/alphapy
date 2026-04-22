@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Engagement: challenge crash on end** (`utils/engagement_service.py`): `finalize_and_announce_challenge` used `mode`, `channel_id`, `guild_id` and `title` as free variables that were never defined, causing a `NameError` crash on every challenge end (timer expiry or `/challenge end`). These are now loaded from `_active_challenges` at the start of the function.
+- **Engagement: challenge progress bar always 0% after restart** (`utils/engagement_service.py`): `rehydrate_challenges` set `start_ts = time.time()` on every bot restart instead of using the real `started_at` from the DB. `start_ts` and `end_ts` are now derived from the DB `started_at` / `ends_at` columns so `/challenge status` shows the correct progress after a restart.
+
 ### Added
 - **Engagement module** (`cogs/engagement.py`, `utils/engagement_service.py`): Community gamification system with five independently toggleable features per guild (all off by default):
   - **Challenges** (`challenges_enabled`) — timed message-count contests per channel; modes: `leaderboard` or `random`. Active challenges rehydrate from DB on restart. Commands: `/challenge start|end|cancel|status|edit`.
