@@ -695,13 +695,24 @@ async def rehydrate_challenges(bot: discord.Client, pool: Optional[asyncpg.Pool]
                         counts[int(pr["user_id"])] = int(pr["message_count"])
             except Exception as exc:
                 logger.warning(f"[engagement] rehydrate counts error: {exc}")
+            # Derive start_ts from the DB started_at so the progress bar is correct
+            # after a bot restart. Fall back to derived value if started_at is missing.
+            started_at: Optional[datetime] = row["started_at"]
+            if isinstance(started_at, datetime):
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
+                real_start_ts = started_at.timestamp()
+            else:
+                real_start_ts = time.time() - (
+                    (ends_at.timestamp() - time.time()) if isinstance(ends_at, datetime) else 0
+                )
             task = bot.loop.create_task(_run_challenge_timer(bot, challenge_id, remaining))
             _active_challenges[challenge_id] = {
                 "guild_id": int(row["guild_id"]),
                 "mode": str(row["mode"] or "leaderboard"),
                 "title": row["title"],
-                "start_ts": time.time(),
-                "end_ts": time.time() + remaining,
+                "start_ts": real_start_ts,
+                "end_ts": ends_at.timestamp() if isinstance(ends_at, datetime) else time.time() + remaining,
                 "channel_id": int(row["channel_id"]) if row["channel_id"] else 0,
                 "task": task,
                 "message_counts": counts,
@@ -718,6 +729,12 @@ async def finalize_and_announce_challenge(
 ) -> None:
     """Determine winner, announce result, assign badge+role, clean runtime state."""
     from utils.db_helpers import get_bot_db_pool
+
+    rt = _active_challenges.get(challenge_id, {})
+    mode: str = rt.get("mode", "leaderboard")
+    channel_id: int = rt.get("channel_id", 0)
+    guild_id: Optional[int] = rt.get("guild_id")
+    title: str = rt.get("title") or "Challenge"
 
     pool = get_bot_db_pool(bot)
     res = await challenge_end(pool, challenge_id, mode)
