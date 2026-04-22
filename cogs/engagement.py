@@ -867,7 +867,9 @@ class EngagementCog(commands.Cog):
                     if last_day == today:
                         new_days = days  # already counted today
                     elif last_day is None or (today - last_day).days > 1:
-                        new_days = 1  # streak broken
+                        # last_day is None should not occur for existing rows,
+                        # but guard against corrupt data
+                        new_days = 1  # streak broken or corrupt — reset
                         update_db = True
                     else:
                         new_days = days + 1
