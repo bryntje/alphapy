@@ -3,6 +3,8 @@
   "typeCheckingMode": "basic",
   "exclude": [
     "venv",
+    ".venv",
+    "node_modules",
     ".git",
     "cogs/test_*.py"
   ]
