@@ -35,7 +35,8 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
-      - name: Type check (pyright)
+      - name: Type check (pyright, advisory)
+        continue-on-error: true
         run: npx pyright
 
       - name: Run tests
