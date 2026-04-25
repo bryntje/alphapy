@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (No changes yet)
+
+### Fixed
+- (No changes yet)
+
+## [3.7.0] - 2026-04-25
+
+### Added
 - **API observability endpoint** (`api.py`): New `GET /api/observability` endpoint (internal, excluded from schema) exposing rolling request metrics for API and webhook traffic:
   - success rate
   - latency percentiles (`p50`, `p95`, `p99`)

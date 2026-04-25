@@ -4,6 +4,28 @@ All notable releases of Alphapy will be documented in this file.
 
 ---
 
+## [3.7.0] - 2026-04-25 - "Enterprise Ready"
+
+### Minor Release: API Observability, CI Quality Gates, and Engagement Stability
+
+This release adds API request observability and idempotent reminder API writes, formalizes migration-driven startup, and improves challenge reliability in the engagement module.
+
+#### What's New
+- **API observability endpoint**: New internal `GET /api/observability` with rolling success rate, request volume, and latency percentiles (`p50`, `p95`, `p99`) for API and webhook traffic
+- **Request tracing**: API middleware now propagates `X-Request-ID` and tracks per-request latency/outcome
+- **Reminder API idempotency**: `POST /api/reminders`, `PUT /api/reminders`, and `DELETE /api/reminders/{reminder_id}/{created_by}` now support `Idempotency-Key` headers
+- **Migration 022**: Creates/ensures `audit_logs` and `health_check_history`, ensures analytics indexes, and adds `idx_reminders_event_time`
+- **CI quality gates**: Added Ruff linting, Pyright type checking, and pytest coverage in `.github/workflows/bot.yml`
+- **Tooling baseline**: Added `pyproject.toml` (Ruff/Pyright config), updated `pytest.ini` coverage defaults, and added `pytest-cov`, `ruff`, and `pyright` to `requirements.txt`
+
+#### Reliability & Fixes
+- **API startup schema behavior**: Removed runtime `CREATE TABLE IF NOT EXISTS` from FastAPI lifespan; schema changes are now Alembic-driven
+- **Security hardening mode**: Added strict startup checks in production when `STRICT_SECURITY_MODE=1` and required auth/webhook secrets are missing
+- **CORS fallback**: Removed wildcard fallback and tightened default fallback to localhost-only development origins
+- **Engagement challenge stability**: Fixed `NameError` crash in challenge finalization and corrected challenge progress after restart by rehydrating timestamps from DB
+
+---
+
 ## [3.3.0] - 2026-04-12 - "Enterprise Ready"
 
 ### Minor Release: Verification Overhaul & Growth Check-in Improvements

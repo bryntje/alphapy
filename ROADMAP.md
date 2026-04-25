@@ -1,8 +1,22 @@
-# 🧬 Innersync • Alphapy Roadmap v3.6.0 "Enterprise Ready"
+# 🧬 Innersync • Alphapy Roadmap v3.7.0 "Enterprise Ready"
 
-**Release v3.6.0 Complete!** ⚡ Settings hot-reload, config audit trail, automod analytics, embed-based `/config show` commands, and bot–dashboard schema parity.
+**Release v3.7.0 Complete!** ⚡ API observability endpoint, request tracing, reminder idempotency keys, migration-driven startup hardening, and CI quality gates.
 
-This document outlines the evolution from v3.6.0 forward.
+This document outlines the evolution from v3.7.0 forward.
+
+## ✅ COMPLETED: API Observability & CI Quality Gates (v3.7.0)
+
+**Status:** ✅ **Fully Implemented & Released**
+
+Minor release focused on operational visibility, reliability, and quality baseline improvements:
+- **API observability**: New internal `GET /api/observability` endpoint with rolling request counts, success rate, and latency percentiles for API + webhook traffic
+- **Request tracing**: Added/propagated `X-Request-ID` and per-request outcome/latency tracking middleware
+- **Reminder API idempotency**: `POST`/`PUT`/`DELETE` reminders now support `Idempotency-Key` to prevent duplicate writes on client retries
+- **Schema governance**: Removed runtime schema-create behavior from API startup; schema changes are now migration-driven via Alembic
+- **CI quality gates**: Ruff, Pyright, and pytest coverage checks wired into CI
+- **Engagement stability fixes**: challenge finalization crash and post-restart progress regressions resolved
+
+---
 
 ## ✅ COMPLETED: Settings Hot-Reload & Dashboard Parity (v3.6.0)
 
