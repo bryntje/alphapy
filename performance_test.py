@@ -141,7 +141,7 @@ async def main():
     try:
         process = psutil.Process(os.getpid())
         memory_before = process.memory_info().rss / 1024 / 1024
-    except:
+    except Exception:
         memory_before = 0
 
     # Run tests
@@ -154,7 +154,7 @@ async def main():
         memory_after = process.memory_info().rss / 1024 / 1024
         memory_delta = memory_after - memory_before
         print(f"📊 Memory delta: {memory_delta:+.1f}MB")
-    except:
+    except Exception:
         pass
 
     print("\n" + "=" * 50)

@@ -1974,8 +1974,8 @@ async def verify_guild_admin_access(
         )
     try:
         discord_id = int(discord_id_str)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Invalid Discord ID in profile.")
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Invalid Discord ID in profile.") from exc
 
     from gpt.helpers import bot_instance
 
@@ -1990,11 +1990,11 @@ async def verify_guild_admin_access(
     try:
         future = asyncio.run_coroutine_threadsafe(runner(), loop)
         is_admin = await asyncio.wait_for(asyncio.wrap_future(future), timeout=5.0)
-    except TimeoutError:
-        raise HTTPException(status_code=503, detail="Permission check timed out.")
+    except TimeoutError as exc:
+        raise HTTPException(status_code=503, detail="Permission check timed out.") from exc
     except Exception as exc:
         logger.debug(f"Guild admin check failed: {exc}")
-        raise HTTPException(status_code=403, detail="Could not verify guild admin access.")
+        raise HTTPException(status_code=403, detail="Could not verify guild admin access.") from exc
 
     if not is_admin:
         raise HTTPException(status_code=403, detail="You do not have admin access to this guild.")
@@ -2067,7 +2067,7 @@ async def get_guild_settings(
 
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get guild settings: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch settings")
+        raise HTTPException(status_code=500, detail="Failed to fetch settings") from exc
 
 
 @router.post("/dashboard/settings/{guild_id}")
@@ -2129,7 +2129,7 @@ async def update_guild_settings(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to update guild settings: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to update settings")
+        raise HTTPException(status_code=500, detail="Failed to update settings") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2155,7 +2155,7 @@ async def get_gdpr_dashboard(
         return {"guild_id": guild_id, "acceptance_count": int(count or 0)}
     except Exception as exc:
         logger.error("[GDPR] Dashboard fetch error: %s", exc)
-        raise HTTPException(status_code=500, detail="Error fetching GDPR data")
+        raise HTTPException(status_code=500, detail="Error fetching GDPR data") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2222,7 +2222,7 @@ async def get_guild_onboarding_questions(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to get guild onboarding questions: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch questions")
+        raise HTTPException(status_code=500, detail="Failed to fetch questions") from exc
 
 
 @router.post("/dashboard/{guild_id}/onboarding/questions")
@@ -2268,7 +2268,7 @@ async def save_guild_onboarding_question(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to save onboarding question: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to save question")
+        raise HTTPException(status_code=500, detail="Failed to save question") from exc
 
 
 @router.delete("/dashboard/{guild_id}/onboarding/questions/{question_id}")
@@ -2299,7 +2299,7 @@ async def delete_guild_onboarding_question(
         raise
     except Exception as exc:
         logger.error("[ERROR] Failed to delete onboarding question: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to delete question")
+        raise HTTPException(status_code=500, detail="Failed to delete question") from exc
 
 
 @router.get("/dashboard/{guild_id}/onboarding/rules", response_model=list[OnboardingRule])
@@ -2341,7 +2341,7 @@ async def get_guild_onboarding_rules(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to get guild onboarding rules: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch rules")
+        raise HTTPException(status_code=500, detail="Failed to fetch rules") from exc
 
 
 @router.post("/dashboard/{guild_id}/onboarding/rules")
@@ -2385,7 +2385,7 @@ async def save_guild_onboarding_rule(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to save onboarding rule: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to save rule")
+        raise HTTPException(status_code=500, detail="Failed to save rule") from exc
 
 
 @router.delete("/dashboard/{guild_id}/onboarding/rules/{rule_id}")
@@ -2416,7 +2416,7 @@ async def delete_guild_onboarding_rule(
         raise
     except Exception as exc:
         logger.error("[ERROR] Failed to delete onboarding rule: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to delete rule")
+        raise HTTPException(status_code=500, detail="Failed to delete rule") from exc
 
 
 class ReorderRequest(BaseModel):
@@ -2458,7 +2458,7 @@ async def reorder_onboarding_items(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to reorder onboarding items: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to reorder items")
+        raise HTTPException(status_code=500, detail="Failed to reorder items") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2537,7 +2537,7 @@ async def get_settings_history(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to get settings history: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch settings history")
+        raise HTTPException(status_code=500, detail="Failed to fetch settings history") from exc
 
 
 @router.post("/dashboard/{guild_id}/settings/rollback/{history_id}")
@@ -2617,7 +2617,7 @@ async def rollback_setting_change(
         raise
     except Exception as exc:
         logger.error("[ERROR] Failed to rollback setting: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to rollback setting")
+        raise HTTPException(status_code=500, detail="Failed to rollback setting") from exc
 
 
 class OperationalLogsResponse(BaseModel):
@@ -2771,7 +2771,7 @@ async def get_automod_rules(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod rules for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod rules")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod rules") from exc
 
 
 @router.post("/dashboard/{guild_id}/automod/rules", response_model=AutoModRule)
@@ -2836,7 +2836,7 @@ async def create_automod_rule(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to create auto-mod rule for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to create auto-mod rule")
+        raise HTTPException(status_code=500, detail="Failed to create auto-mod rule") from exc
 
 
 @router.put("/dashboard/{guild_id}/automod/rules/{rule_id}", response_model=AutoModRule)
@@ -2945,7 +2945,7 @@ async def update_automod_rule(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to update auto-mod rule {rule_id} for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to update auto-mod rule")
+        raise HTTPException(status_code=500, detail="Failed to update auto-mod rule") from exc
 
 
 @router.delete("/dashboard/{guild_id}/automod/rules/{rule_id}")
@@ -2997,7 +2997,7 @@ async def delete_automod_rule(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to delete auto-mod rule {rule_id} for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to delete auto-mod rule")
+        raise HTTPException(status_code=500, detail="Failed to delete auto-mod rule") from exc
 
 
 @router.get("/dashboard/{guild_id}/automod/stats", response_model=AutoModStats)
@@ -3069,7 +3069,7 @@ async def get_automod_stats(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod stats for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod stats")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod stats") from exc
 
 
 @router.get("/dashboard/{guild_id}/automod/violations", response_model=list[AutoModViolation])
@@ -3133,7 +3133,7 @@ async def get_automod_violations(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod violations for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod violations")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod violations") from exc
 
 
 @router.get("/dashboard/{guild_id}/automod/settings", response_model=AutoModSettings)
@@ -3176,7 +3176,7 @@ async def get_automod_settings(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod settings for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod settings")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod settings") from exc
 
 
 @router.post("/dashboard/{guild_id}/automod/settings")
@@ -3212,7 +3212,7 @@ async def update_automod_settings(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to update auto-mod settings for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to update auto-mod settings")
+        raise HTTPException(status_code=500, detail="Failed to update auto-mod settings") from exc
 
 
 app.include_router(router)

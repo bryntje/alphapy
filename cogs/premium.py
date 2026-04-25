@@ -20,17 +20,18 @@ try:
 except ImportError:
     import config  # type: ignore
 
-from utils.premium_guard import (
-    get_active_premium_guild,
-    get_premium_status,
-    get_user_tier,
-    is_premium,
-    transfer_premium_to_guild,
-)
-from utils.premium_tiers import GPT_DAILY_LIMIT, REMINDER_LIMIT
-from utils.timezone import BRUSSELS_TZ
-from utils.validators import validate_admin
-from version import CODENAME, __version__
+if True:
+    from utils.premium_guard import (
+        get_active_premium_guild,
+        get_premium_status,
+        get_user_tier,
+        is_premium,
+        transfer_premium_to_guild,
+    )
+    from utils.premium_tiers import GPT_DAILY_LIMIT, REMINDER_LIMIT
+    from utils.timezone import BRUSSELS_TZ
+    from utils.validators import validate_admin
+    from version import CODENAME, __version__
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,6 @@ Provides automated content moderation with configurable rules and actions.
 Integrates with premium system for advanced features.
 """
 
-import logging
 import time
 from datetime import timedelta
 from typing import Any
@@ -21,8 +20,6 @@ from utils.db_helpers import acquire_safe
 from utils.logger import logger
 from utils.operational_logs import EventType, log_operational_event
 from utils.validators import validate_admin
-
-logger = logging.getLogger(__name__)
 
 
 def requires_admin():

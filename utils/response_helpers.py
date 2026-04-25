@@ -18,11 +18,11 @@ class ResponseHelper:
         """Send error message."""
         try:
             await interaction.followup.send(message, ephemeral=ephemeral)
-        except:
+        except Exception:
             # Fallback if followup fails
             try:
                 await interaction.response.send_message(message, ephemeral=ephemeral)
-            except:
+            except Exception:
                 pass  # Last resort - ignore if all methods fail
 
     @staticmethod
@@ -30,10 +30,10 @@ class ResponseHelper:
         """Send success message."""
         try:
             await interaction.followup.send(message, ephemeral=ephemeral)
-        except:
+        except Exception:
             try:
                 await interaction.response.send_message(message, ephemeral=ephemeral)
-            except:
+            except Exception:
                 pass
 
     @staticmethod
@@ -41,10 +41,10 @@ class ResponseHelper:
         """Send file attachment."""
         try:
             await interaction.followup.send(file=file, ephemeral=ephemeral)
-        except:
+        except Exception:
             try:
                 await interaction.response.send_message(file=file, ephemeral=ephemeral)
-            except:
+            except Exception:
                 pass
 
 

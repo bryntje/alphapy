@@ -10,9 +10,9 @@ import os
 import time
 from typing import Literal
 
-SecretSource = Literal["secret_manager", "env", "cache"]
-
 import config
+
+SecretSource = Literal["secret_manager", "env", "cache"]
 
 logger = logging.getLogger(__name__)
 

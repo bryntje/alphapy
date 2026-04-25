@@ -4,7 +4,6 @@ Test Auto-Moderation Implementation
 Basic test script to verify auto-mod functionality.
 """
 
-import logging
 from typing import cast
 
 import discord
@@ -12,8 +11,6 @@ from discord.ext import commands
 
 from utils.automod_rules import RuleProcessor
 from utils.logger import logger
-
-logger = logging.getLogger(__name__)
 
 
 class MockMessage:
