@@ -1,19 +1,20 @@
+import csv
+import os
+
+import asyncpg
 import discord
 from discord import app_commands
 from discord.ext import commands
+
 import config
-from utils.validators import requires_owner
-import csv
-import os
-import asyncpg
-from typing import Optional
 from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.validators import requires_owner
 
 
 class DataQuery(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("dataquery", {"DATABASE_URL": config.DATABASE_URL})
 

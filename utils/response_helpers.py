@@ -1,8 +1,8 @@
 """
 Response helpers for consistent Discord interaction responses.
 """
+
 import discord
-from typing import Optional
 
 
 class ResponseHelper:
@@ -58,7 +58,7 @@ async def send_db_error(interaction: discord.Interaction, operation: str = "oper
     )
 
 
-async def send_generic_error(interaction: discord.Interaction, operation: str = "operation", error: Optional[Exception] = None) -> None:
+async def send_generic_error(interaction: discord.Interaction, operation: str = "operation", error: Exception | None = None) -> None:
     """Send generic error message."""
     error_msg = f"❌ Failed to {operation}"
     if error:

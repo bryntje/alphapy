@@ -1,30 +1,31 @@
-from datetime import datetime
 import re
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, cast
+
 import discord
 from discord import app_commands
 from discord.ext import commands
+
 import config
-from utils.validators import validate_admin
-from utils.fyi_tips import FYI_KEYS as FYI_TIPS_KEYS
-from utils.db_helpers import acquire_safe
-from utils.embed_builder import EmbedBuilder
-from utils.settings_service import SettingsService, SettingDefinition
-from utils.automod_rules import RuleProcessor, RuleType, ActionType
-from utils.premium_guard import guild_has_premium
-from utils.logger import log_with_guild, log_guild_action, logger
-from utils.sanitizer import safe_embed_text
-from utils.timezone import BRUSSELS_TZ
-from cogs.reaction_roles import StartOnboardingView
-from utils.cog_base import AlphaCog
-from utils.gdpr_helpers import GDPRView, build_gdpr_text
-from cogs.configuration_ui import SetupStep, SETUP_STEPS, SetupWizardView, ReorderQuestionsModal
 from cogs.configuration_automod import (
-    normalize_automod_action_type,
-    is_advanced_action,
     check_advanced_action_premium,
+    normalize_automod_action_type,
     validate_rule_update_fields,
 )
+from cogs.configuration_ui import SETUP_STEPS, ReorderQuestionsModal, SetupWizardView
+from cogs.reaction_roles import StartOnboardingView
+from utils.automod_rules import ActionType, RuleProcessor, RuleType
+from utils.cog_base import AlphaCog
+from utils.db_helpers import acquire_safe
+from utils.embed_builder import EmbedBuilder
+from utils.fyi_tips import FYI_KEYS as FYI_TIPS_KEYS
+from utils.gdpr_helpers import GDPRView, build_gdpr_text
+from utils.logger import log_guild_action, log_with_guild, logger
+from utils.premium_guard import guild_has_premium
+from utils.sanitizer import safe_embed_text
+from utils.settings_service import SettingDefinition
+from utils.validators import validate_admin
+
+
 def requires_admin():
     async def predicate(interaction: discord.Interaction) -> bool:
         is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
@@ -226,7 +227,7 @@ class Configuration(AlphaCog):
     async def system_set_log_channel(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -255,7 +256,7 @@ class Configuration(AlphaCog):
     async def system_set_rules_channel(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -289,7 +290,7 @@ class Configuration(AlphaCog):
     async def system_set_log_level(
         self,
         interaction: discord.Interaction,
-        level: Optional[app_commands.Choice[str]] = None,
+        level: app_commands.Choice[str] | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -322,7 +323,7 @@ class Configuration(AlphaCog):
     async def embedwatcher_set_announcements(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -351,7 +352,7 @@ class Configuration(AlphaCog):
     async def embedwatcher_set_offset(
         self,
         interaction: discord.Interaction,
-        minutes: Optional[app_commands.Range[int, 0, 4320]] = None,
+        minutes: app_commands.Range[int, 0, 4320] | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -379,7 +380,7 @@ class Configuration(AlphaCog):
     async def embedwatcher_set_non_embed(
         self,
         interaction: discord.Interaction,
-        enabled: Optional[bool] = None,
+        enabled: bool | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -409,7 +410,7 @@ class Configuration(AlphaCog):
     async def embedwatcher_set_process_bot_messages(
         self,
         interaction: discord.Interaction,
-        enabled: Optional[bool] = None,
+        enabled: bool | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -443,7 +444,7 @@ class Configuration(AlphaCog):
     async def ticketbot_set_category(
         self,
         interaction: discord.Interaction,
-        category: Optional[discord.CategoryChannel] = None,
+        category: discord.CategoryChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -472,7 +473,7 @@ class Configuration(AlphaCog):
     async def ticketbot_set_staff_role(
         self,
         interaction: discord.Interaction,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -501,7 +502,7 @@ class Configuration(AlphaCog):
     async def ticketbot_set_escalation_role(
         self,
         interaction: discord.Interaction,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -533,7 +534,7 @@ class Configuration(AlphaCog):
         model="Grok model name (e.g. grok-3). Leave empty to reset to default.",
         guild_id="Target guild ID — use this to set the model for a guild you are not in",
     )
-    async def gpt_set_model(self, interaction: discord.Interaction, model: Optional[str] = None, guild_id: Optional[str] = None) -> None:
+    async def gpt_set_model(self, interaction: discord.Interaction, model: str | None = None, guild_id: str | None = None) -> None:
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id not in config.OWNER_IDS:
             await interaction.followup.send("❌ This command is restricted to bot owners.", ephemeral=True)
@@ -571,7 +572,7 @@ class Configuration(AlphaCog):
     async def gpt_set_temperature(
         self,
         interaction: discord.Interaction,
-        temperature: Optional[app_commands.Range[float, 0.0, 2.0]] = None,
+        temperature: app_commands.Range[float, 0.0, 2.0] | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -618,7 +619,7 @@ class Configuration(AlphaCog):
     async def invites_set_channel(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -656,7 +657,7 @@ class Configuration(AlphaCog):
         self,
         interaction: discord.Interaction,
         variant: app_commands.Choice[str],
-        template: Optional[str] = None,
+        template: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -703,7 +704,7 @@ class Configuration(AlphaCog):
     async def reminders_set_default_channel(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -757,7 +758,7 @@ class Configuration(AlphaCog):
     async def verification_set_verified_role(
         self,
         interaction: discord.Interaction,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -786,7 +787,7 @@ class Configuration(AlphaCog):
     async def verification_set_category(
         self,
         interaction: discord.Interaction,
-        category: Optional[discord.CategoryChannel] = None,
+        category: discord.CategoryChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -815,7 +816,7 @@ class Configuration(AlphaCog):
     async def verification_set_vision_model(
         self,
         interaction: discord.Interaction,
-        model: Optional[str] = None,
+        model: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -855,7 +856,7 @@ class Configuration(AlphaCog):
     async def verification_set_ai_prompt_context(
         self,
         interaction: discord.Interaction,
-        context: Optional[str] = None,
+        context: str | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -892,7 +893,7 @@ class Configuration(AlphaCog):
     async def verification_set_reviewer_role(
         self,
         interaction: discord.Interaction,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -925,7 +926,7 @@ class Configuration(AlphaCog):
     async def verification_set_max_payment_age(
         self,
         interaction: discord.Interaction,
-        days: Optional[int] = None,
+        days: int | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1069,7 +1070,7 @@ class Configuration(AlphaCog):
     async def gdpr_set_channel(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1098,7 +1099,7 @@ class Configuration(AlphaCog):
     async def gdpr_set_acceptance_role(
         self,
         interaction: discord.Interaction,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1280,7 +1281,7 @@ class Configuration(AlphaCog):
     async def onboarding_set_role(
         self,
         interaction: discord.Interaction,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1307,7 +1308,7 @@ class Configuration(AlphaCog):
     async def onboarding_set_join_role(
         self,
         interaction: discord.Interaction,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1407,8 +1408,8 @@ class Configuration(AlphaCog):
         rule_order: app_commands.Range[int, 1, 20],
         title: str,
         description: str,
-        thumbnail_url: Optional[str] = None,
-        image_url: Optional[str] = None,
+        thumbnail_url: str | None = None,
+        image_url: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
@@ -1503,7 +1504,7 @@ class Configuration(AlphaCog):
 
     @onboarding_group.command(name="panel_post", description="Post onboarding panel.")
     @requires_admin()
-    async def onboarding_panel_post(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None) -> None:
+    async def onboarding_panel_post(self, interaction: discord.Interaction, channel: discord.TextChannel | None = None) -> None:
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
         target = channel or cast(discord.TextChannel, interaction.channel)
         if target is None:
@@ -1557,9 +1558,8 @@ class Configuration(AlphaCog):
         guild_id = interaction.guild.id
         await interaction.response.defer(ephemeral=True)
         try:
-            from utils.automod_rules import RuleProcessor
-            from utils.premium_guard import guild_has_premium
             from utils.embed_builder import EmbedBuilder
+            from utils.premium_guard import guild_has_premium
             rules = await self.rule_processor.get_active_rules(guild_id)
             premium_status = await guild_has_premium(guild_id)
             automod_enabled = self.settings.get("automod", "enabled", guild_id=guild_id)
@@ -1615,7 +1615,7 @@ class Configuration(AlphaCog):
     @requires_admin()
     @app_commands.describe(channel="Channel for automod logs. Leave empty to reset.")
     async def automod_set_log_channel(
-        self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None
+        self, interaction: discord.Interaction, channel: discord.TextChannel | None = None
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
@@ -1660,7 +1660,7 @@ class Configuration(AlphaCog):
             "max_messages": int(max_messages),
             "time_window": int(time_window_seconds),
         }
-        action_config: Dict[str, Any] = {}
+        action_config: dict[str, Any] = {}
         if normalized_action == ActionType.MUTE.value:
             action_config = {"duration_minutes": 10}
         if normalized_action == ActionType.TIMEOUT.value:
@@ -1718,7 +1718,7 @@ class Configuration(AlphaCog):
             "content_type": "bad_words",
             "words": parsed_words,
         }
-        action_config: Dict[str, Any] = {}
+        action_config: dict[str, Any] = {}
         if normalized_action == ActionType.MUTE.value:
             action_config = {"duration_minutes": 10}
         if normalized_action == ActionType.TIMEOUT.value:
@@ -1747,8 +1747,8 @@ class Configuration(AlphaCog):
         interaction: discord.Interaction,
         name: str,
         allow_links: bool = False,
-        whitelist: Optional[str] = None,
-        blacklist: Optional[str] = None,
+        whitelist: str | None = None,
+        blacklist: str | None = None,
         action_type: str = "delete",
     ) -> None:
         if not interaction.guild:
@@ -1774,7 +1774,7 @@ class Configuration(AlphaCog):
             "whitelist": whitelist_domains,
             "blacklist": blacklist_domains,
         }
-        action_config: Dict[str, Any] = {}
+        action_config: dict[str, Any] = {}
         if normalized_action == ActionType.MUTE.value:
             action_config = {"duration_minutes": 10}
         if normalized_action == ActionType.TIMEOUT.value:
@@ -1821,7 +1821,7 @@ class Configuration(AlphaCog):
             "content_type": "mentions",
             "max_mentions": int(max_mentions),
         }
-        action_config: Dict[str, Any] = {}
+        action_config: dict[str, Any] = {}
         if normalized_action == ActionType.MUTE.value:
             action_config = {"duration_minutes": 10}
         if normalized_action == ActionType.TIMEOUT.value:
@@ -1870,7 +1870,7 @@ class Configuration(AlphaCog):
             "min_length": int(min_length),
             "max_caps_ratio": float(max_caps_ratio),
         }
-        action_config: Dict[str, Any] = {}
+        action_config: dict[str, Any] = {}
         if normalized_action == ActionType.MUTE.value:
             action_config = {"duration_minutes": 10}
         if normalized_action == ActionType.TIMEOUT.value:
@@ -1917,7 +1917,7 @@ class Configuration(AlphaCog):
             "spam_type": "duplicate",
             "max_duplicates": int(max_duplicates),
         }
-        action_config: Dict[str, Any] = {}
+        action_config: dict[str, Any] = {}
         if normalized_action == ActionType.MUTE.value:
             action_config = {"duration_minutes": 10}
         if normalized_action == ActionType.TIMEOUT.value:
@@ -1987,7 +1987,7 @@ class Configuration(AlphaCog):
 
         await interaction.response.defer(ephemeral=True)
         rule_config = {"patterns": parsed_patterns}
-        action_config: Dict[str, Any] = {}
+        action_config: dict[str, Any] = {}
         if normalized_action == ActionType.MUTE.value:
             action_config = {"duration_minutes": 10}
         if normalized_action == ActionType.TIMEOUT.value:
@@ -2047,7 +2047,7 @@ class Configuration(AlphaCog):
             "policy": policy,
             "threshold": threshold,
         }
-        action_config: Dict[str, Any] = {}
+        action_config: dict[str, Any] = {}
         if normalized_action == ActionType.MUTE.value:
             action_config = {"duration_minutes": 10}
         if normalized_action == ActionType.TIMEOUT.value:
@@ -2136,20 +2136,20 @@ class Configuration(AlphaCog):
         self,
         interaction: discord.Interaction,
         rule_id: int,
-        name: Optional[str] = None,
-        enabled: Optional[bool] = None,
-        action_type: Optional[str] = None,
-        max_messages: Optional[app_commands.Range[int, 2, 30]] = None,
-        time_window_seconds: Optional[app_commands.Range[int, 5, 300]] = None,
-        max_mentions: Optional[app_commands.Range[int, 1, 30]] = None,
-        max_duplicates: Optional[app_commands.Range[int, 2, 10]] = None,
-        min_length: Optional[app_commands.Range[int, 5, 500]] = None,
-        max_caps_ratio: Optional[app_commands.Range[float, 0.5, 1.0]] = None,
-        words: Optional[str] = None,
-        patterns: Optional[str] = None,
-        allow_links: Optional[bool] = None,
-        whitelist: Optional[str] = None,
-        blacklist: Optional[str] = None,
+        name: str | None = None,
+        enabled: bool | None = None,
+        action_type: str | None = None,
+        max_messages: app_commands.Range[int, 2, 30] | None = None,
+        time_window_seconds: app_commands.Range[int, 5, 300] | None = None,
+        max_mentions: app_commands.Range[int, 1, 30] | None = None,
+        max_duplicates: app_commands.Range[int, 2, 10] | None = None,
+        min_length: app_commands.Range[int, 5, 500] | None = None,
+        max_caps_ratio: app_commands.Range[float, 0.5, 1.0] | None = None,
+        words: str | None = None,
+        patterns: str | None = None,
+        allow_links: bool | None = None,
+        whitelist: str | None = None,
+        blacklist: str | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("❌ This command only works in a server.", ephemeral=True)
@@ -2177,7 +2177,7 @@ class Configuration(AlphaCog):
             )
             return
 
-        normalized_action: Optional[str] = None
+        normalized_action: str | None = None
         if action_type is not None:
             normalized_action = normalize_automod_action_type(action_type)
             if not normalized_action:
@@ -2282,7 +2282,7 @@ class Configuration(AlphaCog):
             await interaction.followup.send(f"❌ Rule `{rule_id}` not found.", ephemeral=True)
             return
 
-        updates: List[str] = []
+        updates: list[str] = []
         if name is not None:
             updates.append(f"name=`{name}`")
         if enabled is not None:
@@ -2305,9 +2305,9 @@ class Configuration(AlphaCog):
         self,
         interaction: discord.Interaction,
         limit: app_commands.Range[int, 1, 25] = 10,
-        user_id: Optional[str] = None,
-        rule_id: Optional[int] = None,
-        action_type: Optional[str] = None,
+        user_id: str | None = None,
+        rule_id: int | None = None,
+        action_type: str | None = None,
         days: app_commands.Range[int, 1, 90] = 7,
     ) -> None:
         if not interaction.guild:
@@ -2322,7 +2322,7 @@ class Configuration(AlphaCog):
             return
 
         query_parts = ["SELECT user_id, rule_id, action_taken, timestamp FROM automod_logs WHERE guild_id = $1"]
-        params: List[Any] = [interaction.guild.id]
+        params: list[Any] = [interaction.guild.id]
         param_idx = 2
 
         if user_id:
@@ -2441,7 +2441,7 @@ class Configuration(AlphaCog):
     async def growth_set_channel(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ) -> None:
         assert interaction.guild is not None  # Guaranteed by @requires_admin()
         await interaction.response.defer(ephemeral=True)
@@ -2466,8 +2466,8 @@ class Configuration(AlphaCog):
             )
 
     def _resolve_guild_id(
-        self, interaction: discord.Interaction, guild_id_str: Optional[str]
-    ) -> Tuple[Optional[int], Optional[str]]:
+        self, interaction: discord.Interaction, guild_id_str: str | None
+    ) -> tuple[int | None, str | None]:
         """Return (effective_guild_id, error_message). error_message is None on success."""
         if guild_id_str is not None:
             try:
@@ -2490,7 +2490,7 @@ class Configuration(AlphaCog):
         start = page * page_size
         slice_ = items[start : start + page_size]
         embed = discord.Embed(title=title, color=0x5865F2)
-        for definition, value, overridden in slice_:
+        for definition, value, _overridden in slice_:
             formatted = self._format_value(definition, value)
             display_name = self._humanize_key(definition.key)
             embed.add_field(
@@ -2591,7 +2591,7 @@ class Configuration(AlphaCog):
         if "message" in definition.key.lower():
             return str(value)
         return f"`{value}`"
-    async def _send_audit_log(self, title: str, message: str, guild_id: Optional[int] = None) -> None:
+    async def _send_audit_log(self, title: str, message: str, guild_id: int | None = None) -> None:
         """Send audit log to the correct guild's log channel. Config changes are always logged (critical)."""
         if guild_id is None:
             # Backwards compatibility - skip logging if no guild_id provided
@@ -2600,7 +2600,7 @@ class Configuration(AlphaCog):
             channel_id = int(self.settings.get("system", "log_channel_id", guild_id))
         except Exception:
             # No log channel configured for this guild
-            log_with_guild(f"No audit log channel configured for configuration changes", guild_id, "debug")
+            log_with_guild("No audit log channel configured for configuration changes", guild_id, "debug")
             return
         channel = self.bot.get_channel(channel_id)
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
@@ -2733,7 +2733,7 @@ class Configuration(AlphaCog):
     async def engagement_set_challenge_winner_role(
         self,
         interaction: discord.Interaction,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -2758,7 +2758,7 @@ class Configuration(AlphaCog):
     async def engagement_set_weekly_channel(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -2783,7 +2783,7 @@ class Configuration(AlphaCog):
     async def engagement_set_food_channels(
         self,
         interaction: discord.Interaction,
-        channel_ids: Optional[str] = None,
+        channel_ids: str | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -2852,7 +2852,7 @@ class Configuration(AlphaCog):
         self,
         interaction: discord.Interaction,
         badge_key: str,
-        role: Optional[discord.Role] = None,
+        role: discord.Role | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -2906,7 +2906,7 @@ class Configuration(AlphaCog):
     async def engagement_set_og_text(
         self,
         interaction: discord.Interaction,
-        text: Optional[str] = None,
+        text: str | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)

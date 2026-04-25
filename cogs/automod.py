@@ -5,28 +5,22 @@ Provides automated content moderation with configurable rules and actions.
 Integrates with premium system for advanced features.
 """
 
-import asyncio
 import logging
-import re
 import time
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Any
+from datetime import timedelta
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-import asyncpg
 
-from utils.premium_guard import guild_has_premium, is_premium
-from utils.db_helpers import acquire_safe
-from utils.logger import log_with_guild, logger
-from utils.validators import validate_admin
-from utils.automod_rules import RuleProcessor, RuleType, ActionType
 from utils.automod_logging import AutoModLogger
-from utils.response_helpers import ResponseHelper, send_db_error, send_generic_error
-from utils.embed_builder import EmbedBuilder
-from utils.operational_logs import log_operational_event, EventType
+from utils.automod_rules import ActionType, RuleProcessor
 from utils.cog_base import AlphaCog
+from utils.db_helpers import acquire_safe
+from utils.logger import logger
+from utils.operational_logs import EventType, log_operational_event
+from utils.validators import validate_admin
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +42,8 @@ class AutoModeration(AlphaCog):
         super().__init__(bot)
         self.rule_processor = RuleProcessor(bot)
         self.mod_logger = AutoModLogger(bot)
-        self._spam_tracker: Dict[int, Dict[int, List[float]]] = {}  # guild_id -> user_id -> timestamps
-        self._message_cache: Dict[int, Dict[int, str]] = {}  # guild_id -> user_id -> last_message
+        self._spam_tracker: dict[int, dict[int, list[float]]] = {}  # guild_id -> user_id -> timestamps
+        self._message_cache: dict[int, dict[int, str]] = {}  # guild_id -> user_id -> last_message
         
     async def cog_load(self):
         """Initialize the auto-mod system."""
@@ -140,7 +134,7 @@ class AutoModeration(AlphaCog):
             if timestamp - ts < 300  # 5 minutes
         ]
         
-    def _get_user_context(self, guild_id: int, user_id: int) -> Dict[str, Any]:
+    def _get_user_context(self, guild_id: int, user_id: int) -> dict[str, Any]:
         """Get context data for a user in a guild."""
         return {
             'spam_count': len(self._spam_tracker.get(guild_id, {}).get(user_id, [])),
@@ -148,7 +142,7 @@ class AutoModeration(AlphaCog):
             'message_timestamps': self._spam_tracker.get(guild_id, {}).get(user_id, [])
         }
         
-    async def _handle_violation(self, message: discord.Message, rule: Dict[str, Any], result):
+    async def _handle_violation(self, message: discord.Message, rule: dict[str, Any], result):
         """Handle a rule violation by executing the configured action."""
         if not message.guild:
             return
@@ -215,7 +209,7 @@ class AutoModeration(AlphaCog):
         except Exception as e:
             logger.error(f"Error deleting message {message.id}: {e}")
             
-    async def _action_warn_user(self, message: discord.Message, config: Dict):
+    async def _action_warn_user(self, message: discord.Message, config: dict):
         """Send a warning to the user."""
         try:
             warning_message = config.get('message', "⚠️ Your message has been flagged for violating server rules.")
@@ -233,7 +227,7 @@ class AutoModeration(AlphaCog):
         except Exception as e:
             logger.error(f"Error sending warning to user {message.author.id}: {e}")
             
-    async def _action_mute_user(self, message: discord.Message, config: Dict):
+    async def _action_mute_user(self, message: discord.Message, config: dict):
         """Mute the user (requires configured mute role)."""
         try:
             guild = message.guild
@@ -262,7 +256,7 @@ class AutoModeration(AlphaCog):
         except Exception as e:
             logger.error(f"Error muting user {message.author.id}: {e}")
             
-    async def _action_timeout_user(self, message: discord.Message, config: Dict):
+    async def _action_timeout_user(self, message: discord.Message, config: dict):
         """Timeout the user for a specified duration."""
         try:
             duration_minutes = config.get('duration_minutes', 10)
@@ -279,7 +273,7 @@ class AutoModeration(AlphaCog):
         except Exception as e:
             logger.error(f"Error timing out user {message.author.id}: {e}")
             
-    async def _action_ban_user(self, message: discord.Message, config: Dict):
+    async def _action_ban_user(self, message: discord.Message, config: dict):
         """Ban the user from the guild."""
         try:
             guild = message.guild
@@ -296,7 +290,7 @@ class AutoModeration(AlphaCog):
             delete_message_seconds = config.get('delete_message_seconds')
             reason = config.get('reason', 'Auto-moderation ban')
             
-            ban_kwargs: Dict[str, Any] = {'reason': reason}
+            ban_kwargs: dict[str, Any] = {'reason': reason}
             if isinstance(delete_message_seconds, int) and delete_message_seconds > 0:
                 ban_kwargs['delete_message_seconds'] = delete_message_seconds
             
@@ -306,7 +300,7 @@ class AutoModeration(AlphaCog):
         except Exception as e:
             logger.error(f"Error banning user {message.author.id}: {e}")
             
-    async def _update_user_history(self, guild_id: int, user_id: int, rule_type: Optional[str]):
+    async def _update_user_history(self, guild_id: int, user_id: int, rule_type: str | None):
         """Update user's violation history."""
         try:
             from utils.db_helpers import get_bot_db_pool

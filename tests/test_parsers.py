@@ -5,12 +5,8 @@ Test fixtures for centralized parsing functions with graceful failure handling.
 """
 
 import pytest
-from utils.parsers import (
-    parse_days_string,
-    parse_time_string,
-    format_days_for_display,
-    parse_relative_date
-)
+
+from utils.parsers import format_days_for_display, parse_days_string, parse_relative_date, parse_time_string
 
 
 class TestParseDaysString:

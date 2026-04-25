@@ -1,29 +1,28 @@
+import re
+import time as time_module
+from datetime import datetime, timedelta
+from typing import Any, cast
+
+import asyncpg
 import discord
-from discord.ext import commands, tasks
+from asyncpg import exceptions as pg_exceptions
 from discord import app_commands
 from discord.app_commands import checks as app_checks
-import asyncpg
-from asyncpg import exceptions as pg_exceptions
-import asyncio
-from datetime import datetime, time as dtime
+from discord.ext import commands, tasks
+
 import config
-from utils.timezone import BRUSSELS_TZ
-import re
-from datetime import timedelta
-from utils.validators import validate_admin, validate_owner_or_admin
-from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
-from utils.settings_helpers import CachedSettingsHelper
-from utils.embed_builder import EmbedBuilder
-from utils.cog_base import AlphaCog
-from utils.parsers import parse_days_string, parse_time_string, format_days_for_display
-from utils.sanitizer import safe_embed_text
-import time as time_module
-from typing import Optional, List, Dict, Any, Tuple, cast
-from utils.settings_service import SettingsService
+import utils.reminder_repository as reminder_repo
+
 # from config import GUILD_ID  # Removed - no longer needed for multi-guild support
 from cogs.embed_watcher import parse_embed_for_reminder
-from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
-import utils.reminder_repository as reminder_repo
+from utils.cog_base import AlphaCog
+from utils.db_helpers import acquire_safe, get_bot_db_pool, is_pool_healthy
+from utils.embed_builder import EmbedBuilder
+from utils.logger import log_database_event, log_guild_action, log_with_guild, logger
+from utils.parsers import format_days_for_display, parse_days_string, parse_time_string
+from utils.sanitizer import safe_embed_text
+from utils.timezone import BRUSSELS_TZ
+from utils.validators import validate_admin
 
 # All logging timestamps in this module use Brussels time for clarity.
 
@@ -31,9 +30,9 @@ import utils.reminder_repository as reminder_repo
 class ReminderCog(AlphaCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         # Rate limit: max 3 image reminders per hour per (user_id, guild_id)
-        self._image_reminder_timestamps: Dict[Tuple[int, int], List[float]] = {}
+        self._image_reminder_timestamps: dict[tuple[int, int], list[float]] = {}
         self.bot.loop.create_task(self.setup())
 
     def cog_load(self) -> None:
@@ -78,7 +77,7 @@ class ReminderCog(AlphaCog):
             channel_id = self._get_log_channel_id(guild_id)
             if channel_id == 0:
                 # No log channel configured for this guild
-                log_with_guild(f"No log channel configured for reminders logging", guild_id, "debug")
+                log_with_guild("No log channel configured for reminders logging", guild_id, "debug")
                 return
 
             channel = self.bot.get_channel(channel_id)
@@ -171,13 +170,13 @@ class ReminderCog(AlphaCog):
         self,
         interaction: discord.Interaction,
         name: str,
-        channel: Optional[discord.TextChannel] = None,
-        time: Optional[str] = None,
-        days: Optional[str] = None,
-        message: Optional[str] = None,
-        link: Optional[str] = None,
-        image_url: Optional[str] = None,
-        image: Optional[discord.Attachment] = None,
+        channel: discord.TextChannel | None = None,
+        time: str | None = None,
+        days: str | None = None,
+        message: str | None = None,
+        link: str | None = None,
+        image_url: str | None = None,
+        image: discord.Attachment | None = None,
     ):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
@@ -210,7 +209,7 @@ class ReminderCog(AlphaCog):
                 return
 
         # Premium gate: reminders with image require premium
-        resolved_image_url: Optional[str] = (image.url if image else None) or (image_url.strip() if image_url and image_url.strip() else None)
+        resolved_image_url: str | None = (image.url if image else None) or (image_url.strip() if image_url and image_url.strip() else None)
         if resolved_image_url:
             from utils.premium_guard import is_premium, premium_required_message
             if not await is_premium(interaction.user.id, interaction.guild.id):
@@ -236,8 +235,8 @@ class ReminderCog(AlphaCog):
             return
 
         origin_channel_id = origin_message_id = event_time = None
-        debug_info: List[str] = []
-        days_input: Optional[Any] = None
+        debug_info: list[str] = []
+        days_input: Any | None = None
 
         # 👇 Als een embed-link is opgegeven: fetch en parse de embed
         if link:
@@ -384,10 +383,10 @@ class ReminderCog(AlphaCog):
                     ts_list = [t for t in ts_list if t > now_ts - config.IMAGE_REMINDER_RATE_LIMIT_WINDOW]
                     ts_list.append(now_ts)
                     self._image_reminder_timestamps[rkey] = ts_list[-config.IMAGE_REMINDER_RATE_LIMIT_COUNT:]
-        except RuntimeError as e:
+        except RuntimeError:
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
             return
-        except Exception as e:
+        except Exception:
             logger.exception("Error creating reminder")
             await interaction.followup.send("❌ Failed to create reminder. Please try again.", ephemeral=True)
             return
@@ -430,9 +429,9 @@ class ReminderCog(AlphaCog):
         interaction: discord.Interaction,
         days: str,
         time: str,
-        channel: Optional[discord.TextChannel] = None,
-        image_url: Optional[str] = None,
-        image: Optional[discord.Attachment] = None,
+        channel: discord.TextChannel | None = None,
+        image_url: str | None = None,
+        image: discord.Attachment | None = None,
     ):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
@@ -444,7 +443,7 @@ class ReminderCog(AlphaCog):
             await interaction.followup.send("⚠️ Reminders are currently disabled.", ephemeral=True)
             return
 
-        resolved_image_url: Optional[str] = (image.url if image else None) or (image_url.strip() if image_url and image_url.strip() else None)
+        resolved_image_url: str | None = (image.url if image else None) or (image_url.strip() if image_url and image_url.strip() else None)
         if resolved_image_url:
             from utils.premium_guard import is_premium, premium_required_message
             if not await is_premium(interaction.user.id, interaction.guild.id):
@@ -532,7 +531,7 @@ class ReminderCog(AlphaCog):
                 ts_list = [t for t in ts_list if t > now_ts - config.IMAGE_REMINDER_RATE_LIMIT_WINDOW]
                 ts_list.append(now_ts)
                 self._image_reminder_timestamps[rkey] = ts_list[-config.IMAGE_REMINDER_RATE_LIMIT_COUNT:]
-        except Exception as e:
+        except Exception:
             logger.exception("Error creating live session reminder")
             await interaction.followup.send("❌ Failed to create live session. Please try again.", ephemeral=True)
             return
@@ -683,10 +682,10 @@ class ReminderCog(AlphaCog):
                         inline=False
                     )
 
-                embed.set_footer(text=f"Use /reminder_edit <id> to edit or /reminder_delete <id> to delete")
+                embed.set_footer(text="Use /reminder_edit <id> to edit or /reminder_delete <id> to delete")
                 
                 await interaction.followup.send(embed=embed, ephemeral=True)
-        except Exception as e:
+        except Exception:
             logger.exception("Error fetching reminders")
             await interaction.followup.send("⚠️ Failed to fetch reminders. Please try again.", ephemeral=True)
 
@@ -718,10 +717,10 @@ class ReminderCog(AlphaCog):
                     return
 
                 await reminder_repo.delete(conn, guild_id, reminder_id)
-        except RuntimeError as e:
+        except RuntimeError:
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
             return
-        except Exception as e:
+        except Exception:
             logger.exception("Error deleting reminder")
             await interaction.followup.send("❌ Failed to delete reminder. Please try again.", ephemeral=True)
             return
@@ -757,10 +756,10 @@ class ReminderCog(AlphaCog):
                     row = await reminder_repo.get_by_id(conn, guild_id, reminder_id)
                 else:
                     row = await reminder_repo.get_by_id_for_user(conn, guild_id, reminder_id, user_id)
-        except RuntimeError as e:
+        except RuntimeError:
             await interaction.response.send_message("⛔ Database not connected. Please try again later.", ephemeral=True)
             return
-        except Exception as e:
+        except Exception:
             logger.exception("Error fetching reminder for edit")
             await interaction.response.send_message("❌ Failed to fetch reminder. Please try again.", ephemeral=True)
             return
@@ -883,7 +882,7 @@ class ReminderCog(AlphaCog):
         await interaction.response.send_modal(modal)
 
     @reminder_delete.autocomplete("reminder_id")
-    async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str) -> List[discord.app_commands.Choice[str]]:
+    async def reminder_id_autocomplete(self, interaction: discord.Interaction, current: str) -> list[discord.app_commands.Choice[str]]:
         if not interaction.guild:
             return []
         if not self._is_enabled(interaction.guild.id):
@@ -901,7 +900,7 @@ class ReminderCog(AlphaCog):
         ]
 
     @reminder_edit.autocomplete("reminder_id")
-    async def reminder_edit_autocomplete(self, interaction: discord.Interaction, current: str) -> List[discord.app_commands.Choice[str]]:
+    async def reminder_edit_autocomplete(self, interaction: discord.Interaction, current: str) -> list[discord.app_commands.Choice[str]]:
         if not interaction.guild:
             return []
         if not self._is_enabled(interaction.guild.id):
@@ -930,7 +929,7 @@ class ReminderCog(AlphaCog):
     def _is_enabled(self, guild_id: int) -> bool:
         return self.settings_helper.get_bool("reminders", "enabled", guild_id, fallback=True)
 
-    def _get_default_channel_id(self, guild_id: int) -> Optional[int]:
+    def _get_default_channel_id(self, guild_id: int) -> int | None:
         value = self.settings_helper.get_int("reminders", "default_channel_id", guild_id, fallback=0)
         return value if value else None
 
@@ -980,8 +979,8 @@ class ReminderCog(AlphaCog):
                     "5": ["5", "za", "zaterdag", "saturday"],
                     "6": ["6", "zo", "zondag", "sunday"],
                 }
-                current_day_variants = day_abbrevs.get(current_day, [current_day])
-                next_day_variants = day_abbrevs.get(next_day, [next_day])
+                day_abbrevs.get(current_day, [current_day])
+                day_abbrevs.get(next_day, [next_day])
                 
                 # Check if any day variant matches the days array
                 # time and call_time are TIME columns, so we compare them directly
@@ -1063,7 +1062,6 @@ class ReminderCog(AlphaCog):
                     )
                     continue
 
-                dt = now
                 # Determine if this is the T0 (on-time) send or T-60 (offset) send
                 is_t0_send = False
                 if row.get("event_time"):
@@ -1236,15 +1234,15 @@ class ReminderCog(AlphaCog):
 # from utils.reminder_repository directly.
 # ---------------------------------------------------------------------------
 
-async def get_reminders_for_user(conn: asyncpg.Connection, user_id: str, guild_id: Optional[int] = None):
+async def get_reminders_for_user(conn: asyncpg.Connection, user_id: str, guild_id: int | None = None):
     return await reminder_repo.get_for_api(conn, user_id, guild_id)
 
 
-async def create_reminder(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:
+async def create_reminder(conn: asyncpg.Connection, data: dict[str, Any]) -> None:
     await reminder_repo.create_for_api(conn, data)
 
 
-async def update_reminder(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:
+async def update_reminder(conn: asyncpg.Connection, data: dict[str, Any]) -> None:
     await reminder_repo.update_for_api(conn, data)
 
 
@@ -1433,10 +1431,10 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
                     message=final_message,
                     channel_id=channel_id if channel_id else None,
                 )
-        except RuntimeError as e:
+        except RuntimeError:
             await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
             return
-        except Exception as e:
+        except Exception:
             logger.exception("Error updating reminder")
             await interaction.followup.send("❌ Failed to update reminder. Please try again.", ephemeral=True)
             return

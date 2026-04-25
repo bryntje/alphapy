@@ -4,16 +4,16 @@ Alembic environment configuration for database migrations.
 This file configures Alembic to work with asyncpg and the existing database connection.
 """
 
-from logging.config import fileConfig
 import asyncio
+from logging.config import fileConfig
+
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from alembic import context
-
 # Import config module to get DATABASE_URL
 import config
+from alembic import context
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -8,7 +8,7 @@ discord.ui.Modal); they hold no slash-command registrations.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List, Literal, Optional, Tuple
+from typing import Any, Literal
 
 import discord
 
@@ -16,7 +16,6 @@ from utils.db_helpers import acquire_safe
 from utils.embed_builder import EmbedBuilder
 from utils.logger import log_with_guild, logger
 from utils.timezone import BRUSSELS_TZ
-
 
 SetupValueType = Literal["channel", "channel_category", "role"]
 
@@ -29,7 +28,7 @@ class SetupStep:
     value_type: SetupValueType
 
 
-SETUP_STEPS: List[SetupStep] = [
+SETUP_STEPS: list[SetupStep] = [
     SetupStep("system", "log_channel_id", "Do you want to set a log channel for bot messages?", "channel"),
     SetupStep("system", "rules_channel_id", "Set the rules and onboarding channel (#rules)?", "channel"),
     SetupStep("embedwatcher", "announcements_channel_id", "Channel for embed-based reminders?", "channel"),
@@ -48,7 +47,7 @@ class SetupWizardView(discord.ui.View):
         cog: "Any",  # Configuration — use Any to avoid circular import
         guild_id: int,
         user_id: int,
-        steps: List[SetupStep],
+        steps: list[SetupStep],
     ):
         super().__init__(timeout=300)
         self.cog = cog
@@ -56,9 +55,9 @@ class SetupWizardView(discord.ui.View):
         self.user_id = user_id
         self.steps = steps
         self.step_index = 0
-        self.configured_in_session: List[Tuple[str, str]] = []  # (question label, chosen value e.g. #channel or @role)
+        self.configured_in_session: list[tuple[str, str]] = []  # (question label, chosen value e.g. #channel or @role)
 
-    def _current_step(self) -> Optional[SetupStep]:
+    def _current_step(self) -> SetupStep | None:
         if 0 <= self.step_index < len(self.steps):
             return self.steps[self.step_index]
         return None
@@ -67,7 +66,7 @@ class SetupWizardView(discord.ui.View):
         total = len(self.steps)
         current = self.step_index + 1
         embed = discord.Embed(
-            title="⚙️ Server setup (step {} of {})".format(current, total),
+            title=f"⚙️ Server setup (step {current} of {total})",
             description=step.label + "\n\nChoose below or click **Skip**.",
             color=discord.Color.blue(),
             timestamp=datetime.now(BRUSSELS_TZ),
@@ -185,7 +184,7 @@ class SetupWizardView(discord.ui.View):
                 ephemeral=True,
             )
 
-    def _get_resolved_channels(self, interaction: discord.Interaction) -> Optional[Any]:
+    def _get_resolved_channels(self, interaction: discord.Interaction) -> Any | None:
         """Get the first selected channel from a ChannelSelect interaction."""
         data = interaction.data
         if isinstance(data, dict):
@@ -210,7 +209,7 @@ class SetupWizardView(discord.ui.View):
             ch = interaction.guild.get_channel(cid)
         return ch
 
-    def _get_resolved_role(self, interaction: discord.Interaction) -> Optional[Any]:
+    def _get_resolved_role(self, interaction: discord.Interaction) -> Any | None:
         """Get the first selected role from a RoleSelect interaction."""
         data = interaction.data
         if isinstance(data, dict):
@@ -338,7 +337,7 @@ class ReorderQuestionsModal(discord.ui.Modal, title="Reorder Questions"):
         # Add text input for new order
         self.order_input = discord.ui.TextInput(
             label="Question Order",
-            placeholder=f"Enter question numbers in desired order (e.g., 3,1,2,4)",
+            placeholder="Enter question numbers in desired order (e.g., 3,1,2,4)",
             default=", ".join(str(i) for i in range(1, len(questions) + 1)),
             max_length=100,
             required=True

@@ -1,6 +1,5 @@
 """Shared guild admin check logic for use in API and interaction contexts."""
 
-from typing import Optional
 
 import discord
 
@@ -9,7 +8,7 @@ import config
 
 def member_has_admin_in_guild(
     member: discord.Member,
-    app_owner_id: Optional[int] = None,
+    app_owner_id: int | None = None,
 ) -> bool:
     """
     Check if a Discord member has admin permissions in their guild.

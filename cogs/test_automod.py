@@ -4,15 +4,13 @@ Test Auto-Moderation Implementation
 Basic test script to verify auto-mod functionality.
 """
 
-import asyncio
 import logging
-from typing import Dict, Any, Optional
+from typing import cast
 
 import discord
 from discord.ext import commands
-from typing import cast
 
-from utils.automod_rules import RuleProcessor, RuleType, ActionType, RuleResult
+from utils.automod_rules import RuleProcessor
 from utils.logger import logger
 
 logger = logging.getLogger(__name__)
@@ -233,7 +231,7 @@ class TestAutoMod(commands.Cog):
 
         await ctx.send("🗃️ Testing auto-mod CRUD...")
         guild_id = ctx.guild.id
-        created_rule_id: Optional[int] = None
+        created_rule_id: int | None = None
 
         try:
             created_rule_id = await self.rule_processor.create_rule(

@@ -2,13 +2,12 @@ import asyncio
 import logging
 
 import discord
-from discord.ext import commands
 from discord import app_commands
 from discord.app_commands import checks as app_checks
+from discord.ext import commands
 
-from gpt.helpers import is_allowed_prompt
-from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
 from gpt.dataset_loader import load_topic_context
+from gpt.helpers import ask_gpt, is_allowed_prompt, log_gpt_error
 from utils.supabase_client import (
     SupabaseConfigurationError,
     insert_insight_for_discord,
@@ -66,8 +65,8 @@ class LearnTopic(commands.Cog):
 
         # Step 2: Prepare prompt and call ask_gpt (ask_gpt logs its own errors)
         try:
-            from utils.sanitizer import safe_prompt
             from gpt.helpers import LEARN_TOPIC_PROMPT_TEMPLATE
+            from utils.sanitizer import safe_prompt
             
             # Build prompt: use context as background info, topic as the question
             if context:
@@ -150,7 +149,7 @@ class LearnTopic(commands.Cog):
 
             asyncio.create_task(_store_learn_insight())
 
-        except Exception as e:
+        except Exception:
             # ask_gpt() already logs all its errors internally, so we don't log again
             await interaction.followup.send("❌ Couldn't generate a response. Try again later.", ephemeral=True)
 

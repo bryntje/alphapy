@@ -1,12 +1,11 @@
 import asyncio
 import json
 import re
-from datetime import datetime, date, timedelta
-from typing import Literal, Optional, Dict, Any, cast
+from datetime import date, datetime, timedelta
+from typing import Any, Literal, cast
 
 import asyncpg
 import discord
-from asyncpg import exceptions as pg_exceptions
 from discord import app_commands
 from discord.ext import commands
 
@@ -16,15 +15,13 @@ except ImportError:
     import config  # type: ignore
 
 from gpt.helpers import ask_gpt_vision
+from utils.cog_base import AlphaCog
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
-from utils.logger import logger, log_database_event, log_with_guild, log_guild_action
-from utils.sanitizer import safe_embed_text, safe_prompt
+from utils.logger import log_database_event, log_guild_action, log_with_guild, logger
 from utils.premium_guard import guild_has_premium
-from utils.settings_helpers import CachedSettingsHelper
-from utils.settings_service import SettingsService
+from utils.sanitizer import safe_embed_text, safe_prompt
 from utils.timezone import BRUSSELS_TZ
-from utils.cog_base import AlphaCog
 
 
 class VerificationCog(AlphaCog):
@@ -36,7 +33,7 @@ class VerificationCog(AlphaCog):
 
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("verification", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 
@@ -126,19 +123,19 @@ class VerificationCog(AlphaCog):
 
     # ----- Settings helpers -----
 
-    def _get_verified_role_id(self, guild_id: int) -> Optional[int]:
+    def _get_verified_role_id(self, guild_id: int) -> int | None:
         value = self.settings_helper.get_int("verification", "verified_role_id", guild_id, fallback=0)
         return int(value) if value else None
 
-    def _get_panel_channel_id(self, guild_id: int) -> Optional[int]:
+    def _get_panel_channel_id(self, guild_id: int) -> int | None:
         value = self.settings_helper.get_int("verification", "channel_id", guild_id, fallback=0)
         return int(value) if value else None
 
-    def _get_category_id(self, guild_id: int) -> Optional[int]:
+    def _get_category_id(self, guild_id: int) -> int | None:
         value = self.settings_helper.get_int("verification", "category_id", guild_id, fallback=0)
         return int(value) if value else None
 
-    def _get_vision_model(self, guild_id: int) -> Optional[str]:
+    def _get_vision_model(self, guild_id: int) -> str | None:
         try:
             raw = self.settings.get("verification", "vision_model", guild_id)
             if isinstance(raw, str) and raw.strip():
@@ -158,11 +155,11 @@ class VerificationCog(AlphaCog):
         value = self.settings_helper.get_int("verification", "max_payment_age_days", guild_id, fallback=0)
         return int(value) if value and value > 0 else 35
 
-    def _get_reviewer_role_id(self, guild_id: int) -> Optional[int]:
+    def _get_reviewer_role_id(self, guild_id: int) -> int | None:
         value = self.settings_helper.get_int("verification", "reviewer_role_id", guild_id, fallback=0)
         return int(value) if value else None
 
-    async def _get_reference_image_url(self, guild_id: int) -> Optional[str]:
+    async def _get_reference_image_url(self, guild_id: int) -> str | None:
         """Fetch a fresh URL for the stored reference image by re-fetching its Discord message."""
         channel_id = self.settings_helper.get_int("verification", "reference_image_channel_id", guild_id, fallback=0)
         message_id_str = self.settings_helper.get_str("verification", "reference_image_message_id", guild_id, fallback="").strip("\"'")
@@ -222,7 +219,7 @@ class VerificationCog(AlphaCog):
     async def verification_panel_post(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ) -> None:
         from utils.validators import validate_admin
 
@@ -270,7 +267,7 @@ class VerificationCog(AlphaCog):
             color=discord.Color.green(),
             timestamp=datetime.now(BRUSSELS_TZ),
         )
-        from version import __version__, CODENAME
+        from version import CODENAME, __version__
         embed.set_footer(text=f"Innersync • Alphapy v{__version__} — {CODENAME}")
 
         view = VerificationPanelView(self, timeout=None)
@@ -331,7 +328,7 @@ class VerificationCog(AlphaCog):
 
     # ----- Ticket helpers -----
 
-    async def _create_verification_channel(self, interaction: discord.Interaction) -> Optional[discord.TextChannel]:
+    async def _create_verification_channel(self, interaction: discord.Interaction) -> discord.TextChannel | None:
         if not interaction.guild:
             return None
 
@@ -417,12 +414,12 @@ class VerificationCog(AlphaCog):
         channel_id: int,
         *,
         status: str,
-        ai_can_verify: Optional[bool],
-        ai_needs_manual_review: Optional[bool],
-        ai_reason: Optional[str],
-        resolved_by_user_id: Optional[int] = None,
-        rejection_reason: Optional[str] = None,
-        payment_date: Optional[date] = None,
+        ai_can_verify: bool | None,
+        ai_needs_manual_review: bool | None,
+        ai_reason: str | None,
+        resolved_by_user_id: int | None = None,
+        rejection_reason: str | None = None,
+        payment_date: date | None = None,
     ) -> None:
         if not is_pool_healthy(self.db):
             return
@@ -459,12 +456,12 @@ class VerificationCog(AlphaCog):
         self,
         *,
         channel: discord.TextChannel,
-        member: Optional[discord.Member],
+        member: discord.Member | None,
         guild: discord.Guild,
-        resolved_by: Optional[discord.abc.User],
+        resolved_by: discord.abc.User | None,
         outcome: Literal["approved", "rejected", "closed"],
         reason: str = "",
-        started_at: Optional[datetime] = None,
+        started_at: datetime | None = None,
     ) -> None:
         """Unified resolution handler for all verification outcomes.
 
@@ -737,7 +734,7 @@ class VerificationCog(AlphaCog):
         can_verify = False
         needs_manual_review = True
         reason = "Unclear AI result."
-        parsed: Dict[str, Any] = {}
+        parsed: dict[str, Any] = {}
 
         try:
             raw = (result_text or "").strip().lstrip("\ufeff")  # strip BOM if present
@@ -784,7 +781,7 @@ class VerificationCog(AlphaCog):
             )
 
         # Server-side validation — branches on proof_type
-        extracted_payment_date: Optional[date] = None
+        extracted_payment_date: date | None = None
         proof_type = parsed.get("proof_type", "unknown") if isinstance(parsed, dict) else "unknown"
 
         if proof_type == "subscription":
@@ -886,7 +883,7 @@ class VerificationCog(AlphaCog):
             )
 
 
-async def _fetch_ticket_member(cog: "VerificationCog", channel: discord.TextChannel, guild: discord.Guild) -> Optional[discord.Member]:
+async def _fetch_ticket_member(cog: "VerificationCog", channel: discord.TextChannel, guild: discord.Guild) -> discord.Member | None:
     """Look up the member who owns a verification ticket by channel_id."""
     if not (cog.db and is_pool_healthy(cog.db)):
         return None
@@ -934,7 +931,7 @@ class RejectReasonModal(discord.ui.Modal, title="Rejection reason"):
 
 
 class ManualReviewView(discord.ui.View):
-    def __init__(self, cog: "VerificationCog", timeout: Optional[float] = None):
+    def __init__(self, cog: "VerificationCog", timeout: float | None = None):
         super().__init__(timeout=timeout)
         self.cog = cog
 
@@ -995,7 +992,7 @@ class ManualReviewView(discord.ui.View):
 class VerificationCloseView(discord.ui.View):
     """Posted after approve/reject so an admin can delete the channel via button."""
 
-    def __init__(self, cog: "VerificationCog", timeout: Optional[float] = None):
+    def __init__(self, cog: "VerificationCog", timeout: float | None = None):
         super().__init__(timeout=timeout)
         self.cog = cog
 
@@ -1038,7 +1035,7 @@ class VerificationCloseView(discord.ui.View):
 
 
 class VerificationPanelView(discord.ui.View):
-    def __init__(self, cog: VerificationCog, timeout: Optional[float] = None):
+    def __init__(self, cog: VerificationCog, timeout: float | None = None):
         super().__init__(timeout=timeout)
         self.cog = cog
 

@@ -4,16 +4,16 @@ Database migration management commands for Alembic.
 Provides Discord commands to check migration status and apply migrations.
 """
 
-import discord
-from discord.ext import commands
-from discord import app_commands
-import subprocess
-import sys
 import os
-from typing import Optional
-from utils.validators import validate_admin
-from utils.logger import logger
+import subprocess
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
 import config
+from utils.logger import logger
+from utils.validators import validate_admin
 
 
 class Migrations(commands.Cog):
@@ -98,7 +98,7 @@ class Migrations(commands.Cog):
                 return f"Error: {error}"
         except subprocess.TimeoutExpired:
             logger.error(f"Migration {command} {args} timed out")
-            return f"Timeout: Migration took too long"
+            return "Timeout: Migration took too long"
         except Exception as e:
             logger.error(f"Migration {command} {args} failed: {e}")
             return f"Error: {str(e)}"

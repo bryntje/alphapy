@@ -11,15 +11,15 @@ Tests all sanitization functions with various attack vectors including:
 """
 
 import pytest
+
 from utils.sanitizer import (
     escape_markdown,
+    safe_embed_text,
+    safe_log_message,
+    safe_prompt,
     strip_mentions,
     url_filter,
-    safe_embed_text,
-    safe_prompt,
-    safe_log_message,
 )
-
 
 # Test data for parametrized tests
 

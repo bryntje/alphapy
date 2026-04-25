@@ -5,12 +5,12 @@ Alphapy Railway PostgreSQL database. Requires explicit confirmation before
 any data is removed. Does not affect Discord accounts or Supabase accounts.
 """
 
+
 import asyncpg
-from asyncpg import exceptions as pg_exceptions
 import discord
-from discord.ext import commands
+from asyncpg import exceptions as pg_exceptions
 from discord import app_commands
-from typing import Optional
+from discord.ext import commands
 
 import config
 from utils.db_helpers import acquire_safe, is_pool_healthy
@@ -143,7 +143,7 @@ class DeleteMyDataCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("delete_my_data", {"DATABASE_URL": config.DATABASE_URL or ""})
         self.bot.loop.create_task(self._setup())

@@ -5,7 +5,6 @@ is activated so Alphapy can send a welcome DM to the user.
 
 import asyncio
 import json
-from typing import Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -40,7 +39,7 @@ async def _send_founder_dm(user_id: int, message: str) -> bool:
 
 
 @router.post("")
-async def handle_founder_webhook(request: Request) -> Dict[str, str]:
+async def handle_founder_webhook(request: Request) -> dict[str, str]:
     """
     Send a founder welcome DM to the user (e.g. after early-bird purchase).
 
@@ -111,7 +110,7 @@ async def handle_founder_webhook(request: Request) -> Dict[str, str]:
         )
         # Await the result without blocking the event loop; wait_for raises asyncio.TimeoutError
         sent = await asyncio.wait_for(asyncio.wrap_future(future), timeout=10.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("Founder webhook: timeout sending DM to user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,

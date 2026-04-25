@@ -2,19 +2,18 @@
 
 import logging
 import time
-from datetime import datetime
-from typing import Optional, Tuple
+from datetime import UTC, datetime
+
+import asyncpg
+import discord
+import httpx
+from discord import app_commands
+from discord.ext import commands, tasks
 
 # Version string of the currently published Terms of Service / Privacy Policy.
 # Must match the `_Last updated:` date in docs/privacy-policy.md.
 # Updating this causes existing acceptors to be re-prompted on their next /premium use.
 CURRENT_TERMS_VERSION = "2026-03-02"
-
-import discord
-import httpx
-from discord import app_commands
-from discord.ext import commands, tasks
-import asyncpg
 
 try:
     import config_local as config  # type: ignore
@@ -22,16 +21,16 @@ except ImportError:
     import config  # type: ignore
 
 from utils.premium_guard import (
-    is_premium,
-    get_premium_status,
     get_active_premium_guild,
-    transfer_premium_to_guild,
+    get_premium_status,
     get_user_tier,
+    is_premium,
+    transfer_premium_to_guild,
 )
 from utils.premium_tiers import GPT_DAILY_LIMIT, REMINDER_LIMIT
 from utils.timezone import BRUSSELS_TZ
 from utils.validators import validate_admin
-from version import __version__, CODENAME
+from version import CODENAME, __version__
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +188,7 @@ async def _assign_founder_role_if_eligible(cog: 'PremiumCog', user_id: int, guil
 # Early bird availability check
 # ---------------------------------------------------------------------------
 
-_EARLY_BIRD_CACHE: Optional[bool] = None
+_EARLY_BIRD_CACHE: bool | None = None
 _EARLY_BIRD_CACHE_TS: float = 0.0
 _EARLY_BIRD_CACHE_TTL: int = 300  # seconds
 
@@ -256,7 +255,7 @@ async def _create_checkout_url(tier: str, guild_id: int, user_id: int) -> str | 
     return base_url
 
 
-async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name: Optional[str] = None) -> tuple[discord.Embed, discord.ui.View]:
+async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name: str | None = None) -> tuple[discord.Embed, discord.ui.View]:
     """Build the premium info embed and checkout buttons view. Reused after terms acceptance."""
     embed = discord.Embed(
         title="⚡ Premium — real power",
@@ -342,7 +341,7 @@ async def _build_premium_embed_and_view(guild_id: int, user_id: int, guild_name:
     view = discord.ui.View(timeout=None)
     # When early bird is active, show early bird price on yearly and lifetime buttons.
     # When sold out, fall back to regular prices (pricing site is authoritative).
-    tier_info: list[Tuple[str, str, str]] = [
+    tier_info: list[tuple[str, str, str]] = [
         ("monthly", "Monthly", price_monthly),
         ("yearly", "Annual", f"Early Bird {price_yearly_eb}" if early_bird else price_yearly_reg),
         ("lifetime", "Lifetime", f"Early Bird {price_lifetime_eb}" if early_bird else price_lifetime_reg),
@@ -374,7 +373,7 @@ class PremiumCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("premium", {"DATABASE_URL": config.DATABASE_URL or ""})
         self.bot.loop.create_task(self._connect_database())
@@ -559,8 +558,7 @@ class PremiumCog(commands.Cog):
                 if expires:
                     try:
                         exp_str = expires.astimezone(BRUSSELS_TZ).strftime("%d %B %Y")
-                        from datetime import timezone
-                        days_left = (expires.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).days
+                        days_left = (expires.replace(tzinfo=UTC) - datetime.now(UTC)).days
                         expiry_value = f"{exp_str} ({days_left}d remaining)"
                     except Exception:
                         expiry_value = str(expires)

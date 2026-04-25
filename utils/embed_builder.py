@@ -7,10 +7,12 @@ timestamps, and field formatting.
 """
 
 from datetime import datetime
-from discord import Embed, Color
+from typing import Any
+
+from discord import Color, Embed
+
 from utils.timezone import BRUSSELS_TZ
-from typing import Optional, List, Dict, Any
-from version import __version__, CODENAME
+from version import CODENAME, __version__
 
 
 class EmbedBuilder:
@@ -22,8 +24,8 @@ class EmbedBuilder:
     def info(
         title: str,
         description: str = "",
-        fields: Optional[List[Dict[str, Any]]] = None,
-        footer: Optional[str] = None,
+        fields: list[dict[str, Any]] | None = None,
+        footer: str | None = None,
         include_version: bool = False
     ) -> Embed:
         """
@@ -106,8 +108,8 @@ class EmbedBuilder:
     def warning(
         title: str,
         description: str = "",
-        fields: Optional[List[Dict[str, Any]]] = None,
-        footer: Optional[str] = None
+        fields: list[dict[str, Any]] | None = None,
+        footer: str | None = None
     ) -> Embed:
         """
         Warning embed with orange color.
@@ -141,8 +143,8 @@ class EmbedBuilder:
     def success(
         title: str,
         description: str = "",
-        fields: Optional[List[Dict[str, Any]]] = None,
-        footer: Optional[str] = None
+        fields: list[dict[str, Any]] | None = None,
+        footer: str | None = None
     ) -> Embed:
         """
         Success embed with green color.
@@ -176,8 +178,8 @@ class EmbedBuilder:
     def error(
         title: str,
         description: str = "",
-        fields: Optional[List[Dict[str, Any]]] = None,
-        footer: Optional[str] = None
+        fields: list[dict[str, Any]] | None = None,
+        footer: str | None = None
     ) -> Embed:
         """
         Error embed with red color.
@@ -211,8 +213,8 @@ class EmbedBuilder:
     def status(
         title: str,
         description: str = "",
-        fields: Optional[List[Dict[str, Any]]] = None,
-        footer: Optional[str] = None
+        fields: list[dict[str, Any]] | None = None,
+        footer: str | None = None
     ) -> Embed:
         """
         Status embed with teal color (for system status).

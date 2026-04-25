@@ -1,13 +1,12 @@
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
-from oauth2client.service_account import ServiceAccountCredentials
 import io
 import json
 import logging
-import os
 import threading
 
 import fitz  # PyMuPDF
+from oauth2client.service_account import ServiceAccountCredentials
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
 import config
 from utils.gcp_secrets import get_secret

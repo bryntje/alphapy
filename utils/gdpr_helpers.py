@@ -4,7 +4,6 @@ Imported by both cogs/gdpr.py and cogs/configuration.py to avoid circular
 imports between cogs.
 """
 
-from typing import Optional
 
 import asyncpg
 import discord
@@ -13,7 +12,6 @@ from discord.ext import commands
 import config
 from utils.db_helpers import is_pool_healthy
 from utils.logger import logger
-
 
 # ---------------------------------------------------------------------------
 # GDPR agreement text builder
@@ -76,7 +74,7 @@ def _get_gdpr_db():
     return _gdpr_db
 
 
-async def _ensure_gdpr_pool() -> Optional[asyncpg.Pool]:
+async def _ensure_gdpr_pool() -> asyncpg.Pool | None:
     """Ensure the GDPR database pool is initialized."""
     try:
         return await _get_gdpr_db().ensure_pool()
@@ -159,7 +157,7 @@ class GDPRButton(discord.ui.Button):
                 pass
         return True
 
-    def _get_acceptance_role_id(self, guild_id: int) -> Optional[int]:
+    def _get_acceptance_role_id(self, guild_id: int) -> int | None:
         if self.settings:
             try:
                 value = self.settings.get("gdpr", "acceptance_role_id", guild_id)

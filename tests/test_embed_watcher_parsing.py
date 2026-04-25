@@ -8,18 +8,18 @@ Tests cover:
 - Full embed parsing
 """
 
-import pytest
-import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import Mock
+
 import discord
+import pytest
+
 from cogs.embed_watcher import EmbedReminderWatcher
 from utils.embed_parser import extract_datetime_from_text
 from utils.timezone import BRUSSELS_TZ
 
 # Try to use pytest-asyncio, fallback to manual async handling
 try:
-    import pytest_asyncio
+    __import__("pytest_asyncio")
     pytest_asyncio_available = True
 except ImportError:
     pytest_asyncio_available = False

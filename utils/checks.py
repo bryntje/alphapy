@@ -1,6 +1,8 @@
-from discord.ext import commands
 import discord
+from discord.ext import commands
+
 import config
+
 
 def is_owner_or_admin():
     async def predicate(ctx):

@@ -7,7 +7,7 @@ Provides analytics and metrics for auto-moderation performance and effectiveness
 import csv
 import io
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 import asyncpg
 from discord.ext import commands
@@ -20,15 +20,15 @@ log = logging.getLogger(__name__)
 class AutoModAnalytics:
     """Analytics service for auto-moderation metrics."""
     
-    def __init__(self, bot: Optional[commands.Bot] = None):
+    def __init__(self, bot: commands.Bot | None = None):
         self.bot = bot
     
-    def _get_pool(self) -> Optional[asyncpg.Pool]:
+    def _get_pool(self) -> asyncpg.Pool | None:
         if not self.bot:
             return None
         return get_bot_db_pool(self.bot)
     
-    async def get_rule_effectiveness(self, guild_id: int, rule_id: int, days: int = 30) -> Dict[str, Any]:
+    async def get_rule_effectiveness(self, guild_id: int, rule_id: int, days: int = 30) -> dict[str, Any]:
         """
         Get effectiveness metrics for a specific rule.
         
@@ -103,7 +103,7 @@ class AutoModAnalytics:
             log.error(f"Error getting rule effectiveness for rule {rule_id}: {e}")
             return {}
     
-    async def get_guild_overview(self, guild_id: int, days: int = 7) -> Dict[str, Any]:
+    async def get_guild_overview(self, guild_id: int, days: int = 7) -> dict[str, Any]:
         """
         Get overview metrics for a guild's auto-moderation activity.
         

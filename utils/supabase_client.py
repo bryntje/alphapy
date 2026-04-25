@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -26,7 +27,7 @@ def _require_config() -> None:
         )
 
 
-def _headers(prefer: Optional[Iterable[str]] = None, schema: Optional[str] = None, method: str = "GET") -> Dict[str, str]:
+def _headers(prefer: Iterable[str] | None = None, schema: str | None = None, method: str = "GET") -> dict[str, str]:
     header = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -50,8 +51,8 @@ def _headers(prefer: Optional[Iterable[str]] = None, schema: Optional[str] = Non
 
 
 async def _supabase_get(
-    table: str, params: Optional[Dict[str, Any]] = None
-) -> List[Dict[str, Any]]:
+    table: str, params: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     """Fetch rows from a Supabase table using the service role."""
     _require_config()
     url = f"{SUPABASE_URL}/rest/v1/{table}"
@@ -79,11 +80,11 @@ async def _supabase_get(
 
 async def _supabase_post(
     table: str,
-    payload: Dict[str, Any] | List[Dict[str, Any]],
+    payload: dict[str, Any] | list[dict[str, Any]],
     *,
     upsert: bool = False,
-    schema: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    schema: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Insert or upsert records using the Supabase REST endpoint.
     
@@ -95,14 +96,14 @@ async def _supabase_post(
                and table name should NOT include schema prefix.
     """
     _require_config()
-    rows: List[Dict[str, Any]] = (
+    rows: list[dict[str, Any]] = (
         payload if isinstance(payload, list) else [payload]
     )
 
     if not rows:
         return []
 
-    prefer: List[str] = ["return=representation"]
+    prefer: list[str] = ["return=representation"]
     if upsert:
         prefer.append("resolution=merge-duplicates")
 
@@ -151,7 +152,7 @@ async def _supabase_post(
     return data
 
 
-async def _supabase_delete(table: str, filters: Dict[str, str]) -> None:
+async def _supabase_delete(table: str, filters: dict[str, str]) -> None:
     """Delete rows from a Supabase table matching the given PostgREST filters.
 
     Args:
@@ -178,24 +179,24 @@ async def _supabase_delete(table: str, filters: Dict[str, str]) -> None:
         raise
 
 
-async def upsert_profile(payload: Dict[str, Any]) -> None:
+async def upsert_profile(payload: dict[str, Any]) -> None:
     """Upsert a profile record keyed by user_id."""
     await _supabase_post("profiles", payload, upsert=True)
 
 
-async def insert_reflection(payload: Dict[str, Any]) -> None:
+async def insert_reflection(payload: dict[str, Any]) -> None:
     await _supabase_post("reflections", payload, upsert=False)
 
 
-async def insert_trade(payload: Dict[str, Any]) -> None:
+async def insert_trade(payload: dict[str, Any]) -> None:
     await _supabase_post("trades", payload, upsert=False)
 
 
-async def insert_insight(payload: Dict[str, Any]) -> None:
+async def insert_insight(payload: dict[str, Any]) -> None:
     await _supabase_post("insights", payload, upsert=False)
 
 
-async def get_user_id_for_discord(discord_id: str | int) -> Optional[str]:
+async def get_user_id_for_discord(discord_id: str | int) -> str | None:
     """Resolve a Supabase user_id via the profiles table using a Discord id."""
     try:
         rows = await _supabase_get(
@@ -216,7 +217,7 @@ async def get_user_id_for_discord(discord_id: str | int) -> Optional[str]:
     return str(user_id) if user_id else None
 
 
-async def get_discord_id_for_user(user_id: str) -> Optional[str]:
+async def get_discord_id_for_user(user_id: str) -> str | None:
     """Resolve a Discord id via the profiles table using a Supabase user_id."""
     try:
         rows = await _supabase_get(
@@ -241,10 +242,10 @@ async def insert_reflection_for_discord(
     discord_id: int | str,
     *,
     reflection: str,
-    mantra: Optional[str] = None,
-    villain: Optional[str] = None,
-    future_message: Optional[str] = None,
-    date: Optional[datetime] = None,
+    mantra: str | None = None,
+    villain: str | None = None,
+    future_message: str | None = None,
+    date: datetime | None = None,
 ) -> bool:
     """Insert a reflection entry for the Supabase user linked to the Discord id."""
     user_id = await get_user_id_for_discord(discord_id)
@@ -255,7 +256,7 @@ async def insert_reflection_for_discord(
         )
         return False
 
-    timestamp = date or datetime.now(timezone.utc)
+    timestamp = date or datetime.now(UTC)
     payload = {
         "user_id": user_id,
         "date": timestamp.isoformat(),
@@ -277,7 +278,7 @@ async def insert_insight_for_discord(
     *,
     summary: str,
     source: str = "system",
-    tags: Optional[List[str]] = None,
+    tags: list[str] | None = None,
 ) -> bool:
     """Insert an insight entry linked to the Supabase user for the Discord id."""
 

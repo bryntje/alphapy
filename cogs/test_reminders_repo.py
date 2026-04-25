@@ -1,13 +1,15 @@
 # test_reminders_repo.py
-import unittest
 import asyncio
-from typing import Any, Dict, List
-from cogs.reminders import create_reminder, update_reminder, delete_reminder, get_reminders_for_user
+import unittest
+from typing import Any
+
+from cogs.reminders import create_reminder, delete_reminder, get_reminders_for_user, update_reminder
+
 
 class FakeConn:
     def __init__(self):
-        self.rows: List[Dict[str, Any]] = []
-        self.deleted: List[int] = []
+        self.rows: list[dict[str, Any]] = []
+        self.deleted: list[int] = []
 
     async def execute(self, query: str, *params):
         if query.strip().lower().startswith("insert into reminders"):

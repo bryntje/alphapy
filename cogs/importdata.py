@@ -1,16 +1,18 @@
-import discord
-import asyncpg
 import json
+
+import asyncpg
+import discord
 from discord.ext import commands
-from typing import Optional
+
 import config
-from utils.logger import logger, log_with_guild
 from utils.db_helpers import acquire_safe
+from utils.logger import logger
+
 
 class ImportData(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("importdata", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 

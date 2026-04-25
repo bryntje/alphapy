@@ -8,9 +8,11 @@ Tests cover:
 - Day matching logic
 """
 
-import pytest
 from datetime import datetime, time, timedelta
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import patch
+
+import pytest
+
 from cogs.reminders import ReminderCog
 from utils.timezone import BRUSSELS_TZ
 

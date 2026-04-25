@@ -1,12 +1,10 @@
-import discord
+
 from discord.ext import commands
 
 import config
-from typing import Optional
-from utils.settings_service import SettingsService
-from utils.logger import logger
 from utils.cog_base import AlphaCog
-from utils.gdpr_helpers import GDPRView, store_gdpr_acceptance
+from utils.gdpr_helpers import GDPRView
+from utils.logger import logger
 
 
 class GDPRAnnouncement(AlphaCog):
@@ -21,7 +19,7 @@ class GDPRAnnouncement(AlphaCog):
                 pass
         return True
 
-    def _get_channel_id(self, guild_id: int) -> Optional[int]:
+    def _get_channel_id(self, guild_id: int) -> int | None:
         if self.settings:
             try:
                 value = self.settings.get("gdpr", "channel_id", guild_id)

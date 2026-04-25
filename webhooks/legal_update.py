@@ -8,7 +8,6 @@ configured channel of the main guild (MAIN_GUILD_ID).
 
 import json
 import logging
-from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -32,7 +31,7 @@ _DOC_URLS = {
 
 
 @router.post("")
-async def handle_legal_update_webhook(request: Request) -> Dict[str, str]:
+async def handle_legal_update_webhook(request: Request) -> dict[str, str]:
     """
     Post a legal update embed in the main guild when PP or ToS changes.
 
@@ -69,16 +68,15 @@ async def handle_legal_update_webhook(request: Request) -> Dict[str, str]:
             detail="Invalid JSON payload.",
         ) from exc
 
-    documents: List[str] = payload.get("documents", [])
+    documents: list[str] = payload.get("documents", [])
     if not documents:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing required field: documents (must contain 'tos' and/or 'pp').",
         )
 
-    from gpt.helpers import bot_instance
-
     import config
+    from gpt.helpers import bot_instance
 
     main_guild_id = getattr(config, "MAIN_GUILD_ID", 0)
     if not main_guild_id:
@@ -118,7 +116,7 @@ async def handle_legal_update_webhook(request: Request) -> Dict[str, str]:
         )
         return {"status": "skipped", "reason": "channel not found"}
 
-    sent: List[str] = []
+    sent: list[str] = []
     for doc_key in documents:
         if doc_key not in _DOC_LABELS:
             logger.debug("legal-update: unknown document key %r — skipping.", doc_key)

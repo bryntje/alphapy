@@ -7,14 +7,13 @@ No Discord objects, no DB access, no async — these functions are fully testabl
 
 import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
 
 from utils.logger import logger
 from utils.parsers import parse_days_string
 from utils.timezone import BRUSSELS_TZ
 
 
-def extract_datetime_from_text(text: str) -> Optional[datetime]:
+def extract_datetime_from_text(text: str) -> datetime | None:
     """Parse a free-text date/time, trying numeric and natural language formats."""
     date_match = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", text)
     time_match = re.search(r"(\d{1,2}[:.]\d{2})", text)
@@ -53,8 +52,8 @@ def extract_datetime_from_text(text: str) -> Optional[datetime]:
 
 
 def extract_fields_from_lines(
-    lines: List[str],
-) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    lines: list[str],
+) -> tuple[str | None, str | None, str | None, str | None]:
     """Extract date, time, location, and days fields from structured embed lines."""
     date_line = time_line = location_line = days_line = None
     for line in lines:
@@ -71,8 +70,8 @@ def extract_fields_from_lines(
 
 
 def parse_datetime(
-    date_line: Optional[str], time_line: Optional[str]
-) -> Tuple[Optional[datetime], Optional[object]]:
+    date_line: str | None, time_line: str | None
+) -> tuple[datetime | None, object | None]:
     """Parse a date+time from structured embed fields into a timezone-aware datetime."""
     if not time_line:
         logger.warning(f"❌ No valid time found in line: {time_line}")
@@ -122,7 +121,7 @@ def parse_datetime(
     return dt, tz
 
 
-def infer_date_from_time_line(time_line: str) -> Optional[str]:
+def infer_date_from_time_line(time_line: str) -> str | None:
     """Try to extract a date string embedded in a time-line value."""
     numeric = re.search(r"\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b", time_line)
     if numeric:
@@ -153,7 +152,7 @@ def infer_date_from_time_line(time_line: str) -> Optional[str]:
     return None
 
 
-def parse_relative_date(text: str) -> Optional[str]:
+def parse_relative_date(text: str) -> str | None:
     """Parse relative dates like 'This Wednesday', 'Next Friday', 'Tomorrow' etc."""
     now = datetime.now(BRUSSELS_TZ)
     text_lower = text.lower()
@@ -214,7 +213,7 @@ def parse_relative_date(text: str) -> Optional[str]:
     return None
 
 
-def parse_days(days_line: Optional[str], dt: datetime) -> str:
+def parse_days(days_line: str | None, dt: datetime) -> str:
     """Parse days line and return comma-separated string. Uses centralized parser."""
     if not days_line:
         return str(dt.weekday())
@@ -230,7 +229,7 @@ def parse_days(days_line: Optional[str], dt: datetime) -> str:
     return str(dt.weekday())
 
 
-def short_title_for_reminder_name(parsed: Dict, max_chars: int = 50) -> str:
+def short_title_for_reminder_name(parsed: dict, max_chars: int = 50) -> str:
     """
     Derive a short, clear title for the reminder name. When the embed title is long or
     duplicates the description (everything in one line), use the first line of the

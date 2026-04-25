@@ -2,7 +2,6 @@
 Tests for status cog release notes: markdown truncation and dangling header cleanup.
 """
 
-import pytest
 from cogs.status import _drop_dangling_last_header, _truncate_release_notes_md
 
 

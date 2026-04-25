@@ -26,7 +26,7 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import Any, Dict
+from typing import Any
 
 import httpx
 
@@ -45,7 +45,7 @@ def sign_payload(body: bytes, secret: str) -> str:
     return f"sha256={digest}"
 
 
-async def _post(path: str, payload: Dict[str, Any], secret: str, header_name: str) -> None:
+async def _post(path: str, payload: dict[str, Any], secret: str, header_name: str) -> None:
     """POST payload to the dashboard with HMAC signature. Logs on failure, never raises."""
     base_url = getattr(config, "DASHBOARD_BASE_URL", "").rstrip("/")
     if not base_url or not secret:
@@ -76,7 +76,7 @@ async def _post(path: str, payload: Dict[str, Any], secret: str, header_name: st
         logger.warning("Dashboard webhook %s failed: %s", path, exc)
 
 
-def forward_reflection(payload: Dict[str, Any]) -> None:
+def forward_reflection(payload: dict[str, Any]) -> None:
     """Fire-and-forget: notify dashboard of a new/updated reflection.
 
     Endpoint : POST /api/webhooks/reflections
@@ -91,7 +91,7 @@ def forward_reflection(payload: Dict[str, Any]) -> None:
     )
 
 
-def forward_revoke_reflection(payload: Dict[str, Any]) -> None:
+def forward_revoke_reflection(payload: dict[str, Any]) -> None:
     """Fire-and-forget: notify dashboard that a reflection was revoked (GDPR delete).
 
     Endpoint : POST /api/webhooks/revoke-reflection
@@ -106,7 +106,7 @@ def forward_revoke_reflection(payload: Dict[str, Any]) -> None:
     )
 
 
-def forward_supabase_auth(payload: Dict[str, Any]) -> None:
+def forward_supabase_auth(payload: dict[str, Any]) -> None:
     """Fire-and-forget: notify dashboard of a Supabase auth lifecycle event.
 
     Endpoint : POST /api/webhooks/supabase

@@ -1,32 +1,32 @@
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands
-from discord.app_commands import checks as app_checks
-import asyncpg
-from asyncpg import exceptions as pg_exceptions
+import asyncio
 import io
 import json
-import asyncio
+import re
 import time
 from datetime import datetime, timedelta
-import re
-from typing import Optional, List, Dict, Any, cast
-from utils.settings_service import SettingsService
-from utils.settings_helpers import CachedSettingsHelper
-from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
+from typing import Any, Optional, cast
+
+import asyncpg
+import discord
+from asyncpg import exceptions as pg_exceptions
+from discord import app_commands
+from discord.app_commands import checks as app_checks
+from discord.ext import commands, tasks
+
 from utils.cog_base import AlphaCog
-from utils.validators import validate_admin
+from utils.db_helpers import acquire_safe, get_bot_db_pool, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
+from utils.validators import validate_admin
 
 try:
     import config_local as config  # type: ignore
 except ImportError:
     import config  # type: ignore
 
-from utils.logger import logger, log_with_guild, log_guild_action, log_database_event
 from gpt.helpers import ask_gpt
+from utils.logger import log_database_event, log_guild_action, log_with_guild, logger
 from utils.timezone import BRUSSELS_TZ
-from version import __version__, CODENAME
+from version import CODENAME, __version__
 
 
 class TicketBot(AlphaCog):
@@ -42,9 +42,9 @@ class TicketBot(AlphaCog):
 
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         # In-memory cooldown tracking for suggest_reply button
-        self._suggest_reply_cooldowns: Dict[int, float] = {}  # user_id -> last_used_timestamp
+        self._suggest_reply_cooldowns: dict[int, float] = {}  # user_id -> last_used_timestamp
         self._max_cooldown_entries = 1000
         self._max_cooldown_age = 3600  # 1 hour - remove stale entries
         # Start async setup without blocking the event loop
@@ -223,7 +223,7 @@ class TicketBot(AlphaCog):
             channel_id = self._get_log_channel_id(guild_id)
             if channel_id == 0:
                 # No log channel configured for this guild
-                log_with_guild(f"No log channel configured for ticketbot logging", guild_id, "debug")
+                log_with_guild("No log channel configured for ticketbot logging", guild_id, "debug")
                 return
 
             channel = self.bot.get_channel(channel_id)
@@ -277,7 +277,7 @@ class TicketBot(AlphaCog):
                     str(user),
                     description.strip(),
                 )
-        except RuntimeError as e:
+        except RuntimeError:
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
@@ -427,7 +427,7 @@ class TicketBot(AlphaCog):
         )
 
     @app_commands.command(name="ticket_panel_post", description="Post a ticket panel with a Create ticket button")
-    async def ticket_panel_post(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None) -> None:
+    async def ticket_panel_post(self, interaction: discord.Interaction, channel: discord.TextChannel | None = None) -> None:
         is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
         if not is_admin:
             await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)
@@ -478,7 +478,7 @@ class TicketBot(AlphaCog):
                     str(user),
                     (description or "").strip() or "—",
                 )
-        except RuntimeError as e:
+        except RuntimeError:
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
@@ -607,14 +607,14 @@ class TicketBot(AlphaCog):
         parts.append(f"{mins}m")
         return " ".join(parts)
 
-    async def _compute_stats(self, scope: str, guild_id: Optional[int] = None) -> tuple[dict, Optional[int], Optional[List[int]]]:
+    async def _compute_stats(self, scope: str, guild_id: int | None = None) -> tuple[dict, int | None, list[int] | None]:
         # scope: 'all' | '7d' | '30d'
         if not is_pool_healthy(self.db):
             return {}, None, None
         try:
             async with acquire_safe(self.db) as conn:
                 where_parts = []
-                params: List[Any] = []
+                params: list[Any] = []
                 param_index = 1
                 
                 if guild_id is not None:
@@ -648,7 +648,7 @@ class TicketBot(AlphaCog):
                 avg_where = "WHERE " + " AND ".join(avg_where_parts) if avg_where_parts else ""
                 avg_query = f"SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) AS avg_s FROM support_tickets {avg_where}"
                 avg_row = await conn.fetchrow(avg_query, *params) if params else await conn.fetchrow(avg_query)
-                avg_seconds: Optional[int] = None
+                avg_seconds: int | None = None
                 if avg_row and avg_row["avg_s"] is not None:
                     try:
                         avg_seconds = int(float(avg_row["avg_s"]))
@@ -664,7 +664,7 @@ class TicketBot(AlphaCog):
             logger.error(f"Database error in _compute_stats: {e}")
             return {}, None, None
 
-    async def _top_topics(self, limit: int = 5) -> Dict[str, int]:
+    async def _top_topics(self, limit: int = 5) -> dict[str, int]:
         if not is_pool_healthy(self.db):
             return {}
         try:
@@ -681,7 +681,7 @@ class TicketBot(AlphaCog):
                     """,
                     int(limit),
                 )
-                topics: Dict[str, int] = {}
+                topics: dict[str, int] = {}
                 for row in rows:
                     key = row.get("similarity_key") or "-"
                     topics[key] = int(row.get("cnt") or 0)
@@ -695,7 +695,7 @@ class TicketBot(AlphaCog):
             logger.error(f"Database error in _top_topics: {e}")
             return {}
 
-    def _settings_get(self, scope: str, key: str, guild_id: int, fallback: Optional[int] = None):
+    def _settings_get(self, scope: str, key: str, guild_id: int, fallback: int | None = None):
         """Get setting using cached helper. Returns fallback if not found."""
         try:
             if fallback is not None:
@@ -705,9 +705,9 @@ class TicketBot(AlphaCog):
         except Exception:
             return fallback
 
-    async def _post_ticket_summary(self, channel: discord.TextChannel, ticket_id: int, guild_id: int) -> Optional[Dict[str, str]]:
+    async def _post_ticket_summary(self, channel: discord.TextChannel, ticket_id: int, guild_id: int) -> dict[str, str] | None:
         """Generate and post a Grok-based summary for a ticket (used by auto-close)."""
-        messages: List[str] = []
+        messages: list[str] = []
         try:
             async for msg in channel.history(limit=100, oldest_first=True):
                 if not msg.author.bot:
@@ -719,7 +719,7 @@ class TicketBot(AlphaCog):
                 await channel.send("No content to summarize.")
                 return None
 
-            from utils.sanitizer import safe_prompt, safe_embed_text
+            from utils.sanitizer import safe_embed_text, safe_prompt
             # Sanitize each message before sending to Grok
             safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
@@ -780,7 +780,7 @@ class TicketBot(AlphaCog):
             logger.exception(f"❌ Error generating ticket summary: {e}")
             return None
 
-    def _normalize_id(self, value: Optional[object]) -> Optional[int]:
+    def _normalize_id(self, value: object | None) -> int | None:
         if isinstance(value, int):
             return value
         if isinstance(value, str) and value.isdigit():
@@ -791,7 +791,7 @@ class TicketBot(AlphaCog):
         value = self._settings_get("system", "log_channel_id", guild_id, 0)  # Must be configured via /config system set_log_channel
         return int(value) if value is not None else 0
 
-    def _get_ticket_category_id(self, guild_id: int) -> Optional[int]:
+    def _get_ticket_category_id(self, guild_id: int) -> int | None:
         value = self._settings_get(
             "ticketbot",
             "category_id",
@@ -800,7 +800,7 @@ class TicketBot(AlphaCog):
         )
         return self._normalize_id(value)
 
-    def _get_support_role_id(self, guild_id: int) -> Optional[int]:
+    def _get_support_role_id(self, guild_id: int) -> int | None:
         value = self._settings_get("ticketbot", "staff_role_id", guild_id, getattr(config, "TICKET_ACCESS_ROLE_ID", None))
         normalized = self._normalize_id(value)
         if normalized is not None:
@@ -815,7 +815,7 @@ class TicketBot(AlphaCog):
                     return normalized
         return None
 
-    def _resolve_support_role(self, guild: discord.Guild) -> Optional[discord.Role]:
+    def _resolve_support_role(self, guild: discord.Guild) -> discord.Role | None:
         role_id = self._get_support_role_id(guild.id)
         if role_id:
             role = guild.get_role(int(role_id))
@@ -823,7 +823,7 @@ class TicketBot(AlphaCog):
                 return role
         return None
 
-    def _get_escalation_role_id(self, guild_id: int) -> Optional[int]:
+    def _get_escalation_role_id(self, guild_id: int) -> int | None:
         value = self._settings_get(
             "ticketbot",
             "escalation_role_id",
@@ -837,17 +837,17 @@ class TicketBot(AlphaCog):
         *,
         triggered_by: int,
         scope: str,
-        ticket_id: Optional[int] = None,
-        topic: Optional[str] = None,
-        summary: Optional[str] = None,
-        guild_id: Optional[int] = None,
+        ticket_id: int | None = None,
+        topic: str | None = None,
+        summary: str | None = None,
+        guild_id: int | None = None,
     ) -> None:
         if not is_pool_healthy(self.db):
             return
 
         # Use guild_id if provided, otherwise compute stats for all guilds (legacy behavior)
         counts, avg_seconds, _ = await self._compute_stats("all", guild_id)
-        snapshot: Dict[str, object] = {
+        snapshot: dict[str, object] = {
             "counts": counts,
             "avg": avg_seconds,
             "scope": scope,
@@ -859,8 +859,8 @@ class TicketBot(AlphaCog):
         if summary:
             snapshot["summary_preview"] = summary[:280]
 
-        topics_payload: Optional[Dict[str, object]] = None
-        latest_topic: Dict[str, object] = {}
+        topics_payload: dict[str, object] | None = None
+        latest_topic: dict[str, object] = {}
         if topic:
             latest_topic = {
                 "key": topic,
@@ -919,7 +919,7 @@ class TicketBot(AlphaCog):
         except Exception:
             pass
 
-    def _stats_embed(self, counts: dict, avg_seconds: Optional[int], open_ticket_ids: Optional[List[int]] = None) -> discord.Embed:
+    def _stats_embed(self, counts: dict, avg_seconds: int | None, open_ticket_ids: list[int] | None = None) -> discord.Embed:
         embed = EmbedBuilder.info(title="📊 Ticket Statistics")
         for s in ["open", "claimed", "waiting_for_user", "escalated", "closed", "archived"]:
             embed.add_field(name=s, value=str(counts.get(s, 0)), inline=True)
@@ -961,7 +961,7 @@ class TicketBot(AlphaCog):
             self.public = public
             self.scope = scope  # 'all' | '7d' | '30d'
 
-        async def _update(self, interaction: discord.Interaction, scope: Optional[str] = None) -> None:
+        async def _update(self, interaction: discord.Interaction, scope: str | None = None) -> None:
             if scope:
                 self.scope = scope
             is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
@@ -1072,7 +1072,7 @@ class TicketBot(AlphaCog):
         interaction: discord.Interaction,
         id: str,
         status: app_commands.Choice[str],
-        escalate_to: Optional[discord.Role] = None,
+        escalate_to: discord.Role | None = None,
     ):
         is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
         if not is_admin:
@@ -1129,7 +1129,7 @@ class TicketBot(AlphaCog):
                         ticket_id,
                         interaction.guild.id,
                     )
-        except RuntimeError as e:
+        except RuntimeError:
             await interaction.followup.send("❌ Database not available. Please try again later.", ephemeral=True)
             return
         except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
@@ -1161,7 +1161,7 @@ class TicketBot(AlphaCog):
             pass
 
     @ticket_status.autocomplete("id")
-    async def ticket_id_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+    async def ticket_id_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         """Autocomplete for ticket IDs - shows open tickets."""
         if not interaction.guild:
             return []
@@ -1185,7 +1185,7 @@ class TicketBot(AlphaCog):
                     interaction.guild.id
                 )
             
-            choices: List[app_commands.Choice[str]] = []
+            choices: list[app_commands.Choice[str]] = []
             current_lower = current.lower() if current else ""
             
             for row in rows:
@@ -1353,7 +1353,7 @@ class TicketBot(AlphaCog):
                                     pass
                                 
                                 # Post summary using helper method
-                                summary_meta = await self._post_ticket_summary(channel, ticket_id, guild_id)
+                                await self._post_ticket_summary(channel, ticket_id, guild_id)
                                 
                                 # Post auto-close message
                                 await channel.send(
@@ -1411,7 +1411,7 @@ class TicketBot(AlphaCog):
 
 
 class TicketActionView(discord.ui.View):
-    def __init__(self, bot: commands.Bot, ticket_id: int, support_role_id: Optional[int] = None, cog: Optional["TicketBot"] = None, timeout: Optional[float] = None):
+    def __init__(self, bot: commands.Bot, ticket_id: int, support_role_id: int | None = None, cog: Optional["TicketBot"] = None, timeout: float | None = None):
         super().__init__(timeout=timeout)
         self.bot = bot
         self.ticket_id = ticket_id
@@ -1442,14 +1442,14 @@ class TicketActionView(discord.ui.View):
         except Exception:
             pass
 
-    async def _post_summary(self, channel: discord.TextChannel) -> Optional[Dict[str, str]]:
+    async def _post_summary(self, channel: discord.TextChannel) -> dict[str, str] | None:
         """Generate, post and persist a Grok-based summary for this ticket.
 
         Returns a dict with `summary` and `key` when successful so callers can
         reuse the detected topic for metrics, or ``None`` if no summary was
         generated.
         """
-        messages: List[str] = []
+        messages: list[str] = []
         try:
             async for msg in channel.history(limit=100, oldest_first=True):
                 if not msg.author.bot:
@@ -1461,7 +1461,7 @@ class TicketActionView(discord.ui.View):
                 await channel.send("No content to summarize.")
                 return None
 
-            from utils.sanitizer import safe_prompt, safe_embed_text
+            from utils.sanitizer import safe_embed_text, safe_prompt
             # Sanitize each message before sending to Grok
             safe_messages = [safe_prompt(msg) for msg in messages[-50:]]
             prompt = (
@@ -1517,7 +1517,7 @@ class TicketActionView(discord.ui.View):
         return key[:256]
 
     @staticmethod
-    async def _register_summary(view_instance, ticket_id: int, summary: str) -> Optional[str]:
+    async def _register_summary(view_instance, ticket_id: int, summary: str) -> str | None:
         try:
             if not view_instance.cog or not is_pool_healthy(view_instance.cog.db):
                 return None
@@ -1733,7 +1733,7 @@ class TicketActionView(discord.ui.View):
             level="success",
         )
         # Post Grok summary last to satisfy required execution order
-        summary_meta: Optional[Dict[str, str]] = None
+        summary_meta: dict[str, str] | None = None
         if isinstance(interaction.channel, discord.TextChannel):
             summary_meta = await self._post_summary(interaction.channel)
 
@@ -1937,7 +1937,7 @@ class TicketActionView(discord.ui.View):
             self.cog._suggest_reply_cooldowns[interaction.user.id] = current_time
         
         await interaction.response.defer(ephemeral=True)
-        msgs: List[str] = []
+        msgs: list[str] = []
         async for m in ch.history(limit=20, oldest_first=False):
             if not m.author.bot and m.content:
                 msgs.append(f"{m.author.display_name}: {m.content}")
@@ -1968,7 +1968,7 @@ class TicketActionView(discord.ui.View):
 
 
 class TicketOpenView(discord.ui.View):
-    def __init__(self, cog: "TicketBot", timeout: Optional[float] = None):
+    def __init__(self, cog: "TicketBot", timeout: float | None = None):
         super().__init__(timeout=timeout)
         self.cog = cog
 

@@ -1,14 +1,12 @@
-import discord
-import asyncio
-from discord.ext import commands
-from discord import app_commands
-from cogs.gdpr import GDPRView
-from utils.logger import logger
-from gpt.helpers import set_bot_instance
-from utils.settings_service import SettingsService, SettingDefinition
-import config
-from typing import Optional
 
+import discord
+from discord.ext import commands
+
+import config
+from cogs.gdpr import GDPRView
+from gpt.helpers import set_bot_instance
+from utils.logger import logger
+from utils.settings_service import SettingDefinition, SettingsService
 
 # Set intents
 intents = discord.Intents.default()
@@ -257,7 +255,7 @@ async def on_command_error(ctx, error):
 
 async def setup_hook():
     await settings_service.setup()
-    setattr(bot, "settings", settings_service)
+    bot.settings = settings_service
 
     await bot.load_extension("cogs.onboarding")
     await bot.load_extension("cogs.reaction_roles")
@@ -291,7 +289,7 @@ bot.setup_hook = setup_hook
 
 
 # Start bot: uses BOT_TOKEN_ACTIVE (BOT_TOKEN_TEST when USE_TEST_BOT=1, else BOT_TOKEN)
-token: Optional[str] = getattr(config, "BOT_TOKEN_ACTIVE", None)
+token: str | None = getattr(config, "BOT_TOKEN_ACTIVE", None)
 if not token:
     raise RuntimeError("BOT_TOKEN (or BOT_TOKEN_TEST when USE_TEST_BOT=1) is not set in the config.")
 bot.run(token)

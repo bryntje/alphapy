@@ -1,10 +1,12 @@
 """
 Database helper utilities for common database operations.
 """
-import asyncpg
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Optional, AsyncGenerator
-from .db_helpers import create_db_pool, is_pool_healthy, acquire_safe
+
+import asyncpg
+
+from .db_helpers import acquire_safe, create_db_pool, is_pool_healthy
 
 
 class DatabaseManager:
@@ -13,7 +15,7 @@ class DatabaseManager:
     def __init__(self, pool_name: str, config_dict: dict):
         self.pool_name = pool_name
         self.config = config_dict
-        self._pool: Optional[asyncpg.Pool] = None
+        self._pool: asyncpg.Pool | None = None
 
     async def ensure_pool(self) -> asyncpg.Pool:
         """Ensure database pool is available, create if needed."""

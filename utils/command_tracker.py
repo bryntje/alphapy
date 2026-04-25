@@ -5,21 +5,22 @@ This module provides decorators and helpers to track command usage
 across all Discord bot commands (slash and text commands).
 """
 
+import asyncio
 import functools
 import logging
-import asyncio
-from typing import Optional, Callable, Any, List, Dict
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
-import discord
-from discord.ext import commands
+from typing import Any
+
 import asyncpg
+import discord
 from asyncpg import exceptions as pg_exceptions
+from discord.ext import commands
 
 logger = logging.getLogger("bot")
 
 # Global database pool reference (set by bot initialization)
-_db_pool: Optional[asyncpg.Pool] = None
+_db_pool: asyncpg.Pool | None = None
 
 # In-memory queue for batching command usage logs
 @dataclass
@@ -30,13 +31,13 @@ class CommandUsageEntry:
     command_name: str
     command_type: str
     success: bool
-    error_message: Optional[str]
+    error_message: str | None
 
-_command_queue: List[CommandUsageEntry] = []
+_command_queue: list[CommandUsageEntry] = []
 MAX_QUEUE_SIZE = 10000
 FLUSH_THRESHOLD = 1000
 FLUSH_INTERVAL = 30  # seconds
-_flush_task: Optional[asyncio.Task] = None
+_flush_task: asyncio.Task | None = None
 
 # Export _db_pool for checking if it's already initialized
 __all__ = ['set_db_pool', 'log_command_usage', 'track_command', '_db_pool', 'start_flush_task', 'stop_flush_task']
@@ -62,12 +63,12 @@ def set_db_pool(pool: asyncpg.Pool) -> None:
 
 
 async def log_command_usage(
-    guild_id: Optional[int],
+    guild_id: int | None,
     user_id: int,
     command_name: str,
     command_type: str,
     success: bool = True,
-    error_message: Optional[str] = None
+    error_message: str | None = None
 ) -> None:
     """
     Log command usage to in-memory queue (batched writes to audit_logs table).
@@ -230,8 +231,8 @@ def track_command(command_type: str = "slash"):
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Extract interaction or context from args
-            interaction: Optional[discord.Interaction] = None
-            ctx: Optional[commands.Context] = None
+            interaction: discord.Interaction | None = None
+            ctx: commands.Context | None = None
             
             # Find interaction or context in args
             for arg in args:
@@ -245,7 +246,7 @@ def track_command(command_type: str = "slash"):
             # Determine command name and user info
             command_name = func.__name__
             user_id = 0
-            guild_id: Optional[int] = None
+            guild_id: int | None = None
             
             if interaction:
                 command_name = interaction.command.name if interaction.command else func.__name__

@@ -6,24 +6,27 @@ across the codebase. Provides safe connection acquisition with automatic error
 handling and reconnection logic.
 """
 
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
-from typing import Optional, TypeVar, AsyncGenerator, Callable, Any, List
+from typing import Any, TypeVar
+
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
+
 from utils.logger import logger
 
 # Type alias for pools created by create_db_pool (so callers can hint without importing asyncpg)
 PoolT = asyncpg.Pool
 
 # Registry of all created pools for centralized cleanup
-_registered_pools: List[asyncpg.Pool] = []
+_registered_pools: list[asyncpg.Pool] = []
 
 T = TypeVar('T')
 
 @asynccontextmanager
 async def acquire_safe(
-    pool: Optional[asyncpg.Pool],
-    on_error: Optional[Callable[[Exception], Any]] = None
+    pool: asyncpg.Pool | None,
+    on_error: Callable[[Exception], Any] | None = None
 ) -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
     """
     Safe pool acquire with automatic error handling and reconnection.
@@ -57,7 +60,7 @@ async def acquire_safe(
             try:
                 if callable(on_error):
                     # Check if it's async
-                    if hasattr(on_error, '__call__'):
+                    if callable(on_error):
                         import inspect
                         if inspect.iscoroutinefunction(on_error):
                             await on_error(e)
@@ -70,8 +73,8 @@ async def acquire_safe(
 
 @asynccontextmanager
 async def acquire_transactional(
-    pool: Optional[asyncpg.Pool],
-    on_error: Optional[Callable[[Exception], Any]] = None
+    pool: asyncpg.Pool | None,
+    on_error: Callable[[Exception], Any] | None = None
 ) -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
     """
     Safe pool acquire with an open database transaction.
@@ -99,7 +102,7 @@ async def acquire_transactional(
             yield conn
 
 
-def is_pool_healthy(pool: Optional[asyncpg.Pool]) -> bool:
+def is_pool_healthy(pool: asyncpg.Pool | None) -> bool:
     """
     Check if a database pool is healthy and ready for use.
     
@@ -116,7 +119,7 @@ def is_pool_healthy(pool: Optional[asyncpg.Pool]) -> bool:
     return True
 
 
-async def check_pool_health(pool: Optional[asyncpg.Pool]) -> tuple[bool, Optional[str]]:
+async def check_pool_health(pool: asyncpg.Pool | None) -> tuple[bool, str | None]:
     """
     Perform an actual health check by attempting a simple query.
     
@@ -184,7 +187,7 @@ async def create_db_pool(
         raise
 
 
-def get_bot_db_pool(bot) -> Optional[PoolT]:
+def get_bot_db_pool(bot) -> PoolT | None:
     """
     Get the main database pool from bot's SettingsService.
     

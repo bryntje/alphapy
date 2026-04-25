@@ -1,34 +1,33 @@
-import discord
-from discord import app_commands
-from discord.ext import commands
 import re
 from datetime import datetime, timedelta
-import config
+from typing import Any, cast
+
 import asyncpg
+import discord
 from asyncpg import exceptions as pg_exceptions
-from typing import Any, Optional, Tuple, List, cast
-from utils.logger import logger
-from utils.timezone import BRUSSELS_TZ
-from utils.settings_service import SettingsService
-from utils.settings_helpers import CachedSettingsHelper
-from utils.db_helpers import acquire_safe, is_pool_healthy, get_bot_db_pool
+from discord import app_commands
+from discord.ext import commands
+
+import utils.reminder_repository as reminder_repo
 from utils.cog_base import AlphaCog
+from utils.db_helpers import acquire_safe, get_bot_db_pool, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
-from utils.parsers import parse_days_string, format_days_for_display
-from utils.sanitizer import safe_embed_text
 from utils.embed_parser import (
     extract_datetime_from_text,
     extract_fields_from_lines,
-    parse_datetime as parse_datetime_fields,
-    infer_date_from_time_line,
-    parse_relative_date,
-    parse_days,
-    short_title_for_reminder_name,
     format_message_paragraphs,
+    infer_date_from_time_line,
+    parse_days,
+    parse_relative_date,
+    short_title_for_reminder_name,
 )
-import utils.reminder_repository as reminder_repo
-import json
-
+from utils.embed_parser import (
+    parse_datetime as parse_datetime_fields,
+)
+from utils.logger import logger
+from utils.parsers import format_days_for_display, parse_days_string
+from utils.sanitizer import safe_embed_text
+from utils.timezone import BRUSSELS_TZ
 
 # All logging timestamps in this module use Brussels time for clarity.
 
@@ -36,9 +35,9 @@ import json
 class EmbedReminderWatcher(AlphaCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
     
-    def format_days_for_display(self, days_list: List[str]) -> str:
+    def format_days_for_display(self, days_list: list[str]) -> str:
         """Convert day numbers to readable day names using centralized parser."""
         return format_days_for_display(days_list) or "—"
 
@@ -255,7 +254,7 @@ class EmbedReminderWatcher(AlphaCog):
             logger.info(f"⚠️ Failed to parse {message_type} message (ID: {message.id}) - {reason}")
             await self._log_message_processed(message, "failed", reason, message.guild.id)
 
-    async def parse_embed_for_reminder(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:
+    async def parse_embed_for_reminder(self, embed: discord.Embed, guild_id: int) -> dict | None:
         all_text = embed.description or ""
         title_text = embed.title or ""
         
@@ -452,19 +451,19 @@ class EmbedReminderWatcher(AlphaCog):
             logger.exception(f"❌ Parse error: {e}")
             return None
 
-    def extract_fields_from_lines(self, lines: List[str]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    def extract_fields_from_lines(self, lines: list[str]) -> tuple[str | None, str | None, str | None, str | None]:
         return extract_fields_from_lines(lines)
 
-    def parse_datetime(self, date_line: Optional[str], time_line: Optional[str]) -> Tuple[Optional[datetime], Optional[object]]:
+    def parse_datetime(self, date_line: str | None, time_line: str | None) -> tuple[datetime | None, object | None]:
         return parse_datetime_fields(date_line, time_line)
 
-    def infer_date_from_time_line(self, time_line: str) -> Optional[str]:
+    def infer_date_from_time_line(self, time_line: str) -> str | None:
         return infer_date_from_time_line(time_line)
 
-    def parse_relative_date(self, text: str) -> Optional[str]:
+    def parse_relative_date(self, text: str) -> str | None:
         return parse_relative_date(text)
 
-    def parse_days(self, days_line: Optional[str], dt: datetime) -> str:
+    def parse_days(self, days_line: str | None, dt: datetime) -> str:
         return parse_days(days_line, dt)
 
     def _short_title_for_reminder_name(self, parsed: dict, max_chars: int = 50) -> str:
@@ -479,11 +478,11 @@ class EmbedReminderWatcher(AlphaCog):
         channel: int,
         created_by: int,
         guild_id: int,
-        origin_channel_id: Optional[int] = None,
-        origin_message_id: Optional[int] = None,
-        image_url: Optional[str] = None,
+        origin_channel_id: int | None = None,
+        origin_message_id: int | None = None,
+        image_url: str | None = None,
     ) -> None:
-        dt = parsed["datetime"]
+        parsed["datetime"]
         channel = int(channel)
         created_by = int(created_by)
         origin_channel_id = int(origin_channel_id) if origin_channel_id is not None else None
@@ -689,7 +688,7 @@ class EmbedReminderWatcher(AlphaCog):
         """Check if processing bot's own messages is enabled."""
         return self.settings_helper.get_bool("embedwatcher", "process_bot_messages", guild_id, fallback=False)
 
-    async def _check_existing_reminder_for_message(self, guild_id: int, channel_id: int, message_id: int) -> Optional[int]:
+    async def _check_existing_reminder_for_message(self, guild_id: int, channel_id: int, message_id: int) -> int | None:
         """Check if a reminder already exists for this message to prevent duplicate processing."""
         if not is_pool_healthy(self.db):
             return None
@@ -706,7 +705,7 @@ class EmbedReminderWatcher(AlphaCog):
             logger.warning(f"⚠️ Error checking existing reminder: {e}")
             return None
     
-    async def _check_similar_reminder_exists(self, guild_id: int, title: str, channel_id: int, minutes_threshold: int = 5) -> Optional[int]:
+    async def _check_similar_reminder_exists(self, guild_id: int, title: str, channel_id: int, minutes_threshold: int = 5) -> int | None:
         """Check if a reminder with similar title already exists in the same channel within the last N minutes.
         
         This helps prevent duplicate reminders when bot_messages is enabled and the bot sees its own reminder embeds.
@@ -761,11 +760,10 @@ class EmbedReminderWatcher(AlphaCog):
             logger.warning(f"⚠️ Error checking similar reminder: {e}")
             return None
 
-    async def _parse_with_gpt_fallback(self, embed: discord.Embed, guild_id: int) -> Optional[dict]:
+    async def _parse_with_gpt_fallback(self, embed: discord.Embed, guild_id: int) -> dict | None:
         """Use Grok to parse embed when structured parsing fails."""
         try:
             from gpt.helpers import ask_gpt
-            
             from utils.sanitizer import safe_prompt
             
             # Build text from embed and sanitize it
@@ -879,7 +877,7 @@ class EmbedReminderWatcher(AlphaCog):
             logger.exception(f"❌ Grok fallback parsing failed: {e}")
             return None
 
-    async def _log_failed_parse(self, embed: discord.Embed, guild_id: int, message: Optional[discord.Message] = None, message_type: str = "embed") -> None:
+    async def _log_failed_parse(self, embed: discord.Embed, guild_id: int, message: discord.Message | None = None, message_type: str = "embed") -> None:
         """Log failed parse attempt to admin channel."""
         channel_id = self._get_failed_parse_log_channel_id(guild_id)
         if channel_id == 0:
@@ -932,7 +930,7 @@ class EmbedReminderWatcher(AlphaCog):
         if not should_log_to_discord(level, guild_id):
             return
         
-        color = discord.Color.orange() if status == "failed" else discord.Color.green() if status == "success" else discord.Color.blue()
+        discord.Color.orange() if status == "failed" else discord.Color.green() if status == "success" else discord.Color.blue()
         emoji = "✅" if status == "success" else "⚠️" if status == "failed" else "⏭️"
         
         if isinstance(message.channel, (discord.TextChannel, discord.Thread)):

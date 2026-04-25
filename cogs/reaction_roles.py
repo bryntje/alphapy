@@ -1,10 +1,12 @@
-from typing import Optional, cast
+from typing import cast
+
 import discord
 from discord.ext import commands
-import config
-from utils.logger import log_with_guild, logger
+
 from utils.embed_builder import EmbedBuilder
-from utils.operational_logs import log_operational_event, EventType
+from utils.logger import log_with_guild, logger
+from utils.operational_logs import EventType, log_operational_event
+
 
 class StartOnboardingView(discord.ui.View):
     """View with a button to start onboarding directly."""
@@ -182,7 +184,7 @@ class FinalAcceptButton(discord.ui.Button):
     """Button where user indicates they accept all rules; label varies by mode (get role vs start onboarding)."""
     DEFAULT_LABEL = "✅ Accept All Rules & Start Onboarding"
 
-    def __init__(self, label: Optional[str] = None):
+    def __init__(self, label: str | None = None):
         super().__init__(
             label=label or self.DEFAULT_LABEL,
             style=discord.ButtonStyle.success,

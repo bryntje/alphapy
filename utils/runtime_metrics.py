@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from discord.ext import commands
@@ -11,26 +11,26 @@ if TYPE_CHECKING:
 class GuildSnapshot:
     id: int
     name: str
-    member_count: Optional[int]
-    owner_id: Optional[int]
+    member_count: int | None
+    owner_id: int | None
 
 
 @dataclass
 class CommandSnapshot:
     qualified_name: str
-    description: Optional[str]
+    description: str | None
     type: str
 
 
 @dataclass
 class BotSnapshot:
     online: bool
-    latency_ms: Optional[float]
-    uptime_seconds: Optional[int]
-    uptime_human: Optional[str]
-    guilds: List[GuildSnapshot]
+    latency_ms: float | None
+    uptime_seconds: int | None
+    uptime_human: str | None
+    guilds: list[GuildSnapshot]
     commands_loaded: int
-    commands: List[CommandSnapshot]
+    commands: list[CommandSnapshot]
 
 
 def _format_duration(delta: timedelta) -> str:
@@ -38,7 +38,7 @@ def _format_duration(delta: timedelta) -> str:
     days, rem = divmod(total_seconds, 86400)
     hours, rem = divmod(rem, 3600)
     minutes, seconds = divmod(rem, 60)
-    parts: List[str] = []
+    parts: list[str] = []
     if days:
         parts.append(f"{days}d")
     if hours or days:
@@ -50,7 +50,7 @@ def _format_duration(delta: timedelta) -> str:
 
 
 async def _snapshot_bot(bot: "commands.Bot") -> BotSnapshot:
-    guilds: List[GuildSnapshot] = []
+    guilds: list[GuildSnapshot] = []
     for guild in bot.guilds:
         guilds.append(
             GuildSnapshot(
@@ -62,10 +62,10 @@ async def _snapshot_bot(bot: "commands.Bot") -> BotSnapshot:
         )
 
     start_ts = getattr(bot, "start_time", None)
-    uptime_seconds: Optional[int] = None
-    uptime_human: Optional[str] = None
+    uptime_seconds: int | None = None
+    uptime_human: str | None = None
     if isinstance(start_ts, (int, float)):
-        uptime_delta = datetime.now(timezone.utc) - datetime.fromtimestamp(start_ts, tz=timezone.utc)
+        uptime_delta = datetime.now(UTC) - datetime.fromtimestamp(start_ts, tz=UTC)
         uptime_seconds = int(uptime_delta.total_seconds())
         uptime_human = _format_duration(uptime_delta)
 
@@ -73,7 +73,7 @@ async def _snapshot_bot(bot: "commands.Bot") -> BotSnapshot:
     latency_ms = round(latency_raw * 1000, 2) if isinstance(latency_raw, (int, float)) else None
 
     commands_loaded = 0
-    commands: List[CommandSnapshot] = []
+    commands: list[CommandSnapshot] = []
     if hasattr(bot, "tree"):
         for cmd in bot.tree.walk_commands():
             commands_loaded += 1
@@ -101,7 +101,7 @@ async def _snapshot_bot(bot: "commands.Bot") -> BotSnapshot:
     )
 
 
-async def get_bot_snapshot(timeout: float = 2.0) -> Optional[BotSnapshot]:
+async def get_bot_snapshot(timeout: float = 2.0) -> BotSnapshot | None:
     """
     Collect a live snapshot of the Discord bot. Returns None when the bot is not running.
     """
@@ -118,13 +118,13 @@ async def get_bot_snapshot(timeout: float = 2.0) -> Optional[BotSnapshot]:
     try:
         future = asyncio.run_coroutine_threadsafe(runner(), loop)
         return await asyncio.wait_for(asyncio.wrap_future(future), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return None
     except Exception:
         return None
 
 
-def serialize_snapshot(snapshot: Optional[BotSnapshot]) -> Dict[str, Any]:
+def serialize_snapshot(snapshot: BotSnapshot | None) -> dict[str, Any]:
     if snapshot is None:
         return {
             "online": False,

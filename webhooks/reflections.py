@@ -6,11 +6,9 @@ Handles reflection.created events and optionally creates reminders or logs for a
 
 import json
 import logging
-from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from utils.supabase_client import get_user_id_for_discord
 from webhooks.common import get_reflections_webhook_secret, validate_webhook_signature
 
 logger = logging.getLogger(__name__)
@@ -19,7 +17,7 @@ router = APIRouter(prefix="/webhooks/reflections", tags=["reflections"])
 
 
 @router.post("")
-async def handle_reflection_webhook(request: Request) -> Dict[str, str]:
+async def handle_reflection_webhook(request: Request) -> dict[str, str]:
     """
     Handle reflection.created events from App.
     

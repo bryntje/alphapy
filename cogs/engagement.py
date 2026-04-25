@@ -21,57 +21,55 @@ on_raw_reaction_add: increments reaction counts for weekly awards and handles OG
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from utils.db_helpers import get_bot_db_pool
-from utils.logger import logger
 from utils.embed_builder import EmbedBuilder
 from utils.engagement_service import (
-    # Streaks
-    get_streak,
-    set_streak,
-    ensure_streak_nickname,
+    _active_challenges,
+    _challenge_lock,
     # Badges
     add_badge,
+    challenge_add_participant,
+    challenge_cancel,
+    challenge_create,
+    challenge_get_participants_count,
+    challenge_get_top,
+    challenge_remove_participant,
+    challenge_update_ends_at,
+    challenge_update_mode,
+    challenge_update_participant_count,
+    challenge_update_title,
+    compute_weekly_awards,
+    ensure_streak_nickname,
+    finalize_and_announce_challenge,
+    format_duration,
+    # Challenges
+    get_guild_challenges,
+    # Streaks
+    get_streak,
     get_user_badges,
     # OG
     og_count_claims,
+    og_get_setup,
     og_has_claim,
     og_insert_claim,
-    og_get_setup,
     og_set_setup,
-    # Challenges
-    get_active_challenges,
-    get_guild_challenges,
-    challenge_create,
-    challenge_add_participant,
-    challenge_get_top,
-    challenge_get_participants_count,
-    challenge_update_participant_count,
-    challenge_remove_participant,
-    challenge_cancel,
-    challenge_update_mode,
-    challenge_update_title,
-    challenge_update_ends_at,
-    schedule_challenge,
-    reschedule_challenge,
-    rehydrate_challenges,
-    finalize_and_announce_challenge,
     parse_duration_to_seconds,
-    format_duration,
-    _active_challenges,
-    _challenge_lock,
+    rehydrate_challenges,
+    reschedule_challenge,
+    schedule_challenge,
+    set_streak,
+    weekly_increment_reaction,
     # Weekly
     weekly_index_message,
-    weekly_increment_reaction,
-    compute_weekly_awards,
 )
-
+from utils.logger import logger
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -103,7 +101,7 @@ async def _get_setting(
         return default
 
 
-async def _get_award_configs(bot: commands.Bot, guild_id: int) -> List[Dict[str, Any]]:
+async def _get_award_configs(bot: commands.Bot, guild_id: int) -> list[dict[str, Any]]:
     """
     Load configured weekly award categories for a guild.
     Stored as JSON in engagement.weekly_award_configs.
@@ -176,10 +174,10 @@ class ChallengeGroup(app_commands.Group):
     async def start(
         self,
         interaction: discord.Interaction,
-        duration: Optional[str] = None,
-        mode: Optional[app_commands.Choice[str]] = None,
-        title: Optional[str] = None,
-        channel: Optional[discord.TextChannel] = None,
+        duration: str | None = None,
+        mode: app_commands.Choice[str] | None = None,
+        title: str | None = None,
+        channel: discord.TextChannel | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -235,7 +233,7 @@ class ChallengeGroup(app_commands.Group):
     @app_commands.command(name="end", description="End the active challenge and announce the winner")
     @app_commands.describe(challenge_id="Specific challenge ID (optional)")
     async def end(
-        self, interaction: discord.Interaction, challenge_id: Optional[int] = None
+        self, interaction: discord.Interaction, challenge_id: int | None = None
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -263,7 +261,7 @@ class ChallengeGroup(app_commands.Group):
     @app_commands.command(name="cancel", description="Cancel the active challenge without a winner")
     @app_commands.describe(challenge_id="Specific challenge ID (optional)")
     async def cancel(
-        self, interaction: discord.Interaction, challenge_id: Optional[int] = None
+        self, interaction: discord.Interaction, challenge_id: int | None = None
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -302,7 +300,7 @@ class ChallengeGroup(app_commands.Group):
 
         import time as _time
         pool = get_bot_db_pool(self.cog.bot)
-        embeds: List[discord.Embed] = []
+        embeds: list[discord.Embed] = []
         for chal_id, rt in guild_challenges.items():
             mode = rt.get("mode", "leaderboard")
             title = rt.get("title")
@@ -374,12 +372,12 @@ class ChallengeGroup(app_commands.Group):
         self,
         interaction: discord.Interaction,
         field: app_commands.Choice[str],
-        mode: Optional[app_commands.Choice[str]] = None,
-        duration: Optional[str] = None,
-        member: Optional[discord.Member] = None,
-        set_count: Optional[int] = None,
-        title: Optional[str] = None,
-        challenge_id: Optional[int] = None,
+        mode: app_commands.Choice[str] | None = None,
+        duration: str | None = None,
+        member: discord.Member | None = None,
+        set_count: int | None = None,
+        title: str | None = None,
+        challenge_id: int | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -482,7 +480,7 @@ class ChallengeGroup(app_commands.Group):
     @edit.autocomplete("duration")
     async def duration_autocomplete(
         self, interaction: discord.Interaction, current: str
-    ) -> List[app_commands.Choice[str]]:
+    ) -> list[app_commands.Choice[str]]:
         presets = [
             ("15m", "900"), ("30m", "1800"), ("1h", "3600"),
             ("3h", "10800"), ("6h", "21600"), ("1d", "86400"),
@@ -500,7 +498,7 @@ class ChallengeGroup(app_commands.Group):
     @edit.autocomplete("challenge_id")
     async def challenge_id_autocomplete(
         self, interaction: discord.Interaction, current: str
-    ) -> List[app_commands.Choice[int]]:
+    ) -> list[app_commands.Choice[int]]:
         if not interaction.guild:
             return []
         gc = get_guild_challenges(interaction.guild.id)
@@ -570,7 +568,7 @@ class BadgeGroup(app_commands.Group):
     @app_commands.command(name="list", description="List all badges a member has earned")
     @app_commands.describe(member="Member to look up (defaults to yourself)")
     async def list_badges(
-        self, interaction: discord.Interaction, member: Optional[discord.Member] = None
+        self, interaction: discord.Interaction, member: discord.Member | None = None
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -585,7 +583,7 @@ class BadgeGroup(app_commands.Group):
             return
 
         pool = get_bot_db_pool(self.cog.bot)
-        badges: List[str] = []
+        badges: list[str] = []
         if pool:
             badges = await get_user_badges(pool, interaction.guild.id, target.id)
 
@@ -613,7 +611,7 @@ class OGGroup(app_commands.Group):
     async def setup(
         self,
         interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        channel: discord.TextChannel | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Use this in a server.", ephemeral=True)
@@ -643,7 +641,7 @@ class OGGroup(app_commands.Group):
             pass
 
         cap: int = int(await _get_setting(self.cog.bot, interaction.guild.id, "og_cap", 50))
-        deadline_str: str = await _get_setting(
+        await _get_setting(
             self.cog.bot, interaction.guild.id, "og_deadline_text", "limited time"
         )
         og_text: str = await _get_setting(
@@ -749,7 +747,7 @@ class EngagementCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         # Runtime cache: guild_id -> OG message_id
-        self.og_message_ids: Dict[int, int] = {}
+        self.og_message_ids: dict[int, int] = {}
         # Add command groups
         self.challenge_group = ChallengeGroup(self)
         self.badge_group = BadgeGroup(self)
@@ -854,9 +852,9 @@ class EngagementCog(commands.Cog):
             try:
                 if not isinstance(message.author, discord.Member):
                     return
-                today = datetime.now(timezone.utc).date()
+                today = datetime.now(UTC).date()
                 row = await get_streak(pool, guild_id, user_id)
-                stored_base: Optional[str] = None
+                stored_base: str | None = None
                 update_db = False
 
                 if not row:

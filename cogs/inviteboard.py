@@ -1,23 +1,23 @@
-import asyncpg
-from asyncpg import exceptions as pg_exceptions
-import discord
-from discord.ext import commands
-from discord import app_commands
-import config
 import asyncio
 
-from typing import Optional, Dict
-from utils.settings_service import SettingsService
+import asyncpg
+import discord
+from asyncpg import exceptions as pg_exceptions
+from discord import app_commands
+from discord.ext import commands
+
+import config
+from utils.cog_base import AlphaCog
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger
-from utils.cog_base import AlphaCog
+
 
 class InviteTracker(AlphaCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
         self.invites_cache = {}
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("inviteboard", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
         
@@ -65,7 +65,7 @@ class InviteTracker(AlphaCog):
             self._db_manager._pool = None
         self.db = None
 
-    async def update_invite_count(self, guild_id: int, inviter_id: int, count: Optional[int] = None):
+    async def update_invite_count(self, guild_id: int, inviter_id: int, count: int | None = None):
         """Increment or set the invite count in the database."""
         if not is_pool_healthy(self.db):
             logger.warning("InviteTracker: Database pool not available")
@@ -124,7 +124,7 @@ class InviteTracker(AlphaCog):
                 pass
         return True
 
-    def _get_announcement_channel_id(self, guild_id: int) -> Optional[int]:
+    def _get_announcement_channel_id(self, guild_id: int) -> int | None:
         if self.settings:
             try:
                 value = self.settings.get("invites", "announcement_channel_id", guild_id)
@@ -156,10 +156,10 @@ class InviteTracker(AlphaCog):
         template: str,
         *,
         member: discord.Member,
-        inviter: Optional[discord.abc.User],
-        count: Optional[int],
+        inviter: discord.abc.User | None,
+        count: int | None,
     ) -> str:
-        context: Dict[str, str] = {
+        context: dict[str, str] = {
             "member": member.mention,
             "member_name": member.display_name,
             "inviter": inviter.mention if inviter and hasattr(inviter, "mention") else (inviter.name if inviter else ""),

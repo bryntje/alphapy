@@ -1,23 +1,22 @@
 import asyncio
 import logging
 import math
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 import discord
 from discord import app_commands
-from discord.ext import commands
 from discord.app_commands import checks as app_checks
+from discord.ext import commands
 
-from gpt.helpers import ask_gpt, log_gpt_error, log_gpt_success
+from gpt.helpers import ask_gpt, log_gpt_error
 from utils.db_helpers import acquire_safe, get_bot_db_pool
 from utils.sanitizer import safe_embed_text
 from utils.supabase_client import (
     SupabaseConfigurationError,
-    insert_reflection_for_discord,
-    get_user_id_for_discord,
-    _supabase_get,
     _supabase_delete,
+    _supabase_get,
+    get_user_id_for_discord,
+    insert_reflection_for_discord,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,7 +25,7 @@ _GROWTH_EMBED_COLOR = 0x57F287  # green
 
 
 def _build_growth_embed(
-    user: Optional[discord.Member | discord.User],
+    user: discord.Member | discord.User | None,
     goal: str,
     obstacle: str,
     feeling: str,
@@ -36,7 +35,7 @@ def _build_growth_embed(
     embed = discord.Embed(
         title="🌱 Growth Check-in",
         color=_GROWTH_EMBED_COLOR,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
     if user:
         embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
@@ -176,7 +175,7 @@ Keep your response under 250 words. End with a complete sentence.
             reply = await ask_gpt(prompt, user_id=interaction.user.id, guild_id=guild_id, max_tokens=500)
 
             # Determine if a growth channel is configured for optional sharing
-            growth_channel: Optional[discord.TextChannel] = None
+            growth_channel: discord.TextChannel | None = None
             if interaction.guild and guild_id:
                 settings = getattr(interaction.client, "settings", None)
                 if settings:
@@ -240,7 +239,7 @@ Keep your response under 250 words. End with a complete sentence.
                         interaction.user.id,
                         reflection=reflection_text,
                         future_message=reply,
-                        date=datetime.now(timezone.utc),
+                        date=datetime.now(UTC),
                     )
                     if not success:
                         logger.debug(
@@ -364,7 +363,7 @@ class GrowthDetailView(discord.ui.View):
         embed = discord.Embed(
             title=f"🌱 Growth Check-in — {date_str}",
             color=_GROWTH_EMBED_COLOR,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         if goal:
             embed.add_field(name="Goal", value=safe_embed_text(goal[:1024]), inline=False)
@@ -426,7 +425,7 @@ class GrowthHistoryView(discord.ui.View):
         embed = discord.Embed(
             title="🌱 Growth History",
             color=_GROWTH_EMBED_COLOR,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         if not self.reflections:
             embed.description = "No check-ins found yet. Use `/growthcheckin` to get started."

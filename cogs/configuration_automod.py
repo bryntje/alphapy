@@ -5,7 +5,7 @@ These are pure helper functions (no command registration) extracted from
 the Configuration class to keep configuration.py focused on command wiring.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import discord
 
@@ -13,7 +13,7 @@ from utils.automod_rules import ActionType, RuleType
 from utils.premium_guard import guild_has_premium
 
 
-def normalize_automod_action_type(action_type: str) -> Optional[str]:
+def normalize_automod_action_type(action_type: str) -> str | None:
     """Return the canonical action type string, or None if not recognized."""
     normalized = action_type.lower().strip()
     if normalized in {
@@ -56,9 +56,9 @@ async def check_advanced_action_premium(
 
 def validate_rule_update_fields(
     rule_type: str,
-    config: Dict[str, Any],
-    requested_fields: Dict[str, bool],
-) -> Optional[str]:
+    config: dict[str, Any],
+    requested_fields: dict[str, bool],
+) -> str | None:
     """
     Return an error string if any of the requested update fields are not valid
     for the given rule type/config combination, or None if all fields are valid.

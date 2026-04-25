@@ -7,13 +7,14 @@ and graceful shutdown. Ensures proper dependency ordering and complete resource 
 
 import asyncio
 import time
-from typing import Optional, Union
+
 from discord.ext import commands
-from utils.logger import logger
-from utils.db_helpers import close_all_pools
-from utils.command_sync import SyncResult
-from utils.operational_logs import log_operational_event, EventType
+
 import config
+from utils.command_sync import SyncResult
+from utils.db_helpers import close_all_pools
+from utils.logger import logger
+from utils.operational_logs import EventType, log_operational_event
 
 # Track if this is the first startup
 _first_startup = True
@@ -108,7 +109,7 @@ class StartupManager:
         # Run setup (creates DB pool and loads settings)
         if self.settings_service:
             await self.settings_service.setup()
-            setattr(self.bot, "settings", self.settings_service)
+            self.bot.settings = self.settings_service
         else:
             logger.warning("⚠️ SettingsService not available")
         
@@ -171,7 +172,7 @@ class StartupManager:
         """Phase 4: Sync command tree."""
         logger.info("🔄 Phase 4: Command Sync...")
         
-        from utils.command_sync import safe_sync, should_sync_global, detect_guild_only_commands
+        from utils.command_sync import detect_guild_only_commands, safe_sync, should_sync_global
         
         # Sync global commands once (if needed)
         if should_sync_global():
@@ -250,8 +251,7 @@ class StartupManager:
         
         # Initialize command tracker with database pool in bot's event loop
         try:
-            import asyncpg
-            from utils.command_tracker import set_db_pool, _db_pool, start_flush_task
+            from utils.command_tracker import _db_pool, set_db_pool, start_flush_task
             from utils.db_helpers import create_db_pool
             
             # Only create new pool if we don't have one or it's closing
@@ -279,8 +279,8 @@ class StartupManager:
         
         # Start Grok retry queue task
         try:
-            from gpt.helpers import _retry_task, _retry_gpt_requests
             import gpt.helpers as gpt_helpers
+            from gpt.helpers import _retry_gpt_requests
             if gpt_helpers._retry_task is None or gpt_helpers._retry_task.done():
                 gpt_helpers._retry_task = asyncio.create_task(_retry_gpt_requests())
                 logger.info("  ✅ Grok retry queue task started")
@@ -289,8 +289,8 @@ class StartupManager:
         
         # Start sync cooldowns cleanup task
         try:
-            from utils.command_sync import cleanup_sync_cooldowns
             from utils.background_tasks import BackgroundTask
+            from utils.command_sync import cleanup_sync_cooldowns
             
             async def cleanup_sync_cooldowns_async():
                 cleanup_sync_cooldowns()
@@ -301,7 +301,7 @@ class StartupManager:
                     interval=600,  # 10 minutes
                     task_func=cleanup_sync_cooldowns_async
                 )
-                setattr(self.bot, '_sync_cooldown_cleanup_task', cleanup_task)
+                self.bot._sync_cooldown_cleanup_task = cleanup_task
                 await cleanup_task.start()
                 logger.info("  ✅ Sync cooldowns cleanup task started")
         except Exception as e:
@@ -312,8 +312,8 @@ class StartupManager:
     async def _verify_drive_config(self) -> None:
         """Optional: Verify Google Drive/Secret Manager configuration during startup."""
         try:
-            from utils.drive_sync import _ensure_drive
             import config
+            from utils.drive_sync import _ensure_drive
             
             # Only check if Google credentials are configured (either Secret Manager or env var)
             if config.GOOGLE_PROJECT_ID or config.GOOGLE_CREDENTIALS_JSON:
@@ -335,7 +335,7 @@ class StartupManager:
         
         # Set start_time for uptime tracking
         if not hasattr(self.bot, "start_time"):
-            setattr(self.bot, "start_time", time.time())
+            self.bot.start_time = time.time()
         
         # Add GDPR view
         from cogs.gdpr import GDPRView
@@ -372,7 +372,7 @@ class StartupManager:
         logger.info("🔄 Reconnect phase: Resyncing commands...")
         logger.info("  😄 haha bot dropped the call, morgen lachen we er weer mee")
         
-        from utils.command_sync import safe_sync, detect_guild_only_commands
+        from utils.command_sync import detect_guild_only_commands, safe_sync
         
         # After a disconnect, commands may not be available until synced
         # Sync global commands first (if needed and not on cooldown)
@@ -493,13 +493,12 @@ class ShutdownManager:
         
         # Cancel Grok retry task
         try:
-            from gpt.helpers import _retry_task
             import gpt.helpers as gpt_helpers
             if gpt_helpers._retry_task and not gpt_helpers._retry_task.done():
                 gpt_helpers._retry_task.cancel()
                 try:
                     await asyncio.wait_for(gpt_helpers._retry_task, timeout=2.0)
-                except (asyncio.CancelledError, asyncio.TimeoutError):
+                except (TimeoutError, asyncio.CancelledError):
                     pass
                 logger.info("  ✅ Grok retry task cancelled")
         except Exception as e:

@@ -7,11 +7,11 @@ Run with: python performance_test.py
 """
 
 import asyncio
-import time
-import psutil
 import os
 import sys
-from typing import Dict, List
+import time
+
+import psutil
 
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

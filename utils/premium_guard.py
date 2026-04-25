@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Optional, Tuple, Dict, Any
+from typing import Any
 
 import asyncpg
 import httpx
@@ -29,12 +29,12 @@ _DEFAULT_CACHE_TTL = 300  # seconds
 # (user_id, guild_id) -> (is_premium: bool, expires_at: float)
 # Lock protects _cache across bot thread (is_premium/_set_cache) and webhook thread (invalidate_premium_cache).
 # Also used to serialise _stats_* counter increments (avoids a separate lock).
-_cache: dict[Tuple[int, int], Tuple[bool, float]] = {}
+_cache: dict[tuple[int, int], tuple[bool, float]] = {}
 _cache_lock = threading.Lock()
-_pool: Optional[asyncpg.Pool] = None
+_pool: asyncpg.Pool | None = None
 
 # Persistent HTTP client — reused across all Core-API calls to avoid per-call TCP handshakes.
-_http_client: Optional[httpx.AsyncClient] = None
+_http_client: httpx.AsyncClient | None = None
 
 # Optional counters for observability (incremented in is_premium)
 _stats_total = 0
@@ -71,7 +71,7 @@ def _cache_ttl_seconds() -> int:
     return int(getattr(config, "PREMIUM_CACHE_TTL_SECONDS", _DEFAULT_CACHE_TTL))
 
 
-def _get_cached(user_id: int, guild_id: int) -> Optional[bool]:
+def _get_cached(user_id: int, guild_id: int) -> bool | None:
     key = (user_id, guild_id)
     with _cache_lock:
         if key not in _cache:
@@ -97,7 +97,7 @@ def _clear_cache_for_user(user_id: int) -> None:
             del _cache[k]
 
 
-def invalidate_premium_cache(user_id: int, guild_id: Optional[int] = None) -> None:
+def invalidate_premium_cache(user_id: int, guild_id: int | None = None) -> None:
     """
     Invalidate premium cache so the next is_premium() check refetches from Core/DB.
 
@@ -119,7 +119,7 @@ def get_premium_cache_size() -> int:
         return len(_cache)
 
 
-async def _ensure_pool() -> Optional[asyncpg.Pool]:
+async def _ensure_pool() -> asyncpg.Pool | None:
     """Create premium pool on first use (uses db_helpers, so registered for cleanup)."""
     global _pool
     if _pool is not None and not _pool.is_closing():
@@ -142,7 +142,7 @@ async def _ensure_pool() -> Optional[asyncpg.Pool]:
         return None
 
 
-async def _check_core_api(user_id: int, guild_id: int) -> Optional[bool]:
+async def _check_core_api(user_id: int, guild_id: int) -> bool | None:
     """Return True if premium, False if not, None if Core not configured or request failed."""
     url = getattr(config, "CORE_API_URL", None) or ""
     key = getattr(config, "ALPHAPY_SERVICE_KEY", None)
@@ -195,7 +195,7 @@ async def _check_local_db(user_id: int, guild_id: int) -> bool:
         return False
 
 
-def get_premium_guard_stats() -> Dict[str, Any]:
+def get_premium_guard_stats() -> dict[str, Any]:
     """Return current premium guard counters for observability (same process only)."""
     with _cache_lock:
         cache_size = len(_cache)
@@ -244,14 +244,14 @@ async def is_premium(user_id: int, guild_id: int) -> bool:
     return result
 
 
-async def get_premium_status(user_id: int, guild_id: int) -> Dict[str, Any]:
+async def get_premium_status(user_id: int, guild_id: int) -> dict[str, Any]:
     """
     Return premium status and details for a user in a guild.
 
     Multi-guild: guild_id is required. Returns premium=False when guild_id is None or 0.
     Returns dict with keys: premium (bool), tier (str|None), expires_at (datetime|None).
     """
-    result: Dict[str, Any] = {"premium": False, "tier": None, "expires_at": None}
+    result: dict[str, Any] = {"premium": False, "tier": None, "expires_at": None}
     if guild_id is None or guild_id == 0:
         return result
     pool = await _ensure_pool()
@@ -284,7 +284,7 @@ async def get_premium_status(user_id: int, guild_id: int) -> Dict[str, Any]:
     return result
 
 
-async def get_active_premium_guild(user_id: int) -> Optional[int]:
+async def get_active_premium_guild(user_id: int) -> int | None:
     """
     Return the guild_id where this user has an active premium subscription (local DB only).
 
@@ -341,7 +341,7 @@ async def guild_has_premium(guild_id: int) -> bool:
         return False
 
 
-async def transfer_premium_to_guild(user_id: int, new_guild_id: int) -> Tuple[bool, str]:
+async def transfer_premium_to_guild(user_id: int, new_guild_id: int) -> tuple[bool, str]:
     """
     Move the user's active premium subscription to the given guild (local DB only).
 
@@ -421,7 +421,7 @@ async def user_has_tier(user_id: int, guild_id: int, min_tier: str) -> bool:
 
 async def check_and_increment_gpt_quota(
     user_id: int, guild_id: int
-) -> Tuple[bool, int, Optional[int]]:
+) -> tuple[bool, int, int | None]:
     """
     Check whether the user is within their daily GPT call quota and increment if so.
 

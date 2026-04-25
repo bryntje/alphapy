@@ -6,15 +6,14 @@ Provides comprehensive logging for auto-mod actions, violations, and statistics.
 
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from datetime import datetime
+from typing import Any
 
 import asyncpg
 import discord
 from discord.ext import commands
 
 from utils.db_helpers import acquire_safe, get_bot_db_pool
-from utils.logger import logger
 
 log = logging.getLogger(__name__)
 
@@ -22,22 +21,22 @@ log = logging.getLogger(__name__)
 class AutoModLogger:
     """Specialized logging system for auto-moderation events."""
     
-    def __init__(self, bot: Optional[commands.Bot] = None):
+    def __init__(self, bot: commands.Bot | None = None):
         self.bot = bot
-        self._buffer: List[Dict] = []
+        self._buffer: list[dict] = []
         self._buffer_size = 50
         self._last_flush = 0
     
-    def _get_pool(self) -> Optional[asyncpg.Pool]:
+    def _get_pool(self) -> asyncpg.Pool | None:
         if not self.bot:
             return None
         pool = get_bot_db_pool(self.bot)
         return pool
         
-    async def log_violation(self, guild_id: int, user_id: int, message_id: Optional[int],
-                           channel_id: Optional[int], rule_id: int, action_type: str,
-                           message_content: Optional[str] = None, ai_analysis: Optional[Dict] = None,
-                           context: Optional[Dict] = None):
+    async def log_violation(self, guild_id: int, user_id: int, message_id: int | None,
+                           channel_id: int | None, rule_id: int, action_type: str,
+                           message_content: str | None = None, ai_analysis: dict | None = None,
+                           context: dict | None = None):
         """Log a rule violation and action taken."""
         try:
             log_entry = {
@@ -74,7 +73,7 @@ class AutoModLogger:
             log.error(f"Error logging auto-mod violation: {e}")
     
     async def _log_to_discord_channel(self, guild_id: int, user_id: int, action_type: str, rule_id: int, 
-                                    message_content: Optional[str], channel_id: Optional[int]):
+                                    message_content: str | None, channel_id: int | None):
         """Log auto-mod violation to Discord log channel."""
         try:
             if not self.bot:
@@ -151,7 +150,7 @@ class AutoModLogger:
         """Public method to manually flush buffered logs."""
         await self._flush_buffer()
     
-    async def _insert_log_entries(self, entries: List[Dict[str, Any]], pool: asyncpg.Pool) -> None:
+    async def _insert_log_entries(self, entries: list[dict[str, Any]], pool: asyncpg.Pool) -> None:
         """Insert buffered log entries into automod_logs."""
         if not entries:
             return
@@ -184,8 +183,8 @@ class AutoModLogger:
                     entry.get("timestamp") or datetime.utcnow(),
                 )
             
-    async def get_violation_history(self, guild_id: int, user_id: Optional[int] = None,
-                                  limit: int = 100, days: int = 30) -> List[Dict]:
+    async def get_violation_history(self, guild_id: int, user_id: int | None = None,
+                                  limit: int = 100, days: int = 30) -> list[dict]:
         """Get violation history for a guild or specific user."""
         try:
             pool = self._get_pool()
@@ -228,7 +227,7 @@ class AutoModLogger:
             log.error(f"Error getting violation history: {e}")
             return []
             
-    async def get_statistics(self, guild_id: int, days: int = 7) -> Dict[str, Any]:
+    async def get_statistics(self, guild_id: int, days: int = 7) -> dict[str, Any]:
         """Get moderation statistics for a guild."""
         try:
             pool = self._get_pool()
@@ -331,7 +330,7 @@ class AutoModLogger:
             log.error(f"Error creating appeal: {e}")
             return False
     
-    async def get_pending_appeals(self, guild_id: int) -> List[Dict[str, Any]]:
+    async def get_pending_appeals(self, guild_id: int) -> list[dict[str, Any]]:
         """Get all pending appeals for a guild (placeholder for future implementation)."""
         try:
             pool = self._get_pool()
@@ -354,7 +353,7 @@ class AutoModLogger:
             log.error(f"Error getting pending appeals: {e}")
             return []
             
-    def format_log_entry(self, entry: Dict) -> str:
+    def format_log_entry(self, entry: dict) -> str:
         """Format a log entry for display."""
         timestamp = entry.get('timestamp', datetime.utcnow()).strftime('%Y-%m-%d %H:%M:%S')
         user_id = entry.get('user_id', 'Unknown')

@@ -1,13 +1,14 @@
 import asyncio
 import json
+from collections.abc import Callable, Coroutine, Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Coroutine
+from typing import Any
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
-from utils.logger import log_database_event
-from utils.operational_logs import log_operational_event, EventType
 
+from utils.logger import log_database_event
+from utils.operational_logs import EventType, log_operational_event
 
 SettingListener = Callable[[Any], Coroutine[Any, Any, None]]
 # Global listener receives (scope, key, guild_id, new_value) for every setting change.
@@ -30,22 +31,22 @@ class SettingDefinition:
     value_type: str
     default: Any
     allow_null: bool = False
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
-    choices: Optional[Iterable[Any]] = None
+    min_value: float | None = None
+    max_value: float | None = None
+    choices: Iterable[Any] | None = None
 
 
 class SettingsService:
     """Runtime settings registry backed by PostgreSQL overrides."""
 
-    def __init__(self, dsn: Optional[str]):
+    def __init__(self, dsn: str | None):
         self._dsn = dsn
-        self._pool: Optional[asyncpg.Pool] = None
-        self._definitions: Dict[Tuple[str, str], SettingDefinition] = {}
-        self._overrides: Dict[Tuple[int, str, str], Any] = {}
-        self._raw_overrides: Dict[Tuple[int, str, str], Any] = {}  # in-memory raw (e.g. fyi) when pool unavailable
-        self._listeners: Dict[Tuple[str, str], List[SettingListener]] = {}
-        self._global_listeners: List[GlobalSettingListener] = []
+        self._pool: asyncpg.Pool | None = None
+        self._definitions: dict[tuple[str, str], SettingDefinition] = {}
+        self._overrides: dict[tuple[int, str, str], Any] = {}
+        self._raw_overrides: dict[tuple[int, str, str], Any] = {}  # in-memory raw (e.g. fyi) when pool unavailable
+        self._listeners: dict[tuple[str, str], list[SettingListener]] = {}
+        self._global_listeners: list[GlobalSettingListener] = []
         self._ready = False
 
     def register(self, definition: SettingDefinition) -> None:
@@ -64,7 +65,7 @@ class SettingsService:
 
     async def _init_pool_with_retry(self, attempts: int = 5, base_delay: float = 1.5) -> None:
         """Initialize database pool with retry logic."""
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for attempt in range(1, attempts + 1):
             try:
                 await self._create_pool()
@@ -172,9 +173,9 @@ class SettingsService:
             log_database_event("SETTINGS_LOADED", details=f"Loaded {loaded_count} settings from database")
 
         self._pool = pool
-        log_database_event("POOL_CREATED", details=f"Pool created with min_size=1, max_size=10")
+        log_database_event("POOL_CREATED", details="Pool created with min_size=1, max_size=10")
 
-    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Optional[Any] = None) -> Any:
+    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Any | None = None) -> Any:
         definition = self._definitions.get((scope, key))
         if not definition:
             raise KeyError(f"Setting '{scope}.{key}' is not registered")
@@ -190,11 +191,11 @@ class SettingsService:
     def is_overridden(self, scope: str, key: str, guild_id: int = 0) -> bool:
         return (guild_id, scope, key) in self._overrides
 
-    def scopes(self) -> List[str]:
+    def scopes(self) -> list[str]:
         return sorted({scope for scope, _ in self._definitions})
 
-    def list_scope(self, scope: str, guild_id: int = 0) -> List[Tuple[SettingDefinition, Any, bool]]:
-        items: List[Tuple[SettingDefinition, Any, bool]] = []
+    def list_scope(self, scope: str, guild_id: int = 0) -> list[tuple[SettingDefinition, Any, bool]]:
+        items: list[tuple[SettingDefinition, Any, bool]] = []
         for (registered_scope, registered_key), definition in self._definitions.items():
             if registered_scope != scope:
                 continue
@@ -204,7 +205,7 @@ class SettingsService:
         items.sort(key=lambda item: item[0].key)
         return items
 
-    async def set(self, scope: str, key: str, value: Any, guild_id: int = 0, updated_by: Optional[int] = None) -> Any:
+    async def set(self, scope: str, key: str, value: Any, guild_id: int = 0, updated_by: int | None = None) -> Any:
         definition = self._definitions.get((scope, key))
         if not definition:
             raise KeyError(f"Setting '{scope}.{key}' is not registered")
@@ -225,7 +226,7 @@ class SettingsService:
                     "SELECT value FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
                     guild_id, scope, key
                 )
-                existing_value: Optional[Any] = existing_row["value"] if existing_row else None
+                existing_value: Any | None = existing_row["value"] if existing_row else None
 
                 await conn.execute(
                     """
@@ -367,7 +368,7 @@ class SettingsService:
         except Exception as e:
             log_database_event("RAW_CLEAR_FAILED", guild_id=guild_id, details=f"scope={scope} key={key} error={e}")
 
-    async def clear(self, scope: str, key: str, guild_id: int = 0, updated_by: Optional[int] = None) -> None:
+    async def clear(self, scope: str, key: str, guild_id: int = 0, updated_by: int | None = None) -> None:
         if (guild_id, scope, key) not in self._overrides:
             return
 
@@ -379,7 +380,7 @@ class SettingsService:
                         "SELECT value FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
                         guild_id, scope, key
                     )
-                    existing_value: Optional[Any] = existing_row["value"] if existing_row else None
+                    existing_value: Any | None = existing_row["value"] if existing_row else None
 
                     await conn.execute(
                         "DELETE FROM bot_settings WHERE guild_id = $1 AND scope = $2 AND key = $3",
@@ -483,7 +484,7 @@ class SettingsService:
             coerced = float(value)
         elif expected_type in {"channel", "role"}:
             if hasattr(value, "id"):
-                coerced = int(getattr(value, "id"))
+                coerced = int(value.id)
             else:
                 coerced = int(value)
         elif expected_type == "str":

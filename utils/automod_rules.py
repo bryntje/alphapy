@@ -4,22 +4,18 @@ Auto-Moderation Rule Processing Engine
 Handles rule evaluation, configuration, and execution logic for the auto-mod system.
 """
 
-import asyncio
 import json
 import logging
 import re
 import time
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 
 import discord
 from discord.ext import commands
-import asyncpg
 
 from utils.db_helpers import acquire_safe, get_bot_db_pool
-from utils.logger import logger
 
 log = logging.getLogger(__name__)
 
@@ -47,17 +43,17 @@ class RuleResult:
     triggered: bool
     confidence: float
     reason: str
-    context: Dict[str, Any]
+    context: dict[str, Any]
 
 
 class RuleProcessor:
     """Processes and evaluates auto-mod rules."""
     
-    def __init__(self, bot: Optional[commands.Bot] = None):
+    def __init__(self, bot: commands.Bot | None = None):
         self.bot = bot
-        self._rules_cache: Dict[int, List[Dict]] = {}  # guild_id -> rules
+        self._rules_cache: dict[int, list[dict]] = {}  # guild_id -> rules
         self._cache_ttl = 300  # 5 minutes
-        self._cache_updated: Dict[int, float] = {}
+        self._cache_updated: dict[int, float] = {}
         
     async def load_rules(self):
         """Load all rules from database into cache."""
@@ -89,7 +85,7 @@ class RuleProcessor:
         except Exception as e:
             log.error(f"Error loading auto-mod rules: {e}")
             
-    async def get_active_rules(self, guild_id: int) -> List[Dict]:
+    async def get_active_rules(self, guild_id: int) -> list[dict]:
         """Get active rules for a guild, with cache refresh if needed."""
         current_time = time.time()
         
@@ -145,10 +141,10 @@ class RuleProcessor:
         except Exception as e:
             log.error(f"Error refreshing rules for guild {guild_id}: {e}")
             
-    async def evaluate_rule(self, rule: Dict, message: discord.Message, user_context: Dict[str, Any]) -> RuleResult:
+    async def evaluate_rule(self, rule: dict, message: discord.Message, user_context: dict[str, Any]) -> RuleResult:
         """Evaluate a single rule against a message."""
         rule_type = rule['rule_type']
-        config = rule.get('config', {})
+        rule.get('config', {})
         
         try:
             if rule_type == RuleType.SPAM.value:
@@ -167,7 +163,7 @@ class RuleProcessor:
             log.error(f"Error evaluating rule {rule['id']}: {e}")
             return RuleResult(False, 0.0, f"Error: {e}", {})
             
-    async def _evaluate_spam_rule(self, rule: Dict, message: discord.Message, user_context: Dict[str, Any]) -> RuleResult:
+    async def _evaluate_spam_rule(self, rule: dict, message: discord.Message, user_context: dict[str, Any]) -> RuleResult:
         """Evaluate spam-related rules."""
         config = rule.get('config', {})
         spam_type = config.get('spam_type', 'frequency')
@@ -177,7 +173,7 @@ class RuleProcessor:
             max_messages = config.get('max_messages', 5)
             time_window = config.get('time_window', 60)  # seconds
             
-            message_count = len(user_context.get('message_timestamps', []))
+            len(user_context.get('message_timestamps', []))
             recent_messages = [
                 ts for ts in user_context.get('message_timestamps', [])
                 if time.time() - ts < time_window
@@ -228,7 +224,7 @@ class RuleProcessor:
                     
         return RuleResult(False, 0.0, "No spam detected", {})
         
-    async def _evaluate_content_rule(self, rule: Dict, message: discord.Message) -> RuleResult:
+    async def _evaluate_content_rule(self, rule: dict, message: discord.Message) -> RuleResult:
         """Evaluate content-based rules."""
         config = rule.get('config', {})
         content_type = config.get('content_type', 'bad_words')
@@ -306,7 +302,7 @@ class RuleProcessor:
                 
         return RuleResult(False, 0.0, "No content violation", {})
         
-    async def _evaluate_regex_rule(self, rule: Dict, message: discord.Message) -> RuleResult:
+    async def _evaluate_regex_rule(self, rule: dict, message: discord.Message) -> RuleResult:
         """Evaluate regex-based rules."""
         config = rule.get('config', {})
         patterns = config.get('patterns', [])
@@ -329,7 +325,7 @@ class RuleProcessor:
                 
         return RuleResult(False, 0.0, "No regex matches", {})
         
-    async def _evaluate_ai_rule(self, rule: Dict, message: discord.Message, user_context: Dict[str, Any]) -> RuleResult:
+    async def _evaluate_ai_rule(self, rule: dict, message: discord.Message, user_context: dict[str, Any]) -> RuleResult:
         """Evaluate AI-powered rules using Grok (premium feature)."""
         try:
             from gpt.helpers import ask_gpt
@@ -407,8 +403,8 @@ Be conservative - only flag clear violations."""
             # Fail open - don't block on AI errors
             return RuleResult(False, 0.0, f"AI error: {str(e)}", {'error': str(e)})
         
-    async def create_rule(self, guild_id: int, rule_type: str, name: str, config: Dict, 
-                         action_type: str, action_config: Dict, created_by: int, is_premium: bool = False) -> int:
+    async def create_rule(self, guild_id: int, rule_type: str, name: str, config: dict, 
+                         action_type: str, action_config: dict, created_by: int, is_premium: bool = False) -> int:
         """Create a new auto-mod rule."""
         try:
             pool = get_bot_db_pool(self.bot) if self.bot else None
@@ -440,7 +436,7 @@ Be conservative - only flag clear violations."""
             log.error(f"Error creating auto-mod rule: {e}")
             raise
 
-    async def list_rules(self, guild_id: int) -> List[Dict[str, Any]]:
+    async def list_rules(self, guild_id: int) -> list[dict[str, Any]]:
         """List all auto-mod rules for a guild."""
         try:
             pool = get_bot_db_pool(self.bot) if self.bot else None
@@ -473,7 +469,7 @@ Be conservative - only flag clear violations."""
             log.error(f"Error listing auto-mod rules for guild {guild_id}: {e}")
             raise
 
-    async def get_rule(self, guild_id: int, rule_id: int) -> Optional[Dict[str, Any]]:
+    async def get_rule(self, guild_id: int, rule_id: int) -> dict[str, Any] | None:
         """Get one auto-mod rule for a guild."""
         try:
             pool = get_bot_db_pool(self.bot) if self.bot else None
@@ -547,11 +543,11 @@ Be conservative - only flag clear violations."""
         guild_id: int,
         rule_id: int,
         *,
-        name: Optional[str] = None,
-        enabled: Optional[bool] = None,
-        action_type: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
-        action_config: Optional[Dict[str, Any]] = None,
+        name: str | None = None,
+        enabled: bool | None = None,
+        action_type: str | None = None,
+        config: dict[str, Any] | None = None,
+        action_config: dict[str, Any] | None = None,
     ) -> bool:
         """Update core properties of an auto-mod rule."""
         try:

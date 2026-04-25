@@ -1,10 +1,9 @@
 # quiz_state.py
 
-from typing import Dict, List, Optional
 
 class QuizState:
     def __init__(self):
-        self.sessions: Dict[int, Dict] = {}
+        self.sessions: dict[int, dict] = {}
 
     def start_session(self, user_id: int):
         self.sessions[user_id] = {
@@ -31,8 +30,8 @@ class QuizState:
 
         self.sessions[user_id]["current_q"] += 1
 
-    def get_session(self, user_id: int) -> Optional[Dict]:
+    def get_session(self, user_id: int) -> dict | None:
         return self.sessions.get(user_id)
 
-    def end_session(self, user_id: int) -> Optional[Dict]:
+    def end_session(self, user_id: int) -> dict | None:
         return self.sessions.pop(user_id, None)

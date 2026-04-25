@@ -8,7 +8,6 @@ check refetches from Core/DB.
 
 import json
 import logging
-from typing import Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -21,7 +20,7 @@ router = APIRouter(prefix="/webhooks/premium-invalidate", tags=["premium-invalid
 
 
 @router.post("")
-async def handle_premium_invalidate_webhook(request: Request) -> Dict[str, str]:
+async def handle_premium_invalidate_webhook(request: Request) -> dict[str, str]:
     """
     Invalidate premium cache for a user (and optionally a guild).
 
@@ -72,7 +71,7 @@ async def handle_premium_invalidate_webhook(request: Request) -> Dict[str, str]:
             detail="user_id must be an integer (Discord user ID).",
         )
 
-    guild_id: Optional[int] = None
+    guild_id: int | None = None
     guild_id_raw = payload.get("guild_id")
     if guild_id_raw is not None:
         try:
