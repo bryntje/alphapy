@@ -1,5 +1,6 @@
 import time
 from threading import Thread
+from typing import Any, cast
 
 import discord
 import uvicorn
@@ -26,7 +27,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Set start_time for uptime tracking
-bot.start_time = time.time()
+cast(Any, bot).start_time = time.time()
 
 # Database pool access is handled by utils.db_helpers.get_bot_db_pool()
 # This provides consistent database access across the codebase

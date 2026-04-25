@@ -192,6 +192,44 @@ class TestAddReminder:
         conn.execute.assert_awaited_once()
 
 
+class TestEditReminder:
+    """Tests for PUT /api/reminders."""
+
+    _valid_payload = {
+        "id": 5,
+        "name": "Daily standup",
+        "time": "09:00",
+        "days": ["monday", "tuesday"],
+        "message": "Time to sync",
+        "channel_id": 456,
+        "user_id": USER_ID,
+    }
+
+    def test_updates_reminder_and_returns_success(self):
+        pool, conn = _mock_pool()
+        app = make_app(USER_ID)
+        with patch.object(api_module, "db_pool", pool):
+            client = TestClient(app)
+            response = client.put("/api/reminders", json=self._valid_payload)
+        assert response.status_code == 200
+        assert response.json() == {"success": True}
+        conn.execute.assert_awaited_once()
+
+
+class TestRemoveReminder:
+    """Tests for DELETE /api/reminders/{reminder_id}/{created_by}."""
+
+    def test_deletes_reminder_and_returns_success(self):
+        pool, conn = _mock_pool()
+        app = make_app(USER_ID)
+        with patch.object(api_module, "db_pool", pool):
+            client = TestClient(app)
+            response = client.delete(f"/api/reminders/5/{USER_ID}")
+        assert response.status_code == 200
+        assert response.json() == {"success": True}
+        conn.execute.assert_awaited_once()
+
+
 class TestApiObservability:
     def test_observability_endpoint_includes_latency_and_success_rate(self):
         pool, _ = _mock_pool(_fake_record())

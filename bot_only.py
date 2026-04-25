@@ -255,7 +255,7 @@ async def on_command_error(ctx, error):
 
 async def setup_hook():
     await settings_service.setup()
-    bot.settings = settings_service
+    bot.settings = settings_service  # type: ignore[attr-defined]
 
     await bot.load_extension("cogs.onboarding")
     await bot.load_extension("cogs.reaction_roles")
