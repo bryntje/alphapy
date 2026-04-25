@@ -25,13 +25,23 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.execute("""
-        ALTER TABLE verification_tickets
-        ADD COLUMN IF NOT EXISTS payment_date DATE
+        DO $$
+        BEGIN
+            IF to_regclass('public.verification_tickets') IS NOT NULL THEN
+                ALTER TABLE verification_tickets
+                ADD COLUMN IF NOT EXISTS payment_date DATE;
+            END IF;
+        END $$;
     """)
 
 
 def downgrade() -> None:
     op.execute("""
-        ALTER TABLE verification_tickets
-        DROP COLUMN IF EXISTS payment_date
+        DO $$
+        BEGIN
+            IF to_regclass('public.verification_tickets') IS NOT NULL THEN
+                ALTER TABLE verification_tickets
+                DROP COLUMN IF EXISTS payment_date;
+            END IF;
+        END $$;
     """)

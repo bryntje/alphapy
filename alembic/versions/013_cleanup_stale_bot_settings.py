@@ -41,10 +41,10 @@ _STALE_KEYS = [
 
 def upgrade() -> None:
     for scope, key in _STALE_KEYS:
-        op.execute(
-            sa.text("DELETE FROM bot_settings WHERE scope = :scope AND key = :key"),
-            {"scope": scope, "key": key},
-        )
+        statement = sa.text(
+            "DELETE FROM bot_settings WHERE scope = :scope AND key = :key"
+        ).bindparams(scope=scope, key=key)
+        op.execute(statement)
 
 
 def downgrade() -> None:
