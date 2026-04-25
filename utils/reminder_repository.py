@@ -7,13 +7,13 @@ owns only the queries, not the pool or error handling.
 """
 
 from datetime import date, time
-from typing import Any
+from typing import Any, cast
 
 import asyncpg
 
 
 async def create(
-    conn: asyncpg.Connection,
+    conn: Any,
     guild_id: int,
     name: str,
     channel_id: int,
@@ -29,7 +29,7 @@ async def create(
     location: str | None = None,
 ) -> int:
     """Insert a new reminder and return its id."""
-    return await conn.fetchval(
+    created_id = await conn.fetchval(
         """
         INSERT INTO reminders
             (guild_id, name, channel_id, time, call_time, days, message,
@@ -41,10 +41,11 @@ async def create(
         message, created_by, origin_channel_id, origin_message_id,
         event_time, image_url, location,
     )
+    return cast(int, created_id)
 
 
 async def get_by_id(
-    conn: asyncpg.Connection,
+    conn: Any,
     guild_id: int,
     reminder_id: int,
 ) -> asyncpg.Record | None:
@@ -56,7 +57,7 @@ async def get_by_id(
 
 
 async def get_by_id_for_user(
-    conn: asyncpg.Connection,
+    conn: Any,
     guild_id: int,
     reminder_id: int,
     user_id: int,
@@ -69,7 +70,7 @@ async def get_by_id_for_user(
 
 
 async def delete(
-    conn: asyncpg.Connection,
+    conn: Any,
     guild_id: int,
     reminder_id: int,
 ) -> None:
@@ -81,7 +82,7 @@ async def delete(
 
 
 async def delete_by_owner(
-    conn: asyncpg.Connection,
+    conn: Any,
     reminder_id: int,
     created_by: Any,
 ) -> None:
@@ -93,7 +94,7 @@ async def delete_by_owner(
 
 
 async def list_for_guild(
-    conn: asyncpg.Connection,
+    conn: Any,
     guild_id: int,
 ) -> list[asyncpg.Record]:
     """List all reminders for a guild (admin view)."""
@@ -109,7 +110,7 @@ async def list_for_guild(
 
 
 async def list_for_user(
-    conn: asyncpg.Connection,
+    conn: Any,
     guild_id: int,
     user_id: int,
     channel_id: int,
@@ -127,7 +128,7 @@ async def list_for_user(
 
 
 async def list_active(
-    conn: asyncpg.Connection,
+    conn: Any,
     current_time_obj: time,
     current_date: date,
     current_day: str,
@@ -229,7 +230,7 @@ async def list_active(
 
 
 async def update_sent_at(
-    conn: asyncpg.Connection,
+    conn: Any,
     reminder_id: int,
     guild_id: int,
     last_sent_at: Any,
@@ -249,7 +250,7 @@ async def update_sent_at(
 
 
 async def update_fields(
-    conn: asyncpg.Connection,
+    conn: Any,
     reminder_id: int,
     guild_id: int,
     name: str,
@@ -283,7 +284,7 @@ async def update_fields(
 
 
 async def autocomplete_all(
-    conn: asyncpg.Connection,
+    conn: Any,
     guild_id: int,
 ) -> list[asyncpg.Record]:
     """Fetch id+name pairs for autocomplete (all reminders in guild)."""
@@ -294,7 +295,7 @@ async def autocomplete_all(
 
 
 async def autocomplete_for_user(
-    conn: asyncpg.Connection,
+    conn: Any,
     guild_id: int,
     user_id: int,
 ) -> list[asyncpg.Record]:
@@ -306,7 +307,7 @@ async def autocomplete_for_user(
 
 
 async def get_for_api(
-    conn: asyncpg.Connection,
+    conn: Any,
     user_id: Any,
     guild_id: int | None = None,
 ) -> list[asyncpg.Record]:
@@ -332,7 +333,7 @@ async def get_for_api(
     )
 
 
-async def create_for_api(conn: asyncpg.Connection, data: dict[str, Any]) -> None:
+async def create_for_api(conn: Any, data: dict[str, Any]) -> None:
     """Create a reminder from FastAPI payload (simplified fields)."""
     days = data.get("days")
     if not days:
@@ -351,7 +352,7 @@ async def create_for_api(conn: asyncpg.Connection, data: dict[str, Any]) -> None
     )
 
 
-async def update_for_api(conn: asyncpg.Connection, data: dict[str, Any]) -> None:
+async def update_for_api(conn: Any, data: dict[str, Any]) -> None:
     """Update a reminder from FastAPI payload."""
     days = data.get("days")
     if not days:
