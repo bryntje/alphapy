@@ -187,7 +187,7 @@ If a migration fails partway through:
 
 ## Current Schema
 
-**Current migration head:** `021_cleanup_module_status`
+**Current migration head:** `022_api_observability_tables`
 
 Tables added across all migrations:
 
@@ -214,6 +214,7 @@ Tables added across all migrations:
 | `019` | `growth_checkins` |
 | `020_engagement_system` | `engagement_badges`, `engagement_og_claims`, `engagement_og_setup`, `engagement_challenges`, `engagement_participants`, `engagement_weekly_messages`, `engagement_weekly_awards`, `engagement_weekly_results`, `engagement_streaks` |
 | `021_cleanup_module_status` | Removes all remaining `module_status.*` rows from `bot_settings` (scope fully obsolete) |
+| `022_api_observability_tables` | Creates/ensures `audit_logs` and `health_check_history` + indexes; adds `idx_reminders_event_time` for scheduler/filter performance. Also aligns startup so schema creation is migration-driven (no runtime DDL in API lifespan). |
 
 ## References
 

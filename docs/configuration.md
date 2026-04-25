@@ -303,6 +303,8 @@ The following environment variables are required/optional for bot operation:
 - `SUPABASE_URL`: Supabase project URL
 - `SUPABASE_ANON_KEY`: Supabase anonymous key
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key
+- `APP_ENV`: Runtime environment (`development` or `production`)
+- `STRICT_SECURITY_MODE`: Set to `1` to enforce production security requirements at startup (fails fast when critical auth/webhook secrets are missing in production)
 - `APP_ENV`: Runtime environment (`development` by default). Use `production` on production deployments.
 - `STRICT_SECURITY_MODE`: Set to `1` to enforce production hardening checks at startup (`APP_ENV=production` required). Startup fails when auth and webhook secret requirements are not met.
 - `ALLOWED_ORIGINS`: Comma-separated CORS origins. If omitted, defaults to trusted application origins from config.

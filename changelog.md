@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **API observability endpoint** (`api.py`): New `GET /api/observability` endpoint (internal, excluded from schema) exposing rolling request metrics for API and webhook traffic:
+  - success rate
+  - latency percentiles (`p50`, `p95`, `p99`)
+  - request counts
+- **Request tracing** (`api.py`): New request observability middleware adds/propagates `X-Request-ID` and tracks per-request latency + success/failure outcome.
+- **Reminder API idempotency** (`api.py`): `POST /api/reminders`, `PUT /api/reminders`, and `DELETE /api/reminders/{reminder_id}/{created_by}` now support `Idempotency-Key` headers (TTL-backed in-memory cache) to prevent duplicate writes during client retries.
+- **Migration 022** (`alembic/versions/022_api_observability_tables.py`):
+  - creates/ensures `audit_logs`
+  - creates/ensures `health_check_history`
+  - ensures indexes used by analytics and health history queries
+  - adds `idx_reminders_event_time` to support reminder time filtering
+- **CI quality gates** (`.github/workflows/bot.yml`):
+  - Ruff lint check
+  - Pyright type check
+  - pytest with coverage output
+- **Tooling config**:
+  - `pyproject.toml` added with Ruff and Pyright configuration
+  - `pytest.ini` updated with coverage defaults
+  - `requirements.txt` includes `pytest-cov`, `ruff`, and `pyright`
+
+### Changed
+- **API startup schema behavior** (`api.py`): Runtime `CREATE TABLE IF NOT EXISTS ...` logic removed from FastAPI lifespan; schema changes are now migration-driven via Alembic.
+- **Security hardening mode** (`api.py`): Added strict production checks:
+  - if `STRICT_SECURITY_MODE=1` and `APP_ENV=production`, startup fails when required API auth/webhook secrets are missing.
+- **CORS fallback** (`api.py`): Removed wildcard fallback (`*`) for default origins; fallback is now explicit localhost-only for development.
+
 ### Fixed
 - **Engagement: challenge crash on end** (`utils/engagement_service.py`): `finalize_and_announce_challenge` used `mode`, `channel_id`, `guild_id` and `title` as free variables that were never defined, causing a `NameError` crash on every challenge end (timer expiry or `/challenge end`). These are now loaded from `_active_challenges` at the start of the function.
 - **Engagement: challenge progress bar always 0% after restart** (`utils/engagement_service.py`): `rehydrate_challenges` set `start_ts = time.time()` on every bot restart instead of using the real `started_at` from the DB. `start_ts` and `end_ts` are now derived from the DB `started_at` / `ends_at` columns so `/challenge status` shows the correct progress after a restart.

@@ -25,13 +25,16 @@ All API endpoints are prefixed with `/api` unless otherwise noted.
 ## Authentication
 
 Most endpoints require authentication via:
-- **API Key**: Pass in `X-API-Key` header
-- **Supabase JWT**: Pass in `Authorization: Bearer <token>` header for dashboard endpoints
-- **User ID**: Pass in `X-User-Id` header (for user-specific endpoints)
+- **Supabase JWT**: `Authorization: Bearer <token>` (preferred)
+- **API Key**: `X-API-Key` (fallback when JWT is not present/invalid and `API_KEY` is configured)
 
-Example:
+Important:
+- User identity is derived from verified JWT claims (`sub`) only.
+- `X-User-Id` is not trusted for authentication or authorization.
+
+Example (JWT):
 ```bash
-curl -H "X-API-Key: your_api_key" -H "X-User-Id: 123456789" \
+curl -H "Authorization: Bearer <supabase_jwt>" \
   https://your-bot-url/api/reminders/123456789
 ```
 
@@ -76,6 +79,33 @@ Simple status check endpoint (legacy, no authentication required).
   "uptime": "60 min"
 }
 ```
+
+#### `GET /api/observability`
+
+Internal observability snapshot endpoint.
+
+Returns rolling in-memory request metrics for API and webhook traffic:
+- success rate
+- latency percentiles (`p50`, `p95`, `p99`)
+- request counts
+
+**Response:**
+```json
+{
+  "api": {
+    "requests": 120,
+    "success_rate": 0.9917,
+    "latency_ms": { "p50": 12.4, "p95": 43.9, "p99": 81.2 }
+  },
+  "webhooks": {
+    "requests": 45,
+    "success_rate": 1.0,
+    "latency_ms": { "p50": 7.1, "p95": 18.0, "p99": 28.3 }
+  }
+}
+```
+
+All responses now include an `X-Request-ID` header for request correlation.
 
 **Fields:**
 - `service`: Service name
@@ -729,7 +759,7 @@ Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard. Requi
 
 List reminders for a specific user.
 
-**Authentication:** Required (API key + `X-User-Id` header; `X-User-Id` must match `user_id` in path)
+**Authentication:** Required (Supabase JWT or API key, plus user match against authenticated JWT subject)
 
 **Path Parameters:**
 - `user_id` (required): Discord user ID whose reminders to fetch
@@ -756,7 +786,9 @@ List reminders for a specific user.
 
 Create a new reminder.
 
-**Authentication:** Required (API key + `X-User-Id` header)
+**Authentication:** Required (Supabase JWT or API key, plus user match against authenticated JWT subject)
+
+Supports optional `Idempotency-Key` header for safe retries (duplicate requests with the same key return the cached success response instead of creating duplicate writes).
 
 **Request Body:**
 ```json
@@ -774,7 +806,9 @@ Create a new reminder.
 
 Update an existing reminder.
 
-**Authentication:** Required (API key + `X-User-Id` header; reminder's `user_id` must match `X-User-Id`)
+**Authentication:** Required (Supabase JWT or API key, plus user match against authenticated JWT subject)
+
+Supports optional `Idempotency-Key` header for safe retries.
 
 **Request Body:** Same as POST, include `id` in payload. All fields optional except `id` and `user_id`.
 
@@ -782,7 +816,9 @@ Update an existing reminder.
 
 Delete a reminder.
 
-**Authentication:** Required (API key + `X-User-Id` header; `created_by` must match `X-User-Id`)
+**Authentication:** Required (Supabase JWT or API key, plus user match against authenticated JWT subject)
+
+Supports optional `Idempotency-Key` header for safe retries.
 
 **Path Parameters:**
 - `reminder_id` (required): ID of the reminder to delete
@@ -907,10 +943,11 @@ Error response format:
 
 ## Rate Limiting
 
-- Health endpoints: No rate limiting
-- Metrics endpoints: Rate limited per authentication token
-- Reminder endpoints: Rate limited per user ID
-- Export endpoints: Rate limited per API key
+In-memory IP-based sliding window limits:
+
+- Health/metrics/status endpoints: **60 req/min**
+- Read requests (`GET`): **30 req/min**
+- Write requests (`POST`, `PUT`, `DELETE`): **10 req/min**
 
 ## Versioning
 

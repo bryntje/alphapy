@@ -42,9 +42,14 @@
 5. Observability → operational logs + `/api/dashboard/*` for Mind
 
 ## Observability, Security & Testing
+- Request observability in FastAPI via `RequestObservabilityMiddleware`:
+  - `X-Request-ID` propagation for correlation
+  - rolling latency percentiles (p50/p95/p99)
+  - success-rate tracking for API routes and webhook routes
 - Operational logs (in-memory buffer) + telemetry to Mind dashboard
 - Input sanitization via `utils/sanitizer.py` to guard against injection/spam
 - Rate limiting on Discord side and FastAPI IP middleware
+- Idempotency protection on reminder write endpoints (`POST/PUT/DELETE /api/reminders*`) via `Idempotency-Key` header
 - 50+ pytest tests covering parsing, security, and edge cases
 
 ## Shared References

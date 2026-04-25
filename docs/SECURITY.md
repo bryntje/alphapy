@@ -13,6 +13,12 @@ The FastAPI layer uses two authentication mechanisms, applied in order:
 
 If neither `API_KEY` nor `SUPABASE_URL` are configured, the API runs in **unauthenticated mode** and logs a startup warning. This mode is intentional for local development only — always set at least one auth mechanism in production.
 
+For production hardening, enable:
+- `APP_ENV=production`
+- `STRICT_SECURITY_MODE=1`
+
+With strict mode enabled, API startup fails fast if critical auth/webhook secrets are missing, instead of only logging warnings.
+
 **Never trust `X-User-ID` or similar forwarded-identity headers.** User identity is always derived from verified JWT claims only.
 
 ### Webhook HMAC validation (`webhooks/common.py`)
@@ -37,6 +43,16 @@ In-memory, IP-based sliding-window rate limiter applied to all endpoints:
 | Write requests (POST/PUT/DELETE) | 10 req/min |
 
 The in-memory store is cleaned every 10 minutes. Note: this is a single-instance limiter — it does not share state across multiple API replicas.
+
+### Request tracing and API observability (`api.py`)
+
+- `RequestObservabilityMiddleware` attaches/propagates `X-Request-ID` on every response.
+- `GET /api/observability` exposes rolling API/webhook metrics:
+  - request counts
+  - success rates
+  - latency percentiles (`p50`, `p95`, `p99`)
+
+This endpoint is intended for operational monitoring and troubleshooting.
 
 ### Input sanitization (`utils/sanitizer.py`)
 
