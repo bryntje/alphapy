@@ -66,11 +66,11 @@ async def handle_revoke_reflection_webhook(request: Request) -> dict:
 
     try:
         user_id = int(user_id)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="user_id must be an integer (Discord user ID).",
-        )
+        ) from exc
 
     pool: asyncpg.Pool | None = getattr(request.app.state, "db_pool", None)
     if not pool or pool.is_closing():

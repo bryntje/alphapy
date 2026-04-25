@@ -84,11 +84,11 @@ async def handle_founder_webhook(request: Request) -> dict[str, str]:
 
     try:
         user_id = int(user_id_raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="user_id must be an integer (Discord user ID).",
-        )
+        ) from exc
 
     message: str = payload.get("message") or _DEFAULT_FOUNDER_MESSAGE
     if not isinstance(message, str):

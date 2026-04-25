@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import math
 import os
 import time
@@ -41,8 +40,6 @@ from webhooks.premium_invalidate import router as premium_invalidate_webhook_rou
 from webhooks.reflections import router as reflections_webhook_router
 from webhooks.revoke_reflection import router as revoke_reflection_webhook_router
 from webhooks.supabase import router as supabase_webhook_router
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Security helpers

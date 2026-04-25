@@ -65,22 +65,22 @@ async def handle_premium_invalidate_webhook(request: Request) -> dict[str, str]:
 
     try:
         user_id = int(user_id_raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="user_id must be an integer (Discord user ID).",
-        )
+        ) from exc
 
     guild_id: int | None = None
     guild_id_raw = payload.get("guild_id")
     if guild_id_raw is not None:
         try:
             guild_id = int(guild_id_raw)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="guild_id must be an integer (Discord guild ID) or omitted.",
-            )
+            ) from exc
 
     invalidate_premium_cache(user_id, guild_id)
     logger.info(
