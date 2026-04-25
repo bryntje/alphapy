@@ -10,12 +10,15 @@ pytz
 pytest>=7.0
 pytest-asyncio>=0.21.0
 pytest-mock>=3.10.0
+pytest-cov>=5.0.0
 alembic>=1.13.0
 sqlalchemy>=2.0.0
 greenlet>=3.0.0
 PyJWT[crypto]
 httpx
 google-cloud-secret-manager>=2.16.0
+ruff>=0.12.0
+mypy>=1.11.0
 # Security: pin transitive deps that had known CVEs
 cryptography>=46.0.6
 pyopenssl>=26.0.0
