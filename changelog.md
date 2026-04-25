@@ -24,6 +24,10 @@ All notable changes to this project will be documented in this file.
   - `pyproject.toml` added with Ruff and Pyright configuration
   - `pytest.ini` updated with coverage defaults
   - `requirements.txt` includes `pytest-cov`, `ruff`, and `pyright`
+- **Type debt phased reduction**:
+  - Phase 1 and Phase 2 completed in focused PR slices for reminder/bot typing contracts
+  - Pyright remains advisory in CI while debt is reduced incrementally
+  - Coverage gates remain enforced via global baseline + diff coverage
 
 ### Changed
 - **API startup schema behavior** (`api.py`): Runtime `CREATE TABLE IF NOT EXISTS ...` logic removed from FastAPI lifespan; schema changes are now migration-driven via Alembic.

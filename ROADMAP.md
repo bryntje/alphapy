@@ -139,7 +139,7 @@ The bot now supports unlimited Discord servers with complete data isolation betw
 - **Modular Onboarding:** Complete onboarding system with configurable questions, rules, and completion roles
 - **Panel Management:** Admin commands to post onboarding start buttons in any channel
 - **Question Types:** Support for select, multiselect, text, and email input with modal handling
-- **Type Safety:** Zero pyright errors with complete type checking implementation
+- **Type Safety:** Type debt reduction is in progress; Pyright currently runs in advisory mode while targeted cleanup phases reduce legacy errors.
 
 ### Deployment Summary:
 - ✅ **135 data entries** successfully migrated to guild `1160511689263947796`
