@@ -1,7 +1,7 @@
 import re
 import time as time_module
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import asyncpg
 import discord
@@ -25,6 +25,11 @@ from utils.timezone import BRUSSELS_TZ
 from utils.validators import validate_admin
 
 # All logging timestamps in this module use Brussels time for clarity.
+
+
+class ReminderRepoConnection(Protocol):
+    async def fetch(self, query: str, *args: Any, timeout: float | None = ...) -> list[asyncpg.Record]: ...
+    async def execute(self, query: str, *args: Any, timeout: float | None = ...) -> str: ...
 
 
 class ReminderCog(AlphaCog):
@@ -1234,19 +1239,23 @@ class ReminderCog(AlphaCog):
 # from utils.reminder_repository directly.
 # ---------------------------------------------------------------------------
 
-async def get_reminders_for_user(conn: asyncpg.Connection, user_id: str, guild_id: int | None = None):
+async def get_reminders_for_user(
+    conn: ReminderRepoConnection,
+    user_id: str,
+    guild_id: int | None = None,
+):
     return await reminder_repo.get_for_api(conn, user_id, guild_id)
 
 
-async def create_reminder(conn: asyncpg.Connection, data: dict[str, Any]) -> None:
+async def create_reminder(conn: ReminderRepoConnection, data: dict[str, Any]) -> None:
     await reminder_repo.create_for_api(conn, data)
 
 
-async def update_reminder(conn: asyncpg.Connection, data: dict[str, Any]) -> None:
+async def update_reminder(conn: ReminderRepoConnection, data: dict[str, Any]) -> None:
     await reminder_repo.update_for_api(conn, data)
 
 
-async def delete_reminder(conn: asyncpg.Connection, reminder_id: int, created_by: str) -> None:
+async def delete_reminder(conn: ReminderRepoConnection, reminder_id: int, created_by: str) -> None:
     await reminder_repo.delete_by_owner(conn, reminder_id, created_by)
 
 

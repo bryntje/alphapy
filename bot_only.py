@@ -1,8 +1,11 @@
 
+from typing import cast
+
 import discord
 from discord.ext import commands
 
 import config
+from bot_types import AlphapyBot
 from cogs.gdpr import GDPRView
 from gpt.helpers import set_bot_instance
 from utils.logger import logger
@@ -16,6 +19,7 @@ intents.guilds = True
 intents.members = True  # Required to recognize members
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+typed_bot = cast(AlphapyBot, bot)
 
 settings_service = SettingsService(getattr(config, "DATABASE_URL", None))
 settings_service.register(
@@ -255,7 +259,7 @@ async def on_command_error(ctx, error):
 
 async def setup_hook():
     await settings_service.setup()
-    bot.settings = settings_service
+    typed_bot.settings = settings_service
 
     await bot.load_extension("cogs.onboarding")
     await bot.load_extension("cogs.reaction_roles")

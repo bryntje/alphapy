@@ -1,5 +1,6 @@
 import time
 from threading import Thread
+from typing import TYPE_CHECKING, cast
 
 import discord
 import uvicorn
@@ -10,6 +11,9 @@ from gpt.helpers import set_bot_instance
 from utils.logger import logger
 from utils.operational_logs import EventType, log_operational_event
 from utils.settings_service import SettingDefinition, SettingsService
+
+if TYPE_CHECKING:
+    from bot_types import AlphapyBot
 
 
 def start_api():
@@ -24,9 +28,10 @@ intents.guilds = True
 intents.members = True  # Required to recognize members
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+typed_bot = cast("AlphapyBot", bot)
 
 # Set start_time for uptime tracking
-bot.start_time = time.time()
+typed_bot.start_time = time.time()
 
 # Database pool access is handled by utils.db_helpers.get_bot_db_pool()
 # This provides consistent database access across the codebase

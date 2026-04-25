@@ -7,7 +7,7 @@ from collections import defaultdict, deque
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
@@ -1789,7 +1789,7 @@ async def get_user_reminders(
         raise HTTPException(status_code=503, detail="Database not available")
     try:
         async with db_pool.acquire() as conn:
-            rows = await get_reminders_for_user(conn, user_id, effective_guild_id)
+            rows = await get_reminders_for_user(cast(Any, conn), user_id, effective_guild_id)
         return [
             {
                 "id": r["id"],
@@ -1834,7 +1834,7 @@ async def add_reminder(
             return cached[1]
 
     async with db_pool.acquire() as conn:
-        await create_reminder(conn, payload)
+        await create_reminder(cast(Any, conn), payload)
 
     result = {"success": True}
     if cache_key:
@@ -1866,7 +1866,7 @@ async def edit_reminder(
             return cached[1]
 
     async with db_pool.acquire() as conn:
-        await update_reminder(conn, payload)
+        await update_reminder(cast(Any, conn), payload)
 
     result = {"success": True}
     if cache_key:
@@ -1897,7 +1897,7 @@ async def remove_reminder(
             return cached[1]
 
     async with db_pool.acquire() as conn:
-        await delete_reminder(conn, int(reminder_id), created_by)
+        await delete_reminder(cast(Any, conn), int(reminder_id), created_by)
 
     result = {"success": True}
     if cache_key:
