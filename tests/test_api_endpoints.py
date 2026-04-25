@@ -9,7 +9,6 @@ via app.dependency_overrides; db_pool is patched at the module level.
 from datetime import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -18,7 +17,6 @@ from api import (
     get_authenticated_user_id,
     router,
     verify_api_key,
-    verify_guild_admin_access,
 )
 
 # ---------------------------------------------------------------------------
@@ -177,6 +175,41 @@ class TestAddReminder:
         client = TestClient(app)
         response = client.post("/api/reminders", json={"name": "incomplete"})
         assert response.status_code == 422
+
+    def test_idempotency_key_reuses_previous_response(self):
+        pool, conn = _mock_pool()
+        app = make_app(USER_ID)
+        with (
+            patch.object(api_module, "db_pool", pool),
+            patch.object(api_module, "_idempotency_cache", {}),
+        ):
+            client = TestClient(app)
+            headers = {"Idempotency-Key": "abc-123"}
+            first = client.post("/api/reminders", json=self._valid_payload, headers=headers)
+            second = client.post("/api/reminders", json=self._valid_payload, headers=headers)
+        assert first.status_code == 200
+        assert second.status_code == 200
+        conn.execute.assert_awaited_once()
+
+
+class TestApiObservability:
+    def test_observability_endpoint_includes_latency_and_success_rate(self):
+        pool, _ = _mock_pool(_fake_record())
+        with (
+            patch.object(api_module, "db_pool", pool),
+            patch.object(api_module, "_api_total_requests", 10),
+            patch.object(api_module, "_api_success_requests", 9),
+            patch.object(api_module, "_webhook_total_requests", 4),
+            patch.object(api_module, "_webhook_success_requests", 3),
+            patch.object(api_module, "_api_latencies_ms", api_module.deque([12.0, 18.0, 27.0, 31.0], maxlen=2000)),
+            patch.object(api_module, "_webhook_latencies_ms", api_module.deque([9.0, 16.0, 24.0], maxlen=2000)),
+        ):
+            data = api_module.get_observability()
+        assert "api" in data
+        assert "webhooks" in data
+        assert data["api"]["requests"] == 10
+        assert data["api"]["success_rate"] == 0.9
+        assert "p95" in data["api"]["latency_ms"]
 
 
 # ---------------------------------------------------------------------------

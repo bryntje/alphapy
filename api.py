@@ -3,10 +3,11 @@ import logging
 import math
 import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union, Literal, AsyncGenerator
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
@@ -113,6 +114,57 @@ _ip_rate_limits: Dict[str, List[float]] = defaultdict(list)
 MAX_IP_ENTRIES = 1000
 RATE_LIMIT_CLEANUP_INTERVAL = 600  # 10 minutes
 
+# API observability counters (single-process, rolling windows)
+_api_latencies_ms: deque[float] = deque(maxlen=2000)
+_webhook_latencies_ms: deque[float] = deque(maxlen=2000)
+_api_total_requests = 0
+_api_success_requests = 0
+_webhook_total_requests = 0
+_webhook_success_requests = 0
+
+# In-memory idempotency store for write endpoints
+_idempotency_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
+IDEMPOTENCY_TTL_SECONDS = 600
+
+
+def _percentile(values: List[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    k = (len(ordered) - 1) * pct
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return float(ordered[int(k)])
+    return float(ordered[f] * (c - k) + ordered[c] * (k - f))
+
+
+def _record_observability(path: str, status_code: int, latency_ms: float) -> None:
+    global _api_total_requests, _api_success_requests, _webhook_total_requests, _webhook_success_requests
+    is_webhook = path.startswith("/webhooks/")
+    success = status_code < 500
+    if is_webhook:
+        _webhook_total_requests += 1
+        if success:
+            _webhook_success_requests += 1
+        _webhook_latencies_ms.append(latency_ms)
+    else:
+        _api_total_requests += 1
+        if success:
+            _api_success_requests += 1
+        _api_latencies_ms.append(latency_ms)
+
+
+def _cleanup_idempotency_cache() -> None:
+    now = time.time()
+    stale = [key for key, (expires_at, _) in _idempotency_cache.items() if expires_at <= now]
+    for key in stale:
+        _idempotency_cache.pop(key, None)
+
+
+def _idempotency_cache_key(namespace: str, auth_user_id: str, raw_key: str) -> str:
+    return f"{namespace}:{auth_user_id}:{raw_key.strip()}"
+
 # Command stats TTL cache (initialized after CommandStats class definition)
 _command_stats_cache: Dict[tuple[Optional[int], int, int], tuple[Any, datetime]] = {}
 MAX_COMMAND_STATS_CACHE_SIZE = 50
@@ -149,81 +201,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if not getattr(config, "LEGAL_UPDATE_WEBHOOK_SECRET", None):
         logger.warning("⚠️  LEGAL_UPDATE_WEBHOOK_SECRET is not set — legal update webhook is unauthenticated.")
 
+    strict_security_mode = os.getenv("STRICT_SECURITY_MODE", "0") == "1"
+    is_production = os.getenv("APP_ENV", "development").lower() in {"prod", "production"}
+    if strict_security_mode and is_production:
+        missing = []
+        if not _api_key_set and not _supabase_configured:
+            missing.append("API_KEY or SUPABASE_URL")
+        for key in (
+            "SUPABASE_WEBHOOK_SECRET",
+            "PREMIUM_INVALIDATE_WEBHOOK_SECRET",
+            "APP_REFLECTIONS_WEBHOOK_SECRET",
+            "FOUNDER_WEBHOOK_SECRET",
+            "LEGAL_UPDATE_WEBHOOK_SECRET",
+        ):
+            if not getattr(config, key, None):
+                missing.append(key)
+        if missing:
+            raise RuntimeError(
+                "STRICT_SECURITY_MODE failed. Missing required production security configuration: "
+                + ", ".join(missing)
+            )
+
     # Log MAIN_GUILD_ID configuration
     if hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
         logger.info(f"🏠 MAIN_GUILD_ID configured: {config.MAIN_GUILD_ID} (API endpoints will filter to this guild by default)")
     else:
         logger.info("🌐 MAIN_GUILD_ID not configured (API endpoints will show data from all guilds)")
     
-    # Create audit_logs table for command usage analytics
-    try:
-        async with db_pool.acquire() as conn:
-            existed = await conn.fetchval(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'audit_logs')"
-            )
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id SERIAL PRIMARY KEY,
-                    guild_id BIGINT NOT NULL,
-                    user_id BIGINT NOT NULL,
-                    command_name TEXT NOT NULL,
-                    command_type TEXT NOT NULL,
-                    success BOOLEAN DEFAULT TRUE,
-                    error_message TEXT,
-                    created_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_guild_created ON audit_logs(guild_id, created_at);"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_command ON audit_logs(command_name, created_at);"
-            )
-            logger.info("✅ audit_logs table created" if not existed else "✅ audit_logs table verified")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to create audit_logs table: {e}")
-    
-    # Create health_check_history table for trend analysis
-    try:
-        async with db_pool.acquire() as conn:
-            existed = await conn.fetchval(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'health_check_history')"
-            )
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS health_check_history (
-                    id SERIAL PRIMARY KEY,
-                    service TEXT NOT NULL,
-                    version TEXT NOT NULL,
-                    uptime_seconds INTEGER NOT NULL,
-                    db_status TEXT NOT NULL,
-                    guild_count INTEGER,
-                    active_commands_24h INTEGER,
-                    gpt_status TEXT,
-                    database_pool_size INTEGER,
-                    checked_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_health_check_history_checked_at ON health_check_history(checked_at DESC);"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_health_check_history_service ON health_check_history(service, checked_at DESC);"
-            )
-            # Cleanup old records (keep last 30 days)
-            await conn.execute(
-                """
-                DELETE FROM health_check_history
-                WHERE checked_at < NOW() - interval '30 days'
-                """
-            )
-            logger.info("✅ health_check_history table created" if not existed else "✅ health_check_history table verified")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to create health_check_history table: {e}")
-    
+    # Database schema is managed via Alembic migrations; startup only validates connectivity.
     # Note: Command tracker is initialized in bot.py on_ready() event
     # to ensure it uses the bot's event loop, not FastAPI's event loop
     
@@ -280,7 +285,7 @@ app.include_router(legal_update_webhook_router)
 _allowed_origins = getattr(config, "ALLOWED_ORIGINS", [])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_allowed_origins if _allowed_origins else ["*"],
+    allow_origins=_allowed_origins if _allowed_origins else ["http://localhost:3000"],
     allow_credentials=bool(_allowed_origins),
     allow_methods=["*"],
     allow_headers=["*"],
@@ -290,6 +295,20 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # IP-based Rate Limiting Middleware
 # ---------------------------------------------------------------------------
+
+class RequestObservabilityMiddleware(BaseHTTPMiddleware):
+    """Attach request id and collect simple latency/success metrics."""
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        request.state.request_id = request_id
+        start = time.perf_counter()
+        response = await call_next(request)
+        latency_ms = (time.perf_counter() - start) * 1000
+        _record_observability(request.url.path, response.status_code, latency_ms)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """IP-based rate limiting middleware for API endpoints."""
@@ -330,6 +349,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return await call_next(request)
 
+
+app.add_middleware(RequestObservabilityMiddleware)
 
 # Apply rate limiting middleware
 app.add_middleware(RateLimitMiddleware)
@@ -469,6 +490,32 @@ def get_status():
         "online": True,
         "latency": 0,
         "uptime": f"{int((time.time() - startup_time) // 60)} min",
+    }
+
+
+@app.get("/api/observability", include_in_schema=False)
+def get_observability() -> Dict[str, Any]:
+    api_success_rate = (_api_success_requests / _api_total_requests) if _api_total_requests else 1.0
+    webhook_success_rate = (_webhook_success_requests / _webhook_total_requests) if _webhook_total_requests else 1.0
+    return {
+        "api": {
+            "requests": _api_total_requests,
+            "success_rate": round(api_success_rate, 4),
+            "latency_ms": {
+                "p50": round(_percentile(list(_api_latencies_ms), 0.50), 2),
+                "p95": round(_percentile(list(_api_latencies_ms), 0.95), 2),
+                "p99": round(_percentile(list(_api_latencies_ms), 0.99), 2),
+            },
+        },
+        "webhooks": {
+            "requests": _webhook_total_requests,
+            "success_rate": round(webhook_success_rate, 4),
+            "latency_ms": {
+                "p50": round(_percentile(list(_webhook_latencies_ms), 0.50), 2),
+                "p95": round(_percentile(list(_webhook_latencies_ms), 0.95), 2),
+                "p99": round(_percentile(list(_webhook_latencies_ms), 0.99), 2),
+            },
+        },
     }
 
 
@@ -1767,7 +1814,11 @@ async def get_user_reminders(
 
 
 @router.post("/reminders")
-async def add_reminder(reminder: Reminder, auth_user_id: str = Depends(get_authenticated_user_id)):
+async def add_reminder(
+    reminder: Reminder,
+    request: Request,
+    auth_user_id: str = Depends(get_authenticated_user_id),
+):
     global db_pool
     payload = reminder.dict()
     payload["created_by"] = payload.pop("user_id")
@@ -1775,13 +1826,31 @@ async def add_reminder(reminder: Reminder, auth_user_id: str = Depends(get_authe
         raise HTTPException(status_code=403, detail="Forbidden")
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
+
+    idem_key = request.headers.get("Idempotency-Key")
+    cache_key = None
+    if idem_key:
+        _cleanup_idempotency_cache()
+        cache_key = _idempotency_cache_key("add_reminder", auth_user_id, idem_key)
+        cached = _idempotency_cache.get(cache_key)
+        if cached:
+            return cached[1]
+
     async with db_pool.acquire() as conn:
         await create_reminder(conn, payload)
-    return {"success": True}
+
+    result = {"success": True}
+    if cache_key:
+        _idempotency_cache[cache_key] = (time.time() + IDEMPOTENCY_TTL_SECONDS, result)
+    return result
 
 
 @router.put("/reminders")
-async def edit_reminder(reminder: Reminder, auth_user_id: str = Depends(get_authenticated_user_id)):
+async def edit_reminder(
+    reminder: Reminder,
+    request: Request,
+    auth_user_id: str = Depends(get_authenticated_user_id),
+):
     global db_pool
     payload = reminder.dict()
     payload["created_by"] = payload.pop("user_id")
@@ -1789,21 +1858,54 @@ async def edit_reminder(reminder: Reminder, auth_user_id: str = Depends(get_auth
         raise HTTPException(status_code=403, detail="Forbidden")
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
+
+    idem_key = request.headers.get("Idempotency-Key")
+    cache_key = None
+    if idem_key:
+        _cleanup_idempotency_cache()
+        cache_key = _idempotency_cache_key("edit_reminder", auth_user_id, idem_key)
+        cached = _idempotency_cache.get(cache_key)
+        if cached:
+            return cached[1]
+
     async with db_pool.acquire() as conn:
         await update_reminder(conn, payload)
-    return {"success": True}
+
+    result = {"success": True}
+    if cache_key:
+        _idempotency_cache[cache_key] = (time.time() + IDEMPOTENCY_TTL_SECONDS, result)
+    return result
 
 
 @router.delete("/reminders/{reminder_id}/{created_by}")
-async def remove_reminder(reminder_id: str, created_by: str, auth_user_id: str = Depends(get_authenticated_user_id)):
+async def remove_reminder(
+    reminder_id: str,
+    created_by: str,
+    request: Request,
+    auth_user_id: str = Depends(get_authenticated_user_id),
+):
     if created_by != auth_user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
+
+    idem_key = request.headers.get("Idempotency-Key")
+    cache_key = None
+    if idem_key:
+        _cleanup_idempotency_cache()
+        cache_key = _idempotency_cache_key("delete_reminder", auth_user_id, idem_key)
+        cached = _idempotency_cache.get(cache_key)
+        if cached:
+            return cached[1]
+
     async with db_pool.acquire() as conn:
         await delete_reminder(conn, int(reminder_id), created_by)
-    return {"success": True}
+
+    result = {"success": True}
+    if cache_key:
+        _idempotency_cache[cache_key] = (time.time() + IDEMPOTENCY_TTL_SECONDS, result)
+    return result
 
 
 # ---------------------------------------------------------------------------
