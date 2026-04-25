@@ -1,25 +1,25 @@
+
 import asyncpg
-from asyncpg import exceptions as pg_exceptions
 import discord
-from discord.ext import commands
+from asyncpg import exceptions as pg_exceptions
 from discord import app_commands
-from typing import Optional
+from discord.ext import commands
 
 try:
     import config_local as config  # type: ignore
 except ImportError:
     import config  # type: ignore
 
-from utils.validators import validate_admin
+from utils.csv_helpers import create_csv_buffer, create_discord_file_from_buffer
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.logger import logger
-from utils.csv_helpers import create_csv_buffer, create_discord_file_from_buffer
+from utils.validators import validate_admin
 
 
 class Exports(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("exports", {"DATABASE_URL": config.DATABASE_URL})
         self.bot.loop.create_task(self._setup())
@@ -43,7 +43,7 @@ class Exports(commands.Cog):
 
     @app_commands.command(name="export_tickets", description="Export tickets as CSV (admin)")
     @app_commands.describe(scope="Optional: 7d, 30d, all (default: all)")
-    async def export_tickets(self, interaction: discord.Interaction, scope: Optional[str] = "all"):
+    async def export_tickets(self, interaction: discord.Interaction, scope: str | None = "all"):
         is_admin, error_msg = await validate_admin(interaction, raise_on_fail=False)
         if not is_admin:
             await interaction.response.send_message(error_msg or "⛔ Admins only.", ephemeral=True)

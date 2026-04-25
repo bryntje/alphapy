@@ -1,23 +1,23 @@
 import re
+from typing import Any, cast
+
 import asyncpg
-from asyncpg import exceptions as pg_exceptions
 import discord
-from discord.ext import commands
+from asyncpg import exceptions as pg_exceptions
 from discord import app_commands
-from typing import List, Optional, Tuple, Dict, Any, cast
+from discord.ext import commands
 
 try:
     import config_local as config  # type: ignore
 except ImportError:
     import config  # type: ignore
 
-from utils.logger import logger
-from utils.validators import validate_admin
 from utils.db_helpers import acquire_safe, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
+from utils.logger import logger
+from utils.validators import validate_admin
 
-
-SYNS: Dict[str, List[str]] = {
+SYNS: dict[str, list[str]] = {
     "pwd": ["password"],
     "pass": ["password"],
     "mail": ["email"],
@@ -26,14 +26,14 @@ SYNS: Dict[str, List[str]] = {
 }
 
 
-def _normalize(text: str) -> List[str]:
+def _normalize(text: str) -> list[str]:
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     tokens = [t for t in text.split() if len(t) >= 3]
     return tokens
 
 
-def _score_entry(query_tokens: List[str], entry: Dict[str, Any]) -> int:
+def _score_entry(query_tokens: list[str], entry: dict[str, Any]) -> int:
     hay = " ".join([
         entry.get("summary") or "",
         " ".join(entry.get("keywords") or []),
@@ -56,7 +56,7 @@ def _score_entry(query_tokens: List[str], entry: Dict[str, Any]) -> int:
 class FAQ(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("faq", {"DATABASE_URL": config.DATABASE_URL})
         self.bot.loop.create_task(self._setup_db())
@@ -99,7 +99,7 @@ class FAQ(commands.Cog):
             self._db_manager._pool = None
         self.db = None
 
-    async def _fetch_entries(self) -> List[asyncpg.Record]:
+    async def _fetch_entries(self) -> list[asyncpg.Record]:
         if not is_pool_healthy(self.db):
             return []
         try:
@@ -113,7 +113,7 @@ class FAQ(commands.Cog):
             logger.error(f"Database error in _fetch_entries: {e}")
             return []
 
-    async def _search_entries(self, query: str, limit: int = 5) -> List[asyncpg.Record]:
+    async def _search_entries(self, query: str, limit: int = 5) -> list[asyncpg.Record]:
         rows = await self._fetch_entries()
         q_tokens = _normalize(query)
         scored = []
@@ -145,7 +145,7 @@ class FAQ(commands.Cog):
         except Exception:
             pass
 
-    def _page_embed(self, rows: List[asyncpg.Record], page: int, page_size: int = 10) -> discord.Embed:
+    def _page_embed(self, rows: list[asyncpg.Record], page: int, page_size: int = 10) -> discord.Embed:
         start = page * page_size
         end = start + page_size
         slice_rows = rows[start:end]
@@ -164,7 +164,7 @@ class FAQ(commands.Cog):
         return embed
 
     class FAQListView(discord.ui.View):
-        def __init__(self, cog: "FAQ", rows: List[asyncpg.Record], public: bool, page: int = 0, page_size: int = 10):
+        def __init__(self, cog: "FAQ", rows: list[asyncpg.Record], public: bool, page: int = 0, page_size: int = 10):
             super().__init__(timeout=180)
             self.cog = cog
             self.rows = rows
@@ -266,9 +266,9 @@ class FAQ(commands.Cog):
         await self._log_embed("🔎 FAQ search", f"query=‘{query}’ • matches={len(results)} • public={public}")
 
     @faq_search.autocomplete("query")
-    async def faq_search_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+    async def faq_search_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         # quick suggestion based on titles/keywords
-        choices: List[app_commands.Choice[str]] = []
+        choices: list[app_commands.Choice[str]] = []
         try:
             rows = await self._fetch_entries()
             current_norm = current.lower()

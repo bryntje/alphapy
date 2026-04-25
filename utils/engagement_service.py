@@ -17,14 +17,14 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from datetime import date, datetime, timedelta, timezone
-from utils.embed_builder import EmbedBuilder
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import asyncpg
 import discord
-from utils.logger import logger
 
+from utils.embed_builder import EmbedBuilder
+from utils.logger import logger
 
 # ---------------------------------------------------------------------------
 # Streak helpers (nickname logic, no DB)
@@ -41,7 +41,7 @@ def _strip_streak_suffix(name: str) -> str:
     return name.strip()
 
 
-def _compute_suffix(days: int) -> Optional[str]:
+def _compute_suffix(days: int) -> str | None:
     if days <= 0:
         return None
     if days < 7:
@@ -53,7 +53,7 @@ def _compute_suffix(days: int) -> Optional[str]:
     return f"👑 month {months}"
 
 
-def _build_nickname(base: str, suffix: Optional[str]) -> Tuple[str, str]:
+def _build_nickname(base: str, suffix: str | None) -> tuple[str, str]:
     base = (base or "").strip() or "Member"
     if suffix:
         desired = f"{base} | {suffix}"
@@ -72,7 +72,7 @@ def _build_nickname(base: str, suffix: Optional[str]) -> Tuple[str, str]:
 
 async def get_streak(
     pool: asyncpg.Pool, guild_id: int, user_id: int
-) -> Optional[Tuple[Optional[date], int, Optional[str]]]:
+) -> tuple[date | None, int, str | None] | None:
     """Returns (last_day, current_days, base_nickname) or None if no record."""
     try:
         async with pool.acquire() as conn:
@@ -96,7 +96,7 @@ async def set_streak(
     user_id: int,
     last_day: date,
     current_days: int,
-    base_nickname: Optional[str] = None,
+    base_nickname: str | None = None,
 ) -> None:
     try:
         async with pool.acquire() as conn:
@@ -124,9 +124,9 @@ async def set_streak(
 
 async def ensure_streak_nickname(
     member: discord.Member,
-    stored_base: Optional[str],
+    stored_base: str | None,
     streak_days: int,
-) -> Tuple[str, bool, str]:
+) -> tuple[str, bool, str]:
     """
     Update the member's nickname suffix based on their streak.
     Returns (base_for_db, success, message).
@@ -174,7 +174,7 @@ async def add_badge(pool: asyncpg.Pool, guild_id: int, user_id: int, badge_key: 
         logger.warning(f"[engagement] add_badge error: {exc}")
 
 
-async def get_user_badges(pool: asyncpg.Pool, guild_id: int, user_id: int) -> List[str]:
+async def get_user_badges(pool: asyncpg.Pool, guild_id: int, user_id: int) -> list[str]:
     try:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -235,7 +235,7 @@ async def og_insert_claim(pool: asyncpg.Pool, guild_id: int, user_id: int) -> No
 
 async def og_get_setup(
     pool: asyncpg.Pool, guild_id: int
-) -> Optional[Tuple[int, Optional[int]]]:
+) -> tuple[int, int | None] | None:
     """Returns (message_id, channel_id) or None."""
     try:
         async with pool.acquire() as conn:
@@ -252,7 +252,7 @@ async def og_get_setup(
 
 
 async def og_set_setup(
-    pool: asyncpg.Pool, guild_id: int, message_id: int, channel_id: Optional[int]
+    pool: asyncpg.Pool, guild_id: int, message_id: int, channel_id: int | None
 ) -> None:
     try:
         async with pool.acquire() as conn:
@@ -278,15 +278,15 @@ async def og_set_setup(
 # ---------------------------------------------------------------------------
 
 # { challenge_id: { mode, title, start_ts, end_ts, channel_id, guild_id, task, message_counts } }
-_active_challenges: Dict[int, Dict[str, Any]] = {}
+_active_challenges: dict[int, dict[str, Any]] = {}
 _challenge_lock = asyncio.Lock()
 
 
-def get_active_challenges() -> Dict[int, Dict[str, Any]]:
+def get_active_challenges() -> dict[int, dict[str, Any]]:
     return _active_challenges
 
 
-def get_guild_challenges(guild_id: int) -> Dict[int, Dict[str, Any]]:
+def get_guild_challenges(guild_id: int) -> dict[int, dict[str, Any]]:
     return {cid: rt for cid, rt in _active_challenges.items() if rt.get("guild_id") == guild_id}
 
 
@@ -296,8 +296,8 @@ async def challenge_create(
     channel_id: int,
     mode: str,
     duration_seconds: int,
-    title: Optional[str],
-) -> Optional[int]:
+    title: str | None,
+) -> int | None:
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -320,7 +320,7 @@ async def challenge_create(
 
 
 async def challenge_add_participant(
-    pool: Optional[asyncpg.Pool],
+    pool: asyncpg.Pool | None,
     challenge_id: int,
     user_id: int,
     increment: bool,
@@ -355,11 +355,11 @@ async def challenge_add_participant(
 
 
 async def challenge_get_top(
-    pool: Optional[asyncpg.Pool], challenge_id: int, limit: int = 5
-) -> List[Tuple[int, int]]:
+    pool: asyncpg.Pool | None, challenge_id: int, limit: int = 5
+) -> list[tuple[int, int]]:
     if pool is None:
         rt = _active_challenges.get(challenge_id, {})
-        counts: Dict[int, int] = rt.get("message_counts", {})
+        counts: dict[int, int] = rt.get("message_counts", {})
         return sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
     try:
         async with pool.acquire() as conn:
@@ -380,7 +380,7 @@ async def challenge_get_top(
 
 
 async def challenge_get_participants_count(
-    pool: Optional[asyncpg.Pool], challenge_id: int
+    pool: asyncpg.Pool | None, challenge_id: int
 ) -> int:
     if pool is None:
         rt = _active_challenges.get(challenge_id, {})
@@ -398,7 +398,7 @@ async def challenge_get_participants_count(
 
 
 async def challenge_update_participant_count(
-    pool: Optional[asyncpg.Pool], challenge_id: int, user_id: int, new_count: int
+    pool: asyncpg.Pool | None, challenge_id: int, user_id: int, new_count: int
 ) -> None:
     if pool is None:
         return
@@ -420,7 +420,7 @@ async def challenge_update_participant_count(
 
 
 async def challenge_remove_participant(
-    pool: Optional[asyncpg.Pool], challenge_id: int, user_id: int
+    pool: asyncpg.Pool | None, challenge_id: int, user_id: int
 ) -> None:
     if pool is None:
         return
@@ -436,12 +436,12 @@ async def challenge_remove_participant(
 
 
 async def challenge_end(
-    pool: Optional[asyncpg.Pool], challenge_id: int, mode: str
-) -> Optional[Tuple[int, int]]:
+    pool: asyncpg.Pool | None, challenge_id: int, mode: str
+) -> tuple[int, int] | None:
     """Mark challenge inactive, pick winner. Returns (winner_id, count) or None."""
     if pool is None:
         rt = _active_challenges.get(challenge_id, {})
-        counts: Dict[int, int] = rt.get("message_counts", {})
+        counts: dict[int, int] = rt.get("message_counts", {})
         if not counts:
             return None
         winner_id = max(counts, key=counts.__getitem__)
@@ -491,7 +491,7 @@ async def challenge_end(
         return None
 
 
-async def challenge_cancel(pool: Optional[asyncpg.Pool], challenge_id: int) -> None:
+async def challenge_cancel(pool: asyncpg.Pool | None, challenge_id: int) -> None:
     rt = _active_challenges.get(challenge_id)
     if rt:
         task = rt.get("task")
@@ -510,7 +510,7 @@ async def challenge_cancel(pool: Optional[asyncpg.Pool], challenge_id: int) -> N
 
 
 async def challenge_update_mode(
-    pool: Optional[asyncpg.Pool], challenge_id: int, mode: str
+    pool: asyncpg.Pool | None, challenge_id: int, mode: str
 ) -> None:
     if pool is None:
         return
@@ -524,7 +524,7 @@ async def challenge_update_mode(
 
 
 async def challenge_update_title(
-    pool: Optional[asyncpg.Pool], challenge_id: int, title: str
+    pool: asyncpg.Pool | None, challenge_id: int, title: str
 ) -> None:
     if pool is None:
         return
@@ -538,7 +538,7 @@ async def challenge_update_title(
 
 
 async def challenge_update_ends_at(
-    pool: Optional[asyncpg.Pool], challenge_id: int, duration_seconds: int
+    pool: asyncpg.Pool | None, challenge_id: int, duration_seconds: int
 ) -> None:
     if pool is None:
         return
@@ -554,7 +554,7 @@ async def challenge_update_ends_at(
         logger.warning(f"[engagement] challenge_update_ends_at error: {exc}")
 
 
-def parse_duration_to_seconds(value: Optional[str]) -> Optional[int]:
+def parse_duration_to_seconds(value: str | None) -> int | None:
     """Parse human-readable duration: '10d', '3h30m', '900' (seconds)."""
     if value is None:
         return None
@@ -609,11 +609,11 @@ async def _run_challenge_timer(
 
 async def schedule_challenge(
     bot: discord.Client,
-    pool: Optional[asyncpg.Pool],
+    pool: asyncpg.Pool | None,
     challenge_id: int,
     guild_id: int,
     mode: str,
-    title: Optional[str],
+    title: str | None,
     duration_seconds: int,
     channel_id: int,
 ) -> None:
@@ -633,7 +633,7 @@ async def schedule_challenge(
 
 async def reschedule_challenge(
     bot: discord.Client,
-    pool: Optional[asyncpg.Pool],
+    pool: asyncpg.Pool | None,
     challenge_id: int,
     new_duration_seconds: int,
 ) -> None:
@@ -651,7 +651,7 @@ async def reschedule_challenge(
     )
 
 
-async def rehydrate_challenges(bot: discord.Client, pool: Optional[asyncpg.Pool]) -> None:
+async def rehydrate_challenges(bot: discord.Client, pool: asyncpg.Pool | None) -> None:
     """Restore active challenges from DB after bot restart."""
     if pool is None:
         return
@@ -665,14 +665,14 @@ async def rehydrate_challenges(bot: discord.Client, pool: Optional[asyncpg.Pool]
                 ORDER BY started_at ASC NULLS LAST, id ASC
                 """
             )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for row in rows:
             challenge_id = int(row["id"])
-            ends_at: Optional[datetime] = row["ends_at"]
+            ends_at: datetime | None = row["ends_at"]
             remaining = 0
             if isinstance(ends_at, datetime):
                 if ends_at.tzinfo is None:
-                    ends_at = ends_at.replace(tzinfo=timezone.utc)
+                    ends_at = ends_at.replace(tzinfo=UTC)
                 remaining = int((ends_at - now).total_seconds())
             if remaining <= 0:
                 try:
@@ -684,7 +684,7 @@ async def rehydrate_challenges(bot: discord.Client, pool: Optional[asyncpg.Pool]
                 except Exception:
                     pass
                 continue
-            counts: Dict[int, int] = {}
+            counts: dict[int, int] = {}
             try:
                 async with pool.acquire() as conn:
                     prows = await conn.fetch(
@@ -697,10 +697,10 @@ async def rehydrate_challenges(bot: discord.Client, pool: Optional[asyncpg.Pool]
                 logger.warning(f"[engagement] rehydrate counts error: {exc}")
             # Derive start_ts from the DB started_at so the progress bar is correct
             # after a bot restart. Fall back to derived value if started_at is missing.
-            started_at: Optional[datetime] = row["started_at"]
+            started_at: datetime | None = row["started_at"]
             if isinstance(started_at, datetime):
                 if started_at.tzinfo is None:
-                    started_at = started_at.replace(tzinfo=timezone.utc)
+                    started_at = started_at.replace(tzinfo=UTC)
                 real_start_ts = started_at.timestamp()
             else:
                 real_start_ts = time.time() - (
@@ -733,14 +733,14 @@ async def finalize_and_announce_challenge(
     rt = _active_challenges.get(challenge_id, {})
     mode: str = rt.get("mode", "leaderboard")
     channel_id: int = rt.get("channel_id", 0)
-    guild_id: Optional[int] = rt.get("guild_id")
+    guild_id: int | None = rt.get("guild_id")
     title: str = rt.get("title") or "Challenge"
 
     pool = get_bot_db_pool(bot)
     res = await challenge_end(pool, challenge_id, mode)
 
     channel = bot.get_channel(channel_id)
-    guild: Optional[discord.Guild] = None
+    guild: discord.Guild | None = None
     if isinstance(channel, discord.TextChannel):
         guild = channel.guild
     if guild is None and guild_id:
@@ -748,7 +748,7 @@ async def finalize_and_announce_challenge(
 
     if res is not None:
         winner_id, winner_count = res
-        winner_member: Optional[discord.Member] = None
+        winner_member: discord.Member | None = None
         if guild:
             winner_member = guild.get_member(winner_id)
         mention = winner_member.mention if winner_member else f"<@{winner_id}>"
@@ -851,8 +851,8 @@ async def weekly_increment_reaction(
 async def compute_weekly_awards(
     bot: discord.Client,
     guild_id: int,
-    award_channel_id: Optional[int],
-    award_configs: List[Dict[str, Any]],
+    award_channel_id: int | None,
+    award_configs: list[dict[str, Any]],
 ) -> None:
     """
     Compute and announce weekly awards for a guild.
@@ -871,7 +871,7 @@ async def compute_weekly_awards(
         logger.warning("[engagement] compute_weekly_awards: no DB pool")
         return
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     weekday = now.weekday()  # Monday = 0
     this_monday = (now - timedelta(days=weekday)).replace(
         hour=14, minute=0, second=0, microsecond=0
@@ -904,7 +904,7 @@ async def compute_weekly_awards(
             logger.error("[engagement] compute_weekly_awards: could not create week record")
             return
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         for cfg in award_configs:
             award_key: str = cfg["key"]
             filt: str = cfg.get("filter", "non_food")
@@ -969,7 +969,7 @@ async def compute_weekly_awards(
 
             user_id = int(row["user_id"])
             metric = int(row["cnt"])
-            message_id: Optional[int] = None
+            message_id: int | None = None
             if filt == "reactions" and row["message_id"]:
                 message_id = int(row["message_id"])
 
@@ -1011,7 +1011,7 @@ async def compute_weekly_awards(
             })
 
         # Assign roles + badges
-        guild: Optional[discord.Guild] = bot.get_guild(guild_id)
+        guild: discord.Guild | None = bot.get_guild(guild_id)
         for entry in results:
             await add_badge(pool, guild_id, int(entry["user_id"]), str(entry["key"]))
             role_id = entry.get("role_id")

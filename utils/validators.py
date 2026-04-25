@@ -5,18 +5,18 @@ Centralized permission checks and ownership validation to reduce duplicate
 code across cogs. Provides type-safe validators with consistent error messages.
 """
 
-from typing import Optional, Tuple
-from discord import Interaction
-from discord import app_commands
+
+from discord import Interaction, app_commands
 from discord.app_commands import CheckFailure
-from utils.checks_interaction import is_owner_or_admin_interaction
+
 import config
+from utils.checks_interaction import is_owner_or_admin_interaction
 
 
 async def validate_admin(
     interaction: Interaction,
     raise_on_fail: bool = True
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Type-safe admin validation with consistent error messages.
     
@@ -45,7 +45,7 @@ async def validate_ownership(
     user_id: int,
     resource_user_id: int,
     resource_type: str = "resource"
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Validate resource ownership.
     
@@ -67,7 +67,7 @@ async def validate_owner_or_admin(
     resource_user_id: int,
     resource_type: str = "resource",
     raise_on_fail: bool = True
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Validate that user is either the owner of the resource or an admin.
     

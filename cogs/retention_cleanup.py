@@ -8,9 +8,8 @@ Runs a daily background task that deletes analytics records older than 90 days:
 operational analytics data that is not required for the primary service.
 """
 
-import asyncpg
-from typing import Optional
 
+import asyncpg
 from discord.ext import commands
 
 import config
@@ -27,12 +26,12 @@ class RetentionCleanupCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager(
             "retention_cleanup", {"DATABASE_URL": config.DATABASE_URL or ""}
         )
-        self._task: Optional[BackgroundTask] = None
+        self._task: BackgroundTask | None = None
         self.bot.loop.create_task(self._setup())
 
     async def _setup(self) -> None:

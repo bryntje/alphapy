@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
@@ -15,7 +15,7 @@ def _prepare_token(raw_header: str) -> str:
     return token
 
 
-async def verify_supabase_token(authorization_header: Optional[str]) -> Dict[str, Any]:
+async def verify_supabase_token(authorization_header: str | None) -> dict[str, Any]:
     """Validate a Supabase JWT by calling Supabase's /auth/v1/user endpoint."""
 
     if not authorization_header:

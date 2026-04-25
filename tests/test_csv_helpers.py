@@ -3,12 +3,12 @@ Tests for CSV export helpers used by exports cog and others.
 """
 
 import io
-import pytest
+
 from utils.csv_helpers import (
+    cleanup_temp_file,
     create_csv_buffer,
     create_discord_file_from_buffer,
     create_temp_csv_file,
-    cleanup_temp_file,
 )
 
 
@@ -63,7 +63,7 @@ class TestCreateDiscordFileFromBuffer:
         buf = io.StringIO("name\ncafé")
         f = create_discord_file_from_buffer(buf, "out.csv")
         data = f.fp.read()
-        assert b"caf" in data or "caf".encode() in data
+        assert b"caf" in data or b"caf" in data
 
 
 class TestCreateTempCsvFile:

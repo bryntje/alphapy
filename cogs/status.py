@@ -1,29 +1,30 @@
-import discord
+import asyncio
+import os
+from datetime import UTC, datetime
+from typing import Any, cast
+
 import aiohttp
-import time
-from datetime import datetime, timezone
-from utils.timezone import BRUSSELS_TZ
-from utils.logger import get_gpt_status_logs, logger
+import asyncpg
+import discord
+from asyncpg import exceptions as pg_exceptions
 from discord import app_commands
 from discord.ext import commands
-from version import __version__, CODENAME
-import os
-import asyncio
-import asyncpg
-from asyncpg import exceptions as pg_exceptions
+
 import config
-from utils.validators import validate_admin
-from utils.db_helpers import acquire_safe, is_pool_healthy
-from utils.database_helpers import DatabaseManager
-from utils.embed_builder import EmbedBuilder
 from utils.command_metadata import (
-    get_category_for_cog,
-    is_admin_command,
+    HIDDEN_COMMANDS,
     find_enable_disable_pair,
     format_command_pair,
-    HIDDEN_COMMANDS,
+    get_category_for_cog,
+    is_admin_command,
 )
-from typing import Optional, Dict, Any, List, cast
+from utils.database_helpers import DatabaseManager
+from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.embed_builder import EmbedBuilder
+from utils.logger import get_gpt_status_logs, logger
+from utils.timezone import BRUSSELS_TZ
+from utils.validators import validate_admin
+from version import CODENAME, __version__
 
 # Database for command_stats (shared across status commands)
 _status_db = DatabaseManager("status", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
@@ -85,7 +86,7 @@ async def release_cmd(interaction: discord.Interaction):
         embed = EmbedBuilder.info(title=f"Release notes v{__version__}", description=description)
         embed.set_footer(text=f"{CODENAME}")
         await interaction.followup.send(embed=embed)
-    except Exception as e:
+    except Exception:
         logger.exception("release_cmd failed")
         await interaction.followup.send("Failed to read release notes. Please try again later.")
 
@@ -150,8 +151,8 @@ async def commands_list_cmd(
                     command_to_cog[command.name] = cog_name
         
         # Collect all commands grouped by category
-        commands_by_category: Dict[str, List[Dict[str, Any]]] = {}
-        admin_commands_by_category: Dict[str, List[Dict[str, Any]]] = {}
+        commands_by_category: dict[str, list[dict[str, Any]]] = {}
+        admin_commands_by_category: dict[str, list[dict[str, Any]]] = {}
         
         # Walk through all commands in the tree (bot is already cast to commands.Bot above)
         for command in bot.tree.walk_commands():
@@ -433,7 +434,7 @@ async def command_stats_cmd(
             params: list[Any] = [str(days)]
             param_index = 2
             
-            guild_id: Optional[int] = None
+            guild_id: int | None = None
             if guild_only and interaction.guild:
                 guild_id = interaction.guild.id
                 where_clause += f" AND guild_id = ${param_index}"
@@ -518,7 +519,7 @@ async def command_stats_cmd(
             "❌ Command analytics not available. The `audit_logs` table has not been initialized yet.",
             ephemeral=True
         )
-    except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError) as conn_err:
+    except (pg_exceptions.ConnectionDoesNotExistError, pg_exceptions.InterfaceError, ConnectionResetError):
         # Connection error - reset pool and try to reconnect next time
         if _status_db._pool:
             try:
@@ -527,7 +528,7 @@ async def command_stats_cmd(
                 pass
             _status_db._pool = None
         await interaction.followup.send(
-            f"❌ Database connection error. Please try again in a moment.",
+            "❌ Database connection error. Please try again in a moment.",
             ephemeral=True
         )
     except Exception as e:
@@ -551,7 +552,7 @@ async def setup(bot: commands.Bot):
 
 def _format_timedelta(ts: datetime) -> str:
     if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
+        ts = ts.replace(tzinfo=UTC)
     delta = datetime.now(BRUSSELS_TZ) - ts
     total_seconds = int(delta.total_seconds())
     if total_seconds < 60:
@@ -570,8 +571,8 @@ def _derive_api_health(logs) -> str:
         return "❓ No activity this session"
     ts = logs.last_success_time
     if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    age_minutes = (datetime.now(timezone.utc) - ts).total_seconds() / 60
+        ts = ts.replace(tzinfo=UTC)
+    age_minutes = (datetime.now(UTC) - ts).total_seconds() / 60
     if age_minutes <= 30:
         return "✅ Operational"
     if age_minutes <= 120:
@@ -579,7 +580,7 @@ def _derive_api_health(logs) -> str:
     return f"❌ No recent activity (last: {_format_timedelta(logs.last_success_time)})"
 
 
-def _get_configured_model(bot, guild_id: Optional[int]) -> str:
+def _get_configured_model(bot, guild_id: int | None) -> str:
     """Read the currently configured Grok model from guild settings, falling back to logs then default."""
     try:
         settings = getattr(bot, "settings", None) if bot else None
@@ -593,7 +594,7 @@ def _get_configured_model(bot, guild_id: Optional[int]) -> str:
     return logs.current_model or "grok-3"
 
 
-async def get_gptstatus_embed(guild_id: Optional[int] = None, bot=None):
+async def get_gptstatus_embed(guild_id: int | None = None, bot=None):
     from gpt.helpers import _gpt_retry_queue
     logs = get_gpt_status_logs()
 
@@ -746,7 +747,7 @@ def _truncate_release_notes_md(text: str, max_len: int) -> str:
     if len(parts) == 1:
         # No ## headers: try paragraphs
         paras = text.split("\n\n")
-        out: List[str] = []
+        out: list[str] = []
         for p in paras:
             if len("\n\n".join(out) + ("\n\n" if out else "") + p) <= max_len:
                 out.append(p)
@@ -762,7 +763,7 @@ def _truncate_release_notes_md(text: str, max_len: int) -> str:
             return text[:cut].strip()
         return text[:max_len - 3].rstrip() + "..."
     # Rebuild sections: first part may be intro (no ## prefix), rest get "## " back
-    built: List[str] = []
+    built: list[str] = []
     for i, block in enumerate(parts):
         seg = ("## " + block).strip() if i > 0 else block.strip()
         if not seg:
@@ -779,7 +780,7 @@ def _truncate_release_notes_md(text: str, max_len: int) -> str:
     return _drop_dangling_last_header(result).strip()
 
 
-async def _fetch_github_release_notes(repo: str, version: str) -> Optional[str]:
+async def _fetch_github_release_notes(repo: str, version: str) -> str | None:
     """Fetch release notes body from GitHub API for tag v{version}. Returns None on failure."""
     tag = f"v{version}" if not version.startswith("v") else version
     url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
@@ -795,7 +796,7 @@ async def _fetch_github_release_notes(repo: str, version: str) -> Optional[str]:
         return None
 
 
-async def _get_release_notes(version: str) -> tuple[str, Optional[str]]:
+async def _get_release_notes(version: str) -> tuple[str, str | None]:
     """Return (notes_text, releases_url). Uses GitHub if configured, else local changelog.md."""
     repo = getattr(config, "GITHUB_REPO", "").strip() or None
     releases_url = f"https://github.com/{repo}/releases/tag/v{version}" if repo else None
@@ -820,7 +821,7 @@ async def _get_release_notes(version: str) -> tuple[str, Optional[str]]:
 async def _read_release_notes(changelog_path: str, version: str) -> str:
     try:
         loop = asyncio.get_event_loop()
-        content = await loop.run_in_executor(None, lambda: open(changelog_path, "r", encoding="utf-8").read())
+        content = await loop.run_in_executor(None, lambda: open(changelog_path, encoding="utf-8").read())
         # very simple parse: find header '## [version]' and capture until next '##'
         start_marker = f"## [{version}]"
         if start_marker not in content:

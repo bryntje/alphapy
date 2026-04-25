@@ -1,6 +1,6 @@
 import asyncio
 
-from utils.settings_service import SettingsService, SettingDefinition
+from utils.settings_service import SettingDefinition, SettingsService
 
 
 def test_in_memory_settings_roundtrip():

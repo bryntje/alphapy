@@ -8,7 +8,6 @@ webhooks (app-reflections, revoke-reflection, reflections, supabase).
 import hashlib
 import hmac
 import logging
-from typing import Optional
 
 from fastapi import HTTPException, status
 
@@ -17,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 def validate_webhook_signature(
     body: bytes,
-    signature: Optional[str],
-    secret: Optional[str],
+    signature: str | None,
+    secret: str | None,
     *,
-    log_name: Optional[str] = None,
+    log_name: str | None = None,
     missing_detail: str = "Missing webhook signature header.",
     invalid_detail: str = "Invalid webhook signature.",
 ) -> None:
@@ -65,7 +64,7 @@ def validate_webhook_signature(
         )
 
 
-def get_app_reflections_secret() -> Optional[str]:
+def get_app_reflections_secret() -> str | None:
     """Secret for app-reflections and revoke-reflection webhooks (Core-API)."""
     import config
 
@@ -76,7 +75,7 @@ def get_app_reflections_secret() -> Optional[str]:
     )
 
 
-def get_reflections_webhook_secret() -> Optional[str]:
+def get_reflections_webhook_secret() -> str | None:
     """Secret for reflections webhook (reflection.created events)."""
     import config
 
@@ -85,7 +84,7 @@ def get_reflections_webhook_secret() -> Optional[str]:
     )
 
 
-def get_premium_invalidate_secret() -> Optional[str]:
+def get_premium_invalidate_secret() -> str | None:
     """Secret for premium-invalidate webhook (Core notifies on subscription change)."""
     import config
 
@@ -97,7 +96,7 @@ def get_premium_invalidate_secret() -> Optional[str]:
     )
 
 
-def get_founder_webhook_secret() -> Optional[str]:
+def get_founder_webhook_secret() -> str | None:
     """Secret for founder webhook (Core notifies for early-bird founder welcome DM)."""
     import config
 
@@ -109,7 +108,7 @@ def get_founder_webhook_secret() -> Optional[str]:
     )
 
 
-def get_legal_update_webhook_secret() -> Optional[str]:
+def get_legal_update_webhook_secret() -> str | None:
     """Secret for legal-update webhook (GitHub Action notifies on PP/ToS change)."""
     import config
 

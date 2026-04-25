@@ -1,10 +1,12 @@
-import asyncpg
 import sqlite3
-import discord
-from discord.ext import commands
-import config
 from datetime import datetime
+
+import asyncpg
+from discord.ext import commands
+
+import config
 from utils.logger import logger
+
 
 class GDPRMigration(commands.Cog):
     def __init__(self, bot):

@@ -5,15 +5,14 @@ Uses a minimal FastAPI app mounting only these routers to avoid loading full api
 """
 
 from concurrent.futures import Future
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from utils.premium_guard import _get_cached, _set_cache
-from webhooks.premium_invalidate import router as premium_invalidate_router
 from webhooks.founder import router as founder_router
+from webhooks.premium_invalidate import router as premium_invalidate_router
 
 app = FastAPI()
 app.include_router(premium_invalidate_router)

@@ -8,10 +8,11 @@ coercion and caching.
 
 import json
 from collections import OrderedDict
-from typing import Optional, Any, Dict
-from utils.settings_service import SettingsService
+from typing import Any
+
 from utils.db_helpers import acquire_transactional
 from utils.logger import logger
+from utils.settings_service import SettingsService
 
 
 class CachedSettingsHelper:
@@ -56,7 +57,7 @@ class CachedSettingsHelper:
             evicted_key = self._cache.popitem(last=False)
             logger.debug(f"Settings cache eviction: size={len(self._cache)}/{self._max_cache_size}, evicted={evicted_key[0]}")
     
-    def clear_cache(self, scope: Optional[str] = None, key: Optional[str] = None, guild_id: Optional[int] = None) -> None:
+    def clear_cache(self, scope: str | None = None, key: str | None = None, guild_id: int | None = None) -> None:
         """
         Clear cached settings. If parameters are provided, only clear matching entries.
         
@@ -203,8 +204,8 @@ class CachedSettingsHelper:
     async def set_bulk(
         self,
         guild_id: int,
-        updates: Dict[tuple[str, str], Any],
-        updated_by: Optional[int] = None
+        updates: dict[tuple[str, str], Any],
+        updated_by: int | None = None
     ) -> None:
         """
         Bulk settings update using a single database transaction.

@@ -1,6 +1,6 @@
-import os
-import logging
 import asyncio
+import logging
+import os
 
 from utils.drive_sync import fetch_pdf_text_by_name
 
@@ -53,7 +53,7 @@ async def load_topic_context(topic: str) -> str:
 
     if os.path.exists(file_path):
         logger.debug(f"Loading context from local file: {file_path}")
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             return f.read().strip()
     
     # Try Google Drive PDF as fallback
@@ -62,7 +62,7 @@ async def load_topic_context(topic: str) -> str:
         # Sanitize topic before passing to Drive API to prevent query injection
         sanitized_topic = _sanitize_topic_for_drive(topic)
         if not sanitized_topic:
-            logger.debug(f"Topic sanitization resulted in empty string, skipping Drive search")
+            logger.debug("Topic sanitization resulted in empty string, skipping Drive search")
             return ""
         
         # Run synchronous Drive API call in thread pool to avoid blocking event loop

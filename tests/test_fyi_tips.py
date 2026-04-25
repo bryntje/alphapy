@@ -2,21 +2,21 @@
 Tests for utils.fyi_tips: contextual FYI tips (first-time events, cooldown, embed content).
 """
 
-import pytest
-from datetime import datetime, timezone as tz
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from utils.fyi_tips import (
-    FYI_KEYS,
-    FYI_COOLDOWN_SECONDS,
     FYI_CONTENT,
-    _parse_last_sent,
+    FYI_COOLDOWN_SECONDS,
+    FYI_KEYS,
     _build_fyi_embed,
-    send_fyi_if_first,
+    _parse_last_sent,
     force_send_fyi,
     reset_fyi,
+    send_fyi_if_first,
 )
-
 
 # --- _parse_last_sent (unit) ---
 
@@ -165,7 +165,7 @@ async def test_send_fyi_if_first_already_sent_does_not_send(fyi_mock_bot):
 async def test_send_fyi_if_first_cooldown_active_does_not_send(fyi_mock_bot):
     from utils.fyi_tips import LAST_SENT_KEY
     # Set last_sent_at to "now" so cooldown is active
-    now_iso = datetime.now(tz.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     await fyi_mock_bot.settings.set_raw("fyi", LAST_SENT_KEY, now_iso, 789)
     channel = MagicMock()
     channel.send = AsyncMock()

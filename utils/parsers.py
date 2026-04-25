@@ -7,10 +7,7 @@ handling for invalid input.
 """
 
 import re
-from typing import Optional, List
 from datetime import datetime, time
-from utils.timezone import BRUSSELS_TZ
-
 
 # Complete day mapping for parsing
 DAY_MAP = {
@@ -33,7 +30,7 @@ DAY_MAP = {
 }
 
 
-def parse_days_string(days_input: Optional[str]) -> List[str]:
+def parse_days_string(days_input: str | None) -> list[str]:
     """
     Centralized days parsing with normalization.
     
@@ -79,11 +76,9 @@ def parse_days_string(days_input: Optional[str]) -> List[str]:
             normalized.append(day_lower)
         else:
             # Try partial matching (e.g., "ma" matches "maandag")
-            matched = False
             for key, value in DAY_MAP.items():
                 if key.startswith(day_lower) or day_lower.startswith(key):
                     normalized.append(value)
-                    matched = True
                     break
             # If no match found, skip this part (graceful failure)
     
@@ -91,7 +86,7 @@ def parse_days_string(days_input: Optional[str]) -> List[str]:
     return list(set(normalized))
 
 
-def parse_time_string(time_str: Optional[str]) -> Optional[time]:
+def parse_time_string(time_str: str | None) -> time | None:
     """
     Centralized time parsing (HH:MM format).
     
@@ -127,7 +122,7 @@ def parse_time_string(time_str: Optional[str]) -> Optional[time]:
         return None
 
 
-def parse_relative_date(text: str) -> Optional[str]:
+def parse_relative_date(text: str) -> str | None:
     """
     Parse relative dates like 'This Wednesday', 'Next Friday'.
     
@@ -146,7 +141,7 @@ def parse_relative_date(text: str) -> Optional[str]:
     return None
 
 
-def format_days_for_display(days_list: List[str]) -> str:
+def format_days_for_display(days_list: list[str]) -> str:
     """
     Convert day numbers to readable day names for display.
     

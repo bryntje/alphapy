@@ -1,8 +1,8 @@
 """
 Response helpers for consistent Discord interaction responses.
 """
+
 import discord
-from typing import Optional
 
 
 class ResponseHelper:
@@ -18,11 +18,11 @@ class ResponseHelper:
         """Send error message."""
         try:
             await interaction.followup.send(message, ephemeral=ephemeral)
-        except:
+        except Exception:
             # Fallback if followup fails
             try:
                 await interaction.response.send_message(message, ephemeral=ephemeral)
-            except:
+            except Exception:
                 pass  # Last resort - ignore if all methods fail
 
     @staticmethod
@@ -30,10 +30,10 @@ class ResponseHelper:
         """Send success message."""
         try:
             await interaction.followup.send(message, ephemeral=ephemeral)
-        except:
+        except Exception:
             try:
                 await interaction.response.send_message(message, ephemeral=ephemeral)
-            except:
+            except Exception:
                 pass
 
     @staticmethod
@@ -41,10 +41,10 @@ class ResponseHelper:
         """Send file attachment."""
         try:
             await interaction.followup.send(file=file, ephemeral=ephemeral)
-        except:
+        except Exception:
             try:
                 await interaction.response.send_message(file=file, ephemeral=ephemeral)
-            except:
+            except Exception:
                 pass
 
 
@@ -58,7 +58,7 @@ async def send_db_error(interaction: discord.Interaction, operation: str = "oper
     )
 
 
-async def send_generic_error(interaction: discord.Interaction, operation: str = "operation", error: Optional[Exception] = None) -> None:
+async def send_generic_error(interaction: discord.Interaction, operation: str = "operation", error: Exception | None = None) -> None:
     """Send generic error message."""
     error_msg = f"❌ Failed to {operation}"
     if error:

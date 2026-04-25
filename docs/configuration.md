@@ -303,6 +303,11 @@ The following environment variables are required/optional for bot operation:
 - `SUPABASE_URL`: Supabase project URL
 - `SUPABASE_ANON_KEY`: Supabase anonymous key
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key
+- `APP_ENV`: Runtime environment (`development` or `production`)
+- `STRICT_SECURITY_MODE`: Set to `1` to enforce production security requirements at startup (fails fast when critical auth/webhook secrets are missing in production)
+- `APP_ENV`: Runtime environment (`development` by default). Use `production` on production deployments.
+- `STRICT_SECURITY_MODE`: Set to `1` to enforce production hardening checks at startup (`APP_ENV=production` required). Startup fails when auth and webhook secret requirements are not met.
+- `ALLOWED_ORIGINS`: Comma-separated CORS origins. If omitted, defaults to trusted application origins from config.
 
 ### Optional - AI/LLM
 - `GROK_API_KEY`: Grok API key (or `OPENAI_API_KEY` for OpenAI)
@@ -334,6 +339,10 @@ The following environment variables are required/optional for bot operation:
 ### Optional - Legal update notifications
 - `LEGAL_UPDATE_WEBHOOK_SECRET`: Secret for `POST /webhooks/legal-update` (GitHub Action notifies on PP/ToS change). Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET`.
 - `LEGAL_UPDATES_CHANNEL_ID`: Channel ID in the main guild where legal update embeds are posted. Falls back to `system.log_channel_id` for `MAIN_GUILD_ID` if unset.
+
+### Optional - API observability and idempotency
+- `GET /api/observability` (internal endpoint) returns rolling request success-rate and p50/p95/p99 latency for API and webhook traffic.
+- Write endpoints under `/api/reminders` support `Idempotency-Key` header to prevent duplicate writes during client retries (cached for 10 minutes).
 
 ### Optional - GitHub
 - `GITHUB_TOKEN`: Optional token for GitHub API (e.g. `/release`, repo links when `GITHUB_REPO` is set) to avoid rate limits.

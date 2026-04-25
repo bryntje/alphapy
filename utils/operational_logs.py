@@ -1,16 +1,16 @@
 """In-memory buffer for operational events (reconnect, disconnect, etc.) exposed via API."""
 
 from collections import deque
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Deque, Dict, List, Optional, Union
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 MAX_OPERATIONAL_EVENTS = 100
 
-_operational_events: Deque[Dict[str, Any]] = deque(maxlen=MAX_OPERATIONAL_EVENTS)
+_operational_events: deque[dict[str, Any]] = deque(maxlen=MAX_OPERATIONAL_EVENTS)
 
 
-def _normalize_event_type_and_details(event_type: str, details: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+def _normalize_event_type_and_details(event_type: str, details: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     valid_event_types = {e.value for e in EventType}
     if event_type in valid_event_types:
         return event_type, details
@@ -20,7 +20,7 @@ def _normalize_event_type_and_details(event_type: str, details: Dict[str, Any]) 
     return EventType.SETTINGS_CHANGED.value, normalized_details
 
 
-def _push_to_core_ingress(event: Dict[str, Any]) -> None:
+def _push_to_core_ingress(event: dict[str, Any]) -> None:
     """Fire-and-forget: enqueue event for Core-API ingress (no await, non-blocking)."""
     try:
         from utils.core_ingress import enqueue_operational_event
@@ -37,7 +37,7 @@ def _push_to_core_ingress(event: Dict[str, Any]) -> None:
         pass
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """Operational event types for type safety and documentation."""
     BOT_READY = "BOT_READY"
     BOT_RECONNECT = "BOT_RECONNECT"
@@ -49,10 +49,10 @@ class EventType(str, Enum):
 
 
 def log_operational_event(
-    event_type: Union[EventType, str],
+    event_type: EventType | str,
     message: str,
-    guild_id: Optional[int] = None,
-    details: Optional[Dict[str, Any]] = None,
+    guild_id: int | None = None,
+    details: dict[str, Any] | None = None,
 ) -> None:
     """Append an operational event to the buffer for API exposure.
     
@@ -71,7 +71,7 @@ def log_operational_event(
     )
 
     event = {
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "event_type": normalized_event_type,
         "guild_id": guild_id,
         "message": message,
@@ -82,10 +82,10 @@ def log_operational_event(
 
 
 def get_operational_events(
-    guild_id: Optional[int] = None,
+    guild_id: int | None = None,
     limit: int = 50,
-    event_types: Optional[List[str]] = None,
-) -> List[Dict[str, Any]]:
+    event_types: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """
     Get operational events from the buffer, optionally filtered.
 
@@ -103,7 +103,7 @@ def get_operational_events(
         if not event_types:
             return []
     
-    filtered: List[Dict[str, Any]] = []
+    filtered: list[dict[str, Any]] = []
     for event in _operational_events:
         if event_types and event["event_type"] not in event_types:
             continue
@@ -116,7 +116,7 @@ def get_operational_events(
             break
 
     # Serialize for JSON (datetime -> ISO string)
-    result: List[Dict[str, Any]] = []
+    result: list[dict[str, Any]] = []
     for e in filtered:
         result.append({
             "timestamp": e["timestamp"].isoformat(),

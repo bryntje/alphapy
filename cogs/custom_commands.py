@@ -10,7 +10,6 @@ import logging
 import random
 import re
 import time
-from typing import Optional
 
 import discord
 from discord import app_commands

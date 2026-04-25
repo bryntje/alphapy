@@ -8,16 +8,16 @@ caching and graceful fallback to environment variables for local development.
 import logging
 import os
 import time
-from typing import Optional, Dict, Tuple, Union, Literal
-
-SecretSource = Literal["secret_manager", "env", "cache"]
+from typing import Literal
 
 import config
+
+SecretSource = Literal["secret_manager", "env", "cache"]
 
 logger = logging.getLogger(__name__)
 
 # In-memory cache for secrets: {secret_name: (value, expiry_timestamp)}
-_secret_cache: Dict[str, Tuple[str, float]] = {}
+_secret_cache: dict[str, tuple[str, float]] = {}
 # Cache TTL: 1 hour (3600 seconds)
 CACHE_TTL = 3600
 
@@ -35,7 +35,7 @@ def _is_cache_valid(secret_name: str) -> bool:
     return time.time() < expiry
 
 
-def _get_from_cache(secret_name: str) -> Optional[str]:
+def _get_from_cache(secret_name: str) -> str | None:
     """Retrieve secret from cache if valid."""
     if _is_cache_valid(secret_name):
         value, _ = _secret_cache[secret_name]
@@ -51,7 +51,7 @@ def _store_in_cache(secret_name: str, value: str) -> None:
     logger.debug(f"Cached credential value (expires in {CACHE_TTL}s)")
 
 
-def _fetch_from_secret_manager(secret_name: str, project_id: str) -> Optional[str]:
+def _fetch_from_secret_manager(secret_name: str, project_id: str) -> str | None:
     """
     Fetch secret from Google Cloud Secret Manager.
     
@@ -93,9 +93,9 @@ def _fetch_from_secret_manager(secret_name: str, project_id: str) -> Optional[st
 
 def get_secret(
     secret_name: str,
-    project_id: Optional[str] = None,
+    project_id: str | None = None,
     return_source: bool = False,
-) -> Union[Optional[str], Tuple[Optional[str], Optional[SecretSource]]]:
+) -> str | None | tuple[str | None, SecretSource | None]:
     """
     Get secret value from Secret Manager or environment variable fallback.
     
@@ -156,7 +156,7 @@ def get_secret(
     return None
 
 
-def clear_cache(secret_name: Optional[str] = None) -> None:
+def clear_cache(secret_name: str | None = None) -> None:
     """
     Clear secret cache.
     

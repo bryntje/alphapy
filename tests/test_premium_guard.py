@@ -2,16 +2,17 @@
 Tests for Premium guard: message helper and is_premium behaviour.
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from utils.premium_guard import (
-    premium_required_message,
-    is_premium,
-    get_active_premium_guild,
-    invalidate_premium_cache,
     _get_cached,
     _set_cache,
+    get_active_premium_guild,
+    invalidate_premium_cache,
+    is_premium,
+    premium_required_message,
 )
 
 

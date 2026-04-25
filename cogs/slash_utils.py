@@ -2,9 +2,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Modal, TextInput
+
 import config
-from utils.validators import validate_admin
 from utils.logger import logger
+from utils.validators import validate_admin
+
 
 # Combined check function
 def is_owner_or_admin():
@@ -86,7 +88,7 @@ class CustomSlashCommands(commands.Cog):
     @commands.is_owner()
     async def sync(self, ctx: commands.Context):
         """Synchronize slash commands with cooldown protection."""
-        from utils.command_sync import safe_sync, format_cooldown_message
+        from utils.command_sync import format_cooldown_message, safe_sync
         
         guild = ctx.guild
         force = "--force" in ctx.message.content or "-f" in ctx.message.content

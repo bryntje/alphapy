@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections import deque
-from typing import Any, Dict, List
+from typing import Any
 
 import httpx
 
@@ -36,7 +35,7 @@ def _is_ingress_configured() -> bool:
     )
 
 
-async def post_telemetry(payload: Dict[str, Any] | List[Dict[str, Any]]) -> bool:
+async def post_telemetry(payload: dict[str, Any] | list[dict[str, Any]]) -> bool:
     """
     POST telemetry snapshot(s) to Core-API /ingress/telemetry.
     Returns True on success (2xx), False on failure or when Core is not configured.
@@ -49,7 +48,7 @@ async def post_telemetry(payload: Dict[str, Any] | List[Dict[str, Any]]) -> bool
         "Content-Type": "application/json",
         "X-API-Key": config.ALPHAPY_SERVICE_KEY,
     }
-    body: Dict[str, Any]
+    body: dict[str, Any]
     if isinstance(payload, list):
         body = {"snapshots": payload}
     else:
@@ -73,7 +72,7 @@ async def post_telemetry(payload: Dict[str, Any] | List[Dict[str, Any]]) -> bool
         return False
 
 
-def enqueue_operational_event(event: Dict[str, Any]) -> None:
+def enqueue_operational_event(event: dict[str, Any]) -> None:
     """
     Add an operational event to the queue for later POST to Core.
     Event must be JSON-serialisable (timestamp as ISO string, guild_id as int or None).
@@ -94,7 +93,7 @@ async def flush_operational_events_queue() -> None:
     if not _is_ingress_configured() or not _operational_events_queue:
         return
 
-    events: List[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     while _operational_events_queue:
         events.append(_operational_events_queue.popleft())
 

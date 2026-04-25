@@ -7,10 +7,13 @@ exception types (no except-all).
 """
 
 import asyncio
-from typing import Callable, Optional
-from asyncpg import Pool, exceptions as pg_exceptions
-from utils.supabase_client import SupabaseConfigurationError
+from collections.abc import Callable
+
+from asyncpg import Pool
+from asyncpg import exceptions as pg_exceptions
+
 from utils.logger import logger
+from utils.supabase_client import SupabaseConfigurationError
 
 
 class BackgroundTask:
@@ -26,7 +29,7 @@ class BackgroundTask:
         name: str,
         interval: int,
         task_func: Callable,
-        pool: Optional[Pool] = None
+        pool: Pool | None = None
     ):
         """
         Initialize background task.
@@ -41,7 +44,7 @@ class BackgroundTask:
         self.interval = interval
         self.task_func = task_func
         self.pool = pool
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._consecutive_errors = 0
         self._max_consecutive_errors = 10
     
@@ -105,7 +108,7 @@ class BackgroundTask:
                 logger.warning(f"{self.name}: Supabase config error: {supabase_err}")
                 # Don't increment error count - config errors won't resolve
                 
-            except (asyncio.TimeoutError, TimeoutError) as timeout_err:
+            except TimeoutError as timeout_err:
                 # Timeout errors - could be network issues
                 logger.warning(f"{self.name}: Timeout error: {timeout_err}")
                 self._consecutive_errors += 1
@@ -149,7 +152,7 @@ class BackgroundTask:
         except asyncio.CancelledError:
             # Expected - task was cancelled
             logger.debug(f"{self.name}: Task cancelled successfully")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 f"{self.name}: Task did not finish within timeout during shutdown"
             )
@@ -166,7 +169,7 @@ class BackgroundTask:
                     # Give it one more chance to clean up
                     try:
                         await asyncio.wait_for(self._task, timeout=1.0)
-                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                    except (TimeoutError, asyncio.CancelledError):
                         pass
                 except Exception as cleanup_error:
                     logger.debug(

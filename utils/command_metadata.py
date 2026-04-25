@@ -10,11 +10,10 @@ This module provides a centralized, maintainable system for:
 All command metadata is defined here in a clear, structured format.
 """
 
-from typing import Dict, List, Optional, Set, Tuple, Any
-
+from typing import Any
 
 # Mapping of cog class names to friendly category names with emojis
-COG_CATEGORY_MAP: Dict[str, str] = {
+COG_CATEGORY_MAP: dict[str, str] = {
     "Status": "📊 Status & Info",
     "TicketBot": "🎫 Tickets",
     "ReminderCog": "⏰ Reminders",
@@ -41,7 +40,7 @@ COG_CATEGORY_MAP: Dict[str, str] = {
 # Format: (base_path, (enable_full_path, disable_full_path))
 # base_path is the parent path without enable/disable (e.g., "config invites")
 # The tuple contains the full paths for enable and disable commands
-ENABLE_DISABLE_PAIRS: List[Tuple[str, Tuple[str, str]]] = [
+ENABLE_DISABLE_PAIRS: list[tuple[str, tuple[str, str]]] = [
     # Configuration commands
     ("config invites", ("config invites enable", "config invites disable")),
     ("config reminders", ("config reminders enable", "config reminders disable")),
@@ -53,7 +52,7 @@ ENABLE_DISABLE_PAIRS: List[Tuple[str, Tuple[str, str]]] = [
 
 # Commands that are explicitly admin-only (by full path or name)
 # These will be marked as admin even if other detection methods fail
-ADMIN_COMMANDS: Set[str] = {
+ADMIN_COMMANDS: set[str] = {
     "config",
     "clean",
     "sendto",
@@ -71,7 +70,7 @@ ADMIN_COMMANDS: Set[str] = {
 
 
 # Commands that should be excluded from the command list
-HIDDEN_COMMANDS: Set[str] = set()
+HIDDEN_COMMANDS: set[str] = set()
 
 
 def get_category_for_cog(cog_name: str) -> str:
@@ -81,7 +80,7 @@ def get_category_for_cog(cog_name: str) -> str:
 
 def is_admin_command(command_name: str, full_path: str, has_checks: bool, 
                      default_permissions: Any = None,
-                     description: Optional[str] = None) -> bool:
+                     description: str | None = None) -> bool:
     """
     Determine if a command is admin-only.
     
@@ -128,7 +127,7 @@ def is_admin_command(command_name: str, full_path: str, has_checks: bool,
     return False
 
 
-def find_enable_disable_pair(full_path: str, all_commands: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def find_enable_disable_pair(full_path: str, all_commands: list[dict[str, Any]]) -> dict[str, Any] | None:
     """
     Find the matching enable/disable pair for a command.
     
@@ -176,7 +175,7 @@ def find_enable_disable_pair(full_path: str, all_commands: List[Dict[str, Any]])
     return None
 
 
-def format_command_pair(enable_cmd: Dict[str, Any], disable_cmd: Dict[str, Any]) -> str:
+def format_command_pair(enable_cmd: dict[str, Any], disable_cmd: dict[str, Any]) -> str:
     """
     Format an enable/disable command pair as a single line.
     

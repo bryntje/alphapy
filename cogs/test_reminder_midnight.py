@@ -1,8 +1,11 @@
 import unittest
+from datetime import timedelta
 from zoneinfo import ZoneInfo
-from datetime import datetime, timedelta
+
 import discord
+
 from cogs.embed_watcher import parse_embed_for_reminder
+
 
 class TestReminderMidnight(unittest.TestCase):
     def test_midnight_triggers_previous_day(self):

@@ -1,21 +1,22 @@
 import asyncio
-import logging
 import math
 import os
 import time
+import uuid
+from collections import defaultdict, deque
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Union, Literal, AsyncGenerator
-from collections import defaultdict
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 import asyncpg
 from asyncpg import exceptions as pg_exceptions
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
-from pydantic import BaseModel
 
 import config
 from cogs.reminders import (
@@ -24,23 +25,21 @@ from cogs.reminders import (
     get_reminders_for_user,
     update_reminder,
 )
-from utils.logger import get_gpt_status_logs, logger
-from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
-from utils.timezone import BRUSSELS_TZ
-from utils.supabase_auth import verify_supabase_token
-from utils.supabase_client import _supabase_post, get_discord_id_for_user, SupabaseConfigurationError
-from utils.operational_logs import get_operational_events, log_operational_event, EventType
 from utils import core_ingress as core_ingress_module
-from webhooks.supabase import router as supabase_webhook_router
-from webhooks.reflections import router as reflections_webhook_router
+from utils.logger import get_gpt_status_logs, logger
+from utils.operational_logs import EventType, get_operational_events, log_operational_event
+from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
+from utils.supabase_auth import verify_supabase_token
+from utils.supabase_client import SupabaseConfigurationError, _supabase_post, get_discord_id_for_user
+from utils.timezone import BRUSSELS_TZ
+from version import CODENAME, __version__
 from webhooks.app_reflections import router as app_reflections_webhook_router
-from webhooks.revoke_reflection import router as revoke_reflection_webhook_router
-from webhooks.premium_invalidate import router as premium_invalidate_webhook_router
 from webhooks.founder import router as founder_webhook_router
 from webhooks.legal_update import router as legal_update_webhook_router
-from version import CODENAME, __version__
-
-logger = logging.getLogger(__name__)
+from webhooks.premium_invalidate import router as premium_invalidate_webhook_router
+from webhooks.reflections import router as reflections_webhook_router
+from webhooks.revoke_reflection import router as revoke_reflection_webhook_router
+from webhooks.supabase import router as supabase_webhook_router
 
 # ---------------------------------------------------------------------------
 # Security helpers
@@ -49,11 +48,11 @@ logger = logging.getLogger(__name__)
 
 async def verify_api_key(
     request: Request,
-    authorization: Optional[str] = Header(None),
-    x_api_key: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None),
 ) -> None:
     """Guard routes with a Supabase JWT or optional API key."""
-    claims: Optional[Dict[str, Any]] = None
+    claims: dict[str, Any] | None = None
 
     if authorization:
         try:
@@ -79,7 +78,7 @@ async def verify_api_key(
 
 async def get_authenticated_user_id(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
 ) -> str:
     """Extract authenticated user ID from a verified Supabase JWT."""
     claims = getattr(request.state, "supabase_claims", None)
@@ -100,21 +99,72 @@ async def get_authenticated_user_id(
 # FastAPI app bootstrap
 # ---------------------------------------------------------------------------
 
-db_pool: Optional[asyncpg.Pool] = None
+db_pool: asyncpg.Pool | None = None
 router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 
 # Telemetry retry queue
-_telemetry_queue: List[Dict[str, Any]] = []
+_telemetry_queue: list[dict[str, Any]] = []
 MAX_TELEMETRY_QUEUE_SIZE = 100
 MAX_TELEMETRY_RETRIES = 5
 
 # In-memory IP-based rate limiter
-_ip_rate_limits: Dict[str, List[float]] = defaultdict(list)
+_ip_rate_limits: dict[str, list[float]] = defaultdict(list)
 MAX_IP_ENTRIES = 1000
 RATE_LIMIT_CLEANUP_INTERVAL = 600  # 10 minutes
 
+# API observability counters (single-process, rolling windows)
+_api_latencies_ms: deque[float] = deque(maxlen=2000)
+_webhook_latencies_ms: deque[float] = deque(maxlen=2000)
+_api_total_requests = 0
+_api_success_requests = 0
+_webhook_total_requests = 0
+_webhook_success_requests = 0
+
+# In-memory idempotency store for write endpoints
+_idempotency_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+IDEMPOTENCY_TTL_SECONDS = 600
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    k = (len(ordered) - 1) * pct
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return float(ordered[int(k)])
+    return float(ordered[f] * (c - k) + ordered[c] * (k - f))
+
+
+def _record_observability(path: str, status_code: int, latency_ms: float) -> None:
+    global _api_total_requests, _api_success_requests, _webhook_total_requests, _webhook_success_requests
+    is_webhook = path.startswith("/webhooks/")
+    success = status_code < 500
+    if is_webhook:
+        _webhook_total_requests += 1
+        if success:
+            _webhook_success_requests += 1
+        _webhook_latencies_ms.append(latency_ms)
+    else:
+        _api_total_requests += 1
+        if success:
+            _api_success_requests += 1
+        _api_latencies_ms.append(latency_ms)
+
+
+def _cleanup_idempotency_cache() -> None:
+    now = time.time()
+    stale = [key for key, (expires_at, _) in _idempotency_cache.items() if expires_at <= now]
+    for key in stale:
+        _idempotency_cache.pop(key, None)
+
+
+def _idempotency_cache_key(namespace: str, auth_user_id: str, raw_key: str) -> str:
+    return f"{namespace}:{auth_user_id}:{raw_key.strip()}"
+
 # Command stats TTL cache (initialized after CommandStats class definition)
-_command_stats_cache: Dict[tuple[Optional[int], int, int], tuple[Any, datetime]] = {}
+_command_stats_cache: dict[tuple[int | None, int, int], tuple[Any, datetime]] = {}
 MAX_COMMAND_STATS_CACHE_SIZE = 50
 COMMAND_STATS_CACHE_TTL = 30  # seconds
 
@@ -149,81 +199,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if not getattr(config, "LEGAL_UPDATE_WEBHOOK_SECRET", None):
         logger.warning("⚠️  LEGAL_UPDATE_WEBHOOK_SECRET is not set — legal update webhook is unauthenticated.")
 
+    strict_security_mode = os.getenv("STRICT_SECURITY_MODE", "0") == "1"
+    is_production = os.getenv("APP_ENV", "development").lower() in {"prod", "production"}
+    if strict_security_mode and is_production:
+        missing = []
+        if not _api_key_set and not _supabase_configured:
+            missing.append("API_KEY or SUPABASE_URL")
+        for key in (
+            "SUPABASE_WEBHOOK_SECRET",
+            "PREMIUM_INVALIDATE_WEBHOOK_SECRET",
+            "APP_REFLECTIONS_WEBHOOK_SECRET",
+            "FOUNDER_WEBHOOK_SECRET",
+            "LEGAL_UPDATE_WEBHOOK_SECRET",
+        ):
+            if not getattr(config, key, None):
+                missing.append(key)
+        if missing:
+            raise RuntimeError(
+                "STRICT_SECURITY_MODE failed. Missing required production security configuration: "
+                + ", ".join(missing)
+            )
+
     # Log MAIN_GUILD_ID configuration
     if hasattr(config, "MAIN_GUILD_ID") and config.MAIN_GUILD_ID:
         logger.info(f"🏠 MAIN_GUILD_ID configured: {config.MAIN_GUILD_ID} (API endpoints will filter to this guild by default)")
     else:
         logger.info("🌐 MAIN_GUILD_ID not configured (API endpoints will show data from all guilds)")
     
-    # Create audit_logs table for command usage analytics
-    try:
-        async with db_pool.acquire() as conn:
-            existed = await conn.fetchval(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'audit_logs')"
-            )
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id SERIAL PRIMARY KEY,
-                    guild_id BIGINT NOT NULL,
-                    user_id BIGINT NOT NULL,
-                    command_name TEXT NOT NULL,
-                    command_type TEXT NOT NULL,
-                    success BOOLEAN DEFAULT TRUE,
-                    error_message TEXT,
-                    created_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_guild_created ON audit_logs(guild_id, created_at);"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_command ON audit_logs(command_name, created_at);"
-            )
-            logger.info("✅ audit_logs table created" if not existed else "✅ audit_logs table verified")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to create audit_logs table: {e}")
-    
-    # Create health_check_history table for trend analysis
-    try:
-        async with db_pool.acquire() as conn:
-            existed = await conn.fetchval(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'health_check_history')"
-            )
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS health_check_history (
-                    id SERIAL PRIMARY KEY,
-                    service TEXT NOT NULL,
-                    version TEXT NOT NULL,
-                    uptime_seconds INTEGER NOT NULL,
-                    db_status TEXT NOT NULL,
-                    guild_count INTEGER,
-                    active_commands_24h INTEGER,
-                    gpt_status TEXT,
-                    database_pool_size INTEGER,
-                    checked_at TIMESTAMPTZ DEFAULT NOW()
-                );
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_health_check_history_checked_at ON health_check_history(checked_at DESC);"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_health_check_history_service ON health_check_history(service, checked_at DESC);"
-            )
-            # Cleanup old records (keep last 30 days)
-            await conn.execute(
-                """
-                DELETE FROM health_check_history
-                WHERE checked_at < NOW() - interval '30 days'
-                """
-            )
-            logger.info("✅ health_check_history table created" if not existed else "✅ health_check_history table verified")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to create health_check_history table: {e}")
-    
+    # Database schema is managed via Alembic migrations; startup only validates connectivity.
     # Note: Command tracker is initialized in bot.py on_ready() event
     # to ensure it uses the bot's event loop, not FastAPI's event loop
     
@@ -244,7 +247,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ingest_task.cancel()
         try:
             await asyncio.wait_for(ingest_task, timeout=5.0)
-        except (asyncio.CancelledError, asyncio.TimeoutError):
+        except (TimeoutError, asyncio.CancelledError):
             pass
         except Exception as exc:
             logger.debug(f"Telemetry task exception during shutdown (expected): {exc.__class__.__name__}")
@@ -253,7 +256,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         rate_limit_cleanup_task.cancel()
         try:
             await asyncio.wait_for(rate_limit_cleanup_task, timeout=5.0)
-        except (asyncio.CancelledError, asyncio.TimeoutError):
+        except (TimeoutError, asyncio.CancelledError):
             pass
         except Exception as exc:
             logger.debug(f"Rate limit cleanup task exception during shutdown (expected): {exc.__class__.__name__}")
@@ -280,7 +283,7 @@ app.include_router(legal_update_webhook_router)
 _allowed_origins = getattr(config, "ALLOWED_ORIGINS", [])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_allowed_origins if _allowed_origins else ["*"],
+    allow_origins=_allowed_origins if _allowed_origins else ["http://localhost:3000"],
     allow_credentials=bool(_allowed_origins),
     allow_methods=["*"],
     allow_headers=["*"],
@@ -290,6 +293,20 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # IP-based Rate Limiting Middleware
 # ---------------------------------------------------------------------------
+
+class RequestObservabilityMiddleware(BaseHTTPMiddleware):
+    """Attach request id and collect simple latency/success metrics."""
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        request.state.request_id = request_id
+        start = time.perf_counter()
+        response = await call_next(request)
+        latency_ms = (time.perf_counter() - start) * 1000
+        _record_observability(request.url.path, response.status_code, latency_ms)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """IP-based rate limiting middleware for API endpoints."""
@@ -331,6 +348,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+app.add_middleware(RequestObservabilityMiddleware)
+
 # Apply rate limiting middleware
 app.add_middleware(RateLimitMiddleware)
 
@@ -347,20 +366,20 @@ class HealthStatus(BaseModel):
     uptime_seconds: int
     db_status: str
     timestamp: str
-    guild_count: Optional[int] = None
-    active_commands_24h: Optional[int] = None
-    gpt_status: Optional[str] = None
-    database_pool_size: Optional[int] = None
+    guild_count: int | None = None
+    active_commands_24h: int | None = None
+    gpt_status: str | None = None
+    database_pool_size: int | None = None
 
 
 @app.get("/api/health", response_model=HealthStatus, include_in_schema=False)
 async def health_check() -> HealthStatus:
     uptime_seconds = int(time.time() - startup_time)
     db_status = "not_initialized"
-    guild_count: Optional[int] = None
-    active_commands_24h: Optional[int] = None
-    gpt_status: Optional[str] = None
-    database_pool_size: Optional[int] = None
+    guild_count: int | None = None
+    active_commands_24h: int | None = None
+    gpt_status: str | None = None
+    database_pool_size: int | None = None
 
     # Check database status
     if db_pool:
@@ -422,7 +441,7 @@ async def health_check() -> HealthStatus:
         "active_commands_24h": active_commands_24h,
         "gpt_status": gpt_status,
         "database_pool_size": database_pool_size,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(UTC).isoformat()
     }
     logger.info(f"Health check: {health_data}")
 
@@ -455,7 +474,7 @@ async def health_check() -> HealthStatus:
         version=__version__,
         uptime_seconds=uptime_seconds,
         db_status=db_status,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         guild_count=guild_count,
         active_commands_24h=active_commands_24h,
         gpt_status=gpt_status,
@@ -472,11 +491,37 @@ def get_status():
     }
 
 
+@app.get("/api/observability", include_in_schema=False)
+def get_observability() -> dict[str, Any]:
+    api_success_rate = (_api_success_requests / _api_total_requests) if _api_total_requests else 1.0
+    webhook_success_rate = (_webhook_success_requests / _webhook_total_requests) if _webhook_total_requests else 1.0
+    return {
+        "api": {
+            "requests": _api_total_requests,
+            "success_rate": round(api_success_rate, 4),
+            "latency_ms": {
+                "p50": round(_percentile(list(_api_latencies_ms), 0.50), 2),
+                "p95": round(_percentile(list(_api_latencies_ms), 0.95), 2),
+                "p99": round(_percentile(list(_api_latencies_ms), 0.99), 2),
+            },
+        },
+        "webhooks": {
+            "requests": _webhook_total_requests,
+            "success_rate": round(webhook_success_rate, 4),
+            "latency_ms": {
+                "p50": round(_percentile(list(_webhook_latencies_ms), 0.50), 2),
+                "p95": round(_percentile(list(_webhook_latencies_ms), 0.95), 2),
+                "p99": round(_percentile(list(_webhook_latencies_ms), 0.99), 2),
+            },
+        },
+    }
+
+
 @app.get("/api/health/history")
 async def get_health_history(
     hours: int = 24,
     limit: int = 100
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get health check history for trend analysis.
     
@@ -542,10 +587,10 @@ async def get_health_history(
 
 @app.get("/top-commands")
 async def get_top_commands(
-    guild_id: Optional[int] = None,
+    guild_id: int | None = None,
     days: int = 7,
     limit: int = 10
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get top commands by usage.
     
@@ -572,7 +617,7 @@ async def get_top_commands(
     try:
         async with db_pool.acquire() as conn:
             where_clause = "WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL"
-            params: List[Any] = [str(days)]
+            params: list[Any] = [str(days)]
             
             if effective_guild_id is not None:
                 where_clause += " AND guild_id = $2"
@@ -608,69 +653,69 @@ async def get_top_commands(
 # ---------------------------------------------------------------------------
 
 
-def _datetime_to_iso(dt: Optional[datetime]) -> Optional[str]:
+def _datetime_to_iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(BRUSSELS_TZ).isoformat()
 
 
 class GuildInfo(BaseModel):
     id: int
     name: str
-    member_count: Optional[int]
-    owner_id: Optional[int]
+    member_count: int | None
+    owner_id: int | None
 
 
 class CommandInfo(BaseModel):
     qualified_name: str
-    description: Optional[str]
+    description: str | None
     type: str
 
 
 class BotMetrics(BaseModel):
     online: bool
-    latency_ms: Optional[float]
-    uptime_seconds: Optional[int]
-    uptime_human: Optional[str]
+    latency_ms: float | None
+    uptime_seconds: int | None
+    uptime_human: str | None
     commands_loaded: int
     version: str
     codename: str
-    guilds: List[GuildInfo]
-    commands: List[CommandInfo]
+    guilds: list[GuildInfo]
+    commands: list[CommandInfo]
 
 
 class GPTLogEvent(BaseModel):
-    timestamp: Optional[str]
-    user_id: Optional[int]
-    tokens_used: Optional[int] = None
-    latency_ms: Optional[int] = None
-    error_type: Optional[str] = None
+    timestamp: str | None
+    user_id: int | None
+    tokens_used: int | None = None
+    latency_ms: int | None = None
+    error_type: str | None = None
 
 
 class GPTMetrics(BaseModel):
-    last_success_time: Optional[str]
-    last_error_type: Optional[str]
-    last_error_time: Optional[str]
+    last_success_time: str | None
+    last_error_type: str | None
+    last_error_time: str | None
     average_latency_ms: int
     total_tokens_session: int
     current_model: str
-    last_user_id: Optional[int]
+    last_user_id: int | None
     success_count: int
     error_count: int
     rate_limit_hits: int
-    last_rate_limit_time: Optional[str]
-    last_success_latency_ms: Optional[int]
-    recent_successes: List[GPTLogEvent]
-    recent_errors: List[GPTLogEvent]
+    last_rate_limit_time: str | None
+    last_success_latency_ms: int | None
+    recent_successes: list[GPTLogEvent]
+    recent_errors: list[GPTLogEvent]
 
 
 class UpcomingReminder(BaseModel):
     id: int
     name: str
     channel_id: int
-    scheduled_time: Optional[str]
+    scheduled_time: str | None
     is_recurring: bool
 
 
@@ -678,28 +723,28 @@ class ReminderStats(BaseModel):
     total: int
     recurring: int
     one_off: int
-    next_event_time: Optional[str]
-    per_channel: Dict[str, int]
-    upcoming: List[UpcomingReminder]
+    next_event_time: str | None
+    per_channel: dict[str, int]
+    upcoming: list[UpcomingReminder]
 
 
 class TicketListItem(BaseModel):
     id: int
-    username: Optional[str]
-    status: Optional[str]
-    channel_id: Optional[int]
-    created_at: Optional[str]
+    username: str | None
+    status: str | None
+    channel_id: int | None
+    created_at: str | None
 
 
 class TicketStats(BaseModel):
     total: int
-    per_status: Dict[str, int]
+    per_status: dict[str, int]
     open_count: int
-    last_ticket_created_at: Optional[str]
-    average_close_seconds: Optional[int]
-    average_close_human: Optional[str]
-    open_items: List[TicketListItem]
-    open_ticket_ids: List[int]  # List of IDs for easy access
+    last_ticket_created_at: str | None
+    average_close_seconds: int | None
+    average_close_human: str | None
+    open_items: list[TicketListItem]
+    open_ticket_ids: list[int]  # List of IDs for easy access
 
 
 class SettingOverride(BaseModel):
@@ -710,7 +755,7 @@ class SettingOverride(BaseModel):
 
 class InfrastructureMetrics(BaseModel):
     database_up: bool
-    pool_size: Optional[int]
+    pool_size: int | None
     checked_at: str
 
 
@@ -739,7 +784,7 @@ class CommandUsage(BaseModel):
 
 
 class CommandStats(BaseModel):
-    top_commands: List[CommandUsage]
+    top_commands: list[CommandUsage]
     total_commands_24h: int
     period_days: int
 
@@ -749,15 +794,15 @@ class DashboardMetrics(BaseModel):
     gpt: GPTMetrics
     reminders: ReminderStats
     tickets: TicketStats
-    settings_overrides: List[SettingOverride]
+    settings_overrides: list[SettingOverride]
     infrastructure: InfrastructureMetrics
-    command_usage: Optional[CommandStats] = None
-    cache_metrics: Optional[CacheMetrics] = None
-    premium_metrics: Optional[PremiumMetrics] = None
+    command_usage: CommandStats | None = None
+    cache_metrics: CacheMetrics | None = None
+    premium_metrics: PremiumMetrics | None = None
 
 
-def _serialize_gpt_events(raw_events) -> List[GPTLogEvent]:
-    events: List[GPTLogEvent] = []
+def _serialize_gpt_events(raw_events) -> list[GPTLogEvent]:
+    events: list[GPTLogEvent] = []
     for evt in raw_events:
         events.append(
             GPTLogEvent(
@@ -791,7 +836,7 @@ def _collect_gpt_metrics() -> GPTMetrics:
     )
 
 
-async def _fetch_reminder_stats(guild_id: Optional[int] = None) -> ReminderStats:
+async def _fetch_reminder_stats(guild_id: int | None = None) -> ReminderStats:
     """Fetch reminder statistics for dashboard."""
     default = ReminderStats(
         total=0,
@@ -897,7 +942,7 @@ def _format_duration_seconds(seconds: int) -> str:
     minutes, sec = divmod(seconds, 60)
     hours, minutes = divmod(minutes, 60)
     days, hours = divmod(hours, 24)
-    parts: List[str] = []
+    parts: list[str] = []
     if days:
         parts.append(f"{days}d")
     if hours:
@@ -908,7 +953,7 @@ def _format_duration_seconds(seconds: int) -> str:
     return " ".join(parts)
 
 
-async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
+async def _fetch_ticket_stats(guild_id: int | None = None) -> TicketStats:
     """Fetch ticket statistics from database. Returns empty stats if database unavailable."""
     default = TicketStats(
         total=0,
@@ -1008,7 +1053,7 @@ async def _fetch_ticket_stats(guild_id: Optional[int] = None) -> TicketStats:
     )
 
 
-async def _fetch_settings_overrides(guild_id: Optional[int] = None) -> List[SettingOverride]:
+async def _fetch_settings_overrides(guild_id: int | None = None) -> list[SettingOverride]:
     """Fetch settings overrides for dashboard."""
     global db_pool
     if db_pool is None:
@@ -1047,7 +1092,7 @@ async def _fetch_settings_overrides(guild_id: Optional[int] = None) -> List[Sett
 
 async def _collect_infrastructure_metrics() -> InfrastructureMetrics:
     """Collect infrastructure metrics for dashboard."""
-    checked_at = _datetime_to_iso(datetime.now(timezone.utc)) or ""
+    checked_at = _datetime_to_iso(datetime.now(UTC)) or ""
     global db_pool
     if db_pool is None:
         return InfrastructureMetrics(database_up=False, pool_size=None, checked_at=checked_at)
@@ -1060,7 +1105,7 @@ async def _collect_infrastructure_metrics() -> InfrastructureMetrics:
     except Exception as exc:
         logger.warning(f"[WARN] db health check failed: {exc}")
 
-    pool_size: Optional[int]
+    pool_size: int | None
     try:
         pool_size = db_pool.get_size()
     except Exception:
@@ -1073,10 +1118,10 @@ async def _collect_infrastructure_metrics() -> InfrastructureMetrics:
     )
 
 
-def _count_recent_events(events: List[GPTLogEvent], hours: int = 24) -> int:
+def _count_recent_events(events: list[GPTLogEvent], hours: int = 24) -> int:
     if not events:
         return 0
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
     count = 0
     for evt in events:
         ts = getattr(evt, "timestamp", None)
@@ -1090,9 +1135,9 @@ def _count_recent_events(events: List[GPTLogEvent], hours: int = 24) -> int:
             except ValueError:
                 continue
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         else:
-            dt = dt.astimezone(timezone.utc)
+            dt = dt.astimezone(UTC)
         if dt >= cutoff:
             count += 1
     return count
@@ -1140,7 +1185,6 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
     await asyncio.sleep(5)
     
     # Track if we've seen the bot online at least once
-    bot_has_been_online = False
     
     while True:
         try:
@@ -1162,7 +1206,7 @@ async def _telemetry_ingest_loop(interval: int = 45) -> None:
             
             # Track if bot has been online at least once
             if bot_metrics.online:
-                bot_has_been_online = True
+                pass
             gpt_metrics = _collect_gpt_metrics()
             
             # Use MAIN_GUILD_ID for telemetry if configured
@@ -1358,7 +1402,7 @@ async def _persist_telemetry_snapshot(
                             FROM audit_logs
                             WHERE created_at >= timezone('utc', now()) - interval '24 hours'
                         """
-                        params: List[Any] = []
+                        params: list[Any] = []
                         if main_guild_id:
                             query += " AND guild_id = $1"
                             params.append(main_guild_id)
@@ -1429,7 +1473,7 @@ async def _persist_telemetry_snapshot(
     # - numeric: error_rate
     # - text: subsystem, label, status, notes
     # - timestamptz: last_updated, computed_at
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "subsystem": "alphapy",
         "label": "Alphapy Agents",
         "status": status,
@@ -1438,8 +1482,8 @@ async def _persist_telemetry_snapshot(
         "error_rate": float(error_rate),
         "latency_p50": int(latency_p50),
         "latency_p95": int(latency_p95),
-        "last_updated": datetime.now(timezone.utc).isoformat(),
-        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "last_updated": datetime.now(UTC).isoformat(),
+        "computed_at": datetime.now(UTC).isoformat(),
     }
     
     # Add optional fields only if we have values
@@ -1479,21 +1523,21 @@ async def _persist_telemetry_snapshot(
         _telemetry_queue.append({
             "payload": payload,
             "retry_count": 0,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
     else:
         _telemetry_queue.pop(0)
         _telemetry_queue.append({
             "payload": payload,
             "retry_count": 0,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
 
 def _cleanup_command_stats_cache() -> None:
     """Clean up expired entries from command stats cache."""
     global _command_stats_cache
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expired_keys = [
         k for k, (_, cached_at) in _command_stats_cache.items()
         if (now - cached_at).total_seconds() >= COMMAND_STATS_CACHE_TTL
@@ -1514,12 +1558,12 @@ def _cleanup_command_stats_cache() -> None:
         logger.debug(f"Command stats cache: Evicted {excess} oldest entries, size now: {len(_command_stats_cache)}")
 
 
-async def _fetch_command_stats(guild_id: Optional[int] = None, days: int = 7, limit: int = 10) -> Optional[CommandStats]:
+async def _fetch_command_stats(guild_id: int | None = None, days: int = 7, limit: int = 10) -> CommandStats | None:
     """Fetch command usage statistics for dashboard (with TTL cache)."""
     global db_pool, _command_stats_cache
     
     cache_key = (guild_id, days, limit)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     
     # Check cache
     if cache_key in _command_stats_cache:
@@ -1535,7 +1579,7 @@ async def _fetch_command_stats(guild_id: Optional[int] = None, days: int = 7, li
     try:
         async with db_pool.acquire() as conn:
             where_clause = "WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL"
-            params: List[Any] = [str(days)]
+            params: list[Any] = [str(days)]
             
             if guild_id is not None:
                 where_clause += " AND guild_id = $2"
@@ -1556,7 +1600,7 @@ async def _fetch_command_stats(guild_id: Optional[int] = None, days: int = 7, li
             )
             
             # Get total count for 24h
-            total_24h_params: List[Any] = ["1"]
+            total_24h_params: list[Any] = ["1"]
             total_24h_where = "WHERE created_at >= NOW() - interval '24 hours'"
             if guild_id is not None:
                 total_24h_where += " AND guild_id = $2"
@@ -1627,7 +1671,7 @@ def _collect_cache_metrics() -> CacheMetrics:
     )
 
 
-def _collect_premium_metrics() -> Optional[PremiumMetrics]:
+def _collect_premium_metrics() -> PremiumMetrics | None:
     """Collect premium guard stats when running in same process (e.g. bot + API)."""
     try:
         from utils.premium_guard import get_premium_guard_stats
@@ -1646,7 +1690,7 @@ def _collect_premium_metrics() -> Optional[PremiumMetrics]:
 
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)
 async def get_dashboard_metrics(
-    guild_id: Optional[int] = None,
+    guild_id: int | None = None,
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     snapshot = await get_bot_snapshot()
@@ -1694,7 +1738,7 @@ async def get_dashboard_metrics(
 # Alias for Mind monitoring system - expects /api/metrics
 @router.get("/metrics", response_model=DashboardMetrics)
 async def get_metrics(
-    guild_id: Optional[int] = None,
+    guild_id: int | None = None,
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """Alias endpoint for Mind monitoring system."""
@@ -1710,16 +1754,16 @@ class Reminder(BaseModel):
     id: int
     name: str
     time: str  # of `datetime.time` als je deze exact gebruikt
-    days: List[str]
+    days: list[str]
     message: str
     channel_id: int
     user_id: str  # ← belangrijk: moet overeenkomen met je response (created_by)
 
 
-@router.get("/reminders/{user_id}", response_model=List[Reminder])
+@router.get("/reminders/{user_id}", response_model=list[Reminder])
 async def get_user_reminders(
     user_id: str, 
-    guild_id: Optional[int] = None,
+    guild_id: int | None = None,
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
     """
@@ -1767,7 +1811,11 @@ async def get_user_reminders(
 
 
 @router.post("/reminders")
-async def add_reminder(reminder: Reminder, auth_user_id: str = Depends(get_authenticated_user_id)):
+async def add_reminder(
+    reminder: Reminder,
+    request: Request,
+    auth_user_id: str = Depends(get_authenticated_user_id),
+):
     global db_pool
     payload = reminder.dict()
     payload["created_by"] = payload.pop("user_id")
@@ -1775,13 +1823,31 @@ async def add_reminder(reminder: Reminder, auth_user_id: str = Depends(get_authe
         raise HTTPException(status_code=403, detail="Forbidden")
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
+
+    idem_key = request.headers.get("Idempotency-Key")
+    cache_key = None
+    if idem_key:
+        _cleanup_idempotency_cache()
+        cache_key = _idempotency_cache_key("add_reminder", auth_user_id, idem_key)
+        cached = _idempotency_cache.get(cache_key)
+        if cached:
+            return cached[1]
+
     async with db_pool.acquire() as conn:
         await create_reminder(conn, payload)
-    return {"success": True}
+
+    result = {"success": True}
+    if cache_key:
+        _idempotency_cache[cache_key] = (time.time() + IDEMPOTENCY_TTL_SECONDS, result)
+    return result
 
 
 @router.put("/reminders")
-async def edit_reminder(reminder: Reminder, auth_user_id: str = Depends(get_authenticated_user_id)):
+async def edit_reminder(
+    reminder: Reminder,
+    request: Request,
+    auth_user_id: str = Depends(get_authenticated_user_id),
+):
     global db_pool
     payload = reminder.dict()
     payload["created_by"] = payload.pop("user_id")
@@ -1789,21 +1855,54 @@ async def edit_reminder(reminder: Reminder, auth_user_id: str = Depends(get_auth
         raise HTTPException(status_code=403, detail="Forbidden")
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
+
+    idem_key = request.headers.get("Idempotency-Key")
+    cache_key = None
+    if idem_key:
+        _cleanup_idempotency_cache()
+        cache_key = _idempotency_cache_key("edit_reminder", auth_user_id, idem_key)
+        cached = _idempotency_cache.get(cache_key)
+        if cached:
+            return cached[1]
+
     async with db_pool.acquire() as conn:
         await update_reminder(conn, payload)
-    return {"success": True}
+
+    result = {"success": True}
+    if cache_key:
+        _idempotency_cache[cache_key] = (time.time() + IDEMPOTENCY_TTL_SECONDS, result)
+    return result
 
 
 @router.delete("/reminders/{reminder_id}/{created_by}")
-async def remove_reminder(reminder_id: str, created_by: str, auth_user_id: str = Depends(get_authenticated_user_id)):
+async def remove_reminder(
+    reminder_id: str,
+    created_by: str,
+    request: Request,
+    auth_user_id: str = Depends(get_authenticated_user_id),
+):
     if created_by != auth_user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
+
+    idem_key = request.headers.get("Idempotency-Key")
+    cache_key = None
+    if idem_key:
+        _cleanup_idempotency_cache()
+        cache_key = _idempotency_cache_key("delete_reminder", auth_user_id, idem_key)
+        cached = _idempotency_cache.get(cache_key)
+        if cached:
+            return cached[1]
+
     async with db_pool.acquire() as conn:
         await delete_reminder(conn, int(reminder_id), created_by)
-    return {"success": True}
+
+    result = {"success": True}
+    if cache_key:
+        _idempotency_cache[cache_key] = (time.time() + IDEMPOTENCY_TTL_SECONDS, result)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1811,31 +1910,30 @@ async def remove_reminder(reminder_id: str, created_by: str, auth_user_id: str =
 # ---------------------------------------------------------------------------
 
 class GuildSettingsResponse(BaseModel):
-    system: Dict[str, Any] = {}
-    reminders: Dict[str, Any] = {}
-    embedwatcher: Dict[str, Any] = {}
-    gpt: Dict[str, Any] = {}
-    invites: Dict[str, Any] = {}
-    gdpr: Dict[str, Any] = {}
-    automod: Dict[str, Any] = {}
-    onboarding: Dict[str, Any] = {}
-    ticketbot: Dict[str, Any] = {}
-    verification: Dict[str, Any] = {}
+    system: dict[str, Any] = {}
+    reminders: dict[str, Any] = {}
+    embedwatcher: dict[str, Any] = {}
+    gpt: dict[str, Any] = {}
+    invites: dict[str, Any] = {}
+    gdpr: dict[str, Any] = {}
+    automod: dict[str, Any] = {}
+    onboarding: dict[str, Any] = {}
+    ticketbot: dict[str, Any] = {}
+    verification: dict[str, Any] = {}
 
 
 class UpdateSettingsRequest(BaseModel):
     category: str
-    settings: Dict[str, Any]
+    settings: dict[str, Any]
 
 
-_APP_OWNER_CACHE: Optional[tuple[int, float]] = None
+_APP_OWNER_CACHE: tuple[int, float] | None = None
 _APP_OWNER_CACHE_TTL = 60.0
 
 
 async def _check_guild_admin_on_bot_loop(discord_id: int, guild_id: int) -> bool:
     """Run on bot's event loop: check if Discord user has admin in guild."""
     from gpt.helpers import bot_instance
-
     from utils.guild_admin import member_has_admin_in_guild
 
     global _APP_OWNER_CACHE
@@ -1851,7 +1949,7 @@ async def _check_guild_admin_on_bot_loop(discord_id: int, guild_id: int) -> bool
             member = await guild.fetch_member(discord_id)
         except Exception:
             return False
-    app_owner_id: Optional[int] = None
+    app_owner_id: int | None = None
     now = time.time()
     if _APP_OWNER_CACHE is not None and (now - _APP_OWNER_CACHE[1]) < _APP_OWNER_CACHE_TTL:
         app_owner_id = _APP_OWNER_CACHE[0]
@@ -1876,8 +1974,8 @@ async def verify_guild_admin_access(
         )
     try:
         discord_id = int(discord_id_str)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Invalid Discord ID in profile.")
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Invalid Discord ID in profile.") from exc
 
     from gpt.helpers import bot_instance
 
@@ -1892,11 +1990,11 @@ async def verify_guild_admin_access(
     try:
         future = asyncio.run_coroutine_threadsafe(runner(), loop)
         is_admin = await asyncio.wait_for(asyncio.wrap_future(future), timeout=5.0)
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=503, detail="Permission check timed out.")
+    except TimeoutError as exc:
+        raise HTTPException(status_code=503, detail="Permission check timed out.") from exc
     except Exception as exc:
         logger.debug(f"Guild admin check failed: {exc}")
-        raise HTTPException(status_code=403, detail="Could not verify guild admin access.")
+        raise HTTPException(status_code=403, detail="Could not verify guild admin access.") from exc
 
     if not is_admin:
         raise HTTPException(status_code=403, detail="You do not have admin access to this guild.")
@@ -1969,7 +2067,7 @@ async def get_guild_settings(
 
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get guild settings: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch settings")
+        raise HTTPException(status_code=500, detail="Failed to fetch settings") from exc
 
 
 @router.post("/dashboard/settings/{guild_id}")
@@ -2031,7 +2129,7 @@ async def update_guild_settings(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to update guild settings: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to update settings")
+        raise HTTPException(status_code=500, detail="Failed to update settings") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2057,7 +2155,7 @@ async def get_gdpr_dashboard(
         return {"guild_id": guild_id, "acceptance_count": int(count or 0)}
     except Exception as exc:
         logger.error("[GDPR] Dashboard fetch error: %s", exc)
-        raise HTTPException(status_code=500, detail="Error fetching GDPR data")
+        raise HTTPException(status_code=500, detail="Error fetching GDPR data") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2065,26 +2163,26 @@ async def get_gdpr_dashboard(
 # ---------------------------------------------------------------------------
 
 class OnboardingQuestion(BaseModel):
-    id: Optional[int] = None
+    id: int | None = None
     question: str
     question_type: Literal['select', 'multiselect', 'text', 'email']
-    options: Optional[List[Dict[str, str]]] = None  # [{"label": "Option 1", "value": "value1"}]
-    followup: Optional[Dict[str, Any]] = None  # {"value": {"question": "Followup question"}}
+    options: list[dict[str, str]] | None = None  # [{"label": "Option 1", "value": "value1"}]
+    followup: dict[str, Any] | None = None  # {"value": {"question": "Followup question"}}
     required: bool = True
     enabled: bool = True
     step_order: int
 
 class OnboardingRule(BaseModel):
-    id: Optional[int] = None
+    id: int | None = None
     title: str
     description: str
-    thumbnail_url: Optional[str] = None  # Image shown right/top (rechts)
-    image_url: Optional[str] = None  # Image shown at bottom (onderaan)
+    thumbnail_url: str | None = None  # Image shown right/top (rechts)
+    image_url: str | None = None  # Image shown at bottom (onderaan)
     enabled: bool = True
     rule_order: int
 
 
-@router.get("/dashboard/{guild_id}/onboarding/questions", response_model=List[OnboardingQuestion])
+@router.get("/dashboard/{guild_id}/onboarding/questions", response_model=list[OnboardingQuestion])
 async def get_guild_onboarding_questions(
     guild_id: int,
     auth_user_id: str = Depends(get_authenticated_user_id)
@@ -2124,7 +2222,7 @@ async def get_guild_onboarding_questions(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to get guild onboarding questions: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch questions")
+        raise HTTPException(status_code=500, detail="Failed to fetch questions") from exc
 
 
 @router.post("/dashboard/{guild_id}/onboarding/questions")
@@ -2170,7 +2268,7 @@ async def save_guild_onboarding_question(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to save onboarding question: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to save question")
+        raise HTTPException(status_code=500, detail="Failed to save question") from exc
 
 
 @router.delete("/dashboard/{guild_id}/onboarding/questions/{question_id}")
@@ -2201,10 +2299,10 @@ async def delete_guild_onboarding_question(
         raise
     except Exception as exc:
         logger.error("[ERROR] Failed to delete onboarding question: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to delete question")
+        raise HTTPException(status_code=500, detail="Failed to delete question") from exc
 
 
-@router.get("/dashboard/{guild_id}/onboarding/rules", response_model=List[OnboardingRule])
+@router.get("/dashboard/{guild_id}/onboarding/rules", response_model=list[OnboardingRule])
 async def get_guild_onboarding_rules(
     guild_id: int,
     auth_user_id: str = Depends(get_authenticated_user_id)
@@ -2243,7 +2341,7 @@ async def get_guild_onboarding_rules(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to get guild onboarding rules: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch rules")
+        raise HTTPException(status_code=500, detail="Failed to fetch rules") from exc
 
 
 @router.post("/dashboard/{guild_id}/onboarding/rules")
@@ -2287,7 +2385,7 @@ async def save_guild_onboarding_rule(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to save onboarding rule: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to save rule")
+        raise HTTPException(status_code=500, detail="Failed to save rule") from exc
 
 
 @router.delete("/dashboard/{guild_id}/onboarding/rules/{rule_id}")
@@ -2318,12 +2416,12 @@ async def delete_guild_onboarding_rule(
         raise
     except Exception as exc:
         logger.error("[ERROR] Failed to delete onboarding rule: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to delete rule")
+        raise HTTPException(status_code=500, detail="Failed to delete rule") from exc
 
 
 class ReorderRequest(BaseModel):
-    questions: Optional[List[int]] = None
-    rules: Optional[List[int]] = None
+    questions: list[int] | None = None
+    rules: list[int] | None = None
 
 @router.post("/dashboard/{guild_id}/onboarding/reorder")
 async def reorder_onboarding_items(
@@ -2360,7 +2458,7 @@ async def reorder_onboarding_items(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to reorder onboarding items: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to reorder items")
+        raise HTTPException(status_code=500, detail="Failed to reorder items") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2371,19 +2469,19 @@ class SettingsHistoryEntry(BaseModel):
     id: int
     scope: str
     key: str
-    old_value: Optional[Any] = None
+    old_value: Any | None = None
     new_value: Any
-    value_type: Optional[str] = None
-    changed_by: Optional[int] = None
+    value_type: str | None = None
+    changed_by: int | None = None
     changed_at: str
     change_type: Literal['created', 'updated', 'deleted', 'rollback']
 
 
-@router.get("/dashboard/{guild_id}/settings/history", response_model=List[SettingsHistoryEntry])
+@router.get("/dashboard/{guild_id}/settings/history", response_model=list[SettingsHistoryEntry])
 async def get_settings_history(
     guild_id: int,
-    scope: Optional[str] = None,
-    key: Optional[str] = None,
+    scope: str | None = None,
+    key: str | None = None,
     limit: int = 50,
     auth_user_id: str = Depends(get_authenticated_user_id)
 ):
@@ -2439,7 +2537,7 @@ async def get_settings_history(
 
     except Exception as exc:
         logger.error("[ERROR] Failed to get settings history: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch settings history")
+        raise HTTPException(status_code=500, detail="Failed to fetch settings history") from exc
 
 
 @router.post("/dashboard/{guild_id}/settings/rollback/{history_id}")
@@ -2519,29 +2617,29 @@ async def rollback_setting_change(
         raise
     except Exception as exc:
         logger.error("[ERROR] Failed to rollback setting: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to rollback setting")
+        raise HTTPException(status_code=500, detail="Failed to rollback setting") from exc
 
 
 class OperationalLogsResponse(BaseModel):
-    logs: List[Dict[str, Any]]
+    logs: list[dict[str, Any]]
 
 
 # Auto-Moderation Management Endpoints (Web Configuration Interface)
 # ---------------------------------------------------------------------------
 
 class AutoModRule(BaseModel):
-    id: Optional[int] = None
+    id: int | None = None
     guild_id: int
     rule_type: str  # 'spam', 'content', 'regex', 'ai', 'mentions', 'caps', 'duplicate'
     name: str
     enabled: bool = True
-    config: Dict[str, Any]
+    config: dict[str, Any]
     action_type: str  # 'delete', 'warn', 'mute', 'timeout', 'ban'
-    action_config: Dict[str, Any]
+    action_config: dict[str, Any]
     severity: int = 1
-    created_by: Optional[int] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_by: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
     is_premium: bool = False
 
 
@@ -2549,49 +2647,49 @@ class AutoModRuleCreate(BaseModel):
     rule_type: str
     name: str
     enabled: bool = True
-    config: Dict[str, Any]
+    config: dict[str, Any]
     action_type: str
-    action_config: Dict[str, Any]
+    action_config: dict[str, Any]
     severity: int = 1
 
 
 class AutoModRuleUpdate(BaseModel):
-    name: Optional[str] = None
-    enabled: Optional[bool] = None
-    config: Optional[Dict[str, Any]] = None
-    action_type: Optional[str] = None
-    action_config: Optional[Dict[str, Any]] = None
-    severity: Optional[int] = None
+    name: str | None = None
+    enabled: bool | None = None
+    config: dict[str, Any] | None = None
+    action_type: str | None = None
+    action_config: dict[str, Any] | None = None
+    severity: int | None = None
 
 
 class AutoModStats(BaseModel):
     total_rules: int
     enabled_rules: int
-    rules_by_type: Dict[str, int]
+    rules_by_type: dict[str, int]
     total_violations: int
     violations_today: int
     violations_week: int
-    top_violated_rules: List[Dict[str, Any]]
+    top_violated_rules: list[dict[str, Any]]
 
 
 class AutoModViolation(BaseModel):
     id: int
     guild_id: int
     user_id: int
-    message_id: Optional[int]
-    channel_id: Optional[int]
-    rule_id: Optional[int]
+    message_id: int | None
+    channel_id: int | None
+    rule_id: int | None
     action_taken: str
-    message_content: Optional[str]
-    ai_analysis: Optional[Dict[str, Any]]
-    context: Optional[Dict[str, Any]]
+    message_content: str | None
+    ai_analysis: dict[str, Any] | None
+    context: dict[str, Any] | None
     timestamp: str
-    moderator_id: Optional[int]
+    moderator_id: int | None
 
 
 class AutoModSettings(BaseModel):
     enabled: bool = False
-    log_channel_id: Optional[int] = None
+    log_channel_id: int | None = None
     log_actions: bool = True
     log_to_database: bool = True
 
@@ -2600,14 +2698,14 @@ class AutoModSettings(BaseModel):
 async def get_dashboard_logs(
     guild_id: int,
     limit: int = 50,
-    event_types: Optional[str] = None,
+    event_types: str | None = None,
     auth_user_id: str = Depends(get_authenticated_user_id),
 ):
     """Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard.
     Requires guild admin access. Global events (no guild_id) are included for any guild request."""
     await verify_guild_admin_access(guild_id, auth_user_id)
     limit = min(limit, 100)
-    types_list: Optional[List[str]] = None
+    types_list: list[str] | None = None
     if event_types:
         types_list = [t.strip() for t in event_types.split(",") if t.strip()]
     logs = get_operational_events(guild_id=guild_id, limit=limit, event_types=types_list)
@@ -2617,7 +2715,7 @@ async def get_dashboard_logs(
 # Auto-Moderation Management Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/dashboard/{guild_id}/automod/rules", response_model=List[AutoModRule])
+@router.get("/dashboard/{guild_id}/automod/rules", response_model=list[AutoModRule])
 async def get_automod_rules(
     guild_id: int,
     auth_user_id: str = Depends(get_authenticated_user_id)
@@ -2631,8 +2729,6 @@ async def get_automod_rules(
 
     try:
         # Import here to avoid circular imports
-        from utils.automod_rules import RuleProcessor
-        from utils.db_helpers import get_bot_db_pool
         
         # Get bot instance for RuleProcessor
         # Note: In production, you'd need to inject the bot instance properly
@@ -2675,7 +2771,7 @@ async def get_automod_rules(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod rules for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod rules")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod rules") from exc
 
 
 @router.post("/dashboard/{guild_id}/automod/rules", response_model=AutoModRule)
@@ -2740,7 +2836,7 @@ async def create_automod_rule(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to create auto-mod rule for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to create auto-mod rule")
+        raise HTTPException(status_code=500, detail="Failed to create auto-mod rule") from exc
 
 
 @router.put("/dashboard/{guild_id}/automod/rules/{rule_id}", response_model=AutoModRule)
@@ -2849,7 +2945,7 @@ async def update_automod_rule(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to update auto-mod rule {rule_id} for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to update auto-mod rule")
+        raise HTTPException(status_code=500, detail="Failed to update auto-mod rule") from exc
 
 
 @router.delete("/dashboard/{guild_id}/automod/rules/{rule_id}")
@@ -2901,7 +2997,7 @@ async def delete_automod_rule(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to delete auto-mod rule {rule_id} for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to delete auto-mod rule")
+        raise HTTPException(status_code=500, detail="Failed to delete auto-mod rule") from exc
 
 
 @router.get("/dashboard/{guild_id}/automod/stats", response_model=AutoModStats)
@@ -2973,10 +3069,10 @@ async def get_automod_stats(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod stats for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod stats")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod stats") from exc
 
 
-@router.get("/dashboard/{guild_id}/automod/violations", response_model=List[AutoModViolation])
+@router.get("/dashboard/{guild_id}/automod/violations", response_model=list[AutoModViolation])
 async def get_automod_violations(
     guild_id: int,
     limit: int = 50,
@@ -3037,7 +3133,7 @@ async def get_automod_violations(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod violations for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod violations")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod violations") from exc
 
 
 @router.get("/dashboard/{guild_id}/automod/settings", response_model=AutoModSettings)
@@ -3080,7 +3176,7 @@ async def get_automod_settings(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to get auto-mod settings for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod settings")
+        raise HTTPException(status_code=500, detail="Failed to fetch auto-mod settings") from exc
 
 
 @router.post("/dashboard/{guild_id}/automod/settings")
@@ -3116,7 +3212,7 @@ async def update_automod_settings(
         raise
     except Exception as exc:
         logger.error(f"[ERROR] Failed to update auto-mod settings for guild {guild_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to update auto-mod settings")
+        raise HTTPException(status_code=500, detail="Failed to update auto-mod settings") from exc
 
 
 app.include_router(router)

@@ -421,6 +421,7 @@ Historical health check data for trend analysis.
 
 **Notes:**
 - Automatically populated on each `/api/health` call
+- Startup no longer mutates schema; table is managed via Alembic migration `022_api_observability_tables`
 - Auto-cleanup: Records older than 30 days are automatically deleted
 
 ---

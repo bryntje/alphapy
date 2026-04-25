@@ -1,6 +1,6 @@
 import discord
-from discord.ext import commands
 from discord import app_commands
+from discord.ext import commands
 
 from utils.quiz_state import QuizState
 from utils.quiz_tracker import QuizTracker

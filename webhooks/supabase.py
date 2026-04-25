@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhooks/supabase", tags=["supabase"])
 
 
-def _extract_user_id(payload: Dict[str, Any]) -> Optional[str]:
+def _extract_user_id(payload: dict[str, Any]) -> str | None:
     record = payload.get("record") or payload.get("user") or {}
     return record.get("id")
 
 
-def _extract_discord_id(payload: Dict[str, Any]) -> Optional[int]:
+def _extract_discord_id(payload: dict[str, Any]) -> int | None:
     """Extract the Discord user ID (BIGINT) from a Supabase auth payload."""
     record = payload.get("record") or payload.get("user") or {}
     raw_meta = record.get("raw_user_meta_data") or {}
@@ -98,7 +98,7 @@ async def _purge_railway_data(pool, discord_id: int, supabase_user_id: str) -> N
 
 
 @router.post("/auth")
-async def supabase_auth_webhook(request: Request) -> Dict[str, str]:
+async def supabase_auth_webhook(request: Request) -> dict[str, str]:
     """Handle Supabase Auth webhooks for user lifecycle events."""
     body = await request.body()
     signature = (
@@ -139,7 +139,7 @@ async def supabase_auth_webhook(request: Request) -> Dict[str, str]:
     )
 
     if event_type in {"USER_CREATED", "USER_SIGNED_UP", "USER_UPDATED"} and user_id:
-        profile_payload: Dict[str, Any] = {"user_id": user_id}
+        profile_payload: dict[str, Any] = {"user_id": user_id}
         record = payload.get("record") or payload.get("user") or {}
         raw_meta = record.get("raw_user_meta_data") or {}
 

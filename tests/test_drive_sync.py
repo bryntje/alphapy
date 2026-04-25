@@ -8,12 +8,13 @@ Tests cover:
 - Drive client initialization
 """
 
-import pytest
-import os
 import json
-from unittest.mock import Mock, patch, MagicMock
-from utils.drive_sync import _ensure_drive, drive
-from utils.gcp_secrets import get_secret, clear_cache, _secret_cache
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from utils.drive_sync import _ensure_drive
+from utils.gcp_secrets import _secret_cache, clear_cache, get_secret
 
 
 class TestSecretManagerIntegration:
@@ -106,7 +107,7 @@ class TestSecretManagerIntegration:
                             mock_drive_instance = MagicMock()
                             mock_drive_class.return_value = mock_drive_instance
                             
-                            result = _ensure_drive()
+                            _ensure_drive()
                             
                             # Should have called get_secret with Secret Manager config and return_source
                             mock_get_secret.assert_called_once_with(
@@ -229,7 +230,6 @@ class TestGCPSecretsUtility:
         secret_value = "test-value"
         
         # Add to cache manually
-        import time
         from utils.gcp_secrets import _store_in_cache
         _store_in_cache(secret_name, secret_value)
         assert secret_name in _secret_cache

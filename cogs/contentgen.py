@@ -2,11 +2,11 @@ import asyncio
 import logging
 
 import discord
-from discord.ext import commands
 from discord import app_commands
 from discord.app_commands import checks as app_checks
+from discord.ext import commands
 
-from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
+from gpt.helpers import ask_gpt
 from utils.supabase_client import (
     SupabaseConfigurationError,
     insert_insight_for_discord,
@@ -87,7 +87,7 @@ Avoid clichés.
                     )
 
             asyncio.create_task(_store_caption_insight())
-        except Exception as e:
+        except Exception:
             # ask_gpt() already logs all its errors internally, so we don't log again
             await interaction.followup.send("❌ Couldn't generate the caption. Try again later.", ephemeral=True)
 

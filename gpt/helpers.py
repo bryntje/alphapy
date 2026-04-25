@@ -1,14 +1,14 @@
 # helpers.py
 
-import logging
 import asyncio
+import logging
 import time
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+
 import discord
 from discord import Embed
 from discord.ext import commands
-from openai import AsyncOpenAI, OpenAIError
+from openai import AsyncOpenAI
 
 try:
     import config_local as config  # type: ignore
@@ -40,15 +40,15 @@ Geef een duidelijke, uitgebreide uitleg gebaseerd op de context, maar voeg ook j
 
 
 # Bot instance will be set later
-bot_instance: Optional[commands.Bot] = None
+bot_instance: commands.Bot | None = None
 
 # --- Grok Fallback & Retry Queue ---
 FALLBACK_MESSAGE = "I'm temporarily unavailable. Please try again in a few minutes."
 _gpt_retry_queue: list = []  # List of dicts: {messages, user_id, model, guild_id, include_reflections, retry_count, timestamp}
 MAX_RETRY_QUEUE_SIZE = 50
 MAX_RETRIES = 5
-_retry_task: Optional[asyncio.Task] = None
-_retry_lock: Optional[asyncio.Lock] = None  # Initialised lazily on first use (event loop must exist)
+_retry_task: asyncio.Task | None = None
+_retry_lock: asyncio.Lock | None = None  # Initialised lazily on first use (event loop must exist)
 
 # Tracked fire-and-forget tasks — prevents silent exception swallowing and GC-induced cancellation.
 _background_tasks: set = set()
@@ -59,9 +59,9 @@ def set_bot_instance(bot: commands.Bot) -> None:
     logger.info("🤖 Bot instance is now set in helpers.py")
     # Note: Grok retry queue task will be started in on_ready event when event loop is running
 
-def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optional[int] = None, model: Optional[str] = None):
+def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: int | None = None, model: str | None = None):
     from utils.logger import get_gpt_status_logs
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     logs = get_gpt_status_logs()
     logs.last_success_time = now
     logs.last_user = user_id
@@ -86,9 +86,9 @@ def log_gpt_success(user_id=None, tokens_used=0, latency_ms=0, guild_id: Optiona
         _background_tasks.add(t)
         t.add_done_callback(_background_tasks.discard)
 
-def log_gpt_error(error_type="unknown", user_id=None, guild_id: Optional[int] = None):
+def log_gpt_error(error_type="unknown", user_id=None, guild_id: int | None = None):
     from utils.logger import get_gpt_status_logs
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     logs = get_gpt_status_logs()
     logs.last_error_type = error_type
     logs.last_error_time = now
@@ -119,7 +119,7 @@ def is_allowed_prompt(prompt: str) -> bool:
     return not any(bad in prompt.lower() for bad in blocked_keywords)
 
 
-async def log_to_channel(message: str, level: str = "info", guild_id: Optional[int] = None):
+async def log_to_channel(message: str, level: str = "info", guild_id: int | None = None):
     """
     Log Grok events to the configured log channel for the guild.
     Uses system.log_channel_id from settings (configured via /config system set_log_channel).
@@ -154,7 +154,7 @@ async def log_to_channel(message: str, level: str = "info", guild_id: Optional[i
 
     embed = Embed(
         description=message,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         color=0x00BFFF if level == "info" else 0xFF0000
     )
     embed.set_author(name=f"Grok {level.upper()}")
@@ -174,7 +174,7 @@ def _get_retry_lock() -> asyncio.Lock:
     return _retry_lock
 
 
-async def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflections: bool = True, max_tokens: Optional[int] = None):
+async def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflections: bool = True, max_tokens: int | None = None):
     """Add a failed Grok request to the retry queue (thread-safe via asyncio.Lock)."""
     async with _get_retry_lock():
         # Limit queue size (drop oldest if full)
@@ -189,7 +189,7 @@ async def _add_to_retry_queue(messages, user_id, model, guild_id, include_reflec
             "include_reflections": include_reflections,
             "max_tokens": max_tokens,
             "retry_count": 0,
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         })
 
 
@@ -217,7 +217,7 @@ async def _retry_one(item: dict) -> None:
         logger.debug(f"✅ Grok retry succeeded for user {item['user_id']}")
     except Exception as retry_error:
         item["retry_count"] += 1
-        item["timestamp"] = datetime.now(timezone.utc)
+        item["timestamp"] = datetime.now(UTC)
         async with _get_retry_lock():
             if len(_gpt_retry_queue) < MAX_RETRY_QUEUE_SIZE:
                 _gpt_retry_queue.append(item)
@@ -286,7 +286,7 @@ else:
         llm_client = AsyncOpenAI(api_key=_api_key)
         logger.info(f"✅ OpenAI client initialized (model: {_default_model})")
 
-def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
+def _get_settings_values(default_model: str) -> tuple[str, float | None]:
     if bot_instance is None:
         return default_model, None
 
@@ -295,7 +295,7 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
         return default_model, None
 
     model_value = default_model
-    temperature_value: Optional[float] = None
+    temperature_value: float | None = None
 
     try:
         fetched_model = settings.get("gpt", "model")
@@ -317,7 +317,7 @@ def _get_settings_values(default_model: str) -> tuple[str, Optional[float]]:
     return model_value, temperature_value
 
 
-async def ask_gpt(messages, user_id=None, model: Optional[str] = None, guild_id: Optional[int] = None, _is_retry: bool = False, include_reflections: bool = True, max_tokens: Optional[int] = None):
+async def ask_gpt(messages, user_id=None, model: str | None = None, guild_id: int | None = None, _is_retry: bool = False, include_reflections: bool = True, max_tokens: int | None = None):
     """
     Main Grok interaction function.
 
@@ -427,11 +427,11 @@ async def ask_gpt_vision(
     prompt: str,
     image_url: str,
     *,
-    user_id: Optional[int] = None,
-    model: Optional[str] = None,
-    guild_id: Optional[int] = None,
-    extra_image_urls: Optional[list] = None,
-    system_prompt: Optional[str] = None,
+    user_id: int | None = None,
+    model: str | None = None,
+    guild_id: int | None = None,
+    extra_image_urls: list | None = None,
+    system_prompt: str | None = None,
 ) -> str:
     """
     Vision-capable helper for image-based analysis.

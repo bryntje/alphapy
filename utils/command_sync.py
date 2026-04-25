@@ -13,15 +13,15 @@ Features:
 
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict
+
 import discord
 from discord.ext import commands
-from discord import app_commands
+
 from utils.logger import logger
 
 # Cooldown tracking: {key: last_sync_timestamp}
 # Keys: "global" for global syncs, guild.id for per-guild syncs
-_sync_cooldowns: Dict[str, float] = {}
+_sync_cooldowns: dict[str, float] = {}
 
 # Cooldown periods in seconds
 GLOBAL_COOLDOWN = 60 * 60  # 60 minutes
@@ -39,19 +39,19 @@ class SyncResult:
     """Result of a sync operation"""
     success: bool
     command_count: int
-    error: Optional[str] = None
-    cooldown_remaining: Optional[float] = None
+    error: str | None = None
+    cooldown_remaining: float | None = None
     sync_type: str = "unknown"  # "global" or "guild"
 
 
-def _get_cooldown_key(guild: Optional[discord.Guild]) -> str:
+def _get_cooldown_key(guild: discord.Guild | None) -> str:
     """Get cooldown tracking key for a sync operation"""
     if guild is None:
         return "global"
     return str(guild.id)
 
 
-def _check_cooldown(guild: Optional[discord.Guild], force: bool = False) -> Optional[float]:
+def _check_cooldown(guild: discord.Guild | None, force: bool = False) -> float | None:
     """
     Check if sync is on cooldown.
     
@@ -77,7 +77,7 @@ def _check_cooldown(guild: Optional[discord.Guild], force: bool = False) -> Opti
     return None
 
 
-def _update_cooldown(guild: Optional[discord.Guild]) -> None:
+def _update_cooldown(guild: discord.Guild | None) -> None:
     """Update cooldown timestamp after successful sync"""
     key = _get_cooldown_key(guild)
     _sync_cooldowns[key] = time.time()
@@ -111,7 +111,7 @@ def detect_guild_only_commands(bot: commands.Bot) -> bool:
 
 async def safe_sync(
     bot: commands.Bot,
-    guild: Optional[discord.Guild] = None,
+    guild: discord.Guild | None = None,
     force: bool = False
 ) -> SyncResult:
     """

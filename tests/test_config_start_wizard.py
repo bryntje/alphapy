@@ -3,12 +3,12 @@ Tests for /config start setup wizard: SETUP_STEPS, SetupWizardView helpers, reso
 No full Discord environment; uses mocks for interaction and cog.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from cogs.configuration import (
     SETUP_STEPS,
-    SetupStep,
     SetupWizardView,
 )
 

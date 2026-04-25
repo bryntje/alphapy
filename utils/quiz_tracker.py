@@ -1,7 +1,9 @@
 # quiz_tracker.py
 
 import asyncpg
+
 import config
+
 
 class QuizTracker:
     def __init__(self):

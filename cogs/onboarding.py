@@ -1,17 +1,20 @@
-import discord
-from discord.ext import commands
-import json
-import uuid
-import re
 import asyncio
-from typing import Optional, Dict, Any, cast
+import json
+import re
+import uuid
+from typing import Any, Optional, cast
+
 import asyncpg
+import discord
 from asyncpg import exceptions as pg_exceptions
+from discord.ext import commands
+
 import config
-from utils.db_helpers import acquire_safe, is_pool_healthy
+from utils.db_helpers import acquire_safe
 from utils.embed_builder import EmbedBuilder
 from utils.logger import logger
-from utils.operational_logs import log_operational_event, EventType
+from utils.operational_logs import EventType, log_operational_event
+
 
 class Onboarding(commands.Cog):
     """Cog that manages the onboarding process for new users."""
@@ -92,7 +95,7 @@ class Onboarding(commands.Cog):
             ("Other language…", "other"),
         ]
 
-        self.db: Optional[asyncpg.Pool] = None
+        self.db: asyncpg.Pool | None = None
         from utils.database_helpers import DatabaseManager
         self._db_manager = DatabaseManager("onboarding", {"DATABASE_URL": getattr(config, "DATABASE_URL", "")})
 
@@ -278,8 +281,8 @@ class Onboarding(commands.Cog):
         rule_order: int,
         title: str,
         description: str,
-        thumbnail_url: Optional[str] = None,
-        image_url: Optional[str] = None,
+        thumbnail_url: str | None = None,
+        image_url: str | None = None,
     ) -> bool:
         """Save a rule for a specific guild."""
         if not await self._ensure_pool():
@@ -429,7 +432,7 @@ class Onboarding(commands.Cog):
         if self.db is not None:
             return True
 
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for attempt in range(1, attempts + 1):
             try:
                 await self._connect_pool()
@@ -449,7 +452,7 @@ class Onboarding(commands.Cog):
         return False
 
     async def _show_onboarding_step(
-        self, interaction: discord.Interaction, session: Optional[dict], embed: discord.Embed, view: discord.ui.View
+        self, interaction: discord.Interaction, session: dict | None, embed: discord.Embed, view: discord.ui.View
     ) -> None:
         """
         Show the next onboarding step (embed + view) by editing the current message when possible,
@@ -484,7 +487,7 @@ class Onboarding(commands.Cog):
         if sent is not None and session is not None:
             session["onboarding_message"] = sent
 
-    async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: Optional[dict] = None):
+    async def send_next_question(self, interaction: discord.Interaction, step: int = 0, answers: dict | None = None):
         user_id = interaction.user.id
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
@@ -780,7 +783,7 @@ class Onboarding(commands.Cog):
             logger.exception(f"❌ Onboarding: save failed for {user_id}: {exc}")
             return False
 
-    async def get_user_personalization(self, user_id: int, guild_id: int) -> Dict[str, Any]:
+    async def get_user_personalization(self, user_id: int, guild_id: int) -> dict[str, Any]:
         """
         Get the user's personalization preferences from their most recent onboarding (opt-in and language).
         Graceful fallback: returns defaults if no record or DB unavailable.
@@ -876,7 +879,7 @@ class TextInputModal(discord.ui.Modal):
 
 class OnboardingView(discord.ui.View):
     """View for the onboarding flow."""
-    def __init__(self, step: Optional[int] = None, answers: Optional[dict] = None, onboarding: Optional['Onboarding'] = None):
+    def __init__(self, step: int | None = None, answers: dict | None = None, onboarding: Optional['Onboarding'] = None):
         super().__init__(timeout=None)
         self.step = step
         self.answers = answers if answers is not None else {}

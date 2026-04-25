@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-import config
+
 from utils.validators import requires_owner
 
 

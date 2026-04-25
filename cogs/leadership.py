@@ -2,12 +2,12 @@ import asyncio
 import logging
 
 import discord
-from discord.ext import commands
 from discord import app_commands
 from discord.app_commands import checks as app_checks
+from discord.ext import commands
 
+from gpt.helpers import ask_gpt, log_gpt_error
 from utils.logger import logger
-from gpt.helpers import ask_gpt, log_gpt_success, log_gpt_error
 from utils.supabase_client import (
     SupabaseConfigurationError,
     insert_insight_for_discord,
@@ -113,7 +113,7 @@ class AskQuestionButton(discord.ui.Button):
             msg = await self.bot.wait_for("message", timeout=120.0, check=check)
             user_question = msg.content.strip()
             logger.info(f"{interaction.user} asked: {user_question[:100]}")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Timeout occurred before ask_gpt() - log it
             log_gpt_error(error_type="TimeoutError: User did not respond in time", user_id=interaction.user.id, guild_id=guild_id)
             await interaction.followup.send("❌ You didn't respond in time. Try again later.", ephemeral=True)

@@ -2,12 +2,13 @@
 Pytest configuration and shared fixtures for alphapy tests.
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock
 from datetime import datetime
+from typing import Any
+from unittest.mock import AsyncMock, Mock
+
 import discord
-from discord.ext import commands
-from typing import Optional
+import pytest
+
 from utils.timezone import BRUSSELS_TZ
 
 
@@ -17,11 +18,11 @@ class MockSettingsService:
     def __init__(self):
         self._settings = {}
     
-    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Optional[any] = None) -> Optional[any]:
+    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Any | None = None) -> Any | None:
         """Get a setting value. Matches SettingsService signature for CachedSettingsHelper."""
         return self._settings.get((scope, key, guild_id), fallback)
     
-    def set(self, scope: str, key: str, value: any, guild_id: int = 0, updated_by: Optional[int] = None):
+    def set(self, scope: str, key: str, value: Any, guild_id: int = 0, updated_by: int | None = None):
         """Set a setting value."""
         self._settings[(scope, key, guild_id)] = value
     

@@ -7,7 +7,7 @@ owns only the queries, not the pool or error handling.
 """
 
 from datetime import date, time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import asyncpg
 
@@ -18,15 +18,15 @@ async def create(
     name: str,
     channel_id: int,
     reminder_time: time,
-    call_time: Optional[time],
-    days: List[str],
-    message: Optional[str],
+    call_time: time | None,
+    days: list[str],
+    message: str | None,
     created_by: int,
-    origin_channel_id: Optional[int] = None,
-    origin_message_id: Optional[int] = None,
-    event_time: Optional[Any] = None,
-    image_url: Optional[str] = None,
-    location: Optional[str] = None,
+    origin_channel_id: int | None = None,
+    origin_message_id: int | None = None,
+    event_time: Any | None = None,
+    image_url: str | None = None,
+    location: str | None = None,
 ) -> int:
     """Insert a new reminder and return its id."""
     return await conn.fetchval(
@@ -47,7 +47,7 @@ async def get_by_id(
     conn: asyncpg.Connection,
     guild_id: int,
     reminder_id: int,
-) -> Optional[asyncpg.Record]:
+) -> asyncpg.Record | None:
     """Fetch a reminder by id (admin — any owner)."""
     return await conn.fetchrow(
         "SELECT * FROM reminders WHERE id = $1 AND guild_id = $2",
@@ -60,7 +60,7 @@ async def get_by_id_for_user(
     guild_id: int,
     reminder_id: int,
     user_id: int,
-) -> Optional[asyncpg.Record]:
+) -> asyncpg.Record | None:
     """Fetch a reminder by id restricted to its owner."""
     return await conn.fetchrow(
         "SELECT * FROM reminders WHERE id = $1 AND guild_id = $2 AND created_by = $3",
@@ -95,7 +95,7 @@ async def delete_by_owner(
 async def list_for_guild(
     conn: asyncpg.Connection,
     guild_id: int,
-) -> List[asyncpg.Record]:
+) -> list[asyncpg.Record]:
     """List all reminders for a guild (admin view)."""
     return await conn.fetch(
         """
@@ -113,7 +113,7 @@ async def list_for_user(
     guild_id: int,
     user_id: int,
     channel_id: int,
-) -> List[asyncpg.Record]:
+) -> list[asyncpg.Record]:
     """List reminders visible to a non-admin user (owns or in their channel)."""
     return await conn.fetch(
         """
@@ -134,7 +134,7 @@ async def list_active(
     is_late_night: bool,
     next_date: date,
     next_day: str,
-) -> List[asyncpg.Record]:
+) -> list[asyncpg.Record]:
     """
     Fetch reminders that should fire at the current minute.
 
@@ -233,7 +233,7 @@ async def update_sent_at(
     reminder_id: int,
     guild_id: int,
     last_sent_at: Any,
-    sent_message_id: Optional[int] = None,
+    sent_message_id: int | None = None,
 ) -> None:
     """Update the idempotency marker after a reminder fires."""
     if sent_message_id is not None:
@@ -255,9 +255,9 @@ async def update_fields(
     name: str,
     reminder_time: time,
     call_time: time,
-    days: List[str],
-    message: Optional[str],
-    channel_id: Optional[int] = None,
+    days: list[str],
+    message: str | None,
+    channel_id: int | None = None,
 ) -> None:
     """Update editable reminder fields (from edit modal)."""
     if channel_id is not None:
@@ -285,7 +285,7 @@ async def update_fields(
 async def autocomplete_all(
     conn: asyncpg.Connection,
     guild_id: int,
-) -> List[asyncpg.Record]:
+) -> list[asyncpg.Record]:
     """Fetch id+name pairs for autocomplete (all reminders in guild)."""
     return await conn.fetch(
         "SELECT id, name FROM reminders WHERE guild_id = $1 ORDER BY id DESC LIMIT 25",
@@ -297,7 +297,7 @@ async def autocomplete_for_user(
     conn: asyncpg.Connection,
     guild_id: int,
     user_id: int,
-) -> List[asyncpg.Record]:
+) -> list[asyncpg.Record]:
     """Fetch id+name pairs for autocomplete (user's own reminders)."""
     return await conn.fetch(
         "SELECT id, name FROM reminders WHERE guild_id = $1 AND created_by = $2 ORDER BY id DESC LIMIT 25",
@@ -308,8 +308,8 @@ async def autocomplete_for_user(
 async def get_for_api(
     conn: asyncpg.Connection,
     user_id: Any,
-    guild_id: Optional[int] = None,
-) -> List[asyncpg.Record]:
+    guild_id: int | None = None,
+) -> list[asyncpg.Record]:
     """Fetch reminders for a user (FastAPI endpoint)."""
     if guild_id:
         return await conn.fetch(
@@ -332,11 +332,11 @@ async def get_for_api(
     )
 
 
-async def create_for_api(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:
+async def create_for_api(conn: asyncpg.Connection, data: dict[str, Any]) -> None:
     """Create a reminder from FastAPI payload (simplified fields)."""
     days = data.get("days")
     if not days:
-        days_list: List[str] = []
+        days_list: list[str] = []
     elif isinstance(days, str):
         days_list = [days]
     else:
@@ -351,11 +351,11 @@ async def create_for_api(conn: asyncpg.Connection, data: Dict[str, Any]) -> None
     )
 
 
-async def update_for_api(conn: asyncpg.Connection, data: Dict[str, Any]) -> None:
+async def update_for_api(conn: asyncpg.Connection, data: dict[str, Any]) -> None:
     """Update a reminder from FastAPI payload."""
     days = data.get("days")
     if not days:
-        days_list: List[str] = []
+        days_list: list[str] = []
     elif isinstance(days, str):
         days_list = [days]
     else:

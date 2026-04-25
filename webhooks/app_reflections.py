@@ -8,7 +8,6 @@ Consent is validated by Core before the webhook is sent.
 
 import json
 import logging
-from typing import Dict, Optional
 
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request, status
@@ -22,7 +21,7 @@ router = APIRouter(prefix="/webhooks/app-reflections", tags=["app-reflections"])
 
 
 @router.post("")
-async def handle_app_reflection_webhook(request: Request) -> Dict[str, str]:
+async def handle_app_reflection_webhook(request: Request) -> dict[str, str]:
     """
     Handle plaintext reflection payload from Core-API.
 
@@ -71,11 +70,11 @@ async def handle_app_reflection_webhook(request: Request) -> Dict[str, str]:
 
     try:
         user_id = int(user_id)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="user_id must be an integer (Discord user ID).",
-        )
+        ) from exc
 
     if not isinstance(plaintext_content, dict):
         raise HTTPException(
@@ -83,7 +82,7 @@ async def handle_app_reflection_webhook(request: Request) -> Dict[str, str]:
             detail="plaintext_content must be a JSON object.",
         )
 
-    pool: Optional[asyncpg.Pool] = getattr(request.app.state, "db_pool", None)
+    pool: asyncpg.Pool | None = getattr(request.app.state, "db_pool", None)
     if not pool or pool.is_closing():
         logger.error("Database pool not available for app-reflections webhook")
         raise HTTPException(

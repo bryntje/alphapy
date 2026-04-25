@@ -1,9 +1,9 @@
-import sys
 import logging
-from logging.handlers import RotatingFileHandler
+import sys
 from collections import deque
 from datetime import datetime
-from typing import Any, Deque, Dict, Optional
+from logging.handlers import RotatingFileHandler
+from typing import Any
 
 # Configure logging with rotation
 log_handler = RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCount=3)  # 5MB per file, keep 3 backups
@@ -23,20 +23,20 @@ MAX_EVENT_HISTORY = 25
 
 class GPTStatusLogs:
     def __init__(self) -> None:
-        self.last_success_time: Optional[datetime] = None
-        self.last_error_time: Optional[datetime] = None
-        self.last_error_type: Optional[str] = None
+        self.last_success_time: datetime | None = None
+        self.last_error_time: datetime | None = None
+        self.last_error_type: str | None = None
         self.average_latency_ms: int = 0
         self.total_tokens_session: int = 0
         self.current_model: str = "grok-3"  # Default, will be updated from actual usage
-        self.last_user: Optional[int] = None
+        self.last_user: int | None = None
         self.success_count: int = 0
         self.error_count: int = 0
         self.rate_limit_hits: int = 0
-        self.last_rate_limit_time: Optional[datetime] = None
-        self.last_success_latency_ms: Optional[int] = None
-        self.success_events: Deque[Dict[str, Any]] = deque(maxlen=MAX_EVENT_HISTORY)
-        self.error_events: Deque[Dict[str, Any]] = deque(maxlen=MAX_EVENT_HISTORY)
+        self.last_rate_limit_time: datetime | None = None
+        self.last_success_latency_ms: int | None = None
+        self.success_events: deque[dict[str, Any]] = deque(maxlen=MAX_EVENT_HISTORY)
+        self.error_events: deque[dict[str, Any]] = deque(maxlen=MAX_EVENT_HISTORY)
 
 
 gpt_logs = GPTStatusLogs()
@@ -92,7 +92,7 @@ def log_database_event(event: str, guild_id: int = None, details: str = None, le
     log_with_guild(message, guild_id, level)
 
 
-def should_log_to_discord(level: str, guild_id: Optional[int] = None) -> bool:
+def should_log_to_discord(level: str, guild_id: int | None = None) -> bool:
     """
     Check if a log level should be sent to Discord based on guild's log level setting.
     

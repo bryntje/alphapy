@@ -1,6 +1,8 @@
 # utils/checks_interaction.py
 import discord
+
 import config
+
 
 async def is_owner_or_admin_interaction(interaction: discord.Interaction) -> bool:
     user = interaction.user

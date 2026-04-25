@@ -1,8 +1,8 @@
 import discord
 from discord.ext import commands
 
-from utils.logger import logger, log_with_guild
 from utils.cog_base import AlphaCog
+from utils.logger import log_with_guild, logger
 
 
 class JoinRoleCog(AlphaCog):

@@ -3,8 +3,8 @@ Contextual FYI tips: send short, relevant tips when certain first-time events ha
 State is stored in bot_settings (scope fyi); per-guild 24h cooldown prevents spam.
 """
 
-from datetime import datetime, timezone as _tz
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import discord
 
@@ -30,7 +30,7 @@ FYI_KEYS = frozenset({
 })
 
 # Embed content per key: title, description, optional footer. English only; short and actionable.
-FYI_CONTENT: Dict[str, Dict[str, str]] = {
+FYI_CONTENT: dict[str, dict[str, str]] = {
     "first_guild_join": {
         "title": "👋 Welcome",
         "description": "Get started: run `/config start` to set up onboarding and a log channel. I'll send tips there when you use features for the first time.",
@@ -84,7 +84,7 @@ FYI_CONTENT: Dict[str, Dict[str, str]] = {
 }
 
 
-def _build_fyi_embed(key: str, bot_name: Optional[str] = None) -> Optional[discord.Embed]:
+def _build_fyi_embed(key: str, bot_name: str | None = None) -> discord.Embed | None:
     """Build the FYI embed for a given key. Returns None if key has no content."""
     content = FYI_CONTENT.get(key)
     if not content:
@@ -103,17 +103,17 @@ def _build_fyi_embed(key: str, bot_name: Optional[str] = None) -> Optional[disco
     return embed
 
 
-def _parse_last_sent(value: Any) -> Optional[datetime]:
+def _parse_last_sent(value: Any) -> datetime | None:
     """Parse _last_sent_at from stored value (ISO string or number)."""
     if value is None:
         return None
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=_tz.utc)
+        return datetime.fromtimestamp(value, tz=UTC)
     if isinstance(value, str):
         try:
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=_tz.utc)
+                dt = dt.replace(tzinfo=UTC)
             return dt
         except ValueError:
             return None
@@ -125,7 +125,7 @@ async def send_fyi_if_first(
     guild_id: int,
     key: str,
     *,
-    channel_id_override: Optional[int] = None,
+    channel_id_override: int | None = None,
 ) -> None:
     """
     If this is the first time for this guild and this key, and the guild is not in cooldown,
@@ -144,7 +144,7 @@ async def send_fyi_if_first(
     last_sent_val = await bot.settings.get_raw(FYI_SCOPE, LAST_SENT_KEY, guild_id, fallback=None)
     last_sent = _parse_last_sent(last_sent_val)
     if last_sent is not None:
-        now = datetime.now(_tz.utc)
+        now = datetime.now(UTC)
         if (now - last_sent).total_seconds() < FYI_COOLDOWN_SECONDS:
             return
 
@@ -171,7 +171,7 @@ async def send_fyi_if_first(
         logger.warning("fyi_tips: could not send FYI %s to guild %s: %s", key, guild_id, e)
         return
 
-    now_iso = datetime.now(_tz.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     await bot.settings.set_raw(FYI_SCOPE, key, True, guild_id)
     await bot.settings.set_raw(FYI_SCOPE, LAST_SENT_KEY, now_iso, guild_id)
     logger.info("fyi_tips: sent FYI %s for guild %s", key, guild_id)
@@ -182,7 +182,7 @@ async def force_send_fyi(
     guild_id: int,
     key: str,
     *,
-    channel_id_override: Optional[int] = None,
+    channel_id_override: int | None = None,
     mark_as_sent: bool = True,
 ) -> bool:
     """
@@ -219,7 +219,7 @@ async def force_send_fyi(
         return False
 
     if mark_as_sent:
-        now_iso = datetime.now(_tz.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         await bot.settings.set_raw(FYI_SCOPE, key, True, guild_id)
         await bot.settings.set_raw(FYI_SCOPE, LAST_SENT_KEY, now_iso, guild_id)
     return True

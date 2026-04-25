@@ -1,14 +1,17 @@
 # test_embed_parser.py
 import unittest  # type: ignore
 from datetime import datetime
-from typing import Optional, Tuple, Any
-from discord.ext import commands
-from cogs.embed_watcher import EmbedReminderWatcher
+from typing import Any
+
 import discord  # type: ignore
+from discord.ext import commands
+
+from cogs.embed_watcher import EmbedReminderWatcher
+
 
 class DummySettingsService:
     """Minimal mock of SettingsService for testing."""
-    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Optional[Any] = None) -> Any:
+    def get(self, scope: str, key: str, guild_id: int = 0, fallback: Any | None = None) -> Any:
         return fallback
 
 class DummyBot(commands.Bot):
@@ -17,7 +20,7 @@ class DummyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=discord.Intents.default())
         self.settings = DummySettingsService()
 
-    def get_channel(self, *_) -> Optional[Any]:
+    def get_channel(self, *_) -> Any | None:
         return None
 
 class TestEmbedParser(unittest.TestCase):

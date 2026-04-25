@@ -7,7 +7,6 @@ embeds, LLM prompts, logs, or other sensitive contexts.
 """
 
 import re
-from typing import Optional
 
 
 def escape_markdown(text: str) -> str:
@@ -142,7 +141,7 @@ def safe_embed_text(text: str, max_length: int = 4096) -> str:
     return text
 
 
-def safe_prompt(user_input: str, context: Optional[str] = None) -> str:
+def safe_prompt(user_input: str, context: str | None = None) -> str:
     """
     Sanitizes user input for LLM prompts to prevent prompt injection attacks.
     

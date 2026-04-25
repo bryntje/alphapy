@@ -8,22 +8,21 @@ Loads recent reflections from:
 
 from __future__ import annotations
 
-import asyncio
-import asyncpg
 import json
 import logging
-from typing import Optional
+
+import asyncpg
 
 from utils.db_helpers import PoolT
-from utils.supabase_client import _supabase_get, get_user_id_for_discord
 from utils.sanitizer import safe_prompt
+from utils.supabase_client import _supabase_get, get_user_id_for_discord
 
 logger = logging.getLogger(__name__)
 
 _REFLECTION_TEXT_MAX_CHARS = 2048
 _REFLECTION_DATE_MAX_CHARS = 128
 
-_app_reflections_pool: Optional[PoolT] = None
+_app_reflections_pool: PoolT | None = None
 
 
 def _sanitize_reflection_field(value: object, max_chars: int = _REFLECTION_TEXT_MAX_CHARS) -> str:
@@ -36,7 +35,7 @@ def _sanitize_reflection_field(value: object, max_chars: int = _REFLECTION_TEXT_
     return safe_prompt(text[:max_chars])
 
 
-async def _get_app_reflections_pool() -> Optional[PoolT]:
+async def _get_app_reflections_pool() -> PoolT | None:
     """Get or create a shared database pool for app_reflections.
 
     This is intentionally cached at module level so that every user-self flow
@@ -199,7 +198,7 @@ async def load_user_reflections(
                     if reflection_rows:
                         context_parts = ["Recent reflections from the user:", ""]
                         valid_count = 0
-                        for idx, reflection in enumerate(reflection_rows, 1):
+                        for _idx, reflection in enumerate(reflection_rows, 1):
                             date_str = _sanitize_reflection_field(
                                 reflection.get("date", ""),
                                 max_chars=_REFLECTION_DATE_MAX_CHARS,

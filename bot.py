@@ -1,18 +1,16 @@
-import discord
-import asyncio
 import time
-from discord.ext import commands
-from discord import app_commands
-from cogs.gdpr import GDPRView
-from utils.logger import logger
-from gpt.helpers import set_bot_instance
-from utils.settings_service import SettingsService, SettingDefinition
-from utils.operational_logs import log_operational_event, EventType
-import config
-from typing import Optional
-
 from threading import Thread
+
+import discord
 import uvicorn
+from discord.ext import commands
+
+import config
+from gpt.helpers import set_bot_instance
+from utils.logger import logger
+from utils.operational_logs import EventType, log_operational_event
+from utils.settings_service import SettingDefinition, SettingsService
+
 
 def start_api():
     uvicorn.run("api:app", host="0.0.0.0", port=8000)
@@ -28,7 +26,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Set start_time for uptime tracking
-setattr(bot, "start_time", time.time())
+bot.start_time = time.time()
 
 # Database pool access is handled by utils.db_helpers.get_bot_db_pool()
 # This provides consistent database access across the codebase
@@ -691,7 +689,7 @@ async def on_disconnect():
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     """Sync guild-only commands when bot joins a new guild."""
-    from utils.command_sync import safe_sync, detect_guild_only_commands
+    from utils.command_sync import detect_guild_only_commands, safe_sync
     
     logger.info(f"🆕 Bot joined new guild: {guild.name} (ID: {guild.id})")
     
@@ -773,7 +771,7 @@ async def close_with_shutdown():
 bot.close = close_with_shutdown
 
 # Start bot: uses BOT_TOKEN_ACTIVE (BOT_TOKEN_TEST when USE_TEST_BOT=1, else BOT_TOKEN)
-token: Optional[str] = getattr(config, "BOT_TOKEN_ACTIVE", None)
+token: str | None = getattr(config, "BOT_TOKEN_ACTIVE", None)
 if not token:
     raise RuntimeError("BOT_TOKEN (or BOT_TOKEN_TEST when USE_TEST_BOT=1) is not set in the config.")
 bot.run(token)

@@ -4,11 +4,12 @@ CSV export utilities for consistent file generation and Discord file handling.
 import csv
 import io
 import os
+from typing import Any
+
 import discord
-from typing import List, Dict, Any, Optional
 
 
-def create_csv_buffer(rows: List[Dict[str, Any]], fieldnames: Optional[List[str]] = None) -> io.StringIO:
+def create_csv_buffer(rows: list[dict[str, Any]], fieldnames: list[str] | None = None) -> io.StringIO:
     """Create a CSV buffer from database rows."""
     if not fieldnames:
         fieldnames = list(rows[0].keys()) if rows else []
@@ -31,7 +32,7 @@ def create_discord_file_from_buffer(buf: io.StringIO, filename: str) -> discord.
     return discord.File(bytes_buf, filename=filename)
 
 
-def create_temp_csv_file(rows: List[Dict[str, Any]], filename: str, fieldnames: Optional[List[str]] = None) -> str:
+def create_temp_csv_file(rows: list[dict[str, Any]], filename: str, fieldnames: list[str] | None = None) -> str:
     """Create a temporary CSV file (legacy method - prefer buffer method)."""
     if not fieldnames:
         fieldnames = list(rows[0].keys()) if rows else []
