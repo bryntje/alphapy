@@ -1,7 +1,7 @@
 import re
 import time as time_module
 from datetime import datetime, timedelta
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import asyncpg
 import discord
@@ -20,6 +20,7 @@ from utils.db_helpers import acquire_safe, get_bot_db_pool, is_pool_healthy
 from utils.embed_builder import EmbedBuilder
 from utils.logger import log_database_event, log_guild_action, log_with_guild, logger
 from utils.parsers import format_days_for_display, parse_days_string, parse_time_string
+from utils.reminder_repository import ReminderConnectionLike
 from utils.sanitizer import safe_embed_text
 from utils.timezone import BRUSSELS_TZ
 from utils.validators import validate_admin
@@ -27,9 +28,7 @@ from utils.validators import validate_admin
 # All logging timestamps in this module use Brussels time for clarity.
 
 
-class ReminderRepoConnection(Protocol):
-    async def fetch(self, query: str, *args: Any, timeout: float | None = ...) -> list[asyncpg.Record]: ...
-    async def execute(self, query: str, *args: Any, timeout: float | None = ...) -> str: ...
+ReminderRepoConnection = ReminderConnectionLike
 
 
 class ReminderCog(AlphaCog):
@@ -363,7 +362,8 @@ class ReminderCog(AlphaCog):
 
         guild_id = interaction.guild.id
         try:
-            async with acquire_safe(self.db) as conn:
+            async with acquire_safe(self.db) as conn_raw:
+                conn = cast(ReminderConnectionLike, conn_raw)
                 rid = await reminder_repo.create(
                     conn,
                     guild_id=guild_id,
@@ -516,7 +516,8 @@ class ReminderCog(AlphaCog):
             return
 
         try:
-            async with acquire_safe(self.db) as conn:
+            async with acquire_safe(self.db) as conn_raw:
+                conn = cast(ReminderConnectionLike, conn_raw)
                 await reminder_repo.create(
                     conn,
                     guild_id=guild_id,
@@ -571,7 +572,8 @@ class ReminderCog(AlphaCog):
             if not self.db:
                 await interaction.followup.send("⛔ Database not connected.", ephemeral=True)
                 return
-            async with acquire_safe(self.db) as conn:
+            async with acquire_safe(self.db) as conn_raw:
+                conn = cast(ReminderConnectionLike, conn_raw)
                 if is_admin:
                     rows = await reminder_repo.list_for_guild(conn, guild_id)
                 else:
@@ -714,7 +716,8 @@ class ReminderCog(AlphaCog):
 
         guild_id = interaction.guild.id
         try:
-            async with acquire_safe(self.db) as conn:
+            async with acquire_safe(self.db) as conn_raw:
+                conn = cast(ReminderConnectionLike, conn_raw)
                 row = await reminder_repo.get_by_id(conn, guild_id, reminder_id)
 
                 if not row:
@@ -756,7 +759,8 @@ class ReminderCog(AlphaCog):
 
         # Fetch reminder and check ownership
         try:
-            async with acquire_safe(self.db) as conn:
+            async with acquire_safe(self.db) as conn_raw:
+                conn = cast(ReminderConnectionLike, conn_raw)
                 if is_admin:
                     row = await reminder_repo.get_by_id(conn, guild_id, reminder_id)
                 else:
@@ -897,7 +901,8 @@ class ReminderCog(AlphaCog):
         if not self.db:
             return []
         guild_id = interaction.guild.id
-        async with acquire_safe(self.db) as conn:
+        async with acquire_safe(self.db) as conn_raw:
+            conn = cast(ReminderConnectionLike, conn_raw)
             rows = await reminder_repo.autocomplete_all(conn, guild_id)
         return [
             app_commands.Choice(name=f"ID {row['id']} – {row['name'][:30]}", value=row["id"])
@@ -918,7 +923,8 @@ class ReminderCog(AlphaCog):
         user_id = interaction.user.id
         is_admin, _ = await validate_admin(interaction, raise_on_fail=False)
         
-        async with acquire_safe(self.db) as conn:
+        async with acquire_safe(self.db) as conn_raw:
+            conn = cast(ReminderConnectionLike, conn_raw)
             if is_admin:
                 rows = await reminder_repo.autocomplete_all(conn, guild_id)
             else:
@@ -973,7 +979,8 @@ class ReminderCog(AlphaCog):
         next_date = (now + timedelta(days=1)).date()
 
         try:
-            async with acquire_safe(self.db) as conn:
+            async with acquire_safe(self.db) as conn_raw:
+                conn = cast(ReminderConnectionLike, conn_raw)
                 # Build day matching: support both numeric ("0", "1", "2") and text ("ma", "di", "woe", etc.)
                 day_abbrevs = {
                     "0": ["0", "ma", "maandag", "monday"],
@@ -1149,7 +1156,8 @@ class ReminderCog(AlphaCog):
                     )
                     # Update idempotency marker; for T-60 sends also store the message ID
                     try:
-                        async with acquire_safe(self.db) as update_conn:
+                        async with acquire_safe(self.db) as update_conn_raw:
+                            update_conn = cast(ReminderConnectionLike, update_conn_raw)
                             await reminder_repo.update_sent_at(
                                 update_conn,
                                 reminder_id=row["id"],
@@ -1201,7 +1209,8 @@ class ReminderCog(AlphaCog):
                 # Delete one-off reminders from DB after T0 send (not after T-60)
                 if row.get("event_time") and is_t0_send:
                     try:
-                        async with acquire_safe(self.db) as delete_conn:
+                        async with acquire_safe(self.db) as delete_conn_raw:
+                            delete_conn = cast(ReminderConnectionLike, delete_conn_raw)
                             await reminder_repo.delete(delete_conn, row["guild_id"], row["id"])
                         logger.info(f"🗑️ Reminder {row['id']} (one-off) deleted after T0 send.")
                         await self.send_log_embed(
@@ -1244,19 +1253,19 @@ async def get_reminders_for_user(
     user_id: str,
     guild_id: int | None = None,
 ):
-    return await reminder_repo.get_for_api(conn, user_id, guild_id)
+    return await reminder_repo.get_for_api(cast(ReminderConnectionLike, conn), user_id, guild_id)
 
 
 async def create_reminder(conn: ReminderRepoConnection, data: dict[str, Any]) -> None:
-    await reminder_repo.create_for_api(conn, data)
+    await reminder_repo.create_for_api(cast(ReminderConnectionLike, conn), data)
 
 
 async def update_reminder(conn: ReminderRepoConnection, data: dict[str, Any]) -> None:
-    await reminder_repo.update_for_api(conn, data)
+    await reminder_repo.update_for_api(cast(ReminderConnectionLike, conn), data)
 
 
 async def delete_reminder(conn: ReminderRepoConnection, reminder_id: int, created_by: str) -> None:
-    await reminder_repo.delete_by_owner(conn, reminder_id, created_by)
+    await reminder_repo.delete_by_owner(cast(ReminderConnectionLike, conn), reminder_id, created_by)
 
 
 class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
@@ -1373,7 +1382,8 @@ class EditReminderModal(discord.ui.Modal, title="Edit Reminder"):
 
         # Fetch current reminder to preserve event_time and call_time logic
         try:
-            async with acquire_safe(self.cog.db) as conn:
+            async with acquire_safe(self.cog.db) as conn_raw:
+                conn = cast(ReminderConnectionLike, conn_raw)
                 current_row = await reminder_repo.get_by_id(conn, self.guild_id, self.reminder_id)
                 if not current_row:
                     await interaction.followup.send("❌ Reminder not found.", ephemeral=True)
