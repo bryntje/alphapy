@@ -12,6 +12,7 @@ This release adds API request observability and idempotent reminder API writes, 
 
 #### What's New
 - **API observability endpoint**: New internal `GET /api/observability` with rolling success rate, request volume, and latency percentiles (`p50`, `p95`, `p99`) for API and webhook traffic
+  - Audience/scope: Mind/internal observability and ops monitoring (outside Alphapy dashboard configuration endpoints)
 - **Request tracing**: API middleware now propagates `X-Request-ID` and tracks per-request latency/outcome
 - **Reminder API idempotency**: `POST /api/reminders`, `PUT /api/reminders`, and `DELETE /api/reminders/{reminder_id}/{created_by}` now support `Idempotency-Key` headers
 - **Migration 022**: Creates/ensures `audit_logs` and `health_check_history`, ensures analytics indexes, and adds `idx_reminders_event_time`

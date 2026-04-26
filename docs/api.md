@@ -21,6 +21,7 @@ All API endpoints are prefixed with `/api` unless otherwise noted.
 - `/api/dashboard/metrics` (or `/api/metrics` alias) for live metrics
 - `/api/health` for health checks
 - Dashboard configuration endpoints for web UI management
+- `/api/observability` for internal/ops observability snapshots (not part of Alphapy dashboard configuration flows)
 
 ## Authentication
 
@@ -83,6 +84,8 @@ Simple status check endpoint (legacy, no authentication required).
 #### `GET /api/observability`
 
 Internal observability snapshot endpoint.
+
+This endpoint is intended for Mind/internal monitoring and operations use. It is not a `/api/dashboard/*` configuration endpoint.
 
 Returns rolling in-memory request metrics for API and webhook traffic:
 - success rate
