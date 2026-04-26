@@ -86,6 +86,7 @@ Simple status check endpoint (legacy, no authentication required).
 Internal observability snapshot endpoint.
 
 This endpoint is intended for Mind/internal monitoring and operations use. It is not a `/api/dashboard/*` configuration endpoint.
+Requires `X-Api-Key` with the configured service key.
 
 Returns rolling in-memory request metrics for API and webhook traffic:
 - success rate
