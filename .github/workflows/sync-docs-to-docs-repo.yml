@@ -23,8 +23,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Innersync-tech/docs
-          token: ${{ secrets.INNERSYNC_TOKEN }}
+          token: ${{ secrets.DOCS_SYNC_TOKEN }}
           path: docs-repo
+
+      - name: Validate docs repo token
+        run: |
+          if [ -z "${{ secrets.DOCS_SYNC_TOKEN }}" ]; then
+            echo "Missing required secret: DOCS_SYNC_TOKEN"
+            echo "Create a token with write access to Innersync-tech/docs (and enable org SSO if required)."
+            exit 1
+          fi
 
       - name: Sync docs folder to docs-repo/alphapy
         run: |
