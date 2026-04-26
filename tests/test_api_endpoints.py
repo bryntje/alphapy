@@ -9,12 +9,14 @@ via app.dependency_overrides; db_pool is patched at the module level.
 from datetime import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import api as api_module
 from api import (
     get_authenticated_user_id,
+    require_observability_api_key,
     router,
     verify_api_key,
 )
@@ -248,6 +250,29 @@ class TestApiObservability:
         assert data["api"]["requests"] == 10
         assert data["api"]["success_rate"] == 0.9
         assert "p95" in data["api"]["latency_ms"]
+
+
+class TestRequireObservabilityApiKey:
+    @pytest.mark.asyncio
+    async def test_returns_503_when_api_key_not_configured(self):
+        with patch.object(api_module.config, "API_KEY", None):
+            with pytest.raises(api_module.HTTPException) as exc_info:
+                await require_observability_api_key(x_api_key="any-value")
+        assert exc_info.value.status_code == 503
+        assert "not configured" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_returns_401_when_api_key_mismatch(self):
+        with patch.object(api_module.config, "API_KEY", "expected-key"):
+            with pytest.raises(api_module.HTTPException) as exc_info:
+                await require_observability_api_key(x_api_key="wrong-key")
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Unauthorized"
+
+    @pytest.mark.asyncio
+    async def test_allows_request_when_api_key_matches(self):
+        with patch.object(api_module.config, "API_KEY", "expected-key"):
+            await require_observability_api_key(x_api_key="expected-key")
 
 
 # ---------------------------------------------------------------------------
