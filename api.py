@@ -76,6 +76,20 @@ async def verify_api_key(
     request.state.supabase_claims = None
 
 
+async def require_observability_api_key(
+    x_api_key: str | None = Header(None),
+) -> None:
+    """Require service API key for internal observability endpoint access."""
+    configured_key = getattr(config, "API_KEY", None)
+    if not configured_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Observability endpoint unavailable: API key is not configured",
+        )
+    if x_api_key != configured_key:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 async def get_authenticated_user_id(
     request: Request,
     authorization: str | None = Header(None),
@@ -491,7 +505,11 @@ def get_status():
     }
 
 
-@app.get("/api/observability", include_in_schema=False)
+@app.get(
+    "/api/observability",
+    include_in_schema=False,
+    dependencies=[Depends(require_observability_api_key)],
+)
 def get_observability() -> dict[str, Any]:
     api_success_rate = (_api_success_requests / _api_total_requests) if _api_total_requests else 1.0
     webhook_success_rate = (_webhook_success_requests / _webhook_total_requests) if _webhook_total_requests else 1.0

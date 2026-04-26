@@ -51,6 +51,7 @@ The in-memory store is cleaned every 10 minutes. Note: this is a single-instance
   - request counts
   - success rates
   - latency percentiles (`p50`, `p95`, `p99`)
+- `GET /api/observability` now requires `X-Api-Key` (service key) and returns `503` when no service key is configured.
 
 This endpoint is intended for operational monitoring and troubleshooting.
 
