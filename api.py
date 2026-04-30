@@ -1694,7 +1694,11 @@ def _collect_cache_metrics() -> CacheMetrics:
     ticket_cooldowns_size = 0  # TODO: Add global tracking if needed
 
     automod_cache_stats: dict[str, int] = {}
-    bot = get_shared_bot()
+    try:
+        from gpt.helpers import bot_instance
+    except Exception:
+        bot_instance = None
+    bot = bot_instance
     if bot:
         try:
             cog = bot.get_cog("Configuration")
