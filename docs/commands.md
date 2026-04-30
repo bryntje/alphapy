@@ -404,6 +404,10 @@ Manually compute and announce weekly awards for the configured award channel.
 - `/automod set_severity <rule_id> <1–10>` — Rule priority (higher = processed first)
 - `/automod logs [limit] [user_id] [rule_id] [action] [days]` — Recent automod logs
 
+Notes:
+- `action` parameters use fixed slash-command choices: `delete`, `warn`, `mute`, `timeout`, `ban`.
+- `rule_id` now supports autocomplete in `/automod delete_rule`, `/automod set_rule_enabled`, `/automod edit_rule`, `/automod set_severity`, and `/automod logs`.
+
 ---
 
 ### Growth — `/growth`

@@ -5,10 +5,23 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- (No changes yet)
+- **Auto-mod command UX** (`cogs/configuration.py`, `cogs/configuration_automod.py`):
+  - Added explicit slash-command action choices (`delete`, `warn`, `mute`, `timeout`, `ban`) for auto-mod add/edit/logs commands.
+  - Added `rule_id` autocomplete for `/automod delete_rule`, `/automod set_rule_enabled`, `/automod edit_rule`, `/automod set_severity`, and `/automod logs`.
+- **Cache observability expansion** (`api.py`):
+  - `cache_metrics` now includes AutoMod rule cache counters and Engagement cache counters.
+  - `premium_metrics` now includes guild-level premium cache size/hit/miss counters.
 
 ### Fixed
-- (No changes yet)
+- **Engagement settings reads and hot-path caching** (`cogs/engagement.py`):
+  - Fixed `SettingsService.get` usage in engagement helpers (`scope/key/guild_id` order + sync call).
+  - Added TTL caches for engagement feature flags and weekly food-channel IDs.
+  - Added settings-listener invalidation for engagement caches on `engagement.*` updates.
+- **Auto-mod cache invalidation correctness** (`utils/automod_rules.py`):
+  - `create_rule()` now invalidates both rules cache data and cache timestamps, preventing stale/empty reads after rule creation.
+  - Added TTL-backed cache reuse for `list_rules()` to reduce DB load during autocomplete-heavy command usage.
+- **Guild premium check load reduction** (`utils/premium_guard.py`):
+  - Added TTL cache for `guild_has_premium(guild_id)` with invalidation integrated into `invalidate_premium_cache(...)`.
 
 ## [3.7.0] - 2026-04-25
 

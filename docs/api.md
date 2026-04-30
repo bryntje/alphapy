@@ -233,7 +233,10 @@ Comprehensive dashboard metrics including bot status, Grok/LLM stats, reminders,
     "premium_checks_local": 40,
     "premium_cache_hits": 200,
     "premium_transfers_count": 3,
-    "premium_cache_size": 25
+    "premium_cache_size": 25,
+    "premium_guild_cache_size": 8,
+    "premium_guild_cache_hits": 90,
+    "premium_guild_cache_misses": 12
   }
 }
 ```
@@ -246,6 +249,15 @@ The optional `premium_metrics` block provides observability for the Premium guar
 - `premium_cache_hits`: Number of cache hits when resolving premium status
 - `premium_transfers_count`: Number of premium transfers between guilds
 - `premium_cache_size`: Current in-memory cache size for premium status
+- `premium_guild_cache_size`: Current in-memory cache size for guild-level premium checks
+- `premium_guild_cache_hits`: Cache hits for `guild_has_premium(guild_id)`
+- `premium_guild_cache_misses`: Cache misses for `guild_has_premium(guild_id)`
+
+The optional `cache_metrics` block now also includes cache metrics for:
+
+- `automod_rules_cache_*`: active-rules and rule-list cache size/hit/miss counters from `RuleProcessor`
+- `engagement_feature_flag_cache_*`: cache size/hit/miss counters for engagement `*_enabled` checks
+- `engagement_food_channels_cache_*`: cache size/hit/miss counters for engagement food-channel resolution
 
 #### `GET /api/metrics`
 
