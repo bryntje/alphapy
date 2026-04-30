@@ -52,8 +52,21 @@ class RuleProcessor:
     def __init__(self, bot: commands.Bot | None = None):
         self.bot = bot
         self._rules_cache: dict[int, list[dict]] = {}  # guild_id -> rules
+        self._list_rules_cache: dict[int, list[dict]] = {}  # guild_id -> full rule list (enabled + disabled)
         self._cache_ttl = 300  # 5 minutes
         self._cache_updated: dict[int, float] = {}
+        self._list_cache_updated: dict[int, float] = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+    def get_cache_stats(self) -> dict[str, int]:
+        """Expose rule cache metrics for API health dashboards."""
+        return {
+            "automod_rules_cache_size": len(self._rules_cache),
+            "automod_rules_list_cache_size": len(self._list_rules_cache),
+            "automod_rules_cache_hits": self._cache_hits,
+            "automod_rules_cache_misses": self._cache_misses,
+        }
         
     async def load_rules(self):
         """Load all rules from database into cache."""
@@ -74,6 +87,8 @@ class RuleProcessor:
                 
             # Organize by guild
             self._rules_cache.clear()
+            self._list_rules_cache.clear()
+            self._list_cache_updated.clear()
             for rule in rules:
                 guild_id = rule['guild_id']
                 if guild_id not in self._rules_cache:
@@ -92,10 +107,12 @@ class RuleProcessor:
         # Check if cache needs refresh
         if (guild_id not in self._cache_updated or 
             current_time - self._cache_updated.get(guild_id, 0) > self._cache_ttl):
-            
+            self._cache_misses += 1
             await self._refresh_guild_rules(guild_id)
             self._cache_updated[guild_id] = current_time
-            
+        else:
+            self._cache_hits += 1
+
         return self._rules_cache.get(guild_id, [])
         
     async def _refresh_guild_rules(self, guild_id: int):
@@ -426,9 +443,11 @@ Be conservative - only flag clear violations."""
                     RETURNING id
                 """, guild_id, rule_type, name, json.dumps(config), action_id, created_by, is_premium)
                 
-                # Clear cache for this guild
-                if guild_id in self._rules_cache:
-                    del self._rules_cache[guild_id]
+                # Clear cache for this guild so reads refresh immediately.
+                self._rules_cache.pop(guild_id, None)
+                self._cache_updated.pop(guild_id, None)
+                self._list_rules_cache.pop(guild_id, None)
+                self._list_cache_updated.pop(guild_id, None)
                     
                 return rule_id
                 
@@ -439,6 +458,15 @@ Be conservative - only flag clear violations."""
     async def list_rules(self, guild_id: int) -> list[dict[str, Any]]:
         """List all auto-mod rules for a guild."""
         try:
+            current_time = time.time()
+            if (
+                guild_id in self._list_cache_updated
+                and current_time - self._list_cache_updated.get(guild_id, 0) <= self._cache_ttl
+            ):
+                self._cache_hits += 1
+                return [dict(row) for row in self._list_rules_cache.get(guild_id, [])]
+
+            self._cache_misses += 1
             pool = get_bot_db_pool(self.bot) if self.bot else None
             if not pool:
                 raise ValueError("Database not available")
@@ -464,7 +492,10 @@ Be conservative - only flag clear violations."""
                     guild_id,
                 )
 
-            return [dict(row) for row in rows]
+            result = [dict(row) for row in rows]
+            self._list_rules_cache[guild_id] = result
+            self._list_cache_updated[guild_id] = current_time
+            return result
         except Exception as e:
             log.error(f"Error listing auto-mod rules for guild {guild_id}: {e}")
             raise
@@ -533,6 +564,8 @@ Be conservative - only flag clear violations."""
 
             self._rules_cache.pop(guild_id, None)
             self._cache_updated.pop(guild_id, None)
+            self._list_rules_cache.pop(guild_id, None)
+            self._list_cache_updated.pop(guild_id, None)
             return True
         except Exception as e:
             log.error(f"Error deleting auto-mod rule {rule_id} for guild {guild_id}: {e}")
@@ -606,6 +639,8 @@ Be conservative - only flag clear violations."""
 
             self._rules_cache.pop(guild_id, None)
             self._cache_updated.pop(guild_id, None)
+            self._list_rules_cache.pop(guild_id, None)
+            self._list_cache_updated.pop(guild_id, None)
             return True
         except Exception as e:
             log.error(f"Error updating auto-mod rule {rule_id} for guild {guild_id}: {e}")
