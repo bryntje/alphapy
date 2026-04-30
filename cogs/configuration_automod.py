@@ -11,6 +11,7 @@ import discord
 from discord import app_commands
 
 from utils.automod_rules import ActionType, RuleType
+from utils.premium_guard import guild_has_premium
 
 # Slash-command dropdowns for auto-mod actions (values match ActionType / DB).
 AUTOMOD_ACTION_CHOICES: list[app_commands.Choice[str]] = [
@@ -20,7 +21,6 @@ AUTOMOD_ACTION_CHOICES: list[app_commands.Choice[str]] = [
     app_commands.Choice(name="Timeout", value=ActionType.TIMEOUT.value),
     app_commands.Choice(name="Ban", value=ActionType.BAN.value),
 ]
-from utils.premium_guard import guild_has_premium
 
 
 def normalize_automod_action_type(action_type: str) -> str | None:
