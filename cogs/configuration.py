@@ -7,6 +7,7 @@ from discord.ext import commands
 
 import config
 from cogs.configuration_automod import (
+    AUTOMOD_ACTION_CHOICES,
     check_advanced_action_premium,
     normalize_automod_action_type,
     validate_rule_update_fields,
@@ -1631,6 +1632,7 @@ class Configuration(AlphaCog):
             log_guild_action(interaction.guild.id, "Auto-moderation log channel reset", user=str(interaction.user))
 
     @automod_group.command(name="add_spam_rule", description="Add a spam frequency rule")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_add_spam_rule(
         self,
@@ -1683,6 +1685,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation spam rule created: {name}", user=str(interaction.user))
 
     @automod_group.command(name="add_badwords_rule", description="Add a bad-words content rule")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_add_badwords_rule(
         self,
@@ -1741,6 +1744,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation bad-words rule created: {name}", user=str(interaction.user))
 
     @automod_group.command(name="add_links_rule", description="Add a link filtering rule")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_add_links_rule(
         self,
@@ -1794,6 +1798,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation links rule created: {name}", user=str(interaction.user))
 
     @automod_group.command(name="add_mentions_rule", description="Add a mention spam rule")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_add_mentions_rule(
         self,
@@ -1841,6 +1846,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation mentions rule created: {name}", user=str(interaction.user))
 
     @automod_group.command(name="add_caps_rule", description="Add an excessive caps spam rule")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_add_caps_rule(
         self,
@@ -1890,6 +1896,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation caps rule created: {name}", user=str(interaction.user))
 
     @automod_group.command(name="add_duplicate_rule", description="Add a duplicate-message spam rule")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_add_duplicate_rule(
         self,
@@ -1937,6 +1944,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation duplicate rule created: {name}", user=str(interaction.user))
 
     @automod_group.command(name="add_regex_rule", description="Add a regex content rule (premium)")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_add_regex_rule(
         self,
@@ -2010,6 +2018,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation regex rule created: {name}", user=str(interaction.user))
 
     @automod_group.command(name="add_ai_rule", description="Add AI content rule (premium).")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_add_ai_rule(
         self,
@@ -2131,6 +2140,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation rule {state}: {rule_id}", user=str(interaction.user))
 
     @automod_group.command(name="edit_rule", description="Edit an auto-moderation rule")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_edit_rule(
         self,
@@ -2300,6 +2310,7 @@ class Configuration(AlphaCog):
         log_guild_action(interaction.guild.id, f"Auto-moderation rule updated: {rule_id}", user=str(interaction.user))
 
     @automod_group.command(name="logs", description="Show auto-moderation logs.")
+    @app_commands.choices(action_type=AUTOMOD_ACTION_CHOICES)
     @requires_admin()
     async def automod_logs(
         self,
@@ -2434,6 +2445,41 @@ class Configuration(AlphaCog):
             ephemeral=True,
         )
         log_guild_action(interaction.guild.id, f"Auto-moderation rule severity updated: {rule_id} → {severity}", user=str(interaction.user))
+
+    @automod_delete_rule.autocomplete("rule_id")
+    @automod_set_rule_enabled.autocomplete("rule_id")
+    @automod_edit_rule.autocomplete("rule_id")
+    @automod_set_severity.autocomplete("rule_id")
+    @automod_logs.autocomplete("rule_id")
+    async def automod_rule_id_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[int]]:
+        """Suggest auto-mod rules for this server (type / name / id filter)."""
+        if not interaction.guild:
+            return []
+        try:
+            rows = await self.rule_processor.list_rules(interaction.guild.id)
+        except Exception:
+            logger.debug("automod_rule_id_autocomplete: list_rules failed", exc_info=True)
+            return []
+
+        q = current.lower().strip()
+        choices: list[app_commands.Choice[int]] = []
+        for row in rows:
+            rid = int(row["id"])
+            name = str(row.get("name") or "unnamed")
+            rtype = str(row.get("rule_type") or "")
+            action_t = str(row.get("action_type") or "")
+            enabled = bool(row.get("enabled"))
+            label = f"#{rid} {name} · {rtype} · {action_t} · {'on' if enabled else 'off'}"
+            if len(label) > 100:
+                label = label[:97] + "..."
+            if q and q not in label.lower() and q not in str(rid):
+                continue
+            choices.append(app_commands.Choice(name=label, value=rid))
+            if len(choices) >= 25:
+                break
+        return choices
 
     @growth_group.command(name="set_channel", description="Set Growth Check-in channel")
     @requires_admin()

@@ -21,6 +21,7 @@ on_raw_reaction_add: increments reaction counts for weekly awards and handles OG
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -76,15 +77,62 @@ from utils.logger import logger
 # ---------------------------------------------------------------------------
 
 
+_FEATURE_FLAG_TTL = 30.0
+_FOOD_CHANNELS_TTL = 60.0
+_feature_flag_cache: dict[tuple[int, str], tuple[bool, float]] = {}
+_food_channels_cache: dict[int, tuple[set[int], float]] = {}
+_cache_stats = {
+    "feature_flag_hits": 0,
+    "feature_flag_misses": 0,
+    "food_channels_hits": 0,
+    "food_channels_misses": 0,
+}
+
+
+def _invalidate_engagement_cache(scope: str, key: str, guild_id: int) -> None:
+    """Drop local engagement cache entries when related settings change."""
+    if scope != "engagement":
+        return
+    if key.endswith("_enabled"):
+        feature = key[:-8]
+        _feature_flag_cache.pop((guild_id, feature), None)
+    if key == "weekly_food_channel_ids":
+        _food_channels_cache.pop(guild_id, None)
+
+
+def get_engagement_cache_stats() -> dict[str, int]:
+    """Expose engagement cache metrics for dashboard/health endpoints."""
+    return {
+        "engagement_feature_flag_cache_size": len(_feature_flag_cache),
+        "engagement_food_channels_cache_size": len(_food_channels_cache),
+        "engagement_feature_flag_cache_hits": int(_cache_stats["feature_flag_hits"]),
+        "engagement_feature_flag_cache_misses": int(_cache_stats["feature_flag_misses"]),
+        "engagement_food_channels_cache_hits": int(_cache_stats["food_channels_hits"]),
+        "engagement_food_channels_cache_misses": int(_cache_stats["food_channels_misses"]),
+    }
+
+
 async def _is_enabled(bot: commands.Bot, guild_id: int, feature: str) -> bool:
     """Return True if the given engagement feature is enabled for the guild."""
+    now = time.monotonic()
+    cache_key = (guild_id, feature)
+    cached = _feature_flag_cache.get(cache_key)
+    if cached and cached[1] > now:
+        _cache_stats["feature_flag_hits"] += 1
+        return cached[0]
+    _cache_stats["feature_flag_misses"] += 1
+
     settings = getattr(bot, "settings", None)
     if not settings:
+        _feature_flag_cache[cache_key] = (False, now + _FEATURE_FLAG_TTL)
         return False
     try:
-        val = await settings.get(guild_id, "engagement", f"{feature}_enabled")
-        return bool(val)
+        val = settings.get("engagement", f"{feature}_enabled", guild_id=guild_id)
+        is_enabled = bool(val)
+        _feature_flag_cache[cache_key] = (is_enabled, now + _FEATURE_FLAG_TTL)
+        return is_enabled
     except Exception:
+        _feature_flag_cache[cache_key] = (False, now + _FEATURE_FLAG_TTL)
         return False
 
 
@@ -95,7 +143,7 @@ async def _get_setting(
     if not settings:
         return default
     try:
-        val = await settings.get(guild_id, "engagement", key)
+        val = settings.get("engagement", key, guild_id=guild_id)
         return val if val is not None else default
     except Exception:
         return default
@@ -138,13 +186,21 @@ async def _get_award_configs(bot: commands.Bot, guild_id: int) -> list[dict[str,
 
 async def _get_food_channel_ids(bot: commands.Bot, guild_id: int) -> set:
     """Load the set of channel IDs designated as food channels for a guild."""
+    now = time.monotonic()
+    cached = _food_channels_cache.get(guild_id)
+    if cached and cached[1] > now:
+        _cache_stats["food_channels_hits"] += 1
+        return set(cached[0])
+    _cache_stats["food_channels_misses"] += 1
+
     raw = await _get_setting(bot, guild_id, "weekly_food_channel_ids", "")
-    ids: set = set()
+    ids: set[int] = set()
     if raw:
         for tok in str(raw).split(","):
             tok = tok.strip()
             if tok.isdigit():
                 ids.add(int(tok))
+    _food_channels_cache[guild_id] = (set(ids), now + _FOOD_CHANNELS_TTL)
     return ids
 
 
@@ -746,6 +802,7 @@ class EngagementCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._settings_listener = self._on_setting_changed
         # Runtime cache: guild_id -> OG message_id
         self.og_message_ids: dict[int, int] = {}
         # Add command groups
@@ -757,6 +814,12 @@ class EngagementCog(commands.Cog):
         bot.tree.add_command(self.badge_group)
         bot.tree.add_command(self.og_group)
         bot.tree.add_command(self.weekly_group)
+        settings = getattr(bot, "settings", None)
+        if settings:
+            settings.add_global_listener(self._settings_listener)
+
+    async def _on_setting_changed(self, scope: str, key: str, guild_id: int, _value: Any) -> None:
+        _invalidate_engagement_cache(scope, key, guild_id)
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command("challenge")

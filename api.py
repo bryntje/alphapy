@@ -784,6 +784,16 @@ class CacheMetrics(BaseModel):
     ip_rate_limits_size: int
     sync_cooldowns_size: int
     ticket_cooldowns_size: int
+    automod_rules_cache_size: int = 0
+    automod_rules_list_cache_size: int = 0
+    automod_rules_cache_hits: int = 0
+    automod_rules_cache_misses: int = 0
+    engagement_feature_flag_cache_size: int = 0
+    engagement_food_channels_cache_size: int = 0
+    engagement_feature_flag_cache_hits: int = 0
+    engagement_feature_flag_cache_misses: int = 0
+    engagement_food_channels_cache_hits: int = 0
+    engagement_food_channels_cache_misses: int = 0
 
 
 class PremiumMetrics(BaseModel):
@@ -794,6 +804,9 @@ class PremiumMetrics(BaseModel):
     premium_cache_hits: int
     premium_transfers_count: int
     premium_cache_size: int
+    premium_guild_cache_size: int = 0
+    premium_guild_cache_hits: int = 0
+    premium_guild_cache_misses: int = 0
 
 
 class CommandUsage(BaseModel):
@@ -1679,13 +1692,45 @@ def _collect_cache_metrics() -> CacheMetrics:
     # Ticket cooldowns size (need to get from bot instance or track globally)
     # For now, we'll track this separately if needed
     ticket_cooldowns_size = 0  # TODO: Add global tracking if needed
+
+    automod_cache_stats: dict[str, int] = {}
+    try:
+        from gpt.helpers import bot_instance
+    except Exception:
+        bot_instance = None
+    bot = bot_instance
+    if bot:
+        try:
+            cog = bot.get_cog("Configuration")
+            rule_processor = getattr(cog, "rule_processor", None) if cog else None
+            if rule_processor and hasattr(rule_processor, "get_cache_stats"):
+                automod_cache_stats = rule_processor.get_cache_stats()
+        except Exception:
+            automod_cache_stats = {}
+
+    try:
+        from cogs.engagement import get_engagement_cache_stats
+
+        engagement_cache_stats = get_engagement_cache_stats()
+    except Exception:
+        engagement_cache_stats = {}
     
     return CacheMetrics(
         command_tracker_queue_size=command_tracker_size,
         command_stats_cache_size=command_stats_size,
         ip_rate_limits_size=ip_rate_limits_size,
         sync_cooldowns_size=sync_cooldowns_size,
-        ticket_cooldowns_size=ticket_cooldowns_size
+        ticket_cooldowns_size=ticket_cooldowns_size,
+        automod_rules_cache_size=automod_cache_stats.get("automod_rules_cache_size", 0),
+        automod_rules_list_cache_size=automod_cache_stats.get("automod_rules_list_cache_size", 0),
+        automod_rules_cache_hits=automod_cache_stats.get("automod_rules_cache_hits", 0),
+        automod_rules_cache_misses=automod_cache_stats.get("automod_rules_cache_misses", 0),
+        engagement_feature_flag_cache_size=engagement_cache_stats.get("engagement_feature_flag_cache_size", 0),
+        engagement_food_channels_cache_size=engagement_cache_stats.get("engagement_food_channels_cache_size", 0),
+        engagement_feature_flag_cache_hits=engagement_cache_stats.get("engagement_feature_flag_cache_hits", 0),
+        engagement_feature_flag_cache_misses=engagement_cache_stats.get("engagement_feature_flag_cache_misses", 0),
+        engagement_food_channels_cache_hits=engagement_cache_stats.get("engagement_food_channels_cache_hits", 0),
+        engagement_food_channels_cache_misses=engagement_cache_stats.get("engagement_food_channels_cache_misses", 0),
     )
 
 
@@ -1701,6 +1746,9 @@ def _collect_premium_metrics() -> PremiumMetrics | None:
             premium_cache_hits=stats.get("premium_cache_hits", 0),
             premium_transfers_count=stats.get("premium_transfers_count", 0),
             premium_cache_size=stats.get("premium_cache_size", 0),
+            premium_guild_cache_size=stats.get("premium_guild_cache_size", 0),
+            premium_guild_cache_hits=stats.get("premium_guild_cache_hits", 0),
+            premium_guild_cache_misses=stats.get("premium_guild_cache_misses", 0),
         )
     except Exception:
         return None

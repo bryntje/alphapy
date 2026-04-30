@@ -30,6 +30,7 @@ _DEFAULT_CACHE_TTL = 300  # seconds
 # Lock protects _cache across bot thread (is_premium/_set_cache) and webhook thread (invalidate_premium_cache).
 # Also used to serialise _stats_* counter increments (avoids a separate lock).
 _cache: dict[tuple[int, int], tuple[bool, float]] = {}
+_guild_cache: dict[int, tuple[bool, float]] = {}
 _cache_lock = threading.Lock()
 _pool: asyncpg.Pool | None = None
 
@@ -42,6 +43,8 @@ _stats_cache_hits = 0
 _stats_core_api = 0
 _stats_local = 0
 _stats_transfers = 0
+_stats_guild_cache_hits = 0
+_stats_guild_cache_misses = 0
 
 
 def _get_http_client() -> httpx.AsyncClient:
@@ -89,6 +92,23 @@ def _set_cache(user_id: int, guild_id: int, is_premium: bool) -> None:
         _cache[(user_id, guild_id)] = (is_premium, time.monotonic() + ttl)
 
 
+def _get_cached_guild(guild_id: int) -> bool | None:
+    with _cache_lock:
+        if guild_id not in _guild_cache:
+            return None
+        is_premium, expires_at = _guild_cache[guild_id]
+        if time.monotonic() > expires_at:
+            del _guild_cache[guild_id]
+            return None
+        return is_premium
+
+
+def _set_guild_cache(guild_id: int, is_premium: bool) -> None:
+    ttl = _cache_ttl_seconds()
+    with _cache_lock:
+        _guild_cache[guild_id] = (is_premium, time.monotonic() + ttl)
+
+
 def _clear_cache_for_user(user_id: int) -> None:
     """Remove all cache entries for this user (e.g. after transfer)."""
     with _cache_lock:
@@ -109,14 +129,17 @@ def invalidate_premium_cache(user_id: int, guild_id: int | None = None) -> None:
     if guild_id is not None:
         with _cache_lock:
             _cache.pop((user_id, guild_id), None)
+            _guild_cache.pop(guild_id, None)
     else:
         _clear_cache_for_user(user_id)
+        with _cache_lock:
+            _guild_cache.clear()
 
 
 def get_premium_cache_size() -> int:
     """Return the number of entries in the premium in-memory cache (for status/health display)."""
     with _cache_lock:
-        return len(_cache)
+        return len(_cache) + len(_guild_cache)
 
 
 async def _ensure_pool() -> asyncpg.Pool | None:
@@ -199,6 +222,7 @@ def get_premium_guard_stats() -> dict[str, Any]:
     """Return current premium guard counters for observability (same process only)."""
     with _cache_lock:
         cache_size = len(_cache)
+        guild_cache_size = len(_guild_cache)
     return {
         "premium_checks_total": _stats_total,
         "premium_checks_core_api": _stats_core_api,
@@ -206,6 +230,9 @@ def get_premium_guard_stats() -> dict[str, Any]:
         "premium_cache_hits": _stats_cache_hits,
         "premium_transfers_count": _stats_transfers,
         "premium_cache_size": cache_size,
+        "premium_guild_cache_size": guild_cache_size,
+        "premium_guild_cache_hits": _stats_guild_cache_hits,
+        "premium_guild_cache_misses": _stats_guild_cache_misses,
     }
 
 
@@ -321,8 +348,19 @@ async def guild_has_premium(guild_id: int) -> bool:
     """
     if guild_id is None or guild_id == 0:
         return False
+
+    global _stats_guild_cache_hits, _stats_guild_cache_misses
+    cached = _get_cached_guild(guild_id)
+    if cached is not None:
+        with _cache_lock:
+            _stats_guild_cache_hits += 1
+        return cached
+    with _cache_lock:
+        _stats_guild_cache_misses += 1
+
     pool = await _ensure_pool()
     if pool is None:
+        _set_guild_cache(guild_id, False)
         return False
     try:
         async with acquire_safe(pool) as conn:
@@ -335,9 +373,12 @@ async def guild_has_premium(guild_id: int) -> bool:
                 """,
                 guild_id,
             )
-        return row is not None
+        result = row is not None
+        _set_guild_cache(guild_id, result)
+        return result
     except Exception as e:
         logger.warning("Premium guard: guild_has_premium failed: %s", e)
+        _set_guild_cache(guild_id, False)
         return False
 
 
