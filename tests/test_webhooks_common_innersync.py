@@ -1,7 +1,6 @@
 from unittest.mock import patch
 
 import config
-
 from webhooks.common import get_discord_link_webhook_secret
 
 
