@@ -34,9 +34,9 @@ from utils.supabase_client import SupabaseConfigurationError, _supabase_post
 from utils.timezone import BRUSSELS_TZ
 from version import CODENAME, __version__
 from webhooks.app_reflections import router as app_reflections_webhook_router
+from webhooks.discord_link import router as discord_link_webhook_router
 from webhooks.founder import router as founder_webhook_router
 from webhooks.legal_update import router as legal_update_webhook_router
-from webhooks.discord_link import router as discord_link_webhook_router
 from webhooks.premium_invalidate import router as premium_invalidate_webhook_router
 from webhooks.reflections import router as reflections_webhook_router
 from webhooks.revoke_reflection import router as revoke_reflection_webhook_router
