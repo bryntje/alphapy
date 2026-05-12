@@ -1044,24 +1044,27 @@ async def compute_weekly_awards(
                 period_end = week_end - timedelta(seconds=1)
                 period_text = (
                     f"Week of {week_start.strftime('%d %b %H:%M')} "
-                    f"— {period_end.strftime('%d %b %H:%M')}"
+                    f"to {period_end.strftime('%d %b %H:%M')} (Monday to Monday)"
                 )
+                guild_name = ch.guild.name if ch.guild else "Weekly"
                 embed = discord.Embed(
-                    title="🏆 Weekly Awards",
+                    title=f"🏆 {guild_name} Weekly Awards",
                     description=period_text,
                     color=discord.Color.gold(),
                 )
+                sections: list[str] = []
                 for entry in results:
                     uid = int(entry["user_id"])
                     metric = int(entry["metric"])
                     label: str = entry.get("label", entry["key"].title())
                     subtitle: str = entry.get("subtitle", "")
-                    lines = [f"<@{uid}>", f"Score: **{metric}**"]
+                    lines = [f"**{label}**", f"<@{uid}>", f"Score: **{metric}**"]
                     if subtitle:
                         lines.append(subtitle)
                     if entry.get("message_id"):
                         lines.append(f"Message ID: `{entry['message_id']}`")
-                    embed.add_field(name=label, value="\n".join(lines), inline=False)
+                    sections.append("\n".join(lines))
+                embed.description = f"{period_text}\n\n" + "\n\n".join(sections)
                 embed.set_footer(text="Congratulations to all winners! 💪")
                 try:
                     await ch.send(embed=embed)
