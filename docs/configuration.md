@@ -315,7 +315,12 @@ The following environment variables are required/optional for bot operation:
 
 ### Optional - Core API (telemetry / operational events)
 - `CORE_API_URL`: Base URL of the Core API for centralised telemetry and operational event ingress. When set, operational events and telemetry are sent to Core instead of directly to Supabase.
-- `ALPHAPY_SERVICE_KEY`: Service key for authenticating with the Core API.
+- `ALPHAPY_SERVICE_KEY`: Service key for authenticating with the Core API (`X-API-Key`), including premium verify, Discord link session, and bot profile endpoints.
+- `CORE_DISCORD_LINK_SESSION_PATH`: Optional override for the POST path used to start a Discord link session (default: `/integrations/discord/link-session`).
+- `CORE_DISCORD_BOT_PROFILE_PATH`: Optional override for the GET path used to fetch a profile for a Discord user (default: `/integrations/discord/bot-profile`).
+
+### Optional - Innersync identity (Discord link webhook)
+- `DISCORD_LINK_WEBHOOK_SECRET`: Secret for HMAC validation of `POST /webhooks/discord-link`. Falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET` / `SUPABASE_WEBHOOK_SECRET`.
 
 ### Optional - Premium tier
 - `PREMIUM_CHECKOUT_URL`: Checkout page URL for the "Get Premium" button in `/premium`. If unset, buttons are disabled.

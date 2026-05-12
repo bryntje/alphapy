@@ -146,6 +146,7 @@ class StartupManager:
             "cogs.faq",
             "cogs.exports",
             "cogs.delete_my_data",
+            "cogs.innersync_identity",
             "cogs.migrations",
             "cogs.verification",
             "cogs.automod",

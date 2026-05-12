@@ -1255,7 +1255,7 @@ async def update_reminder(conn: ReminderRepoConnection, data: dict[str, Any]) ->
     await reminder_repo.update_for_api(conn, data)
 
 
-async def delete_reminder(conn: ReminderRepoConnection, reminder_id: int, created_by: str) -> None:
+async def delete_reminder(conn: ReminderRepoConnection, reminder_id: int, created_by: int | str) -> None:
     await reminder_repo.delete_by_owner(conn, reminder_id, created_by)
 
 

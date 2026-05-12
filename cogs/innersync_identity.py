@@ -1,0 +1,210 @@
+"""
+Innersync identity: /link, /unlink, and /profile (Discord ↔ central user id).
+"""
+
+from __future__ import annotations
+
+import time
+from collections import defaultdict
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from utils.cog_base import AlphaCog
+from utils.core_discord_integration import (
+    extract_link_url,
+    fetch_innersync_profile_for_discord,
+    request_discord_link_session,
+)
+from utils.db_helpers import get_bot_db_pool
+from utils.embed_builder import EmbedBuilder
+from utils.innersync_identity import (
+    delete_discord_link_for_discord_user,
+    get_innersync_id_for_discord,
+)
+from utils.logger import logger
+from utils.sanitizer import safe_embed_text
+
+_LINK_RATELIMIT: dict[int, list[float]] = defaultdict(list)
+_LINK_WINDOW_SEC = 60.0
+_LINK_MAX_PER_WINDOW = 3
+
+
+def _link_rate_ok(discord_user_id: int) -> bool:
+    now = time.monotonic()
+    cutoff = now - _LINK_WINDOW_SEC
+    window = [t for t in _LINK_RATELIMIT[discord_user_id] if t > cutoff]
+    if len(window) >= _LINK_MAX_PER_WINDOW:
+        _LINK_RATELIMIT[discord_user_id] = window
+        return False
+    window.append(now)
+    _LINK_RATELIMIT[discord_user_id] = window
+    return True
+
+
+@app_commands.command(name="link", description="Link this Discord account to your Innersync identity")
+async def link_slash(interaction: discord.Interaction) -> None:
+    if not _link_rate_ok(interaction.user.id):
+        await interaction.response.send_message(
+            "You are using this command too often. Please wait about a minute and try again.",
+            ephemeral=True,
+        )
+        return
+
+    pool = get_bot_db_pool(interaction.client)
+    if pool is None:
+        await interaction.response.send_message(
+            "The bot database is not available. Try again later.",
+            ephemeral=True,
+        )
+        return
+
+    existing = await get_innersync_id_for_discord(pool, interaction.user.id)
+    if existing:
+        await interaction.response.send_message(
+            embed=EmbedBuilder.info(
+                title="Already linked",
+                description=(
+                    "This Discord account is already linked to an Innersync profile. "
+                    "Use `/profile` to see your details, or `/unlink` if you need to disconnect."
+                ),
+            ),
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    session = await request_discord_link_session(interaction.user.id)
+    url = extract_link_url(session)
+    if not url:
+        await interaction.followup.send(
+            embed=EmbedBuilder.info(
+                title="Link unavailable",
+                description=(
+                    "The link service is not available right now. "
+                    "If this keeps happening, ask a server admin to confirm **CORE_API_URL** and "
+                    "**ALPHAPY_SERVICE_KEY** are set and that Core exposes the Discord link session endpoint."
+                ),
+            ),
+            ephemeral=True,
+        )
+        return
+
+    desc = (
+        "Open the link below in your browser while signed in to the Innersync App. "
+        "When you finish, Core will confirm the link and you will receive a DM from this bot.\n\n"
+        f"[Open link session]({url})"
+    )
+    await interaction.followup.send(
+        embed=EmbedBuilder.info(
+            title="Link Innersync",
+            description=desc,
+        ),
+        ephemeral=True,
+    )
+
+
+@app_commands.command(name="unlink", description="Remove the Innersync link for this Discord account")
+async def unlink_slash(interaction: discord.Interaction) -> None:
+    pool = get_bot_db_pool(interaction.client)
+    if pool is None:
+        await interaction.response.send_message(
+            "The bot database is not available. Try again later.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    deleted = False
+    try:
+        deleted = await delete_discord_link_for_discord_user(pool, interaction.user.id)
+    except Exception as e:
+        logger.warning("unlink: delete failed: %s", e)
+        await interaction.followup.send(
+            "Could not remove the link. Please try again later.",
+            ephemeral=True,
+        )
+        return
+
+    if deleted:
+        await interaction.followup.send(
+            embed=EmbedBuilder.info(
+                title="Unlinked",
+                description="Your Discord account is no longer linked to Innersync in Alphapy. You can run `/link` again anytime.",
+            ),
+            ephemeral=True,
+        )
+    else:
+        await interaction.followup.send(
+            embed=EmbedBuilder.info(
+                title="Nothing to unlink",
+                description="There was no Alphapy link stored for this Discord account.",
+            ),
+            ephemeral=True,
+        )
+
+
+@app_commands.command(name="profile", description="Show your Innersync-linked profile (or Discord fallback)")
+async def profile_slash(interaction: discord.Interaction) -> None:
+    await interaction.response.defer(ephemeral=True)
+    profile = await fetch_innersync_profile_for_discord(interaction.user.id)
+    if profile:
+        name = profile.get("display_name") or profile.get("name") or interaction.user.display_name
+        avatar = profile.get("avatar_url") or profile.get("avatar")
+        iid = profile.get("innersync_user_id") or profile.get("user_id")
+        lines = [f"**{safe_embed_text(str(name), 256)}**"]
+        if iid:
+            lines.append(f"Innersync user id: `{safe_embed_text(str(iid), 64)}`")
+        embed = EmbedBuilder.info(
+            title="Innersync profile",
+            description="\n".join(lines),
+        )
+        if isinstance(avatar, str) and avatar.startswith("http"):
+            embed.set_thumbnail(url=avatar[:2048])
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        return
+
+    pool = get_bot_db_pool(interaction.client)
+    linked_id = None
+    if pool is not None:
+        try:
+            linked_id = await get_innersync_id_for_discord(pool, interaction.user.id)
+        except Exception as e:
+            logger.debug("profile: link lookup failed: %s", e)
+
+    if linked_id:
+        desc = (
+            f"Your account is linked (Innersync id `{safe_embed_text(linked_id, 48)}`), "
+            "but the central profile service did not return details. Try again later."
+        )
+    else:
+        desc = (
+            "No central profile is available yet. Run `/link` to connect this Discord account "
+            "to your Innersync identity."
+        )
+
+    embed = EmbedBuilder.info(
+        title="Profile",
+        description=(
+            f"**Discord:** {safe_embed_text(interaction.user.display_name, 128)}\n\n{desc}"
+        ),
+    )
+    if interaction.user.display_avatar:
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class InnersyncIdentityCog(AlphaCog):
+    """Slash commands for Innersync identity linking and profile."""
+
+    def __init__(self, bot: commands.Bot) -> None:
+        super().__init__(bot)
+
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(InnersyncIdentityCog(bot))
+    bot.tree.add_command(link_slash)
+    bot.tree.add_command(unlink_slash)
+    bot.tree.add_command(profile_slash)

@@ -19,6 +19,17 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 
 ---
 
+## 🔗 Agent: InnersyncIdentity
+- **Path**: `cogs/innersync_identity.py`, `utils/innersync_identity.py`, `utils/core_discord_integration.py`, `webhooks/discord_link.py`
+- **Purpose**: Maps Discord snowflakes to Innersync user ids (Supabase Auth `sub`) for cross-product identity
+- **Storage**: PostgreSQL table `alphapy_discord_links` (Railway; migration `023_alphapy_discord_links`)
+- **Commands**: `/link` (Core link-session URL, rate limited), `/unlink`, `/profile` (Core bot-profile when configured)
+- **API**: Reminder and dashboard flows resolve JWT `sub` → Discord via `alphapy_discord_links` with Supabase `profiles` fallback (`resolve_innersync_jwt_sub_to_discord_int`)
+- **Webhooks**: `POST /webhooks/discord-link` (HMAC `DISCORD_LINK_WEBHOOK_SECRET` chain) — Core confirms completed link; may DM the user
+- **GDPR**: `alphapy_discord_links` rows purged with other Railway PII in `webhooks/supabase.py` user delete handler
+
+---
+
 ## 📣 Agent: EmbedReminderWatcher
 - **Path**: `cogs/embed_watcher.py`
 - **Purpose**: Detects new embeds in the announcements channel and automatically creates reminders
@@ -35,8 +46,8 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 ## 🧾 Agent: ReminderManager
 - **Path**: `cogs/reminders.py`
 - **Purpose**: Slash commands for manual reminder management
-- **Commands**: `/add_reminder`, `/add_live_session`, `/reminder_list`, `/reminder_edit`, `/reminder_delete`
-- **LiveSessionPresets**: `/add_live_session` creates a recurring live-session reminder (fixed message, optional image; premium for images)
+- **Commands**: `/add_reminder`, `/add_live_session`, `/edit_live_session`, `/delete_live_session`, `/reminder_list`, `/reminder_edit`, `/reminder_delete`
+- **LiveSessionPresets**: `/add_live_session` creates a recurring live-session reminder (fixed message, optional image; premium for images); `/edit_live_session` and `/delete_live_session` manage preset entries directly
 - **Interaction**: Shares parser with EmbedReminderWatcher
 - **Embeds**: Title max 240 chars, location max 1024 chars
 
@@ -195,6 +206,7 @@ This applies even when the user speaks Dutch in chat or in instructions. Keep al
 - **Features** (all off by default):
   - **Challenges** (`challenges_enabled`) — timed message-count contests per channel. Modes: `leaderboard` (most messages wins) or `random` (random draw). Rehydrates active challenges from DB on bot restart.
   - **Weekly Awards** (`weekly_enabled`) — indexes messages (`has_image`, `is_food`) and reactions via `on_message` / `on_raw_reaction_add`. Award categories are configurable per guild (JSON). Default awards: Motivator (non-food), Foodfluencer (food, only when food channels configured), Sharpshooter (images), Star (reactions). Triggered manually with `/weekly compute` or automatically via a scheduler.
+  - **Weekly Awards announcement style**: single structured embed body (period + category blocks with winner mention, score, subtitle, optional message ID), matching the configured category order.
   - **Badges** (`badges_enabled`) — per-guild badge history. `/badge give` links a badge to an optional Discord role. Badge roles are configured via `/engagement set_badge_role`.
   - **Streaks** (`streaks_enabled`) — daily activity streak counter. Optional nickname suffix (`streaks_nicknames` setting): `Name | 🐣 day 3`, `🔥 week 2`, `👑 month 1`.
   - **OG Claims** (`og_enabled`) — reaction-based limited-spot claim system. Cap, message text, and badge role are all configurable. `/og setup` posts the claim message; `/og status` shows remaining spots.

@@ -30,12 +30,13 @@ from utils.logger import get_gpt_status_logs, logger
 from utils.operational_logs import EventType, get_operational_events, log_operational_event
 from utils.runtime_metrics import get_bot_snapshot, serialize_snapshot
 from utils.supabase_auth import verify_supabase_token
-from utils.supabase_client import SupabaseConfigurationError, _supabase_post, get_discord_id_for_user
+from utils.supabase_client import SupabaseConfigurationError, _supabase_post
 from utils.timezone import BRUSSELS_TZ
 from version import CODENAME, __version__
 from webhooks.app_reflections import router as app_reflections_webhook_router
 from webhooks.founder import router as founder_webhook_router
 from webhooks.legal_update import router as legal_update_webhook_router
+from webhooks.discord_link import router as discord_link_webhook_router
 from webhooks.premium_invalidate import router as premium_invalidate_webhook_router
 from webhooks.reflections import router as reflections_webhook_router
 from webhooks.revoke_reflection import router as revoke_reflection_webhook_router
@@ -107,6 +108,28 @@ async def get_authenticated_user_id(
         return str(claims["sub"])
 
     raise HTTPException(status_code=401, detail="Missing authentication context")
+
+
+async def _require_discord_id_for_linked_innersync(innersync_sub: str) -> int:
+    """
+    Resolve Supabase JWT `sub` to a Discord snowflake using `alphapy_discord_links`
+    (and Supabase profile fallback). Fails closed if nothing is linked.
+    """
+    global db_pool
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    from utils.innersync_identity import resolve_innersync_jwt_sub_to_discord_int
+
+    did = await resolve_innersync_jwt_sub_to_discord_int(db_pool, innersync_sub)
+    if did is None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "No Discord account linked to this Innersync user. "
+                "Run /link in the Alphapy Discord server to connect your account."
+            ),
+        )
+    return did
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +313,7 @@ app.include_router(reflections_webhook_router)
 app.include_router(app_reflections_webhook_router)
 app.include_router(revoke_reflection_webhook_router)
 app.include_router(premium_invalidate_webhook_router)
+app.include_router(discord_link_webhook_router)
 app.include_router(founder_webhook_router)
 app.include_router(legal_update_webhook_router)
 
@@ -1819,11 +1843,11 @@ async def get_metrics(
 class Reminder(BaseModel):
     id: int
     name: str
-    time: str  # of `datetime.time` als je deze exact gebruikt
+    time: str
     days: list[str]
     message: str
     channel_id: int
-    user_id: str  # ← belangrijk: moet overeenkomen met je response (created_by)
+    user_id: str  # JWT `sub` in requests; DB stores Discord snowflake in `created_by` after link resolution
 
 
 @router.get("/reminders/{user_id}", response_model=list[Reminder])
@@ -1841,6 +1865,8 @@ async def get_user_reminders(
     """
     if auth_user_id != user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
+
+    discord_uid = await _require_discord_id_for_linked_innersync(auth_user_id)
     
     # Use MAIN_GUILD_ID as default if no guild_id is specified
     effective_guild_id = guild_id
@@ -1855,7 +1881,7 @@ async def get_user_reminders(
         raise HTTPException(status_code=503, detail="Database not available")
     try:
         async with db_pool.acquire() as conn:
-            rows = await get_reminders_for_user(cast(Any, conn), user_id, effective_guild_id)
+            rows = await get_reminders_for_user(cast(Any, conn), discord_uid, effective_guild_id)
         return [
             {
                 "id": r["id"],
@@ -1885,8 +1911,10 @@ async def add_reminder(
     global db_pool
     payload = reminder.dict()
     payload["created_by"] = payload.pop("user_id")
-    if payload["created_by"] != auth_user_id:
+    if str(payload["created_by"]) != str(auth_user_id):
         raise HTTPException(status_code=403, detail="Forbidden")
+    discord_uid = await _require_discord_id_for_linked_innersync(auth_user_id)
+    payload["created_by"] = discord_uid
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -1917,8 +1945,10 @@ async def edit_reminder(
     global db_pool
     payload = reminder.dict()
     payload["created_by"] = payload.pop("user_id")
-    if payload["created_by"] != auth_user_id:
+    if str(payload["created_by"]) != str(auth_user_id):
         raise HTTPException(status_code=403, detail="Forbidden")
+    discord_uid = await _require_discord_id_for_linked_innersync(auth_user_id)
+    payload["created_by"] = discord_uid
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -1947,8 +1977,9 @@ async def remove_reminder(
     request: Request,
     auth_user_id: str = Depends(get_authenticated_user_id),
 ):
-    if created_by != auth_user_id:
+    if str(created_by) != str(auth_user_id):
         raise HTTPException(status_code=403, detail="Forbidden")
+    discord_uid = await _require_discord_id_for_linked_innersync(auth_user_id)
     global db_pool
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -1963,7 +1994,7 @@ async def remove_reminder(
             return cached[1]
 
     async with db_pool.acquire() as conn:
-        await delete_reminder(cast(Any, conn), int(reminder_id), created_by)
+        await delete_reminder(cast(Any, conn), int(reminder_id), discord_uid)
 
     result = {"success": True}
     if cache_key:
@@ -2032,16 +2063,7 @@ async def verify_guild_admin_access(
 ) -> None:
     """Verify that the authenticated Supabase user has admin access to the specified guild.
     Raises HTTPException 403 if not admin or Discord ID not linked."""
-    discord_id_str = await get_discord_id_for_user(auth_user_id)
-    if not discord_id_str:
-        raise HTTPException(
-            status_code=403,
-            detail="No Discord account linked to your profile. Link Discord via Supabase Auth to access guild logs.",
-        )
-    try:
-        discord_id = int(discord_id_str)
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail="Invalid Discord ID in profile.") from exc
+    discord_id = await _require_discord_id_for_linked_innersync(auth_user_id)
 
     from gpt.helpers import bot_instance
 
@@ -2854,10 +2876,8 @@ async def create_automod_rule(
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        # Get user's Discord ID
-        user_id = await get_discord_id_for_user(auth_user_id)
-        if not user_id:
-            raise HTTPException(status_code=404, detail="User not found")
+        # Get user's Discord ID (Innersync JWT sub → Discord via alphapy_discord_links / profile fallback)
+        user_id = await _require_discord_id_for_linked_innersync(auth_user_id)
         
         # Rule metadata reflects guild entitlement, not the caller's personal subscription
         from utils.premium_guard import guild_has_premium

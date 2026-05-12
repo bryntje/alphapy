@@ -202,6 +202,26 @@ Plaintext reflections received from the App via Core-API webhook. Used for Grok 
 
 ---
 
+### `alphapy_discord_links`
+
+Maps Supabase Auth user id (Innersync UUID) to a Discord snowflake for Alphapy and the HTTP API. There is no database-level foreign key to Supabase `users` (different host); integrity is enforced when Core confirms a link via webhook.
+
+**Columns:**
+- `innersync_user_id` (UUID, NOT NULL, PRIMARY KEY): Supabase Auth `sub`
+- `discord_user_id` (BIGINT, NOT NULL, UNIQUE): Discord user snowflake
+- `linked_at` (TIMESTAMPTZ, NOT NULL, DEFAULT NOW())
+- `link_source` (TEXT, nullable): e.g. `magic_link`, `otp`, `webhook`
+
+**Indexes:**
+- `idx_alphapy_discord_links_discord` on `(discord_user_id)`
+
+**Notes:**
+- Written by `POST /webhooks/discord-link` after the user completes linking in Core/App.
+- Removed by `/unlink` or GDPR purge when the Supabase user is deleted (`webhooks/supabase.py`).
+- Resolution helpers live in `utils/innersync_identity.py` (with optional fallback to Supabase `profiles` for migration).
+
+---
+
 ### `onboarding`
 
 User onboarding responses per guild.
