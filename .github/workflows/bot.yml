@@ -22,9 +22,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: recursive
-          token: ${{ secrets.INNERSYNC_TOKEN }}
-
+          # Default GITHUB_TOKEN is used for checkout. Do not require INNERSYNC_TOKEN here:
+          # an empty or revoked PAT breaks all PR CI with "could not read Username for 'https://github.com'".
+          # If private submodules are added later, set submodules + a dedicated secret only where needed.
 
       - name: Set up Python
         uses: actions/setup-python@v4
