@@ -64,6 +64,11 @@ TELEMETRY_INGEST_INTERVAL = int(os.getenv("TELEMETRY_INGEST_INTERVAL", "45"))  #
 # Use the Core API origin (e.g. https://core.innersync.tech), not a Next.js site such as api.innersync.tech.
 CORE_API_URL = (os.getenv("CORE_API_URL") or "").rstrip("/")
 ALPHAPY_SERVICE_KEY = os.getenv("ALPHAPY_SERVICE_KEY")
+# Core → Alphapy: confirm Discord ↔ Innersync link (HMAC via X-Webhook-Signature)
+DISCORD_LINK_WEBHOOK_SECRET = os.getenv("DISCORD_LINK_WEBHOOK_SECRET")
+# Optional path overrides for Core integration (defaults match planned Core routes)
+CORE_DISCORD_LINK_SESSION_PATH = (os.getenv("CORE_DISCORD_LINK_SESSION_PATH") or "").strip()
+CORE_DISCORD_BOT_PROFILE_PATH = (os.getenv("CORE_DISCORD_BOT_PROFILE_PATH") or "").strip()
 
 # Discord OAuth2 for Web Configuration Interface
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")

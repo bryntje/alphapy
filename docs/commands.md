@@ -5,6 +5,7 @@ Complete reference for all Discord slash commands available in the Alphapy bot.
 ## Command Categories
 
 - [Core Utilities](#core-utilities)
+- [Innersync identity](#innersync-identity)
 - [Reminders](#reminders)
 - [Tickets](#tickets)
 - [Verification](#verification)
@@ -57,6 +58,32 @@ Delete messages from a channel.
 
 ---
 
+## Innersync identity
+
+Link your Discord account to your central Innersync (Supabase Auth) user id so Mind, App, and Alphapy share the same identity.
+
+### `/link`
+
+Starts a link session via Core API. You receive an ephemeral message with a browser URL; after you complete the flow in the App, Core calls Alphapy and you get a confirmation DM.
+
+**Rate limit:** Up to 3 uses per minute per user.
+
+**Permissions:** Everyone (ephemeral)
+
+### `/unlink`
+
+Removes the stored mapping in Alphapy for your Discord account. You can run `/link` again later.
+
+**Permissions:** Everyone (ephemeral)
+
+### `/profile`
+
+Shows central profile fields from Core when available (`display_name`, `avatar_url`, Innersync user id). If Core does not return data, shows your Discord display name and whether an Alphapy/Supabase link exists.
+
+**Permissions:** Everyone (ephemeral)
+
+---
+
 ## Reminders
 
 ### `/add_reminder`
@@ -86,6 +113,32 @@ Create a recurring "live session" reminder with a fixed message ("Live session s
 - `channel` (optional): Channel for the reminder (uses default if not set)
 - `image_url` (optional): Image URL for the reminder (Premium)
 - `image` (optional): Image attachment (Premium; same rate limit as image reminders)
+
+---
+
+### `/edit_live_session`
+Edit an existing live-session preset reminder.
+
+**Parameters:**
+- `live_session_id` (required): ID of the live session reminder
+- `days` (optional): Days of the week (e.g. "mon,wed,fri")
+- `time` (optional): Session start time in HH:MM format
+- `channel` (optional): Target channel
+- `image_url` (optional): New image URL (Premium)
+- `image` (optional): New image attachment (Premium)
+- `clear_image` (optional): Set to `true` to remove the current image
+
+**Behavior:** Keeps live-session preset defaults (`name` + fixed message), updates only the requested fields.
+
+---
+
+### `/delete_live_session`
+Delete an existing live-session preset reminder.
+
+**Parameters:**
+- `live_session_id` (required): ID of the live session reminder
+
+**Permissions:** Owner/Admin or live session creator
 
 ---
 

@@ -37,6 +37,7 @@ def _extract_discord_id(payload: dict[str, Any]) -> int | None:
 async def _purge_railway_data(pool, discord_id: int, supabase_user_id: str) -> None:
     """Delete all personal data for a user from Railway PostgreSQL (GDPR erasure)."""
     tables_to_delete = [
+        ("alphapy_discord_links", "discord_user_id"),
         ("onboarding", "user_id"),
         ("support_tickets", "user_id"),
         # faq_search_logs excluded: the table has no user_id column (queries are stored anonymously)

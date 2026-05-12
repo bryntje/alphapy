@@ -119,6 +119,18 @@ def get_legal_update_webhook_secret() -> str | None:
     )
 
 
+def get_discord_link_webhook_secret() -> str | None:
+    """Secret for Core → Alphapy Discord/Innersync link confirmation webhook."""
+    import config
+
+    return (
+        getattr(config, "DISCORD_LINK_WEBHOOK_SECRET", None)
+        or getattr(config, "APP_REFLECTIONS_WEBHOOK_SECRET", None)
+        or getattr(config, "WEBHOOK_SECRET", None)
+        or getattr(config, "SUPABASE_WEBHOOK_SECRET", None)
+    )
+
+
 __all__ = [
     "validate_webhook_signature",
     "get_app_reflections_secret",
@@ -126,4 +138,5 @@ __all__ = [
     "get_premium_invalidate_secret",
     "get_founder_webhook_secret",
     "get_legal_update_webhook_secret",
+    "get_discord_link_webhook_secret",
 ]

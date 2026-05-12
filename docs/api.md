@@ -15,7 +15,7 @@ All API endpoints are prefixed with `/api` unless otherwise noted.
 - **Onboarding Management**: Questions, rules, and flow configuration (`/api/dashboard/{guild_id}/onboarding/*`)
 - **Reminder Management**: User-facing reminder CRUD operations (requires API key + user ID)
 - **Exports**: CSV export endpoints for tickets and FAQ
-- **Webhooks**: Incoming webhooks from Core-API (app-reflections, revoke-reflection); validated via `X-Webhook-Signature`
+- **Webhooks**: Incoming webhooks from Core-API and GitHub Actions; validated via `X-Webhook-Signature` (includes app-reflections, discord-link, premium-invalidate, founder, legal-update)
 
 **Note for Mind Dashboard**: Mind primarily uses:
 - `/api/dashboard/metrics` (or `/api/metrics` alias) for live metrics
@@ -36,7 +36,7 @@ Important:
 Example (JWT):
 ```bash
 curl -H "Authorization: Bearer <supabase_jwt>" \
-  https://your-bot-url/api/reminders/123456789
+  https://your-bot-url/api/reminders/<supabase_user_uuid>
 ```
 
 Dashboard endpoints example:
@@ -771,6 +771,8 @@ Get operational logs (reconnect, disconnect, etc.) for the Mind dashboard. Requi
 
 ### Reminder Management
 
+Mind and other clients authenticate with a **Supabase JWT**. The `user_id` path field and reminder payload `user_id` must equal the JWT `sub` (Innersync user UUID). Alphapy resolves that UUID to a Discord snowflake via `alphapy_discord_links` (and Supabase `profiles` as a fallback) before reading or writing `reminders.created_by`. If the user is not linked, reminder endpoints return **403** with guidance to run `/link` in Discord.
+
 #### `GET /api/reminders/{user_id}`
 
 List reminders for a specific user.
@@ -778,7 +780,7 @@ List reminders for a specific user.
 **Authentication:** Required (Supabase JWT or API key, plus user match against authenticated JWT subject)
 
 **Path Parameters:**
-- `user_id` (required): Discord user ID whose reminders to fetch
+- `user_id` (required): Must equal the authenticated JWT `sub` (Innersync UUID). Reminders are loaded using the linked Discord id.
 
 **Response:**
 ```json
@@ -826,7 +828,7 @@ Update an existing reminder.
 
 Supports optional `Idempotency-Key` header for safe retries.
 
-**Request Body:** Same as POST, include `id` in payload. All fields optional except `id` and `user_id`.
+**Request Body:** Same as POST, include `id` in payload. The `user_id` field must equal the JWT `sub`; it is stored as Discord `created_by` after link resolution.
 
 #### `DELETE /api/reminders/{reminder_id}/{created_by}`
 
@@ -838,7 +840,7 @@ Supports optional `Idempotency-Key` header for safe retries.
 
 **Path Parameters:**
 - `reminder_id` (required): ID of the reminder to delete
-- `created_by` (required): Discord user ID who created the reminder
+- `created_by` (required): Must equal the authenticated JWT `sub` (Innersync UUID); must match the reminder owner after link resolution.
 
 ### Exports
 
@@ -846,7 +848,7 @@ Supports optional `Idempotency-Key` header for safe retries.
 
 ## Webhooks
 
-These endpoints receive payloads from Core-API. They do not use API key authentication; use `X-Webhook-Signature` (HMAC) with the configured secret (`APP_REFLECTIONS_WEBHOOK_SECRET` or fallback). See [Configuration](configuration.md) for environment variables.
+These endpoints receive payloads from Core-API. They do not use API key authentication; use `X-Webhook-Signature` (HMAC) with the configured secret (`DISCORD_LINK_WEBHOOK_SECRET`, `APP_REFLECTIONS_WEBHOOK_SECRET`, or other per-route fallbacks). See [Configuration](configuration.md) for environment variables.
 
 ### `POST /webhooks/app-reflections`
 
@@ -922,6 +924,29 @@ Clears the premium cache for a user so the next check refetches from Core-API/DB
 - `guild_id` is optional — if omitted, cache is cleared for all guilds for that user.
 
 **Response:** `200` with `{"status": "ok"}`.
+
+---
+
+### `POST /webhooks/discord-link`
+
+Confirms a completed Discord ↔ Innersync link from Core after the user finishes the browser/App flow. Upserts into `alphapy_discord_links` and may send the user a confirmation DM.
+
+**Headers:** `X-Webhook-Signature` (HMAC-SHA256; secret: `DISCORD_LINK_WEBHOOK_SECRET`, falls back to `APP_REFLECTIONS_WEBHOOK_SECRET` / `WEBHOOK_SECRET` / `SUPABASE_WEBHOOK_SECRET`)
+
+**Request body:**
+```json
+{
+  "innersync_user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "discord_user_id": 123456789012345678,
+  "link_source": "magic_link"
+}
+```
+
+- `link_source` is optional (stored for auditing).
+
+**Responses:**
+- `200` with `{"status": "ok"|"noop", "discord_user_id": "<snowflake>"}`
+- `409` if the Discord user or Innersync user is already linked to a different account
 
 ---
 
