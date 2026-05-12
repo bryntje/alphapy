@@ -26,10 +26,12 @@ from api import (
 # ---------------------------------------------------------------------------
 
 GUILD_ID = 111111111111111111
-USER_ID = "999999999999999999"
+# JWT `sub` must be a UUID for Innersync resolution; Discord snowflake used in DB rows.
+AUTH_SUB = "550e8400-e29b-41d4-a716-446655440000"
+DISCORD_USER_ID = 999999999999999999
 
 
-def make_app(auth_user: str = USER_ID) -> FastAPI:
+def make_app(auth_user: str = AUTH_SUB) -> FastAPI:
     """Build a fresh FastAPI instance with auth/api-key deps bypassed."""
     app = FastAPI()
     app.include_router(router)
@@ -50,7 +52,7 @@ def _fake_record(**kwargs):
         "channel_id": 123,
         "location": None,
         "event_time": None,
-        "created_by": USER_ID,
+        "created_by": DISCORD_USER_ID,
     }
     defaults.update(kwargs)
 
@@ -74,6 +76,14 @@ def _mock_pool(*rows):
     return pool, conn
 
 
+def _patch_resolve_innersync_to_discord():
+    """JWT sub (UUID) resolves to DISCORD_USER_ID for reminder DB queries."""
+    return patch(
+        "utils.innersync_identity.resolve_innersync_jwt_sub_to_discord_int",
+        new=AsyncMock(return_value=DISCORD_USER_ID),
+    )
+
+
 # ---------------------------------------------------------------------------
 # GET /api/reminders/{user_id}
 # ---------------------------------------------------------------------------
@@ -84,37 +94,43 @@ class TestGetUserReminders:
 
     def test_happy_path_returns_reminder_list(self):
         pool, _ = _mock_pool(_fake_record())
-        app = make_app(USER_ID)
-        with patch.object(api_module, "db_pool", pool):
+        app = make_app()
+        with (
+            patch.object(api_module, "db_pool", pool),
+            _patch_resolve_innersync_to_discord(),
+        ):
             client = TestClient(app)
-            response = client.get(f"/api/reminders/{USER_ID}")
+            response = client.get(f"/api/reminders/{AUTH_SUB}")
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
         assert data[0]["name"] == "Test Reminder"
-        assert data[0]["user_id"] == USER_ID
+        assert data[0]["user_id"] == str(DISCORD_USER_ID)
 
     def test_empty_list_when_no_reminders(self):
         pool, _ = _mock_pool()  # no rows
-        app = make_app(USER_ID)
-        with patch.object(api_module, "db_pool", pool):
+        app = make_app()
+        with (
+            patch.object(api_module, "db_pool", pool),
+            _patch_resolve_innersync_to_discord(),
+        ):
             client = TestClient(app)
-            response = client.get(f"/api/reminders/{USER_ID}")
+            response = client.get(f"/api/reminders/{AUTH_SUB}")
         assert response.status_code == 200
         assert response.json() == []
 
     def test_returns_503_when_db_unavailable(self):
-        app = make_app(USER_ID)
+        app = make_app()
         with patch.object(api_module, "db_pool", None):
             client = TestClient(app)
-            response = client.get(f"/api/reminders/{USER_ID}")
+            response = client.get(f"/api/reminders/{AUTH_SUB}")
         assert response.status_code == 503
 
     def test_returns_403_when_user_id_mismatch(self):
         """Authenticated user can only access their own reminders."""
         app = make_app(auth_user="other_user")
         client = TestClient(app)
-        response = client.get(f"/api/reminders/{USER_ID}")
+        response = client.get(f"/api/reminders/{AUTH_SUB}")
         assert response.status_code == 403
 
     def test_returns_401_without_auth(self):
@@ -124,7 +140,7 @@ class TestGetUserReminders:
         app.dependency_overrides[verify_api_key] = lambda: None
         # No get_authenticated_user_id override → real dependency raises 401
         client = TestClient(app, raise_server_exceptions=False)
-        response = client.get(f"/api/reminders/{USER_ID}")
+        response = client.get(f"/api/reminders/{AUTH_SUB}")
         assert response.status_code == 401
 
 
@@ -143,13 +159,16 @@ class TestAddReminder:
         "days": ["monday", "tuesday"],
         "message": "Time to sync",
         "channel_id": 456,
-        "user_id": USER_ID,
+        "user_id": AUTH_SUB,
     }
 
     def test_creates_reminder_and_returns_success(self):
         pool, conn = _mock_pool()
-        app = make_app(USER_ID)
-        with patch.object(api_module, "db_pool", pool):
+        app = make_app()
+        with (
+            patch.object(api_module, "db_pool", pool),
+            _patch_resolve_innersync_to_discord(),
+        ):
             client = TestClient(app)
             response = client.post("/api/reminders", json=self._valid_payload)
         assert response.status_code == 200
@@ -157,7 +176,7 @@ class TestAddReminder:
         conn.execute.assert_awaited_once()
 
     def test_returns_503_when_db_unavailable(self):
-        app = make_app(USER_ID)
+        app = make_app()
         with patch.object(api_module, "db_pool", None):
             client = TestClient(app)
             response = client.post("/api/reminders", json=self._valid_payload)
@@ -173,16 +192,17 @@ class TestAddReminder:
         assert response.status_code == 403
 
     def test_returns_422_for_missing_required_fields(self):
-        app = make_app(USER_ID)
+        app = make_app()
         client = TestClient(app)
         response = client.post("/api/reminders", json={"name": "incomplete"})
         assert response.status_code == 422
 
     def test_idempotency_key_reuses_previous_response(self):
         pool, conn = _mock_pool()
-        app = make_app(USER_ID)
+        app = make_app()
         with (
             patch.object(api_module, "db_pool", pool),
+            _patch_resolve_innersync_to_discord(),
             patch.object(api_module, "_idempotency_cache", {}),
         ):
             client = TestClient(app)
@@ -204,13 +224,16 @@ class TestEditReminder:
         "days": ["monday", "tuesday"],
         "message": "Time to sync",
         "channel_id": 456,
-        "user_id": USER_ID,
+        "user_id": AUTH_SUB,
     }
 
     def test_updates_reminder_and_returns_success(self):
         pool, conn = _mock_pool()
-        app = make_app(USER_ID)
-        with patch.object(api_module, "db_pool", pool):
+        app = make_app()
+        with (
+            patch.object(api_module, "db_pool", pool),
+            _patch_resolve_innersync_to_discord(),
+        ):
             client = TestClient(app)
             response = client.put("/api/reminders", json=self._valid_payload)
         assert response.status_code == 200
@@ -223,10 +246,13 @@ class TestRemoveReminder:
 
     def test_deletes_reminder_and_returns_success(self):
         pool, conn = _mock_pool()
-        app = make_app(USER_ID)
-        with patch.object(api_module, "db_pool", pool):
+        app = make_app()
+        with (
+            patch.object(api_module, "db_pool", pool),
+            _patch_resolve_innersync_to_discord(),
+        ):
             client = TestClient(app)
-            response = client.delete(f"/api/reminders/5/{USER_ID}")
+            response = client.delete(f"/api/reminders/5/{AUTH_SUB}")
         assert response.status_code == 200
         assert response.json() == {"success": True}
         conn.execute.assert_awaited_once()
@@ -293,7 +319,7 @@ class TestGetGuildSettings:
         assert response.status_code == 401
 
     def test_returns_503_when_db_unavailable(self):
-        app = make_app(USER_ID)
+        app = make_app()
         with (
             patch.object(api_module, "db_pool", None),
             patch("api.verify_guild_admin_access", new=AsyncMock()),
@@ -308,7 +334,7 @@ class TestGetGuildSettings:
             {"scope": "system", "key": "log_channel_id", "value": "123"},
             {"scope": "embedwatcher", "key": "enabled", "value": "true"},
         ])
-        app = make_app(USER_ID)
+        app = make_app()
         with (
             patch.object(api_module, "db_pool", pool),
             patch("api.verify_guild_admin_access", new=AsyncMock()),
@@ -324,7 +350,7 @@ class TestGetGuildSettings:
         """verify_guild_admin_access raises 403 for non-admins."""
         from fastapi import HTTPException
 
-        app = make_app(USER_ID)
+        app = make_app()
         with (
             patch.object(api_module, "db_pool", MagicMock()),
             patch(
@@ -354,7 +380,7 @@ class TestGetAutomodRules:
         assert response.status_code == 401
 
     def test_returns_503_when_db_unavailable(self):
-        app = make_app(USER_ID)
+        app = make_app()
         with (
             patch.object(api_module, "db_pool", None),
             patch("api.verify_guild_admin_access", new=AsyncMock()),
@@ -366,7 +392,7 @@ class TestGetAutomodRules:
     def test_returns_empty_list_when_no_rules(self):
         pool, conn = _mock_pool()
         conn.fetch = AsyncMock(return_value=[])
-        app = make_app(USER_ID)
+        app = make_app()
         with (
             patch.object(api_module, "db_pool", pool),
             patch("api.verify_guild_admin_access", new=AsyncMock()),
@@ -379,7 +405,7 @@ class TestGetAutomodRules:
     def test_non_admin_gets_403(self):
         from fastapi import HTTPException
 
-        app = make_app(USER_ID)
+        app = make_app()
         with (
             patch.object(api_module, "db_pool", MagicMock()),
             patch(
