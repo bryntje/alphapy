@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Innersync Identity (`/link`)** – Discord ↔ Innersync user mapping via Core link-session; Railway table `alphapy_discord_links`; webhook `POST /webhooks/discord-link` on completion. Commands: `/link`, `/unlink`, `/profile`.
+
+### Fixed
+- **Discord `/link` URL from Core** – `extract_link_url()` normalizes malformed URLs from Core (e.g. `https:/` → `https://`) before sending the Discord link button; avoids `400 Invalid Form Body` when `INNERSYNC_APP_URL` on Core has a typo.
+
+### Added
 - **Auto-mod command UX** (`cogs/configuration.py`, `cogs/configuration_automod.py`):
   - Added explicit slash-command action choices (`delete`, `warn`, `mute`, `timeout`, `ban`) for auto-mod add/edit/logs commands.
   - Added `rule_id` autocomplete for `/automod delete_rule`, `/automod set_rule_enabled`, `/automod edit_rule`, `/automod set_severity`, and `/automod logs`.
