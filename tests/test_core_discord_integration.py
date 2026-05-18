@@ -22,6 +22,15 @@ def test_extract_link_url_authorize_url() -> None:
     assert extract_link_url({"authorize_url": "https://a.example/z"}) == "https://a.example/z"
 
 
+def test_extract_link_url_fixes_single_slash_scheme() -> None:
+    assert (
+        extract_link_url(
+            {"link_url": "https:/app.innersync.tech/dashboard/settings/integrations/link?token=abc"}
+        )
+        == "https://app.innersync.tech/dashboard/settings/integrations/link?token=abc"
+    )
+
+
 @pytest.mark.asyncio
 async def test_request_discord_link_session_none_without_core_url(monkeypatch) -> None:
     import utils.core_discord_integration as cdi

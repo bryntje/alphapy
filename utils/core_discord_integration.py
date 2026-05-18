@@ -8,7 +8,9 @@ CORE_DISCORD_BOT_PROFILE_PATH.
 
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -74,6 +76,22 @@ async def request_discord_link_session(discord_user_id: int) -> dict[str, Any] |
         return None
 
 
+def normalize_http_url(url: str) -> str | None:
+    """
+    Return a Discord-safe http(s) URL, or None if still invalid after fixes.
+
+    Repairs https:/host → https://host (common INNERSYNC_APP_URL typo on Core).
+    """
+    if not url or not isinstance(url, str):
+        return None
+    fixed = url.strip()
+    fixed = re.sub(r"^(https?):/([^/])", r"\1://\2", fixed)
+    parsed = urlparse(fixed)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    return fixed
+
+
 def extract_link_url(session: dict[str, Any] | None) -> str | None:
     """Pick a browser URL from a link-session response."""
     if not session:
@@ -81,7 +99,7 @@ def extract_link_url(session: dict[str, Any] | None) -> str | None:
     for key in ("link_url", "url", "magic_link_url", "authorize_url"):
         v = session.get(key)
         if isinstance(v, str) and v.startswith("http"):
-            return v
+            return normalize_http_url(v)
     return None
 
 
