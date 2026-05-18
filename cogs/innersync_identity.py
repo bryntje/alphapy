@@ -93,16 +93,24 @@ async def link_slash(interaction: discord.Interaction) -> None:
         )
         return
 
-    desc = (
-        "Open the link below in your browser while signed in to the Innersync App. "
-        "When you finish, Core will confirm the link and you will receive a DM from this bot.\n\n"
-        f"[Open link session]({url})"
+    # Link button instead of markdown — tokens often contain "_" which breaks [text](url) in embeds.
+    view = discord.ui.View()
+    view.add_item(
+        discord.ui.Button(
+            label="Open link session",
+            url=url,
+            style=discord.ButtonStyle.link,
+        )
     )
     await interaction.followup.send(
         embed=EmbedBuilder.info(
             title="Link Innersync",
-            description=desc,
+            description=(
+                "Use the button below to open the Innersync App while signed in. "
+                "When you finish, Core will confirm the link and you will receive a DM from this bot."
+            ),
         ),
+        view=view,
         ephemeral=True,
     )
 
