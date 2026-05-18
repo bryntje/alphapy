@@ -99,9 +99,34 @@ async def test_unlink_slash_deleted_and_not_deleted() -> None:
         with (
             patch.object(cog, "get_bot_db_pool", return_value=pool),
             patch.object(cog, "delete_discord_link_for_discord_user", new=AsyncMock(return_value=deleted)),
+            patch.object(cog, "get_innersync_id_for_discord", new=AsyncMock(return_value=None)),
         ):
             await cog.unlink_slash.callback(interaction)
         interaction.followup.send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unlink_slash_not_deleted_legacy_profile_hint() -> None:
+    interaction = MagicMock()
+    interaction.user.id = 46
+    interaction.client = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    pool = MagicMock()
+    with (
+        patch.object(cog, "get_bot_db_pool", return_value=pool),
+        patch.object(cog, "delete_discord_link_for_discord_user", new=AsyncMock(return_value=False)),
+        patch.object(
+            cog,
+            "get_innersync_id_for_discord",
+            new=AsyncMock(return_value="550e8400-e29b-41d4-a716-446655440000"),
+        ),
+    ):
+        await cog.unlink_slash.callback(interaction)
+    interaction.followup.send.assert_awaited_once()
+    embed = interaction.followup.send.await_args.kwargs.get("embed")
+    assert embed is not None
+    assert "formal Alphapy link row" in embed.description
 
 
 @pytest.mark.asyncio
