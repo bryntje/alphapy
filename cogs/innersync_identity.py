@@ -60,7 +60,9 @@ async def link_slash(interaction: discord.Interaction) -> None:
         )
         return
 
-    existing = await get_innersync_id_for_discord(pool, interaction.user.id)
+    existing = await get_innersync_id_for_discord(
+        pool, interaction.user.id, allow_profile_fallback=False
+    )
     if existing:
         await interaction.response.send_message(
             embed=EmbedBuilder.info(
@@ -137,10 +139,20 @@ async def unlink_slash(interaction: discord.Interaction) -> None:
             ephemeral=True,
         )
     else:
+        legacy_profile = await get_innersync_id_for_discord(
+            pool, interaction.user.id, allow_profile_fallback=True
+        )
+        if legacy_profile:
+            desc = (
+                "There is no formal Alphapy link row yet, but your App profile still has a "
+                "Discord id on file. Run `/link` to complete the Innersync identity flow."
+            )
+        else:
+            desc = "There was no Alphapy link stored for this Discord account."
         await interaction.followup.send(
             embed=EmbedBuilder.info(
                 title="Nothing to unlink",
-                description="There was no Alphapy link stored for this Discord account.",
+                description=desc,
             ),
             ephemeral=True,
         )

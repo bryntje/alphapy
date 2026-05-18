@@ -124,14 +124,23 @@ async def get_discord_id_for_innersync(
 async def get_innersync_id_for_discord(
     pool: asyncpg.Pool | None,
     discord_user_id: int,
+    *,
+    allow_profile_fallback: bool = True,
 ) -> str | None:
-    """Return Innersync (Supabase) user id string for a Discord snowflake."""
+    """
+    Return Innersync (Supabase) user id string for a Discord snowflake.
+
+    When allow_profile_fallback is False, only alphapy_discord_links counts (for /link).
+    API/reminder flows keep the default True so legacy profiles.discord_id still resolves.
+    """
     cached = _cache_get_by_discord(discord_user_id)
     if cached is not None:
         return cached
 
     if pool is None:
-        return await _fallback_innersync_from_supabase_profiles(discord_user_id)
+        if allow_profile_fallback:
+            return await _fallback_innersync_from_supabase_profiles(discord_user_id)
+        return None
 
     try:
         async with acquire_safe(pool) as conn:
@@ -146,14 +155,18 @@ async def get_innersync_id_for_discord(
             )
     except Exception as e:
         logger.warning("alphapy_discord_links lookup by discord id failed: %s", e)
-        return await _fallback_innersync_from_supabase_profiles(discord_user_id)
+        if allow_profile_fallback:
+            return await _fallback_innersync_from_supabase_profiles(discord_user_id)
+        return None
 
     if row and row["iid"]:
         iid = str(row["iid"])
         _cache_set_by_discord(discord_user_id, iid)
         return iid
 
-    return await _fallback_innersync_from_supabase_profiles(discord_user_id)
+    if allow_profile_fallback:
+        return await _fallback_innersync_from_supabase_profiles(discord_user_id)
+    return None
 
 
 async def _fallback_discord_from_supabase_profiles(innersync_user_id: str) -> int | None:
