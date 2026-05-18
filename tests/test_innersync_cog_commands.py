@@ -67,6 +67,12 @@ async def test_link_slash_sends_session_url() -> None:
     ):
         await cog.link_slash.callback(interaction)
     interaction.followup.send.assert_awaited_once()
+    view = interaction.followup.send.await_args.kwargs.get("view")
+    assert view is not None
+    link_buttons = [c for c in view.children if getattr(c, "url", None)]
+    assert len(link_buttons) == 1
+    assert link_buttons[0].url == "https://app.example/l"
+    assert link_buttons[0].label == "Open link session"
 
 
 @pytest.mark.asyncio
